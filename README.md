@@ -25,13 +25,12 @@ dated web reports. Every number links to the rows it came from, and every answer
 
 ## Work PC (install, test, update)
 
-Same model as the B2B tools: no admin, git, pip or Node build. With `DG_GITHUB_TOKEN` (Contents: read on this repo):
+Same model as B2B: **only `setup.ps1` is needed**. Save it in an empty folder (e.g. `C:\Wizard`) and run it. It
+downloads everything else from this private repository with `DG_GITHUB_TOKEN` (Contents: read), taken from the
+environment or from a `DG_GITHUB_TOKEN=` line in `.env` in that folder. No admin, git, pip or Node build.
 
 ```powershell
-mkdir C:\Wizard; cd C:\Wizard
-$h = @{ Authorization = "Bearer $env:DG_GITHUB_TOKEN"; Accept = 'application/vnd.github.raw' }
-Invoke-WebRequest https://api.github.com/repos/datap0nd/wizard/contents/setup.ps1 -Headers $h -OutFile setup.ps1 -UseBasicParsing
-powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1
+.\setup.ps1
 .\start.ps1
 ```
 

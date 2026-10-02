@@ -24,14 +24,34 @@ the first setup and setup copies it into `.env`, or add it to `.env` yourself.
 
 ## First install
 
-In a new PowerShell window:
+Only `setup.ps1` is needed, as with B2B. It creates everything else.
+
+1. Create an empty folder, e.g. `C:\Wizard`.
+2. In it, create `setup.ps1` with the contents of [`setup.ps1`](../setup.ps1) from `main`. On GitHub, open the file and
+   use **Copy raw file**, paste it into Notepad, then **Save as** `setup.ps1` with *Save as type: All files*.
+3. Token: if `DG_GITHUB_TOKEN` is not already an environment variable, create `.env` in the same folder with one line,
+   `DG_GITHUB_TOKEN=<token>`.
+4. In PowerShell, in that folder:
+
+   ```powershell
+   .\setup.ps1
+   ```
+
+   If the execution policy refuses it, use `powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1`.
+
+It does not matter that the pasted copy gets old. Setup always installs the newest `main`, and if `main` has a newer
+`setup.ps1` it continues with that one. It then replaces the folder's `setup.ps1` with the current copy.
+
+Alternatively, download it with the token instead of pasting:
 
 ```powershell
-mkdir C:\Wizard; cd C:\Wizard
 $h = @{ Authorization = "Bearer $env:DG_GITHUB_TOKEN"; Accept = 'application/vnd.github.raw' }
 Invoke-WebRequest https://api.github.com/repos/datap0nd/wizard/contents/setup.ps1 -Headers $h -OutFile setup.ps1 -UseBasicParsing
-powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1
 ```
+
+Unlike B2B, setup needs no Administrator rights and installs no Windows service. Wizard runs each question through
+*your* Gemini CLI and protects your Google sign-in with your Windows account. A service account could use neither, so
+Wizard runs in your session through `start.ps1`.
 
 Setup does, in order:
 

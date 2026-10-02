@@ -1,4 +1,6 @@
 # Install or refresh Wizard in this folder from GitHub. No admin rights, git, pip or Node build needed.
+# Only this file is needed on a work PC: save it as setup.ps1 in an empty folder (e.g. C:\Wizard) and run .\setup.ps1.
+# GitHub token: the DG_GITHUB_TOKEN environment variable, or a DG_GITHUB_TOKEN=<token> line in .env in the same folder.
 # Downloads the exact commit of `main`, a portable Python and locked libraries (SHA-256 verified) from this repository's
 # GitHub release, installs a clean release under releases\, keeps .env, data\, content\ and outbox\, refreshes the
 # Gemini CLI task folder, and checks the installation. Same model as the B2B installer.
@@ -151,7 +153,7 @@ try {
         }
         if (-not $commit) {
             $status = ''; try { $status = [int]$lookupError.Exception.Response.StatusCode } catch { }
-            $tokenState = if (-not $githubToken) { 'No DG_GITHUB_TOKEN was found (environment or .env).' } else { "A token was found ($($githubToken.Length) characters)." }
+            $tokenState = if (-not $githubToken) { "No DG_GITHUB_TOKEN was found. Set it as an environment variable, or put the line DG_GITHUB_TOKEN=<token> in $envPath, then run setup.ps1 again." } else { "A token was found ($($githubToken.Length) characters)." }
             $hint = switch ($status) {
                 401 { 'The token is invalid or expired.' }
                 404 { "The token cannot see $Repository. Add this repository to the token (fine-grained: Contents read-only), or use a token with the repo scope." }
