@@ -84,6 +84,9 @@ cd C:\Wizard
 gemini -m gemini-3.8-flash
 ```
 
+The first time, Gemini CLI asks whether you trust this folder: choose **Trust folder**. Project commands and
+`GEMINI.md` load only in a trusted folder, so without this `/wizard:tasks` is unknown.
+
 Then type `/wizard:tasks`, or `/wizard:tasks 10-12` to limit the range. Gemini reads `tasks\START_HERE.md`, works
 through the numbered tasks in order, and asks you whenever a task needs a decision. It tracks progress in
 `outbox\STATUS.md`, so you can stop at any time and run `/wizard:tasks` again later to resume.

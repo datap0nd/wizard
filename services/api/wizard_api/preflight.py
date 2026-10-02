@@ -106,8 +106,8 @@ def run_checks(settings: Settings) -> int:
     ok = True
     gemini_ok = True
     print("Wizard installation check", flush=True)
-    _line("INFO", f"runtime {settings.runtime} · model {settings.model} · auth {settings.auth_mode} · port {settings.port}")
-    _line("INFO", f"data {settings.data_dir} · content {settings.content_dir or 'built-in SYNTHETIC examples'}")
+    _line("INFO", f"runtime {settings.runtime} | model {settings.model} | auth {settings.auth_mode} | port {settings.port}")
+    _line("INFO", f"data {settings.data_dir} | content {settings.content_dir or 'built-in SYNTHETIC examples'}")
     try:
         settings.data_dir.mkdir(parents=True, exist_ok=True)
         probe = settings.data_dir / ".write-test"

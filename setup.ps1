@@ -275,7 +275,7 @@ try {
     Write-Host "Wizard is installed in $InstallDir" -ForegroundColor Green
     Write-Host "Active release: $release"
     if ($checkCode -eq 1) { Write-Host 'Gemini CLI is not ready yet (see the check above). Replay mode works: set WIZARD_AGENT_RUNTIME=replay in .env to demo without Gemini.' -ForegroundColor Yellow }
-    Write-Host 'Next: .\start.ps1   (Gemini CLI tasks: open Gemini CLI in this folder and run /wizard:tasks)'
+    Write-Host 'Next: .\start.ps1   (Gemini CLI tasks: run gemini in this folder, trust the folder, then /wizard:tasks)'
 } catch {
     Write-Host "Setup failed: $($_.Exception.Message)" -ForegroundColor Red
     exit 1

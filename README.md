@@ -36,7 +36,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1
 ```
 
 Then `.\update_app.ps1` after every push to `main`. Documentation and checks are Gemini CLI tasks: in `C:\Wizard`, run
-`gemini -m gemini-3.8-flash` and type `/wizard:tasks`. Full guide: [docs/workpc-setup.md](docs/workpc-setup.md).
+`gemini -m gemini-3.8-flash`, trust the folder when asked, and type `/wizard:tasks`. Full guide: [docs/workpc-setup.md](docs/workpc-setup.md).
 
 ## Quick start (Windows, development)
 

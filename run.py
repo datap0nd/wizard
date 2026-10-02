@@ -41,7 +41,7 @@ def main() -> int:
     except ConfigError as error:
         print(f"Wizard configuration error: {error}", file=sys.stderr)
         return 2
-    print(f"Wizard {settings.runtime} runtime · http://{settings.internal_url.split('//')[1]} · data {settings.data_dir}", flush=True)
+    print(f"Wizard {settings.runtime} runtime | http://{settings.internal_url.split('//')[1]} | data {settings.data_dir}", flush=True)
     uvicorn.run(app, host=settings.host, port=settings.port, log_level="warning", proxy_headers=False)
     return 0
 

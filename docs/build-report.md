@@ -26,6 +26,20 @@ decisions. Update it with every change that alters behaviour.
   - New `tests/unit/test_workpc.py`, which parses all four PowerShell scripts with the PowerShell parser.
   - The real-CLI probe test.
   - Local `verify_all.sh --allow-blocked=live-parity`: every layer PASS, only live parity BLOCKED.
+- **End-to-end install from GitHub** (dev PC, empty folder, token from `gh auth token`, exactly the documented
+  bootstrap):
+  - **First install** of `f483db8`: 18 archives downloaded and verified, portable Python started under x64
+    emulation, the check passed. It warned "Gemini CLI not found" because this PC has no global CLI, and
+    `whoami /upn` is empty because the PC is not domain-joined.
+  - **`update_app.ps1 -NoStart`** after setting `WIZARD_GEMINI_CLI_JS` and `WIZARD_LOCAL_USER_EMAIL` in `.env`:
+    archives reused, every check PASS, including the real-CLI compatibility probe on the portable Python.
+  - **`start.ps1`**: health/ready OK, Owner identity listed first, chat UI and the "Link your Gemini account" dialog
+    working.
+  - **`/wizard:tasks 00`** (Gemini CLI 0.62 in the install folder, offline): the command expands with its argument and
+    the folder's `GEMINI.md` loads, but **only in a trusted folder**. CLI 0.62 refuses untrusted folders headless and
+    asks interactively, so the guide and setup now say to trust the folder.
+- **Not testable here:** linking a real enterprise Google account and a live answer. Those are the first things to try
+  on the work PC.
 
 ## 2026-10-02 (later) — Real-content loader, documentation kit, CI type fixes
 

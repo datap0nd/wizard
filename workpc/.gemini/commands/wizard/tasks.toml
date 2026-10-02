@@ -1,5 +1,6 @@
-description = "Work through the Wizard tasks in tasks\\ (optionally one task: /wizard:tasks 11)"
+description = "Work through the Wizard tasks in tasks\\ (optionally some: /wizard:tasks 11 or /wizard:tasks 10-12)"
 prompt = """
 Read tasks/START_HERE.md and follow it exactly. Requested scope: {{args}}
-(If the scope is empty, work through every task that is not done yet, in order. If it is a number, do only that task.)
+(If the scope is empty, work through every task that is not done yet, in order. If it is a number, do only that task.
+If it is a range such as 10-12, do only those tasks, in order.)
 """
