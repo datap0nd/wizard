@@ -1,0 +1,55 @@
+# Reference CI. The plan requires an approved internal runner; this workflow is the template to port there.
+# Offline only: SYNTHETIC fixtures, replay runtime, the real Gemini CLI with fake model replies. No corporate access.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Python dependencies (locked)
+        run: uv sync --frozen
+
+      - name: Web dependencies (locked) and browser
+        run: |
+          npm --prefix apps/web ci --no-audit --no-fund
+          npx --prefix apps/web playwright install --with-deps chromium
+
+      - name: Pinned Gemini CLI for offline fake-response tests
+        run: |
+          mkdir -p .tools
+          echo '{"name":"wizard-dev-tools","private":true}' > .tools/package.json
+          npm --prefix .tools install --no-audit --no-fund @google/gemini-cli@0.62.0
+
+      - name: Verify all layers (fail closed; live parity cannot run here)
+        run: bash scripts/verify_all.sh --allow-blocked=live-parity
+
+      - name: Keep verification logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-logs
+          path: artifacts/verify/
+          retention-days: 14

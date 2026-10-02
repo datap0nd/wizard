@@ -1,0 +1,9 @@
+# Decision records
+
+One file per decision: `YYYY-MM-DD-short-name.md` with **Date, Owner, Context, Options, Decision, Consequences,
+Evidence**. A decision that changes repository rules also updates [AGENTS.md](../../AGENTS.md).
+
+- [2026-10-02 Agent-first design](2026-10-02-agent-first.md)
+- [2026-10-02 Two Gemini runtime routes](2026-10-02-gemini-runtime-routes.md)
+- [2026-10-02 Per-user Gemini CLI credential isolation](2026-10-02-cli-credential-isolation.md)
+- [2026-10-02 Development dependency constraints](2026-10-02-dependencies.md)

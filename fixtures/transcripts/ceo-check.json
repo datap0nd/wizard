@@ -1,0 +1,314 @@
+{
+  "id": "ceo-check",
+  "kind": "check",
+  "data_mode": "SYNTHETIC",
+  "match": [
+    "return+marketing",
+    "marketing+investment"
+  ],
+  "steps": [
+    {
+      "say": "Re-checking the figures in the ranking against the cited NERP, GSCM and ASAP evidence."
+    },
+    {
+      "tool": "wizard_check_my_data",
+      "as": "check",
+      "args": {
+        "claims": [
+          {
+            "label": "EG Q3 spend",
+            "stated_value": 1500000,
+            "evidence_id": "{E:nerp-mkt-spend-quarterly}",
+            "measure": "spend_usd",
+            "where": [
+              {
+                "field": "market",
+                "values": [
+                  "EG"
+                ]
+              },
+              {
+                "field": "fiscal_quarter",
+                "values": [
+                  "2026-Q3"
+                ]
+              }
+            ],
+            "period": "2026-Q3"
+          },
+          {
+            "label": "EG proxy",
+            "stated_value": 14667,
+            "expression": "(q3 - q2) / (spend / 1000000)",
+            "inputs": [
+              {
+                "name": "q3",
+                "evidence_id": "{E:gscm-sell-through-quarterly}",
+                "measure": "sell_out_units",
+                "where": [
+                  {
+                    "field": "market",
+                    "values": [
+                      "EG"
+                    ]
+                  },
+                  {
+                    "field": "fiscal_quarter",
+                    "values": [
+                      "2026-Q3"
+                    ]
+                  }
+                ],
+                "period": "2026-Q3"
+              },
+              {
+                "name": "q2",
+                "evidence_id": "{E:gscm-sell-through-quarterly}",
+                "measure": "sell_out_units",
+                "where": [
+                  {
+                    "field": "market",
+                    "values": [
+                      "EG"
+                    ]
+                  },
+                  {
+                    "field": "fiscal_quarter",
+                    "values": [
+                      "2026-Q2"
+                    ]
+                  }
+                ],
+                "period": "2026-Q2"
+              },
+              {
+                "name": "spend",
+                "evidence_id": "{E:nerp-mkt-spend-quarterly}",
+                "measure": "spend_usd",
+                "where": [
+                  {
+                    "field": "market",
+                    "values": [
+                      "EG"
+                    ]
+                  },
+                  {
+                    "field": "fiscal_quarter",
+                    "values": [
+                      "2026-Q3"
+                    ]
+                  }
+                ],
+                "period": "2026-Q3"
+              }
+            ]
+          },
+          {
+            "label": "SA proxy",
+            "stated_value": 10000,
+            "expression": "(q3 - q2) / (spend / 1000000)",
+            "inputs": [
+              {
+                "name": "q3",
+                "evidence_id": "{E:gscm-sell-through-quarterly}",
+                "measure": "sell_out_units",
+                "where": [
+                  {
+                    "field": "market",
+                    "values": [
+                      "SA"
+                    ]
+                  },
+                  {
+                    "field": "fiscal_quarter",
+                    "values": [
+                      "2026-Q3"
+                    ]
+                  }
+                ],
+                "period": "2026-Q3"
+              },
+              {
+                "name": "q2",
+                "evidence_id": "{E:gscm-sell-through-quarterly}",
+                "measure": "sell_out_units",
+                "where": [
+                  {
+                    "field": "market",
+                    "values": [
+                      "SA"
+                    ]
+                  },
+                  {
+                    "field": "fiscal_quarter",
+                    "values": [
+                      "2026-Q2"
+                    ]
+                  }
+                ],
+                "period": "2026-Q2"
+              },
+              {
+                "name": "spend",
+                "evidence_id": "{E:nerp-mkt-spend-quarterly}",
+                "measure": "spend_usd",
+                "where": [
+                  {
+                    "field": "market",
+                    "values": [
+                      "SA"
+                    ]
+                  },
+                  {
+                    "field": "fiscal_quarter",
+                    "values": [
+                      "2026-Q3"
+                    ]
+                  }
+                ],
+                "period": "2026-Q3"
+              }
+            ]
+          },
+          {
+            "label": "AE proxy",
+            "stated_value": 9615,
+            "expression": "(q3 - q2) / (spend / 1000000)",
+            "inputs": [
+              {
+                "name": "q3",
+                "evidence_id": "{E:gscm-sell-through-quarterly}",
+                "measure": "sell_out_units",
+                "where": [
+                  {
+                    "field": "market",
+                    "values": [
+                      "AE"
+                    ]
+                  },
+                  {
+                    "field": "fiscal_quarter",
+                    "values": [
+                      "2026-Q3"
+                    ]
+                  }
+                ],
+                "period": "2026-Q3"
+              },
+              {
+                "name": "q2",
+                "evidence_id": "{E:gscm-sell-through-quarterly}",
+                "measure": "sell_out_units",
+                "where": [
+                  {
+                    "field": "market",
+                    "values": [
+                      "AE"
+                    ]
+                  },
+                  {
+                    "field": "fiscal_quarter",
+                    "values": [
+                      "2026-Q2"
+                    ]
+                  }
+                ],
+                "period": "2026-Q2"
+              },
+              {
+                "name": "spend",
+                "evidence_id": "{E:nerp-mkt-spend-quarterly}",
+                "measure": "spend_usd",
+                "where": [
+                  {
+                    "field": "market",
+                    "values": [
+                      "AE"
+                    ]
+                  },
+                  {
+                    "field": "fiscal_quarter",
+                    "values": [
+                      "2026-Q3"
+                    ]
+                  }
+                ],
+                "period": "2026-Q3"
+              }
+            ]
+          },
+          {
+            "label": "EG share gain (pp)",
+            "stated_value": 1.6,
+            "expression": "s3 - s2",
+            "inputs": [
+              {
+                "name": "s3",
+                "evidence_id": "{E:asap-share-quarterly}",
+                "measure": "volume_share_pct",
+                "aggregate": "value",
+                "where": [
+                  {
+                    "field": "market",
+                    "values": [
+                      "EG"
+                    ]
+                  },
+                  {
+                    "field": "fiscal_quarter",
+                    "values": [
+                      "2026-Q3"
+                    ]
+                  }
+                ],
+                "period": "2026-Q3"
+              },
+              {
+                "name": "s2",
+                "evidence_id": "{E:asap-share-quarterly}",
+                "measure": "volume_share_pct",
+                "aggregate": "value",
+                "where": [
+                  {
+                    "field": "market",
+                    "values": [
+                      "EG"
+                    ]
+                  },
+                  {
+                    "field": "fiscal_quarter",
+                    "values": [
+                      "2026-Q2"
+                    ]
+                  }
+                ],
+                "period": "2026-Q2"
+              }
+            ]
+          },
+          {
+            "label": "SA observed Apple + Xiaomi switchers",
+            "stated_value": 18400,
+            "evidence_id": "{E:asap-smartswitch-transfers}",
+            "measure": "transfers",
+            "where": [
+              {
+                "field": "market",
+                "values": [
+                  "SA"
+                ]
+              }
+            ]
+          }
+        ],
+        "replay_evidence_ids": [
+          "{E:nerp-mkt-spend-quarterly}",
+          "{E:gscm-sell-through-quarterly}"
+        ]
+      }
+    },
+    {
+      "answer": "**All six figures I re-checked match the cited evidence, and the NERP and GSCM requests return the same rows today.** The ranking stands: EG, then SA, then AE, with MA not ranked.\n\n- EG Q3 spend $1.5M, and the EG, SA and AE proxies (14,667, 10,000 and 9,615 extra units per USD 1M) recompute from the spend and sell-out rows within rounding.\n- EG share gain of +1.6 pp and SA's 18,400 observed switchers match the ASAP rows.\n\nStill unverifiable by a recomputation: the proxy definition itself is an unsigned draft, and nothing here establishes causation. The check confirms the arithmetic and the sources, not the interpretation."
+    }
+  ]
+}

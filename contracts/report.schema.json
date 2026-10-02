@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wizard.internal/contracts/report.schema.json",
+  "title": "Wizard dated report",
+  "description": "A saved answer with the evidence needed to review its numbers. Data mode (where data came from) and check status (whether figures were independently recomputed) are separate.",
+  "type": "object",
+  "required": ["id", "run_id", "conversation_id", "created_at", "expires_at", "question", "kind", "answer", "notes", "visuals",
+               "evidence", "data_mode", "data_modes", "runtime", "check", "warnings", "timeline"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^rpt_"},
+    "run_id": {"type": "string"},
+    "conversation_id": {"type": "string"},
+    "created_at": {"type": "string"},
+    "expires_at": {"type": "string"},
+    "question": {"type": "string"},
+    "kind": {"enum": ["ask", "check"]},
+    "parent_run_id": {"type": ["string", "null"]},
+    "answer": {"type": "string", "minLength": 1},
+    "notes": {"type": "array", "items": {"type": "string"}},
+    "visuals": {"type": "array", "items": {"type": "object", "required": ["id", "kind", "title", "columns", "rows", "evidence_ids", "derived_by"]}},
+    "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}},
+    "data_mode": {"enum": ["SYNTHETIC", "DATED_APPROVED_SNAPSHOT", "LIVE_VERIFIED", null]},
+    "data_modes": {"type": "array", "items": {"enum": ["SYNTHETIC", "DATED_APPROVED_SNAPSHOT", "LIVE_VERIFIED"]}},
+    "runtime": {"type": "object", "required": ["kind", "label", "model"],
+                "properties": {"kind": {"enum": ["gemini-cli", "code-assist", "replay"]}, "label": {"type": "string"},
+                               "model": {"type": "string"}, "session_id": {"type": ["string", "null"]}}},
+    "check": {"type": "object", "required": ["status"],
+              "properties": {"status": {"enum": ["CHECKED", "NOT_CHECKED", "DISCREPANCY"]}, "summary": {"type": ["string", "null"]}}},
+    "warnings": {"type": "array", "items": {"type": "string"}},
+    "timeline": {"type": "array"}
+  },
+  "$defs": {
+    "evidence": {
+      "type": "object",
+      "required": ["id", "run_id", "tool", "system", "report_id", "report_name", "data_mode", "connector_status", "request", "columns",
+                   "rows", "total_rows", "truncated", "as_of", "retrieved_at", "digest", "warnings", "locator"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^E[0-9]+$"},
+        "data_mode": {"enum": ["SYNTHETIC", "DATED_APPROVED_SNAPSHOT", "LIVE_VERIFIED"]},
+        "connector_status": {"enum": ["SYNTHETIC_FIXTURE", "NAVIGATION_ONLY", "ROWS_VERIFIED", "BLOCKED"]},
+        "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "rows": {"type": "array", "maxItems": 500}
+      }
+    }
+  }
+}

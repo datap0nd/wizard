@@ -1,0 +1,290 @@
+{
+  "id": "planner-sell-in-vs-sell-out",
+  "kind": "ask",
+  "data_mode": "SYNTHETIC",
+  "match": [
+    "sell-in+sell-out",
+    "channel-stuffing",
+    "channel stuffing",
+    "sell in+sell out"
+  ],
+  "steps": [
+    {
+      "say": "I'll screen every model and market for sell-in running ahead of sell-out in 2026-Q3, then check installed base, activations, app engagement and Smart Switch for the ones that stand out."
+    },
+    {
+      "tool": "wizard_lookup_definitions",
+      "args": {
+        "query": "sell-in sell-out channel stuffing"
+      }
+    },
+    {
+      "tool": "gscm_run_report",
+      "as": "flow",
+      "args": {
+        "report_id": "gscm-sell-in-sell-out-monthly",
+        "filters": [
+          {
+            "field": "fiscal_quarter",
+            "values": [
+              "2026-Q3"
+            ]
+          }
+        ],
+        "group_by": [
+          "market",
+          "model_code",
+          "fiscal_quarter"
+        ],
+        "measures": [
+          "sell_in_units",
+          "sell_out_units",
+          "channel_stock_units"
+        ]
+      }
+    },
+    {
+      "tool": "gscm_run_report",
+      "as": "stock_june",
+      "args": {
+        "report_id": "gscm-sell-in-sell-out-monthly",
+        "filters": [
+          {
+            "field": "month",
+            "values": [
+              "2026-06"
+            ]
+          }
+        ],
+        "group_by": [
+          "market",
+          "model_code"
+        ],
+        "measures": [
+          "channel_stock_units"
+        ]
+      }
+    },
+    {
+      "tool": "asap_run_report",
+      "as": "ib",
+      "args": {
+        "report_id": "asap-installed-base",
+        "filters": [
+          {
+            "field": "month",
+            "values": [
+              "2026-03",
+              "2026-06",
+              "2026-09"
+            ]
+          },
+          {
+            "field": "model_code",
+            "values": [
+              "A37",
+              "A57",
+              "A17",
+              "S26U"
+            ]
+          }
+        ],
+        "measures": [
+          "active_devices"
+        ]
+      }
+    },
+    {
+      "tool": "asap_run_report",
+      "as": "activations",
+      "args": {
+        "report_id": "asap-installed-base",
+        "filters": [
+          {
+            "field": "fiscal_quarter",
+            "values": [
+              "2026-Q3"
+            ]
+          }
+        ],
+        "group_by": [
+          "market",
+          "model_code"
+        ],
+        "measures": [
+          "new_activations"
+        ]
+      }
+    },
+    {
+      "tool": "asap_run_report",
+      "as": "app",
+      "args": {
+        "report_id": "asap-app-engagement",
+        "filters": [
+          {
+            "field": "month",
+            "values": [
+              "2026-09"
+            ]
+          },
+          {
+            "field": "market",
+            "values": [
+              "SA",
+              "AE",
+              "EG",
+              "MA"
+            ]
+          },
+          {
+            "field": "model_code",
+            "values": [
+              "A37",
+              "A57",
+              "A17",
+              "ZFL8"
+            ]
+          }
+        ],
+        "measures": [
+          "new_device_activations",
+          "d30_active_rate_pct"
+        ]
+      }
+    },
+    {
+      "tool": "asap_run_report",
+      "as": "switch",
+      "args": {
+        "report_id": "asap-smartswitch-transfers",
+        "filters": [
+          {
+            "field": "fiscal_quarter",
+            "values": [
+              "2026-Q2",
+              "2026-Q3"
+            ]
+          }
+        ],
+        "group_by": [
+          "market",
+          "target_family",
+          "fiscal_quarter"
+        ],
+        "measures": [
+          "transfers"
+        ]
+      }
+    },
+    {
+      "tool": "wizard_render_visual",
+      "as": "table",
+      "args": {
+        "kind": "table",
+        "title": "Sell-in vs sell-out screen, 2026-Q3",
+        "subtitle": "Model-market pairs with sell-in at least 15% above sell-out. Screening only: no stock age, returns or approved threshold.",
+        "columns": [
+          {
+            "key": "market",
+            "label": "Market"
+          },
+          {
+            "key": "model",
+            "label": "Model"
+          },
+          {
+            "key": "sell_in",
+            "label": "Sell-in",
+            "type": "integer"
+          },
+          {
+            "key": "sell_out",
+            "label": "Sell-out",
+            "type": "integer"
+          },
+          {
+            "key": "ratio",
+            "label": "Sell-in ÷ sell-out",
+            "type": "number"
+          },
+          {
+            "key": "stock_change",
+            "label": "Channel stock change (Jun→Sep)",
+            "type": "integer"
+          },
+          {
+            "key": "ib_growth",
+            "label": "Installed base growth Q3",
+            "type": "percent",
+            "unit": "%"
+          },
+          {
+            "key": "read",
+            "label": "Reading"
+          }
+        ],
+        "rows": [
+          [
+            "EG",
+            "Galaxy A37",
+            97463,
+            62880,
+            1.55,
+            34583,
+            -0.5,
+            "Concerning"
+          ],
+          [
+            "AE",
+            "Galaxy Z Flip8",
+            20295,
+            12300,
+            1.65,
+            7995,
+            null,
+            "Launch fill"
+          ],
+          [
+            "AE",
+            "Galaxy Z Fold8",
+            8917,
+            6150,
+            1.45,
+            2767,
+            null,
+            "Launch fill"
+          ],
+          [
+            "MA",
+            "Galaxy A17",
+            29997,
+            22220,
+            1.35,
+            7777,
+            3.8,
+            "Cannot assess (feed missing)"
+          ],
+          [
+            "SA",
+            "Galaxy A57",
+            120594,
+            103960,
+            1.16,
+            16634,
+            4.5,
+            "Contradictory"
+          ]
+        ],
+        "evidence_ids": [
+          "{flow}",
+          "{stock_june}",
+          "{ib}"
+        ]
+      }
+    },
+    {
+      "answer": "**Five model–market pairs had sell-in at least 15% above sell-out in 2026-Q3; only EG Galaxy A37 combines that with stalling installed-base growth, and its demand signals point to channel loading rather than a demand problem.** Treat this as a screening result, not a diagnosis: there is no stock age, returns data or owner-approved threshold. All figures are SYNTHETIC test data.\n\n[{table}]\n\n**EG · Galaxy A37 — concerning (channel-loading pattern)**\n- Sell-in 97,463 vs sell-out 62,880 units (1.55×) [{flow}]; channel stock rose from 24,092 in June [{stock_june}] to 58,675 in September [{flow}].\n- Installed base fell 0.5% in Q3 (677,360 → 673,979) after growing 4.2% in Q2 [{ib}].\n- Only 45,274 activations against 62,880 sell-out (72%) [{activations}], and the 30-day active rate of new devices is 61% [{app}].\n- Weak demand indicators while stock builds is consistent with channel stuffing, or with sell-out reported but not activated. Smart Switch is reported by family (S/A/Z), not by model, so it cannot isolate the A37 [{switch}].\n\n**AE · Galaxy Z Flip8 — likely launch pipeline fill**\n- Sell-in 20,295 vs sell-out 12,300 (1.65×) in its launch quarter [{flow}], but activations track sell-out (98%) [{activations}] and 93% of new devices are still active after 30 days [{app}]. Watch whether the 7,995 units of stock [{flow}] sell down in Q4.\n\n**SA · Galaxy A57 — contradictory signals**\n- Sell-in 120,594 vs sell-out 103,960 (1.16×) with stock up from 36,620 [{stock_june}] to 53,254 [{flow}] looks like loading, yet installed base grew 4.5% (faster than Q2's 4.2%) [{ib}] and activations matched sell-out (99%) [{activations}]. Demand looks real; stock age would settle it.\n\n**MA · Galaxy A17 — cannot be assessed**\n- Sell-in 29,997 vs sell-out 22,220 (1.35×) [{flow}], but Morocco's app-engagement feed is missing for September [{app}], so the demand side is incomplete. Missing data is not evidence of weak demand.\n\n**Healthy reference:** SA Galaxy S26 Ultra sold in and out at the same pace (54,783 vs 54,240) [{flow}].\n\n**Next questions**\n- Show EG Galaxy A37 sell-in, sell-out and activations by month for 2026.\n- Is a partner-level GSCM report available to see which distributors hold the EG A37 stock?"
+    }
+  ]
+}

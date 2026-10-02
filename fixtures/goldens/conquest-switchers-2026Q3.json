@@ -1,0 +1,60 @@
+{
+  "id": "conquest-switchers-2026Q3",
+  "data_mode": "SYNTHETIC",
+  "story": "Conquest",
+  "period": "2026-Q3",
+  "question": "Where are we winning switchers from Apple and Xiaomi according to Smart Switch, and does our investment and sell-out data support doubling down there?",
+  "markets": [
+    {
+      "market": "SA",
+      "apple": 12100,
+      "xiaomi": 6300,
+      "total_q3": 18400,
+      "total_q2": 16700,
+      "opted_in_q3": 273122,
+      "per_1000_observed": 67.4,
+      "conquest_spend_q3": 1050000
+    },
+    {
+      "market": "AE",
+      "apple": 9400,
+      "xiaomi": 2500,
+      "total_q3": 11900,
+      "total_q2": 11700,
+      "opted_in_q3": 141270,
+      "per_1000_observed": 84.2,
+      "conquest_spend_q3": 650000
+    },
+    {
+      "market": "EG",
+      "apple": 2900,
+      "xiaomi": 4400,
+      "total_q3": 7300,
+      "total_q2": 6000,
+      "opted_in_q3": 114442,
+      "per_1000_observed": 63.8,
+      "conquest_spend_q3": 375000
+    },
+    {
+      "market": "MA",
+      "apple": 900,
+      "xiaomi": 1200,
+      "total_q3": 2100,
+      "total_q2": 1950,
+      "opted_in_q3": 39188,
+      "per_1000_observed": 53.6,
+      "conquest_spend_q3": null
+    }
+  ],
+  "rubric": {
+    "must_include": [
+      "counts are observed (lower bound)",
+      "coverage differs by market",
+      "doubling down is a decision to investigate without incremental economics"
+    ],
+    "must_not": [
+      "call observed switchers all switchers",
+      "equate correlation with marketing return"
+    ]
+  }
+}

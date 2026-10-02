@@ -1,0 +1,48 @@
+{
+  "data_mode": "SYNTHETIC",
+  "notice": "Invented values for development and demonstration. Not corporate data. Do not present as live.",
+  "generator": "scripts/generate_fixtures.py",
+  "generator_version": 1,
+  "files": {
+    "asap/app_engagement_monthly.csv": {
+      "sha256": "b7374e998d2e73a9bb5546358dcf2bf2edec5be14e09ff02edc932d291c77200",
+      "rows": 183
+    },
+    "asap/gross_margin_quarterly.csv": {
+      "sha256": "9392bb1cbcbfc0b1be9e150b1380cf9b599783325d647fd2bab1aeec23226f50",
+      "rows": 68
+    },
+    "asap/installed_base_monthly.csv": {
+      "sha256": "e3a0bff88c0ca98222fbeac0117222788fdd0bd0807344ea9ded146422844840",
+      "rows": 204
+    },
+    "asap/market_share_quarterly.csv": {
+      "sha256": "0a0a7f069371681d1e7414e2bc266b368537faa65a99ed10e4357785ccb4d321",
+      "rows": 60
+    },
+    "asap/smartswitch_coverage_monthly.csv": {
+      "sha256": "c2f31a904280cecd5549a2b7d66d0b611acdb49afc2bead47252b87eb51da878",
+      "rows": 36
+    },
+    "asap/smartswitch_transfers_monthly.csv": {
+      "sha256": "0eff96da43fa6b6cd9804a1779dd28a503a8c46c6ee8b4c21d2adeb3b6e8e929",
+      "rows": 540
+    },
+    "gscm/sell_in_sell_out_monthly.csv": {
+      "sha256": "3f17fbc3b98d944ab905e3e043ca3b2d24f5b78016f26255f72028b3f80b15ec",
+      "rows": 204
+    },
+    "gscm/sell_through_quarterly.csv": {
+      "sha256": "98660a9699d5b79fb3024214154bfad202f06247475d72d7fcabdb64e20b64e2",
+      "rows": 12
+    },
+    "nerp/campaigns.csv": {
+      "sha256": "221eba7fb240edc340f71783a68043035ff591fd3a6dd3b44c4afec2659133dd",
+      "rows": 44
+    },
+    "nerp/marketing_spend_quarterly.csv": {
+      "sha256": "aa9a78f9bc2e43fc883197f77a843e4db114b519691ee656cf54a38f50b5ff6c",
+      "rows": 44
+    }
+  }
+}

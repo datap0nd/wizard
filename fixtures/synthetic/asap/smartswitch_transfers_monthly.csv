@@ -1,0 +1,541 @@
+market,month,origin_brand,target_family,transfers
+AE,2026-01,Apple,A,696
+AE,2026-01,Apple,S,1531
+AE,2026-01,Apple,Z,557
+AE,2026-01,Huawei,A,213
+AE,2026-01,Huawei,S,136
+AE,2026-01,Huawei,Z,39
+AE,2026-01,Other Android,A,1280
+AE,2026-01,Other Android,S,814
+AE,2026-01,Other Android,Z,233
+AE,2026-01,Samsung (upgrade),A,4266
+AE,2026-01,Samsung (upgrade),S,2715
+AE,2026-01,Samsung (upgrade),Z,776
+AE,2026-01,Xiaomi,A,576
+AE,2026-01,Xiaomi,S,115
+AE,2026-01,Xiaomi,Z,77
+AE,2026-02,Apple,A,718
+AE,2026-02,Apple,S,1579
+AE,2026-02,Apple,Z,574
+AE,2026-02,Huawei,A,220
+AE,2026-02,Huawei,S,140
+AE,2026-02,Huawei,Z,40
+AE,2026-02,Other Android,A,1320
+AE,2026-02,Other Android,S,840
+AE,2026-02,Other Android,Z,240
+AE,2026-02,Samsung (upgrade),A,4400
+AE,2026-02,Samsung (upgrade),S,2800
+AE,2026-02,Samsung (upgrade),Z,800
+AE,2026-02,Xiaomi,A,594
+AE,2026-02,Xiaomi,S,119
+AE,2026-02,Xiaomi,Z,79
+AE,2026-03,Apple,A,761
+AE,2026-03,Apple,S,1675
+AE,2026-03,Apple,Z,609
+AE,2026-03,Huawei,A,233
+AE,2026-03,Huawei,S,149
+AE,2026-03,Huawei,Z,42
+AE,2026-03,Other Android,A,1400
+AE,2026-03,Other Android,S,891
+AE,2026-03,Other Android,Z,254
+AE,2026-03,Samsung (upgrade),A,4667
+AE,2026-03,Samsung (upgrade),S,2970
+AE,2026-03,Samsung (upgrade),Z,848
+AE,2026-03,Xiaomi,A,630
+AE,2026-03,Xiaomi,S,126
+AE,2026-03,Xiaomi,Z,84
+AE,2026-04,Apple,A,728
+AE,2026-04,Apple,S,1602
+AE,2026-04,Apple,Z,582
+AE,2026-04,Huawei,A,218
+AE,2026-04,Huawei,S,139
+AE,2026-04,Huawei,Z,40
+AE,2026-04,Other Android,A,1309
+AE,2026-04,Other Android,S,833
+AE,2026-04,Other Android,Z,238
+AE,2026-04,Samsung (upgrade),A,4364
+AE,2026-04,Samsung (upgrade),S,2777
+AE,2026-04,Samsung (upgrade),Z,793
+AE,2026-04,Xiaomi,A,624
+AE,2026-04,Xiaomi,S,125
+AE,2026-04,Xiaomi,Z,83
+AE,2026-05,Apple,A,751
+AE,2026-05,Apple,S,1652
+AE,2026-05,Apple,Z,600
+AE,2026-05,Huawei,A,225
+AE,2026-05,Huawei,S,143
+AE,2026-05,Huawei,Z,41
+AE,2026-05,Other Android,A,1350
+AE,2026-05,Other Android,S,859
+AE,2026-05,Other Android,Z,246
+AE,2026-05,Samsung (upgrade),A,4500
+AE,2026-05,Samsung (upgrade),S,2864
+AE,2026-05,Samsung (upgrade),Z,818
+AE,2026-05,Xiaomi,A,643
+AE,2026-05,Xiaomi,S,129
+AE,2026-05,Xiaomi,Z,86
+AE,2026-06,Apple,A,796
+AE,2026-06,Apple,S,1752
+AE,2026-06,Apple,Z,637
+AE,2026-06,Huawei,A,239
+AE,2026-06,Huawei,S,152
+AE,2026-06,Huawei,Z,43
+AE,2026-06,Other Android,A,1432
+AE,2026-06,Other Android,S,911
+AE,2026-06,Other Android,Z,260
+AE,2026-06,Samsung (upgrade),A,4772
+AE,2026-06,Samsung (upgrade),S,3037
+AE,2026-06,Samsung (upgrade),Z,868
+AE,2026-06,Xiaomi,A,682
+AE,2026-06,Xiaomi,S,137
+AE,2026-06,Xiaomi,Z,91
+AE,2026-07,Apple,A,752
+AE,2026-07,Apple,S,1654
+AE,2026-07,Apple,Z,602
+AE,2026-07,Huawei,A,241
+AE,2026-07,Huawei,S,154
+AE,2026-07,Huawei,Z,44
+AE,2026-07,Other Android,A,1450
+AE,2026-07,Other Android,S,923
+AE,2026-07,Other Android,Z,263
+AE,2026-07,Samsung (upgrade),A,4832
+AE,2026-07,Samsung (upgrade),S,3075
+AE,2026-07,Samsung (upgrade),Z,878
+AE,2026-07,Xiaomi,A,600
+AE,2026-07,Xiaomi,S,120
+AE,2026-07,Xiaomi,Z,80
+AE,2026-08,Apple,A,776
+AE,2026-08,Apple,S,1706
+AE,2026-08,Apple,Z,620
+AE,2026-08,Huawei,A,258
+AE,2026-08,Huawei,S,165
+AE,2026-08,Huawei,Z,47
+AE,2026-08,Other Android,A,1551
+AE,2026-08,Other Android,S,987
+AE,2026-08,Other Android,Z,282
+AE,2026-08,Samsung (upgrade),A,5171
+AE,2026-08,Samsung (upgrade),S,3290
+AE,2026-08,Samsung (upgrade),Z,940
+AE,2026-08,Xiaomi,A,619
+AE,2026-08,Xiaomi,S,124
+AE,2026-08,Xiaomi,Z,82
+AE,2026-09,Apple,A,822
+AE,2026-09,Apple,S,1810
+AE,2026-09,Apple,Z,658
+AE,2026-09,Huawei,A,277
+AE,2026-09,Huawei,S,176
+AE,2026-09,Huawei,Z,50
+AE,2026-09,Other Android,A,1661
+AE,2026-09,Other Android,S,1057
+AE,2026-09,Other Android,Z,302
+AE,2026-09,Samsung (upgrade),A,5537
+AE,2026-09,Samsung (upgrade),S,3524
+AE,2026-09,Samsung (upgrade),Z,1007
+AE,2026-09,Xiaomi,A,656
+AE,2026-09,Xiaomi,S,131
+AE,2026-09,Xiaomi,Z,88
+EG,2026-01,Apple,A,184
+EG,2026-01,Apple,S,405
+EG,2026-01,Apple,Z,147
+EG,2026-01,Huawei,A,189
+EG,2026-01,Huawei,S,121
+EG,2026-01,Huawei,Z,34
+EG,2026-01,Other Android,A,1136
+EG,2026-01,Other Android,S,723
+EG,2026-01,Other Android,Z,206
+EG,2026-01,Samsung (upgrade),A,3786
+EG,2026-01,Samsung (upgrade),S,2409
+EG,2026-01,Samsung (upgrade),Z,688
+EG,2026-01,Xiaomi,A,768
+EG,2026-01,Xiaomi,S,154
+EG,2026-01,Xiaomi,Z,102
+EG,2026-02,Apple,A,190
+EG,2026-02,Apple,S,417
+EG,2026-02,Apple,Z,152
+EG,2026-02,Huawei,A,195
+EG,2026-02,Huawei,S,124
+EG,2026-02,Huawei,Z,36
+EG,2026-02,Other Android,A,1171
+EG,2026-02,Other Android,S,746
+EG,2026-02,Other Android,Z,213
+EG,2026-02,Samsung (upgrade),A,3904
+EG,2026-02,Samsung (upgrade),S,2485
+EG,2026-02,Samsung (upgrade),Z,710
+EG,2026-02,Xiaomi,A,792
+EG,2026-02,Xiaomi,S,158
+EG,2026-02,Xiaomi,Z,106
+EG,2026-03,Apple,A,201
+EG,2026-03,Apple,S,443
+EG,2026-03,Apple,Z,161
+EG,2026-03,Huawei,A,207
+EG,2026-03,Huawei,S,131
+EG,2026-03,Huawei,Z,38
+EG,2026-03,Other Android,A,1242
+EG,2026-03,Other Android,S,791
+EG,2026-03,Other Android,Z,226
+EG,2026-03,Samsung (upgrade),A,4141
+EG,2026-03,Samsung (upgrade),S,2635
+EG,2026-03,Samsung (upgrade),Z,753
+EG,2026-03,Xiaomi,A,840
+EG,2026-03,Xiaomi,S,168
+EG,2026-03,Xiaomi,Z,112
+EG,2026-04,Apple,A,200
+EG,2026-04,Apple,S,440
+EG,2026-04,Apple,Z,160
+EG,2026-04,Huawei,A,197
+EG,2026-04,Huawei,S,125
+EG,2026-04,Huawei,Z,36
+EG,2026-04,Other Android,A,1180
+EG,2026-04,Other Android,S,751
+EG,2026-04,Other Android,Z,214
+EG,2026-04,Samsung (upgrade),A,3934
+EG,2026-04,Samsung (upgrade),S,2503
+EG,2026-04,Samsung (upgrade),Z,715
+EG,2026-04,Xiaomi,A,840
+EG,2026-04,Xiaomi,S,168
+EG,2026-04,Xiaomi,Z,112
+EG,2026-05,Apple,A,206
+EG,2026-05,Apple,S,454
+EG,2026-05,Apple,Z,165
+EG,2026-05,Huawei,A,203
+EG,2026-05,Huawei,S,129
+EG,2026-05,Huawei,Z,37
+EG,2026-05,Other Android,A,1217
+EG,2026-05,Other Android,S,775
+EG,2026-05,Other Android,Z,221
+EG,2026-05,Samsung (upgrade),A,4056
+EG,2026-05,Samsung (upgrade),S,2581
+EG,2026-05,Samsung (upgrade),Z,738
+EG,2026-05,Xiaomi,A,866
+EG,2026-05,Xiaomi,S,173
+EG,2026-05,Xiaomi,Z,116
+EG,2026-06,Apple,A,219
+EG,2026-06,Apple,S,481
+EG,2026-06,Apple,Z,175
+EG,2026-06,Huawei,A,215
+EG,2026-06,Huawei,S,137
+EG,2026-06,Huawei,Z,39
+EG,2026-06,Other Android,A,1291
+EG,2026-06,Other Android,S,821
+EG,2026-06,Other Android,Z,235
+EG,2026-06,Samsung (upgrade),A,4302
+EG,2026-06,Samsung (upgrade),S,2738
+EG,2026-06,Samsung (upgrade),Z,782
+EG,2026-06,Xiaomi,A,919
+EG,2026-06,Xiaomi,S,184
+EG,2026-06,Xiaomi,Z,122
+EG,2026-07,Apple,A,232
+EG,2026-07,Apple,S,510
+EG,2026-07,Apple,Z,186
+EG,2026-07,Huawei,A,195
+EG,2026-07,Huawei,S,124
+EG,2026-07,Huawei,Z,36
+EG,2026-07,Other Android,A,1172
+EG,2026-07,Other Android,S,746
+EG,2026-07,Other Android,Z,213
+EG,2026-07,Samsung (upgrade),A,3908
+EG,2026-07,Samsung (upgrade),S,2487
+EG,2026-07,Samsung (upgrade),Z,710
+EG,2026-07,Xiaomi,A,1056
+EG,2026-07,Xiaomi,S,211
+EG,2026-07,Xiaomi,Z,141
+EG,2026-08,Apple,A,239
+EG,2026-08,Apple,S,526
+EG,2026-08,Apple,Z,192
+EG,2026-08,Huawei,A,210
+EG,2026-08,Huawei,S,133
+EG,2026-08,Huawei,Z,38
+EG,2026-08,Other Android,A,1257
+EG,2026-08,Other Android,S,800
+EG,2026-08,Other Android,Z,229
+EG,2026-08,Samsung (upgrade),A,4190
+EG,2026-08,Samsung (upgrade),S,2667
+EG,2026-08,Samsung (upgrade),Z,762
+EG,2026-08,Xiaomi,A,1089
+EG,2026-08,Xiaomi,S,218
+EG,2026-08,Xiaomi,Z,145
+EG,2026-09,Apple,A,254
+EG,2026-09,Apple,S,558
+EG,2026-09,Apple,Z,203
+EG,2026-09,Huawei,A,224
+EG,2026-09,Huawei,S,143
+EG,2026-09,Huawei,Z,41
+EG,2026-09,Other Android,A,1347
+EG,2026-09,Other Android,S,857
+EG,2026-09,Other Android,Z,245
+EG,2026-09,Samsung (upgrade),A,4491
+EG,2026-09,Samsung (upgrade),S,2858
+EG,2026-09,Samsung (upgrade),Z,816
+EG,2026-09,Xiaomi,A,1155
+EG,2026-09,Xiaomi,S,231
+EG,2026-09,Xiaomi,Z,154
+MA,2026-01,Apple,A,64
+MA,2026-01,Apple,S,141
+MA,2026-01,Apple,Z,51
+MA,2026-01,Huawei,A,63
+MA,2026-01,Huawei,S,40
+MA,2026-01,Huawei,Z,12
+MA,2026-01,Other Android,A,381
+MA,2026-01,Other Android,S,243
+MA,2026-01,Other Android,Z,69
+MA,2026-01,Samsung (upgrade),A,1270
+MA,2026-01,Samsung (upgrade),S,808
+MA,2026-01,Samsung (upgrade),Z,231
+MA,2026-01,Xiaomi,A,240
+MA,2026-01,Xiaomi,S,48
+MA,2026-01,Xiaomi,Z,32
+MA,2026-02,Apple,A,66
+MA,2026-02,Apple,S,145
+MA,2026-02,Apple,Z,53
+MA,2026-02,Huawei,A,65
+MA,2026-02,Huawei,S,42
+MA,2026-02,Huawei,Z,12
+MA,2026-02,Other Android,A,393
+MA,2026-02,Other Android,S,250
+MA,2026-02,Other Android,Z,71
+MA,2026-02,Samsung (upgrade),A,1310
+MA,2026-02,Samsung (upgrade),S,834
+MA,2026-02,Samsung (upgrade),Z,238
+MA,2026-02,Xiaomi,A,247
+MA,2026-02,Xiaomi,S,50
+MA,2026-02,Xiaomi,Z,33
+MA,2026-03,Apple,A,70
+MA,2026-03,Apple,S,154
+MA,2026-03,Apple,Z,56
+MA,2026-03,Huawei,A,69
+MA,2026-03,Huawei,S,44
+MA,2026-03,Huawei,Z,13
+MA,2026-03,Other Android,A,417
+MA,2026-03,Other Android,S,265
+MA,2026-03,Other Android,Z,76
+MA,2026-03,Samsung (upgrade),A,1389
+MA,2026-03,Samsung (upgrade),S,884
+MA,2026-03,Samsung (upgrade),Z,253
+MA,2026-03,Xiaomi,A,262
+MA,2026-03,Xiaomi,S,53
+MA,2026-03,Xiaomi,Z,35
+MA,2026-04,Apple,A,68
+MA,2026-04,Apple,S,150
+MA,2026-04,Apple,Z,54
+MA,2026-04,Huawei,A,65
+MA,2026-04,Huawei,S,41
+MA,2026-04,Huawei,Z,12
+MA,2026-04,Other Android,A,389
+MA,2026-04,Other Android,S,248
+MA,2026-04,Other Android,Z,71
+MA,2026-04,Samsung (upgrade),A,1297
+MA,2026-04,Samsung (upgrade),S,826
+MA,2026-04,Samsung (upgrade),Z,236
+MA,2026-04,Xiaomi,A,264
+MA,2026-04,Xiaomi,S,53
+MA,2026-04,Xiaomi,Z,35
+MA,2026-05,Apple,A,70
+MA,2026-05,Apple,S,155
+MA,2026-05,Apple,Z,56
+MA,2026-05,Huawei,A,67
+MA,2026-05,Huawei,S,43
+MA,2026-05,Huawei,Z,12
+MA,2026-05,Other Android,A,401
+MA,2026-05,Other Android,S,256
+MA,2026-05,Other Android,Z,73
+MA,2026-05,Samsung (upgrade),A,1338
+MA,2026-05,Samsung (upgrade),S,852
+MA,2026-05,Samsung (upgrade),Z,243
+MA,2026-05,Xiaomi,A,272
+MA,2026-05,Xiaomi,S,55
+MA,2026-05,Xiaomi,Z,36
+MA,2026-06,Apple,A,74
+MA,2026-06,Apple,S,163
+MA,2026-06,Apple,Z,60
+MA,2026-06,Huawei,A,71
+MA,2026-06,Huawei,S,45
+MA,2026-06,Huawei,Z,13
+MA,2026-06,Other Android,A,426
+MA,2026-06,Other Android,S,271
+MA,2026-06,Other Android,Z,77
+MA,2026-06,Samsung (upgrade),A,1419
+MA,2026-06,Samsung (upgrade),S,903
+MA,2026-06,Samsung (upgrade),Z,258
+MA,2026-06,Xiaomi,A,289
+MA,2026-06,Xiaomi,S,58
+MA,2026-06,Xiaomi,Z,38
+MA,2026-07,Apple,A,72
+MA,2026-07,Apple,S,158
+MA,2026-07,Apple,Z,58
+MA,2026-07,Huawei,A,67
+MA,2026-07,Huawei,S,43
+MA,2026-07,Huawei,Z,12
+MA,2026-07,Other Android,A,402
+MA,2026-07,Other Android,S,256
+MA,2026-07,Other Android,Z,73
+MA,2026-07,Samsung (upgrade),A,1341
+MA,2026-07,Samsung (upgrade),S,853
+MA,2026-07,Samsung (upgrade),Z,244
+MA,2026-07,Xiaomi,A,288
+MA,2026-07,Xiaomi,S,58
+MA,2026-07,Xiaomi,Z,38
+MA,2026-08,Apple,A,74
+MA,2026-08,Apple,S,163
+MA,2026-08,Apple,Z,60
+MA,2026-08,Huawei,A,71
+MA,2026-08,Huawei,S,46
+MA,2026-08,Huawei,Z,13
+MA,2026-08,Other Android,A,430
+MA,2026-08,Other Android,S,274
+MA,2026-08,Other Android,Z,78
+MA,2026-08,Samsung (upgrade),A,1434
+MA,2026-08,Samsung (upgrade),S,913
+MA,2026-08,Samsung (upgrade),Z,261
+MA,2026-08,Xiaomi,A,297
+MA,2026-08,Xiaomi,S,59
+MA,2026-08,Xiaomi,Z,40
+MA,2026-09,Apple,A,79
+MA,2026-09,Apple,S,173
+MA,2026-09,Apple,Z,63
+MA,2026-09,Huawei,A,77
+MA,2026-09,Huawei,S,49
+MA,2026-09,Huawei,Z,14
+MA,2026-09,Other Android,A,461
+MA,2026-09,Other Android,S,293
+MA,2026-09,Other Android,Z,84
+MA,2026-09,Samsung (upgrade),A,1536
+MA,2026-09,Samsung (upgrade),S,977
+MA,2026-09,Samsung (upgrade),Z,279
+MA,2026-09,Xiaomi,A,315
+MA,2026-09,Xiaomi,S,63
+MA,2026-09,Xiaomi,Z,42
+SA,2026-01,Apple,A,816
+SA,2026-01,Apple,S,1795
+SA,2026-01,Apple,Z,653
+SA,2026-01,Huawei,A,418
+SA,2026-01,Huawei,S,266
+SA,2026-01,Huawei,Z,76
+SA,2026-01,Other Android,A,2509
+SA,2026-01,Other Android,S,1596
+SA,2026-01,Other Android,Z,456
+SA,2026-01,Samsung (upgrade),A,8362
+SA,2026-01,Samsung (upgrade),S,5321
+SA,2026-01,Samsung (upgrade),Z,1520
+SA,2026-01,Xiaomi,A,1344
+SA,2026-01,Xiaomi,S,269
+SA,2026-01,Xiaomi,Z,179
+SA,2026-02,Apple,A,842
+SA,2026-02,Apple,S,1851
+SA,2026-02,Apple,Z,673
+SA,2026-02,Huawei,A,431
+SA,2026-02,Huawei,S,274
+SA,2026-02,Huawei,Z,79
+SA,2026-02,Other Android,A,2587
+SA,2026-02,Other Android,S,1647
+SA,2026-02,Other Android,Z,470
+SA,2026-02,Samsung (upgrade),A,8623
+SA,2026-02,Samsung (upgrade),S,5488
+SA,2026-02,Samsung (upgrade),Z,1568
+SA,2026-02,Xiaomi,A,1386
+SA,2026-02,Xiaomi,S,277
+SA,2026-02,Xiaomi,Z,185
+SA,2026-03,Apple,A,892
+SA,2026-03,Apple,S,1964
+SA,2026-03,Apple,Z,714
+SA,2026-03,Huawei,A,457
+SA,2026-03,Huawei,S,291
+SA,2026-03,Huawei,Z,83
+SA,2026-03,Other Android,A,2744
+SA,2026-03,Other Android,S,1746
+SA,2026-03,Other Android,Z,499
+SA,2026-03,Samsung (upgrade),A,9146
+SA,2026-03,Samsung (upgrade),S,5820
+SA,2026-03,Samsung (upgrade),Z,1663
+SA,2026-03,Xiaomi,A,1470
+SA,2026-03,Xiaomi,S,294
+SA,2026-03,Xiaomi,Z,196
+SA,2026-04,Apple,A,864
+SA,2026-04,Apple,S,1901
+SA,2026-04,Apple,Z,691
+SA,2026-04,Huawei,A,434
+SA,2026-04,Huawei,S,276
+SA,2026-04,Huawei,Z,79
+SA,2026-04,Other Android,A,2604
+SA,2026-04,Other Android,S,1657
+SA,2026-04,Other Android,Z,473
+SA,2026-04,Samsung (upgrade),A,8680
+SA,2026-04,Samsung (upgrade),S,5523
+SA,2026-04,Samsung (upgrade),Z,1578
+SA,2026-04,Xiaomi,A,1416
+SA,2026-04,Xiaomi,S,283
+SA,2026-04,Xiaomi,Z,189
+SA,2026-05,Apple,A,891
+SA,2026-05,Apple,S,1960
+SA,2026-05,Apple,Z,713
+SA,2026-05,Huawei,A,448
+SA,2026-05,Huawei,S,285
+SA,2026-05,Huawei,Z,81
+SA,2026-05,Other Android,A,2685
+SA,2026-05,Other Android,S,1709
+SA,2026-05,Other Android,Z,488
+SA,2026-05,Samsung (upgrade),A,8951
+SA,2026-05,Samsung (upgrade),S,5696
+SA,2026-05,Samsung (upgrade),Z,1627
+SA,2026-05,Xiaomi,A,1460
+SA,2026-05,Xiaomi,S,292
+SA,2026-05,Xiaomi,Z,195
+SA,2026-06,Apple,A,945
+SA,2026-06,Apple,S,2079
+SA,2026-06,Apple,Z,756
+SA,2026-06,Huawei,A,475
+SA,2026-06,Huawei,S,302
+SA,2026-06,Huawei,Z,86
+SA,2026-06,Other Android,A,2848
+SA,2026-06,Other Android,S,1812
+SA,2026-06,Other Android,Z,518
+SA,2026-06,Samsung (upgrade),A,9493
+SA,2026-06,Samsung (upgrade),S,6041
+SA,2026-06,Samsung (upgrade),Z,1726
+SA,2026-06,Xiaomi,A,1549
+SA,2026-06,Xiaomi,S,310
+SA,2026-06,Xiaomi,Z,206
+SA,2026-07,Apple,A,968
+SA,2026-07,Apple,S,2130
+SA,2026-07,Apple,Z,774
+SA,2026-07,Huawei,A,467
+SA,2026-07,Huawei,S,298
+SA,2026-07,Huawei,Z,85
+SA,2026-07,Other Android,A,2803
+SA,2026-07,Other Android,S,1784
+SA,2026-07,Other Android,Z,510
+SA,2026-07,Samsung (upgrade),A,9345
+SA,2026-07,Samsung (upgrade),S,5947
+SA,2026-07,Samsung (upgrade),Z,1699
+SA,2026-07,Xiaomi,A,1512
+SA,2026-07,Xiaomi,S,302
+SA,2026-07,Xiaomi,Z,202
+SA,2026-08,Apple,A,998
+SA,2026-08,Apple,S,2196
+SA,2026-08,Apple,Z,799
+SA,2026-08,Huawei,A,500
+SA,2026-08,Huawei,S,318
+SA,2026-08,Huawei,Z,91
+SA,2026-08,Other Android,A,2999
+SA,2026-08,Other Android,S,1908
+SA,2026-08,Other Android,Z,545
+SA,2026-08,Samsung (upgrade),A,9995
+SA,2026-08,Samsung (upgrade),S,6361
+SA,2026-08,Samsung (upgrade),Z,1817
+SA,2026-08,Xiaomi,A,1559
+SA,2026-08,Xiaomi,S,312
+SA,2026-08,Xiaomi,Z,208
+SA,2026-09,Apple,A,1059
+SA,2026-09,Apple,S,2329
+SA,2026-09,Apple,Z,847
+SA,2026-09,Huawei,A,535
+SA,2026-09,Huawei,S,341
+SA,2026-09,Huawei,Z,97
+SA,2026-09,Other Android,A,3211
+SA,2026-09,Other Android,S,2043
+SA,2026-09,Other Android,Z,584
+SA,2026-09,Samsung (upgrade),A,10704
+SA,2026-09,Samsung (upgrade),S,6811
+SA,2026-09,Samsung (upgrade),Z,1946
+SA,2026-09,Xiaomi,A,1654
+SA,2026-09,Xiaomi,S,331
+SA,2026-09,Xiaomi,Z,220

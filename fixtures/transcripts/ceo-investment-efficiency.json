@@ -1,0 +1,274 @@
+{
+  "id": "ceo-investment-efficiency",
+  "kind": "ask",
+  "data_mode": "SYNTHETIC",
+  "match": [
+    "return+marketing",
+    "marketing+investment"
+  ],
+  "steps": [
+    {
+      "say": "I'll check how a return on marketing investment can be measured with the approved sources, then pull 2026-Q3 spend, sell-through, share and switching by market."
+    },
+    {
+      "tool": "wizard_lookup_definitions",
+      "args": {
+        "query": "return on marketing investment ROI proxy"
+      }
+    },
+    {
+      "tool": "wizard_search_catalog",
+      "args": {
+        "query": "marketing spend sell-out share smart switch",
+        "limit": 8
+      }
+    },
+    {
+      "tool": "nerp_run_report",
+      "as": "spend",
+      "args": {
+        "report_id": "nerp-mkt-spend-quarterly",
+        "filters": [
+          {
+            "field": "fiscal_quarter",
+            "values": [
+              "2026-Q2",
+              "2026-Q3"
+            ]
+          }
+        ],
+        "group_by": [
+          "market",
+          "fiscal_quarter"
+        ],
+        "measures": [
+          "spend_usd"
+        ]
+      }
+    },
+    {
+      "tool": "gscm_run_report",
+      "as": "sellout",
+      "args": {
+        "report_id": "gscm-sell-through-quarterly",
+        "filters": [
+          {
+            "field": "fiscal_quarter",
+            "values": [
+              "2026-Q2",
+              "2026-Q3"
+            ]
+          }
+        ],
+        "measures": [
+          "sell_out_units"
+        ]
+      }
+    },
+    {
+      "tool": "asap_run_report",
+      "as": "share",
+      "args": {
+        "report_id": "asap-share-quarterly",
+        "filters": [
+          {
+            "field": "fiscal_quarter",
+            "values": [
+              "2026-Q2",
+              "2026-Q3"
+            ]
+          },
+          {
+            "field": "brand",
+            "values": [
+              "Samsung"
+            ]
+          }
+        ],
+        "measures": [
+          "volume_share_pct"
+        ]
+      }
+    },
+    {
+      "tool": "asap_run_report",
+      "as": "switching",
+      "args": {
+        "report_id": "asap-smartswitch-transfers",
+        "filters": [
+          {
+            "field": "fiscal_quarter",
+            "values": [
+              "2026-Q3"
+            ]
+          },
+          {
+            "field": "origin_brand",
+            "values": [
+              "Apple",
+              "Xiaomi"
+            ]
+          }
+        ],
+        "group_by": [
+          "market",
+          "origin_brand"
+        ],
+        "measures": [
+          "transfers"
+        ]
+      }
+    },
+    {
+      "tool": "asap_run_report",
+      "as": "coverage",
+      "args": {
+        "report_id": "asap-smartswitch-coverage",
+        "filters": [
+          {
+            "field": "fiscal_quarter",
+            "values": [
+              "2026-Q3"
+            ]
+          }
+        ],
+        "group_by": [
+          "market"
+        ],
+        "measures": [
+          "new_activations",
+          "opted_in_devices"
+        ]
+      }
+    },
+    {
+      "say": "MA has no NERP spend posted for 2026-Q3, so it cannot be ranked. Calculating the proxy for EG, SA and AE."
+    },
+    {
+      "tool": "wizard_calculate",
+      "args": {
+        "expression": "(q3 - q2) / spend_musd",
+        "variables": [
+          {
+            "name": "q3",
+            "value": 262000
+          },
+          {
+            "name": "q2",
+            "value": 240000
+          },
+          {
+            "name": "spend_musd",
+            "value": 1.5
+          }
+        ]
+      }
+    },
+    {
+      "tool": "wizard_calculate",
+      "args": {
+        "expression": "(q3 - q2) / spend_musd",
+        "variables": [
+          {
+            "name": "q3",
+            "value": 452000
+          },
+          {
+            "name": "q2",
+            "value": 410000
+          },
+          {
+            "name": "spend_musd",
+            "value": 4.2
+          }
+        ]
+      }
+    },
+    {
+      "tool": "wizard_calculate",
+      "args": {
+        "expression": "(q3 - q2) / spend_musd",
+        "variables": [
+          {
+            "name": "q3",
+            "value": 205000
+          },
+          {
+            "name": "q2",
+            "value": 180000
+          },
+          {
+            "name": "spend_musd",
+            "value": 2.6
+          }
+        ]
+      }
+    },
+    {
+      "tool": "wizard_render_visual",
+      "as": "chart",
+      "args": {
+        "kind": "bar",
+        "title": "Investment-efficiency proxy, 2026-Q3",
+        "subtitle": "Extra sell-out units (Q3 vs Q2) per USD 1M of Q3 marketing spend. Not ROI. MA not ranked: no Q3 spend.",
+        "columns": [
+          {
+            "key": "market",
+            "label": "Market"
+          },
+          {
+            "key": "proxy",
+            "label": "Extra units per USD 1M",
+            "type": "number",
+            "unit": "units/USD 1M"
+          },
+          {
+            "key": "share_gain",
+            "label": "Share gain",
+            "type": "number",
+            "unit": "pp"
+          },
+          {
+            "key": "switchers",
+            "label": "Observed Apple + Xiaomi switchers",
+            "type": "integer"
+          }
+        ],
+        "rows": [
+          [
+            "EG",
+            14666.67,
+            1.6,
+            7300
+          ],
+          [
+            "SA",
+            10000,
+            0.8,
+            18400
+          ],
+          [
+            "AE",
+            9615.38,
+            -0.3,
+            11900
+          ]
+        ],
+        "x": "market",
+        "series": [
+          "proxy"
+        ],
+        "evidence_ids": [
+          "{spend}",
+          "{sellout}",
+          "{share}",
+          "{switching}"
+        ],
+        "note": "Proxy = (Q3 sell-out - Q2 sell-out) / Q3 spend in USD millions (NERP planning FX)."
+      }
+    },
+    {
+      "answer": "**EG ranks first on an investment-efficiency proxy for 2026-Q3, ahead of SA and AE. MA cannot be ranked because no Q3 spend is posted in NERP.** This is a proxy, not proven ROI: the sources have spend and outcomes but no incrementality, margin or counterfactual. All figures are SYNTHETIC test data.\n\n[{chart}]\n\n| Rank | Market | Q3 spend | Sell-out Q2 → Q3 | Proxy (extra units per USD 1M) | Share gain | Observed Apple + Xiaomi switchers (Q3) |\n|---|---|---|---|---|---|---|\n| 1 | EG | $1.5M [{spend}] | 240,000 → 262,000 [{sellout}] | 14,667 | +1.6 pp [{share}] | 7,300 [{switching}] |\n| 2 | SA | $4.2M [{spend}] | 410,000 → 452,000 [{sellout}] | 10,000 | +0.8 pp [{share}] | 18,400 [{switching}] |\n| 3 | AE | $2.6M [{spend}] | 180,000 → 205,000 [{sellout}] | 9,615 | −0.3 pp [{share}] | 11,900 [{switching}] |\n| — | MA | not posted [{spend}] | 95,000 → 101,000 [{sellout}] | not ranked | +0.4 pp [{share}] | 2,100 [{switching}] |\n\n**How the proxy works:** (Q3 sell-out − Q2 sell-out) ÷ Q3 marketing spend in USD millions, using NERP planning-rate USD. Share gain is Samsung volume share in percentage points; switching counts are observed Smart Switch transfers from Apple and Xiaomi, shown separately rather than blended into one score.\n\n**What qualifies the ranking**\n- **Signals disagree in AE:** sell-out grew 13.9% but Samsung share fell 0.3 pp, so the market grew faster than Samsung did.\n- **Switching coverage differs:** only 48% of new EG devices are observed by Smart Switch, against 62% in SA and 71% in AE [{coverage}]. EG's lower switcher count partly reflects lower observation.\n- **Scale matters:** SA added the most units (+42,000) and the most observed switchers, at a higher spend.\n- **Not causal:** the Z Flip8/Fold8 launch and seasonality lift Q3 sell-out regardless of spend, and spend effects can lag.\n- **Draft definition:** the proxy definition has not been signed by the CFO or marketing owner.\n\n**Useful next questions**\n- Show EG and SA Q3 spend by category and campaign objective.\n- Compare the same proxy for 2026-Q2 to see whether EG's lead is stable."
+    }
+  ]
+}

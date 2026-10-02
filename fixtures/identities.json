@@ -1,0 +1,41 @@
+{
+  "data_mode": "SYNTHETIC",
+  "notice": "Test identities for local development and CI only. Real users come from corporate SSO; real rights come from source entitlements.",
+  "users": [
+    {
+      "id": "u-ceo", "email": "ceo@wizard.test", "name": "Test CEO", "role": "CEO",
+      "entitlements": {
+        "nerp": {"reports": ["*"], "markets": ["*"]},
+        "gscm": {"reports": ["*"], "markets": ["*"]},
+        "asap": {"reports": ["*"], "markets": ["*"]}
+      }
+    },
+    {
+      "id": "u-cfo", "email": "cfo@wizard.test", "name": "Test CFO", "role": "CFO",
+      "entitlements": {
+        "nerp": {"reports": ["*"], "markets": ["*"]},
+        "gscm": {"reports": ["*"], "markets": ["*"]},
+        "asap": {"reports": ["*"], "markets": ["*"]}
+      }
+    },
+    {
+      "id": "u-dir-gulf", "email": "director.gulf@wizard.test", "name": "Test Director (Gulf)", "role": "Director",
+      "entitlements": {
+        "nerp": {"reports": ["*"], "markets": ["SA", "AE"]},
+        "gscm": {"reports": ["*"], "markets": ["SA", "AE"]},
+        "asap": {"reports": ["asap-share-*", "asap-smartswitch-*", "asap-installed-base", "asap-app-engagement", "asap-exec-dossier"], "markets": ["SA", "AE"]}
+      }
+    },
+    {
+      "id": "u-planner", "email": "planner@wizard.test", "name": "Test Planner", "role": "Planner",
+      "entitlements": {
+        "gscm": {"reports": ["*"], "markets": ["*"]},
+        "asap": {"reports": ["asap-share-*", "asap-smartswitch-*", "asap-installed-base", "asap-app-engagement"], "markets": ["*"]}
+      }
+    },
+    {
+      "id": "u-no-sources", "email": "newjoiner@wizard.test", "name": "Test New Joiner", "role": "Viewer",
+      "entitlements": {}
+    }
+  ]
+}

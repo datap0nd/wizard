@@ -1,0 +1,80 @@
+{
+  "contract_version": 1,
+  "system": {
+    "id": "gscm",
+    "name": "GSCM",
+    "description": "Global supply chain management: sell-in to the channel, sell-out to consumers and channel stock.",
+    "families": ["sell_in", "sell_out", "channel_stock"],
+    "owner": "TBD - GSCM / IT VOC (Step 03)",
+    "connector": {"status": "SYNTHETIC_FIXTURE", "data_mode": "SYNTHETIC", "transport": "fixture", "live_interface": "unknown - catalog of ~100 candidate reports to be inventoried by metadata"},
+    "open_url_template": null
+  },
+  "folders": [
+    {"id": "gscm-channel", "name": "Channel performance", "parent": null}
+  ],
+  "reports": [
+    {
+      "id": "gscm-sell-in-sell-out-monthly",
+      "name": "Sell-in, sell-out and channel stock by model and month",
+      "folder": "gscm-channel",
+      "type": "report",
+      "row_access": "ROWS",
+      "file": "gscm/sell_in_sell_out_monthly.csv",
+      "description": "Units shipped into the channel (sell-in), units sold by the channel to consumers (sell-out, also called sell-through units) and end-of-month channel stock, per market, model and month. Channel stock is a month-end balance: do not add it across months.",
+      "grain": ["market", "model_code", "month"],
+      "as_of": "2026-10-01T02:00:00Z",
+      "refresh": "Daily at 02:00 UTC; months close on the 3rd working day",
+      "dimensions": [
+        {"key": "market", "label": "Market", "type": "string", "role": "market", "values_hint": ["SA", "AE", "EG", "MA"]},
+        {"key": "model_code", "label": "Model code", "type": "string", "role": "model"},
+        {"key": "model", "label": "Model", "type": "string"},
+        {"key": "month", "label": "Month", "type": "month", "role": "period"},
+        {"key": "fiscal_quarter", "label": "Fiscal quarter", "type": "quarter", "role": "period"}
+      ],
+      "measures": [
+        {"key": "sell_in_units", "label": "Sell-in (units)", "type": "integer", "unit": "units", "aggregation": "sum"},
+        {"key": "sell_out_units", "label": "Sell-out (units)", "type": "integer", "unit": "units", "aggregation": "sum"},
+        {"key": "channel_stock_units", "label": "Channel stock, month end (units)", "type": "integer", "unit": "units", "aggregation": "last"}
+      ],
+      "attributes": [],
+      "prompts": [
+        {"key": "month", "label": "Month", "multi": true},
+        {"key": "fiscal_quarter", "label": "Fiscal quarter", "multi": true},
+        {"key": "market", "label": "Market", "multi": true},
+        {"key": "model_code", "label": "Model", "multi": true}
+      ],
+      "caveats": ["Sell-out is reported by channel partners and can be restated for up to two months."],
+      "sensitivity": "internal"
+    },
+    {
+      "id": "gscm-sell-through-quarterly",
+      "name": "Sell-through by market and quarter",
+      "folder": "gscm-channel",
+      "type": "report",
+      "row_access": "ROWS",
+      "file": "gscm/sell_through_quarterly.csv",
+      "description": "Quarterly totals across all models: sell-in units, sell-out units, opening and closing channel stock, and sell-through rate = sell-out / (opening stock + sell-in).",
+      "grain": ["market", "fiscal_quarter"],
+      "as_of": "2026-10-01T02:00:00Z",
+      "refresh": "Daily at 02:00 UTC",
+      "dimensions": [
+        {"key": "market", "label": "Market", "type": "string", "role": "market", "values_hint": ["SA", "AE", "EG", "MA"]},
+        {"key": "fiscal_quarter", "label": "Fiscal quarter", "type": "quarter", "role": "period"}
+      ],
+      "measures": [
+        {"key": "sell_in_units", "label": "Sell-in (units)", "type": "integer", "unit": "units", "aggregation": "sum"},
+        {"key": "sell_out_units", "label": "Sell-out (units)", "type": "integer", "unit": "units", "aggregation": "sum"},
+        {"key": "opening_channel_stock_units", "label": "Opening channel stock (units)", "type": "integer", "unit": "units", "aggregation": "none"},
+        {"key": "closing_channel_stock_units", "label": "Closing channel stock (units)", "type": "integer", "unit": "units", "aggregation": "none"},
+        {"key": "sell_through_rate_pct", "label": "Sell-through rate (%)", "type": "percent", "unit": "%", "aggregation": "none"}
+      ],
+      "attributes": [],
+      "prompts": [
+        {"key": "fiscal_quarter", "label": "Fiscal quarter", "multi": true},
+        {"key": "market", "label": "Market", "multi": true}
+      ],
+      "caveats": [],
+      "sensitivity": "internal"
+    }
+  ]
+}

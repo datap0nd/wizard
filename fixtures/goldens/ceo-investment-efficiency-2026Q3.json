@@ -1,0 +1,72 @@
+{
+  "id": "ceo-investment-efficiency-2026Q3",
+  "data_mode": "SYNTHETIC",
+  "story": "Executive",
+  "question": "Which market gave us the best return on marketing investment last quarter — tie NERP spend to sell-through, share gain, and competitive switching, and rank them.",
+  "period": "2026-Q3",
+  "baseline": "2026-Q2",
+  "metric": {
+    "id": "investment-efficiency-proxy",
+    "label": "Investment-efficiency proxy (not ROI)",
+    "formula": "(sell_out_units[Q3] - sell_out_units[Q2]) / (spend_usd[Q3] / 1e6)",
+    "unit": "extra units per USD 1M"
+  },
+  "ranking": [
+    {
+      "rank": 1,
+      "market": "EG",
+      "proxy": 14666.67,
+      "spend_usd": 1500000,
+      "sell_out_q2": 240000,
+      "sell_out_q3": 262000,
+      "share_gain_pp": 1.6,
+      "observed_switchers_apple_xiaomi": 7300,
+      "coverage_pct": 48.0
+    },
+    {
+      "rank": 2,
+      "market": "SA",
+      "proxy": 10000.0,
+      "spend_usd": 4200000,
+      "sell_out_q2": 410000,
+      "sell_out_q3": 452000,
+      "share_gain_pp": 0.8,
+      "observed_switchers_apple_xiaomi": 18400,
+      "coverage_pct": 62.0
+    },
+    {
+      "rank": 3,
+      "market": "AE",
+      "proxy": 9615.38,
+      "spend_usd": 2600000,
+      "sell_out_q2": 180000,
+      "sell_out_q3": 205000,
+      "share_gain_pp": -0.3,
+      "observed_switchers_apple_xiaomi": 11900,
+      "coverage_pct": 71.0
+    }
+  ],
+  "not_ranked": [
+    {
+      "market": "MA",
+      "reason": "No NERP marketing spend posted for 2026-Q3 (missing, not zero)",
+      "sell_out_q2": 95000,
+      "sell_out_q3": 101000,
+      "share_gain_pp": 0.4,
+      "observed_switchers_apple_xiaomi": 2100
+    }
+  ],
+  "rubric": {
+    "must_include": [
+      "the result is a proxy, not proven ROI",
+      "MA cannot be ranked because spend is missing",
+      "share gain and switching shown separately",
+      "switching coverage differs by market"
+    ],
+    "must_not": [
+      "call the result ROI or proven return",
+      "impute MA spend",
+      "sum share percentages across markets"
+    ]
+  }
+}

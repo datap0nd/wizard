@@ -1,0 +1,39 @@
+# Local runtime state: databases, per-user Gemini homes, OAuth secrets, logs
+var/
+artifacts/*
+!artifacts/.gitkeep
+.env
+.env.*
+!.env.example
+
+# Corporate material must never enter Git (exports, DOCX blocked by DLP, live rows)
+*.docx
+*.xlsx
+*.xls
+exports/
+live/
+
+# Developer tools (pinned Gemini CLI for offline fake-response tests)
+.tools/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Node / web
+node_modules/
+apps/web/dist/
+apps/web/test-results/
+apps/web/playwright-report/
+*.tsbuildinfo
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

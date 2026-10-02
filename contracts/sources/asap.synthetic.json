@@ -1,0 +1,233 @@
+{
+  "contract_version": 1,
+  "system": {
+    "id": "asap",
+    "name": "ASAP",
+    "description": "MicroStrategy (Strategy) BI portal: market intelligence, consumer ecosystem and executive dossiers.",
+    "families": ["market_share", "switching", "installed_base", "app_engagement", "margin"],
+    "owner": "TBD - ASAP IT / report owners (Step 09)",
+    "connector": {"status": "SYNTHETIC_FIXTURE", "data_mode": "SYNTHETIC", "transport": "fixture", "live_interface": "MicroStrategy Library REST (not yet validated for this tenant)"},
+    "open_url_template": null
+  },
+  "folders": [
+    {"id": "asap-shared", "name": "Shared Reports", "parent": null},
+    {"id": "asap-market-intel", "name": "Market Intelligence", "parent": "asap-shared"},
+    {"id": "asap-consumer", "name": "Consumer & Ecosystem", "parent": "asap-shared"},
+    {"id": "asap-finance", "name": "Finance (restricted)", "parent": "asap-shared"},
+    {"id": "asap-exec", "name": "Executive Dossiers", "parent": "asap-shared"}
+  ],
+  "reports": [
+    {
+      "id": "asap-share-quarterly",
+      "name": "Smartphone market share by brand",
+      "folder": "asap-market-intel",
+      "type": "report",
+      "row_access": "ROWS",
+      "file": "asap/market_share_quarterly.csv",
+      "description": "Volume share (% of smartphone units) and value share (% of sales value) by market, fiscal quarter and brand, from a retail panel. Shares are percentages and cannot be added across markets or quarters; share gain is the difference in percentage points.",
+      "grain": ["market", "fiscal_quarter", "brand"],
+      "as_of": "2026-09-28T00:00:00Z",
+      "refresh": "Weekly (panel lag about 4 weeks)",
+      "dimensions": [
+        {"key": "market", "label": "Market", "type": "string", "role": "market", "values_hint": ["SA", "AE", "EG", "MA"]},
+        {"key": "fiscal_quarter", "label": "Fiscal quarter", "type": "quarter", "role": "period"},
+        {"key": "brand", "label": "Brand", "type": "string", "values_hint": ["Samsung", "Apple", "Xiaomi", "Transsion", "Others"]}
+      ],
+      "measures": [
+        {"key": "volume_share_pct", "label": "Volume share (%)", "type": "percent", "unit": "%", "aggregation": "none"},
+        {"key": "value_share_pct", "label": "Value share (%)", "type": "percent", "unit": "%", "aggregation": "none"}
+      ],
+      "attributes": [{"key": "panel", "label": "Panel source", "type": "text"}],
+      "prompts": [
+        {"key": "fiscal_quarter", "label": "Fiscal quarter", "multi": true},
+        {"key": "market", "label": "Market", "multi": true},
+        {"key": "brand", "label": "Brand", "multi": true}
+      ],
+      "caveats": ["Panel coverage differs by market; denominator is the panel's estimate of total smartphone sales."],
+      "sensitivity": "internal"
+    },
+    {
+      "id": "asap-smartswitch-transfers",
+      "name": "Smart Switch transfers by origin brand",
+      "folder": "asap-consumer",
+      "type": "report",
+      "row_access": "ROWS",
+      "file": "asap/smartswitch_transfers_monthly.csv",
+      "description": "Observed Smart Switch data transfers onto a new Galaxy device, by market, month, origin brand of the previous phone and target Galaxy family (S, A, Z). Only devices that opted in to diagnostics are observed, so counts are a lower bound of all switchers; see 'Smart Switch observation coverage' for the opted-in share.",
+      "grain": ["market", "month", "origin_brand", "target_family"],
+      "as_of": "2026-10-01T04:00:00Z",
+      "refresh": "Daily",
+      "dimensions": [
+        {"key": "market", "label": "Market", "type": "string", "role": "market", "values_hint": ["SA", "AE", "EG", "MA"]},
+        {"key": "month", "label": "Month", "type": "month", "role": "period"},
+        {"key": "origin_brand", "label": "Origin brand", "type": "string", "values_hint": ["Apple", "Xiaomi", "Huawei", "Other Android", "Samsung (upgrade)"]},
+        {"key": "target_family", "label": "Target Galaxy family", "type": "string", "values_hint": ["S", "A", "Z"]}
+      ],
+      "measures": [
+        {"key": "transfers", "label": "Observed transfers", "type": "integer", "unit": "transfers", "aggregation": "sum"}
+      ],
+      "attributes": [],
+      "prompts": [
+        {"key": "month", "label": "Month", "multi": true},
+        {"key": "market", "label": "Market", "multi": true},
+        {"key": "origin_brand", "label": "Origin brand", "multi": true}
+      ],
+      "caveats": ["Observed events only. Not all switchers use Smart Switch and not all devices are observed."],
+      "sensitivity": "internal"
+    },
+    {
+      "id": "asap-smartswitch-coverage",
+      "name": "Smart Switch observation coverage",
+      "folder": "asap-consumer",
+      "type": "report",
+      "row_access": "ROWS",
+      "file": "asap/smartswitch_coverage_monthly.csv",
+      "description": "New device activations, devices opted in to diagnostics (the observed population for Smart Switch counts) and coverage %, by market and month.",
+      "grain": ["market", "month"],
+      "as_of": "2026-10-01T04:00:00Z",
+      "refresh": "Daily",
+      "dimensions": [
+        {"key": "market", "label": "Market", "type": "string", "role": "market", "values_hint": ["SA", "AE", "EG", "MA"]},
+        {"key": "month", "label": "Month", "type": "month", "role": "period"}
+      ],
+      "measures": [
+        {"key": "new_activations", "label": "New activations", "type": "integer", "unit": "devices", "aggregation": "sum"},
+        {"key": "opted_in_devices", "label": "Opted-in devices", "type": "integer", "unit": "devices", "aggregation": "sum"},
+        {"key": "coverage_pct", "label": "Coverage (%)", "type": "percent", "unit": "%", "aggregation": "none"}
+      ],
+      "attributes": [],
+      "prompts": [
+        {"key": "month", "label": "Month", "multi": true},
+        {"key": "market", "label": "Market", "multi": true}
+      ],
+      "caveats": [],
+      "sensitivity": "internal"
+    },
+    {
+      "id": "asap-installed-base",
+      "name": "Installed base by model",
+      "folder": "asap-consumer",
+      "type": "report",
+      "row_access": "ROWS",
+      "file": "asap/installed_base_monthly.csv",
+      "description": "Active Galaxy devices (installed base) at month end, new activations and retired devices by market, model line and month. Active devices is a month-end balance: do not add it across months.",
+      "grain": ["market", "model_code", "month"],
+      "as_of": "2026-10-01T04:00:00Z",
+      "refresh": "Daily",
+      "dimensions": [
+        {"key": "market", "label": "Market", "type": "string", "role": "market", "values_hint": ["SA", "AE", "EG", "MA"]},
+        {"key": "model_code", "label": "Model code", "type": "string", "role": "model"},
+        {"key": "model", "label": "Model", "type": "string"},
+        {"key": "month", "label": "Month", "type": "month", "role": "period"}
+      ],
+      "measures": [
+        {"key": "active_devices", "label": "Active devices, month end", "type": "integer", "unit": "devices", "aggregation": "last"},
+        {"key": "new_activations", "label": "New activations", "type": "integer", "unit": "devices", "aggregation": "sum"},
+        {"key": "retired_devices", "label": "Retired devices", "type": "integer", "unit": "devices", "aggregation": "sum"}
+      ],
+      "attributes": [],
+      "prompts": [
+        {"key": "month", "label": "Month", "multi": true},
+        {"key": "market", "label": "Market", "multi": true},
+        {"key": "model_code", "label": "Model", "multi": true}
+      ],
+      "caveats": ["Model lines include predecessor models that share the line code."],
+      "sensitivity": "internal"
+    },
+    {
+      "id": "asap-app-engagement",
+      "name": "Device and app engagement",
+      "folder": "asap-consumer",
+      "type": "report",
+      "row_access": "ROWS",
+      "file": "asap/app_engagement_monthly.csv",
+      "description": "New device activations, 30-day active rate of newly activated devices and Galaxy Store monthly active use per device, by market, model and month. The Morocco feed has not been received since July 2026.",
+      "grain": ["market", "model_code", "month"],
+      "as_of": "2026-10-01T04:00:00Z",
+      "refresh": "Daily",
+      "dimensions": [
+        {"key": "market", "label": "Market", "type": "string", "role": "market", "values_hint": ["SA", "AE", "EG", "MA"]},
+        {"key": "model_code", "label": "Model code", "type": "string", "role": "model"},
+        {"key": "model", "label": "Model", "type": "string"},
+        {"key": "month", "label": "Month", "type": "month", "role": "period"}
+      ],
+      "measures": [
+        {"key": "new_device_activations", "label": "New device activations", "type": "integer", "unit": "devices", "aggregation": "sum"},
+        {"key": "d30_active_rate_pct", "label": "30-day active rate (%)", "type": "percent", "unit": "%", "aggregation": "none"},
+        {"key": "galaxy_store_mau_per_device", "label": "Galaxy Store MAU per device", "type": "number", "aggregation": "none"}
+      ],
+      "attributes": [],
+      "prompts": [
+        {"key": "month", "label": "Month", "multi": true},
+        {"key": "market", "label": "Market", "multi": true},
+        {"key": "model_code", "label": "Model", "multi": true}
+      ],
+      "caveats": ["Aggregated counts and rates only; no device-level records."],
+      "sensitivity": "internal"
+    },
+    {
+      "id": "asap-gross-margin",
+      "name": "Gross margin by model (restricted)",
+      "folder": "asap-finance",
+      "type": "report",
+      "row_access": "ROWS",
+      "file": "asap/gross_margin_quarterly.csv",
+      "description": "Gross margin % by market, model and quarter. Restricted to finance leadership.",
+      "grain": ["market", "model_code", "fiscal_quarter"],
+      "as_of": "2026-09-30T00:00:00Z",
+      "refresh": "Monthly close",
+      "dimensions": [
+        {"key": "market", "label": "Market", "type": "string", "role": "market", "values_hint": ["SA", "AE", "EG", "MA"]},
+        {"key": "fiscal_quarter", "label": "Fiscal quarter", "type": "quarter", "role": "period"},
+        {"key": "model_code", "label": "Model code", "type": "string", "role": "model"},
+        {"key": "model", "label": "Model", "type": "string"}
+      ],
+      "measures": [
+        {"key": "gross_margin_pct", "label": "Gross margin (%)", "type": "percent", "unit": "%", "aggregation": "none"}
+      ],
+      "attributes": [],
+      "prompts": [
+        {"key": "fiscal_quarter", "label": "Fiscal quarter", "multi": true},
+        {"key": "market", "label": "Market", "multi": true}
+      ],
+      "caveats": ["Margin is not incremental margin from marketing; it cannot by itself establish marketing ROI."],
+      "sensitivity": "restricted"
+    },
+    {
+      "id": "asap-exec-dossier",
+      "name": "MENAT executive overview (dossier)",
+      "folder": "asap-exec",
+      "type": "dossier",
+      "row_access": "NAVIGATION_ONLY",
+      "file": null,
+      "description": "Executive dossier with several visualizations. Browseable and openable in ASAP; structured rows are not retrievable until a specific visualization is approved and parity-tested.",
+      "grain": [],
+      "as_of": null,
+      "refresh": "Unknown",
+      "dimensions": [],
+      "measures": [],
+      "attributes": [],
+      "prompts": [],
+      "caveats": ["Navigation only: Wizard cannot read numbers from this dossier."],
+      "sensitivity": "internal"
+    },
+    {
+      "id": "asap-retail-coverage",
+      "name": "Retail door coverage",
+      "folder": "asap-market-intel",
+      "type": "report",
+      "row_access": "NAVIGATION_ONLY",
+      "file": null,
+      "description": "Retail point-of-sale coverage by market. Listed for navigation; row retrieval not approved.",
+      "grain": [],
+      "as_of": null,
+      "refresh": "Unknown",
+      "dimensions": [],
+      "measures": [],
+      "attributes": [],
+      "prompts": [{"key": "market", "label": "Market", "multi": true}],
+      "caveats": ["Navigation only."],
+      "sensitivity": "internal"
+    }
+  ]
+}

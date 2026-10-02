@@ -1,0 +1,63 @@
+[project]
+name = "wizard"
+version = "0.1.0"
+description = "Permission-aware executive analyst: Gemini (enterprise sign-in) chooses read-only source tools; Wizard owns identity, tool boundaries, evidence and reports."
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn>=0.32",
+  "pydantic>=2.9",
+  "httpx>=0.28",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3",
+  "ruff>=0.8",
+  "mypy>=1.13",
+  "jsonschema>=4.23",
+]
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = [
+  "services/api/wizard_api",
+  "services/agent/wizard_agent",
+  "services/connectors/wizard_connectors",
+  "services/checks/wizard_checks",
+]
+
+[tool.hatch.build]
+dev-mode-dirs = ["services/api", "services/agent", "services/connectors", "services/checks"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["services/api", "services/agent", "services/connectors", "services/checks", "."]
+markers = [
+  "gemini_cli: runs the real Gemini CLI with fake model responses (needs WIZARD_GEMINI_CLI_JS or .tools)",
+  "live: needs live corporate sources or a signed-in Gemini account; reported as BLOCKED when not configured",
+]
+addopts = "-q -p no:cacheprovider -p no:tmpdir"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+src = ["services/api", "services/agent", "services/connectors", "services/checks", "scripts", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S"]
+ignore = ["S101", "S603", "S607", "E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S105", "S106", "S107", "S108", "B011"]
+"scripts/**" = ["S311"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_unused_ignores = true
+files = ["services"]

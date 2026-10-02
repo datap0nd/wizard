@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wizard.internal/contracts/run-event.schema.json",
+  "title": "Wizard run event",
+  "description": "One observed event of an agent run, as stored and streamed (SSE data). Events record what actually happened; they never contain private chain of thought.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["seq", "type", "ts", "payload"],
+  "properties": {
+    "seq": {"type": "integer", "minimum": 1},
+    "ts": {"type": "string"},
+    "type": {"enum": ["run_started", "status", "agent_session", "text_delta", "note", "model_tool_trace", "tool_started",
+                      "tool_finished", "visual_added", "check_result", "warning", "agent_stats", "diagnostic",
+                      "run_finished", "run_failed"]},
+    "payload": {"type": "object"}
+  },
+  "allOf": [
+    {"if": {"properties": {"type": {"const": "tool_started"}}},
+     "then": {"properties": {"payload": {"required": ["call_id", "name", "label", "category", "arguments"]}}}},
+    {"if": {"properties": {"type": {"const": "tool_finished"}}},
+     "then": {"properties": {"payload": {"required": ["call_id", "name", "ok", "duration_ms", "summary"]}}}},
+    {"if": {"properties": {"type": {"const": "text_delta"}}},
+     "then": {"properties": {"payload": {"required": ["text"]}}}},
+    {"if": {"properties": {"type": {"const": "run_finished"}}},
+     "then": {"properties": {"payload": {"required": ["status", "report_id", "answer", "data_mode", "check_status"]}}}},
+    {"if": {"properties": {"type": {"const": "run_failed"}}},
+     "then": {"properties": {"payload": {"required": ["code", "message"]}}}}
+  ]
+}

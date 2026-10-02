@@ -1,0 +1,74 @@
+{
+  "id": "planner-sell-in-vs-sell-out-2026Q3",
+  "data_mode": "SYNTHETIC",
+  "story": "Planner",
+  "period": "2026-Q3",
+  "question": "Flag any model where sell-in is outpacing sell-out and installed-base growth is stalling — then check Smart Switch and app usage to tell me if it's a demand problem or a channel-stuffing problem.",
+  "cases": [
+    {
+      "market": "EG",
+      "model_code": "A37",
+      "reading": "concerning",
+      "sell_in": 97463,
+      "sell_out": 62880,
+      "stock_jun": 24092,
+      "stock_sep": 58675,
+      "installed_base_growth_q3_pct": -0.5,
+      "installed_base_growth_q2_pct": 4.2,
+      "activations": 45274,
+      "d30_active_rate_sep_pct": 61.0
+    },
+    {
+      "market": "AE",
+      "model_code": "ZFL8",
+      "reading": "launch fill",
+      "sell_in": 20295,
+      "sell_out": 12300,
+      "stock_jun": 0,
+      "stock_sep": 7995,
+      "activations": 12054,
+      "d30_active_rate_sep_pct": 93.0
+    },
+    {
+      "market": "SA",
+      "model_code": "A57",
+      "reading": "contradictory",
+      "sell_in": 120594,
+      "sell_out": 103960,
+      "stock_jun": 36620,
+      "stock_sep": 53254,
+      "installed_base_growth_q3_pct": 4.5,
+      "installed_base_growth_q2_pct": 4.2,
+      "activations": 102920
+    },
+    {
+      "market": "MA",
+      "model_code": "A17",
+      "reading": "missing feed",
+      "sell_in": 29997,
+      "sell_out": 22220,
+      "stock_jun": 8267,
+      "stock_sep": 16044,
+      "app_engagement_rows_q3": 0
+    },
+    {
+      "market": "SA",
+      "model_code": "S26U",
+      "reading": "healthy",
+      "sell_in": 54783,
+      "sell_out": 54240
+    }
+  ],
+  "rubric": {
+    "must_include": [
+      "screening result, not a diagnosis",
+      "EG A37 combines loading with stalling installed base",
+      "MA app feed missing is not weak demand",
+      "SA A57 signals conflict"
+    ],
+    "must_not": [
+      "state channel stuffing as a fact",
+      "treat missing app data as zero"
+    ]
+  }
+}

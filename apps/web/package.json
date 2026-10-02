@@ -1,0 +1,46 @@
+{
+  "name": "wizard-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Wizard web app: chat, live agent activity, evidence, source explorer and dated reports. Talks only to the Wizard API.",
+  "scripts": {
+    "dev": "vite",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit && vite build",
+    "test": "vitest run",
+    "e2e": "playwright test"
+  },
+  "dependencies": {
+    "@fontsource/inter": "5.3.0",
+    "@radix-ui/react-dialog": "1.1.23",
+    "@radix-ui/react-dropdown-menu": "2.1.24",
+    "@radix-ui/react-tooltip": "1.2.16",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "echarts": "6.1.0",
+    "lucide-react": "1.49.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1",
+    "tailwind-merge": "3.7.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@tailwindcss/vite": "4.3.3",
+    "@testing-library/react": "16.3.3",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "jsdom": "30.1.1",
+    "tailwindcss": "4.3.3",
+    "typescript": "5.9.3",
+    "vite": "8.3.2",
+    "vitest": "5.0.3"
+  },
+  "overrides": {
+    "lightningcss": "1.32.0"
+  },
+  "//overrides": "lightningcss 1.33.0 native binary is blocked by Windows Application Control on the dev PC; 1.32.0 is allowed. Revisit when IT allowlists newer builds."
+}
