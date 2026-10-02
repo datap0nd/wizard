@@ -12,7 +12,7 @@ def runtime(tmp_path: Path, **kw) -> GeminiCliRuntime:
     cli = tmp_path / "gemini.js"
     cli.write_text("// stub")
     return GeminiCliRuntime(GeminiCliConfig(model="gemini-3.8-flash", internal_url="http://127.0.0.1:8770", cli_js=cli,
-                                            node="node", shim_cwd=str(tmp_path), **kw))
+                                            node="node", **kw))
 
 
 def request(home: Path, token: str = "tok-123") -> AgentRequest:

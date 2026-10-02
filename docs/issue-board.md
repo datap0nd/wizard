@@ -20,5 +20,5 @@ SYNTHETIC data; it is never a claim about live data.
 | 12 | Planner analysis | Done (synthetic) | Story fixtures and transcript; screening only | Live feeds incl. stock age/returns |
 | 13 | Conquest | Done (synthetic) | Observed counts with coverage; decision-to-investigate framing | Live Smart Switch aggregates, incremental economics |
 | 14 | Repeatable source onboarding | Template ready | [source-onboarding.md](source-onboarding.md); contracts generate tools without code changes; content-repo template with Gemini CLI authoring commands ([documentation-guide.md](documentation-guide.md)). `WIZARD_CONTENT_DIR` loader and `scripts/validate_content.py` (navigation-only real catalogs) | First real intake |
-| 15 | Harden, deploy, operations | Draft | [deployment.md](deployment.md), [operations.md](operations.md) | IT host decisions, named operator |
+| 15 | Harden, deploy, operations | Draft | [deployment.md](deployment.md), [operations.md](operations.md); single-user work-PC test install (`setup.ps1` / `start.ps1` / `update_app.ps1`, portable runtime, Gemini CLI task kit): [workpc-setup.md](workpc-setup.md) | IT host decisions, named operator |
 | 16 | Release stack and executive pilot | Not started | verify_all fail-closed gate | All of the above |

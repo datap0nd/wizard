@@ -25,7 +25,7 @@ from wizard_agent.replay import ReplayRuntime
 from wizard_agent.runtime import AgentRuntime
 from wizard_agent.secret_box import SecretBox
 from wizard_connectors.content import errors, validate_content
-from wizard_connectors.entitlements import Identity, IdentityDirectory
+from wizard_connectors.entitlements import Identity, IdentityDirectory, SystemRights
 from wizard_connectors.paths import ROOT
 from wizard_connectors.tools import build_registry, build_services
 
@@ -92,7 +92,7 @@ def build_runtime(settings: Settings, secret_box: SecretBox, scopes: list[str]) 
             model=settings.model, internal_url=settings.internal_url, cli_js=cli_js, node=settings.node, scopes=scopes,
             google_cloud_project=settings.google_cloud_project, timeout_s=settings.run_timeout_s,
             fake_responses=Path(settings.gemini_fake_responses).resolve() if settings.gemini_fake_responses else None,
-            shim_cwd=str(ROOT / "services" / "connectors")))
+            shim_command=[str(ROOT / "wizard_mcp_shim.py")]))
     if settings.runtime == "code-assist":
         return CodeAssistRuntime(settings.model, secret_box, settings.google_cloud_project, settings.thinking)
     return ReplayRuntime(settings.transcripts_dir, settings.replay_delay_s)
@@ -121,6 +121,12 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         services = build_services()
     registry = build_registry(services)
     identities = IdentityDirectory.load(settings.identities_file)
+    if settings.local_user_email:
+        # The person testing on this PC, with their real work email so Gemini account linking passes the email match.
+        owner = Identity(id="local-owner", email=settings.local_user_email.lower(), name=settings.local_user_name or "You",
+                         role="Owner (local test)", entitlements={s.id: SystemRights(reports=["*"], markets=["*"])
+                                                                  for s in services.catalog.systems})
+        identities = IdentityDirectory([owner, *[i for i in identities.all() if i.email != owner.email]])
     store = Store(settings.data_dir / "wizard.sqlite3")
     interrupted = store.mark_interrupted()
     secret_box = SecretBox()

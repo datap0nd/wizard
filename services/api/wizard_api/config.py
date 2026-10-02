@@ -63,6 +63,8 @@ class Settings:
     secure_cookies: bool = False
     replay_delay_s: float = 0.0
     session_hours: int = 12
+    local_user_email: str | None = None
+    local_user_name: str | None = None
     session_secret: bytes = b""
 
     @property
@@ -94,15 +96,22 @@ def _int(value: str, name: str, low: int, high: int) -> int:
     return number
 
 
-def load_settings(env: dict[str, str] | None = None, env_file: Path | None = None) -> Settings:
-    merged = read_env_file(env_file or ROOT / ".env")
+def load_settings(env: dict[str, str] | None = None, env_file: Path | None = None, home: Path | None = None) -> Settings:
+    """`home` is a work-PC install folder: .env lives there and relative paths (data, content, identities) resolve
+    against it, so they survive updates. Without it, a development checkout uses the repository root."""
+    base = Path(home).resolve() if home else ROOT
+    merged = read_env_file(env_file or base / ".env")
     merged.update({k: v for k, v in (env if env is not None else os.environ).items() if k.startswith(("WIZARD_", "GOOGLE_CLOUD_PROJECT"))})
 
     def get(name: str, default: str | None = None) -> str | None:
         value = merged.get(name)
         return value if value not in (None, "") else default
 
-    data_dir = Path(get("WIZARD_DATA_DIR", str(ROOT / "var")) or "var").resolve()
+    def local(path: str) -> Path:
+        candidate = Path(path)
+        return (candidate if candidate.is_absolute() else base / candidate).resolve()
+
+    data_dir = local(get("WIZARD_DATA_DIR", "data" if home else "var") or "var")
     settings = Settings(data_dir=data_dir)
     settings.host = get("WIZARD_HOST", settings.host) or settings.host
     settings.port = _int(get("WIZARD_PORT", "8770") or "8770", "WIZARD_PORT", 1, 65535)
@@ -127,16 +136,20 @@ def load_settings(env: dict[str, str] | None = None, env_file: Path | None = Non
         settings.trusted_proxies = {p.strip() for p in proxies.split(",") if p.strip()}
     identities = get("WIZARD_IDENTITIES_FILE")
     if identities:
-        settings.identities_file = Path(identities)
+        settings.identities_file = local(identities)
     transcripts = get("WIZARD_TRANSCRIPTS_DIR")
     if transcripts:
         settings.transcripts_dir = Path(transcripts)
     content = get("WIZARD_CONTENT_DIR")
     if content:
-        settings.content_dir = Path(content).resolve()
+        settings.content_dir = local(content)
         if settings.runtime == "replay":
             raise ConfigError("WIZARD_CONTENT_DIR cannot be combined with the replay runtime: replay plays recorded "
                               "transcripts over the synthetic catalog. Use gemini-cli or code-assist.")
+    settings.local_user_email = get("WIZARD_LOCAL_USER_EMAIL")
+    if settings.local_user_email and "@" not in settings.local_user_email:
+        raise ConfigError("WIZARD_LOCAL_USER_EMAIL must be your work email address")
+    settings.local_user_name = get("WIZARD_LOCAL_USER_NAME") or (settings.local_user_email or "").split("@")[0] or None
     dist = get("WIZARD_WEB_DIST")
     if dist:
         settings.web_dist = Path(dist)

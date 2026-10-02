@@ -49,7 +49,7 @@ class GeminiCliConfig:
     google_cloud_project: str | None = None
     fake_responses: Path | None = None
     timeout_s: int = 600
-    shim_cwd: str | None = None
+    shim_command: list[str] = field(default_factory=lambda: ["-m", "wizard_connectors.mcp_shim"])
 
 
 def resolve_cli_js(explicit: str | None, repo_root: Path) -> Path | None:
@@ -144,10 +144,12 @@ class GeminiCliRuntime:
             "telemetry": {"enabled": False},
             "tools": {"core": []},
             "mcp": {"allowed": list(self.config.scopes)},
+            # Never load GEMINI.md files from parent folders (an install folder's operator notes, a repo's developer
+            # notes): the analyst's context is Wizard's system prompt plus the conversation, nothing else.
+            "context": {"fileName": "WIZARD-RUNTIME-NO-PROJECT-CONTEXT.md", "includeDirectoryTree": False},
             "mcpServers": {
-                scope: {"command": self.config.python, "args": ["-m", "wizard_connectors.mcp_shim", "--scope", scope],
+                scope: {"command": self.config.python, "args": [*self.config.shim_command, "--scope", scope],
                         "env": env, "trust": True, "timeout": self.config.timeout_s * 1000,
-                        **({"cwd": self.config.shim_cwd} if self.config.shim_cwd else {}),
                         "description": f"Wizard read-only {scope} tools"}
                 for scope in self.config.scopes
             },

@@ -7,3 +7,4 @@ Evidence**. A decision that changes repository rules also updates [AGENTS.md](..
 - [2026-10-02 Two Gemini runtime routes](2026-10-02-gemini-runtime-routes.md)
 - [2026-10-02 Per-user Gemini CLI credential isolation](2026-10-02-cli-credential-isolation.md)
 - [2026-10-02 Development dependency constraints](2026-10-02-dependencies.md)
+- [2026-10-02 Work-PC installation and task kit](2026-10-02-workpc-install.md)

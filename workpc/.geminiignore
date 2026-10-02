@@ -1,0 +1,8 @@
+# Keep Gemini CLI sessions in the install folder away from sign-ins, secrets and installed binaries.
+data/
+.env
+runtime/
+releases/
+dependencies/
+.downloads/
+*.pid

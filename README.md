@@ -23,6 +23,21 @@ dated web reports. Every number links to the rows it came from, and every answer
 | Real platform documentation | `WIZARD_CONTENT_DIR` loads an internal wizard-content repo (template in `templates/content/`, Gemini CLI authoring commands, validator); real reports are navigation-only until live adapters exist | Working; no real content yet |
 | Corporate SSO | Trusted-header mode implemented for an SSO reverse proxy; not connected to a real IdP |
 
+## Work PC (install, test, update)
+
+Same model as the B2B tools: no admin, git, pip or Node build. With `DG_GITHUB_TOKEN` (Contents: read on this repo):
+
+```powershell
+mkdir C:\Wizard; cd C:\Wizard
+$h = @{ Authorization = "Bearer $env:DG_GITHUB_TOKEN"; Accept = 'application/vnd.github.raw' }
+Invoke-WebRequest https://api.github.com/repos/datap0nd/wizard/contents/setup.ps1 -Headers $h -OutFile setup.ps1 -UseBasicParsing
+powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1
+.\start.ps1
+```
+
+Then `.\update_app.ps1` after every push to `main`. Documentation and checks are Gemini CLI tasks: in `C:\Wizard`, run
+`gemini -m gemini-3.8-flash` and type `/wizard:tasks`. Full guide: [docs/workpc-setup.md](docs/workpc-setup.md).
+
 ## Quick start (Windows, development)
 
 Prerequisites: Python 3.11+ with [uv](https://docs.astral.sh/uv/), Node.js 20+.

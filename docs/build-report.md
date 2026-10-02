@@ -3,6 +3,30 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
+## 2026-10-02 (evening) — Work-PC install, update loop and Gemini CLI task kit
+
+- **Install like B2B:** `setup.ps1` / `start.ps1` / `update_app.ps1` at the repository root, guide in
+  [workpc-setup.md](workpc-setup.md), decision in [decisions/2026-10-02-workpc-install.md](decisions/2026-10-02-workpc-install.md).
+  Portable CPython 3.13.15 plus 17 locked wheels, published as release
+  `portable-cp313-win_amd64-f77a70401bd85a63d2e5` by `scripts/lock_portable.py --publish`. The web app is committed
+  prebuilt (`apps/web/dist`, fingerprint checked by the new `web-dist` layer).
+- **Install-folder mode:**
+  - `run.py --home <folder>` reads `.env` and keeps `data\` in the install folder.
+  - `run.py --check` gates every new release: does the app start, does content validate, and an offline Gemini CLI
+    probe. The probe confirms exactly Wizard's 15 tools, Wizard's prompt, thinking HIGH, and no `GEMINI.md` leaking in
+    from a parent folder.
+  - `WIZARD_LOCAL_USER_EMAIL` adds an Owner identity with the real work email.
+- **Fix found by the probe:** Gemini CLI loaded `GEMINI.md` from parent folders into the analyst's context. Wizard's
+  per-user CLI settings now point `context.fileName` at a name that never exists.
+- **Gemini CLI task kit** (`workpc/`):
+  - `/wizard:tasks` and tasks 00–17, 90 (environment report, inventory, platform guides, report catalogs,
+    definitions, question coverage, validation, owner questions, switch to real catalog, feedback pack).
+  - `GEMINI.md` and `.geminiignore` keep `data\` and `.env` out of reach.
+- **Verification:**
+  - New `tests/unit/test_workpc.py`, which parses all four PowerShell scripts with the PowerShell parser.
+  - The real-CLI probe test.
+  - Local `verify_all.sh --allow-blocked=live-parity`: every layer PASS, only live parity BLOCKED.
+
 ## 2026-10-02 (later) — Real-content loader, documentation kit, CI type fixes
 
 - **Content folder:** `WIZARD_CONTENT_DIR` loads an internal wizard-content repository instead of the synthetic examples.

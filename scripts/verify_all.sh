@@ -31,7 +31,7 @@ layer() {  # layer <name> <command...>; BLOCKED when output names a policy block
 layer spec          $PY scripts/verify_spec.py
 layer secrets       $PY scripts/scan_secrets.py
 layer contracts     $PY scripts/export_contracts.py --check
-layer lint          $PY -m ruff check services tests scripts
+layer lint          $PY -m ruff check services tests scripts run.py wizard_mcp_shim.py
 layer types         $PY -m mypy --show-traceback
 layer python-tests  $PY -m pytest tests -m "not live and not gemini_cli"
 layer gemini-cli    $PY -m pytest tests -m gemini_cli -rs
@@ -39,6 +39,7 @@ layer evals-schema  $PY -m pytest tests/evals
 if [ ! -d apps/web/node_modules ]; then (cd apps/web && npm ci --no-audit --no-fund) >artifacts/verify/web-install.log 2>&1; fi
 layer web-types     npm --prefix apps/web run typecheck
 layer web-unit      npm --prefix apps/web test
+layer web-dist      npm --prefix apps/web run verify-dist
 layer web-build     npm --prefix apps/web run build
 layer e2e           npm --prefix apps/web run e2e
 layer live-parity   $PY -m pytest tests/parity -m live -rs

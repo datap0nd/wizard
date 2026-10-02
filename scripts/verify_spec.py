@@ -199,6 +199,20 @@ def knowledge_and_links() -> None:
             check((doc.parent / target).exists(), f"{doc.relative_to(ROOT)}: broken link {target}")
 
 
+def portable_locks() -> None:
+    import hashlib
+    locks = {name: ROOT / name for name in ("runtime.lock.json", "dependencies.lock.json", "portable_assets.lock.json")}
+    if not all(p.is_file() for p in locks.values()):
+        failures.append("portable runtime locks missing (run scripts/lock_portable.py)")
+        return
+    assets = json.loads(locks["portable_assets.lock.json"].read_text(encoding="utf-8"))
+    for name, key in (("runtime.lock.json", "runtime_lock_sha256"), ("dependencies.lock.json", "dependency_lock_sha256")):
+        check(hashlib.sha256(locks[name].read_bytes()).hexdigest() == assets[key], f"{name} does not match portable_assets.lock.json")
+    for package in json.loads(locks["dependencies.lock.json"].read_text(encoding="utf-8"))["packages"]:
+        check(package["filename"].endswith(("-none-any.whl", "-cp313-cp313-win_amd64.whl")), f"unsupported wheel {package['filename']}")
+        check(re.fullmatch(r"[0-9a-f]{64}", package["sha256"]) is not None, f"bad digest for {package['filename']}")
+
+
 def templates() -> None:
     copy = ROOT / "templates" / "content" / "schema" / "source-contract.schema.json"
     check(copy.is_file() and copy.read_bytes() == (ROOT / "contracts" / "source-contract.schema.json").read_bytes(),
@@ -215,6 +229,7 @@ def templates() -> None:
 def main() -> int:
     fixtures_and_labels()
     templates()
+    portable_locks()
     reports = contracts()
     goldens()
     transcripts(reports)

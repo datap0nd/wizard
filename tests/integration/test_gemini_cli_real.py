@@ -97,3 +97,13 @@ def test_cli_tool_declarations(live_server, tmp_path):
     assert not [n for n in names if any(w in n for w in ("shell", "write", "file", "web", "fetch", "memory"))]
     assert sent["config"]["systemInstruction"].startswith("You are Wizard")
     assert sent["config"]["thinkingConfig"]["thinkingLevel"] == "HIGH"
+
+
+def test_installation_probe_passes_and_ignores_parent_gemini_md(tmp_path):
+    """The same probe `run.py --check` runs on the work PC (it plants a GEMINI.md above the run folder)."""
+    from wizard_api.config import load_settings
+    from wizard_api.preflight import probe_gemini_cli
+    settings = load_settings(env={"WIZARD_AGENT_RUNTIME": "gemini-cli"}, home=tmp_path)
+    passed, detail = probe_gemini_cli(settings)
+    assert passed, detail
+    assert "15 read-only tools" in detail

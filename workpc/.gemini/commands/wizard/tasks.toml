@@ -1,0 +1,5 @@
+description = "Work through the Wizard tasks in tasks\\ (optionally one task: /wizard:tasks 11)"
+prompt = """
+Read tasks/START_HERE.md and follow it exactly. Requested scope: {{args}}
+(If the scope is empty, work through every task that is not done yet, in order. If it is a number, do only that task.)
+"""
