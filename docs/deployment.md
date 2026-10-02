@@ -12,6 +12,7 @@ desktop pilot and move to a managed host.
 | Identity | `WIZARD_AUTH_MODE=trusted-header`, `WIZARD_TRUSTED_PROXIES=<proxy IP>`, `WIZARD_PUBLIC_ORIGIN=https://…`, `WIZARD_SECURE_COOKIES=true` | OPEN |
 | Gemini | Node 20+, `@google/gemini-cli@0.62.0` pinned; `WIZARD_AGENT_RUNTIME` chosen by the Step 02 spike; `GOOGLE_CLOUD_PROJECT` | OPEN |
 | Proxy/TLS | `HTTPS_PROXY`, `NO_PROXY`, `NODE_EXTRA_CA_CERTS` for corporate TLS inspection | OPEN |
+| Content | `WIZARD_CONTENT_DIR` = checkout of the internal wizard-content repo, validated with `scripts/validate_content.py` | Implemented; content OPEN |
 | Data dir | `WIZARD_DATA_DIR` outside the install, ACL'd to the service account; contains SQLite, per-user homes, DPAPI secrets | OPEN |
 | Secrets | DPAPI (machine-bound to the service account) until IT names a secret store | OPEN |
 | Lock/reboot | Service restarts on boot; in-flight runs are marked interrupted on restart | Implemented in app |

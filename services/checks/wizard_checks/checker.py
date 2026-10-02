@@ -77,15 +77,15 @@ def compute(selector: Selector, evidence_by_id: dict[str, dict[str, Any]]) -> tu
     if evidence.get("truncated"):
         return None, f"{selector.evidence_id} was truncated; rerun the request without truncation to recompute", 0
     rows = _rows(evidence)
-    for field_name, values in selector.where:
+    for field_name, accepted in selector.where:
         if field_name not in keys:
             return None, f"{field_name} is not a column of {selector.evidence_id}", 0
-        wanted = {str(v).casefold() for v in values}
+        wanted = {str(v).casefold() for v in accepted}
         rows = [r for r in rows if str(r.get(field_name)).casefold() in wanted]
     if not rows:
         return None, f"no rows of {selector.evidence_id} match the stated filters", 0
     problem = _period_problem(rows, selector.period)
-    values = [r[selector.measure] for r in rows if isinstance(r.get(selector.measure), int | float)]
+    values: list[float] = [float(r[selector.measure]) for r in rows if isinstance(r.get(selector.measure), int | float)]
     if selector.aggregate == "count":
         return float(len(rows)), problem, len(rows)
     if not values:
@@ -114,7 +114,7 @@ def _allowance(stated: float, recomputed: float, tolerance_pct: float) -> float:
 
 def check(claims: list[Claim], evidence_by_id: dict[str, dict[str, Any]],
           replay: Callable[[str], tuple[str, str]] | None = None, replay_ids: list[str] | None = None) -> dict[str, Any]:
-    results = []
+    results: list[dict[str, Any]] = []
     for claim in claims:
         notes: list[str] = []
         inputs_out = []

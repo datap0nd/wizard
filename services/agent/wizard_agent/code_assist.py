@@ -18,7 +18,7 @@ import httpx
 
 from . import google_oauth
 from .prompting import system_prompt
-from .runtime import AgentFailure, AgentRequest, Emit, ToolBridge
+from .runtime import AgentFailure, AgentRequest, Emit, RuntimeKind, ToolBridge
 from .secret_box import SecretBox
 
 API_BASE = "https://cloudcode-pa.googleapis.com/v1internal"
@@ -70,7 +70,7 @@ def retry_delay(body: str, attempt: int) -> float:
 
 
 class CodeAssistRuntime:
-    kind = "code-assist"
+    kind: RuntimeKind = "code-assist"
 
     def __init__(self, model: str, secret_box: SecretBox, project: str | None = None, thinking: str = "high",
                  api_base: str = API_BASE, transport: httpx.AsyncBaseTransport | None = None):

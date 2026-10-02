@@ -71,7 +71,10 @@ export function SourceExplorer({onAsk}: {onAsk: (text: string) => void}) {
             <span className="min-w-0 flex-1">
               <span className="block text-[13px] font-semibold">{system.name}</span>
               <span className="block truncate text-[11.5px] text-ink-3">{system.families.join(', ').replaceAll('_', ' ')}</span>
-              <span className="mt-1 flex flex-wrap gap-1"><DataModeBadge mode={system.data_mode} /><span className="text-[11px] text-ink-3">{system.reports_with_rows}/{system.reports} readable</span></span>
+              <span className="mt-1 flex flex-wrap gap-1">
+                {system.connector_status === 'NAVIGATION_ONLY' ? <StatusPill tone="muted"><Lock />Navigation only</StatusPill> : <DataModeBadge mode={system.data_mode} />}
+                <span className="text-[11px] text-ink-3">{system.reports_with_rows}/{system.reports} readable</span>
+              </span>
             </span>
           </button>
           {open === system.id && catalogs[system.id] && <div className="mt-1"><Tree catalog={catalogs[system.id]} parent={null} depth={0} onPick={report => setPicked({system, report})} /></div>}
@@ -80,7 +83,8 @@ export function SourceExplorer({onAsk}: {onAsk: (text: string) => void}) {
       <Dialog open={!!picked} onOpenChange={value => { if (!value) setPicked(null); }}>
         {picked && <DialogContent title={picked.report.name} description={`${picked.system.name} · ${picked.report.id}`}>
           <div className="space-y-3 text-sm" data-testid="report-details">
-            <div className="flex flex-wrap gap-1.5"><StatusChip status={picked.report.status} /><DataModeBadge mode={picked.system.data_mode} />
+            <div className="flex flex-wrap gap-1.5"><StatusChip status={picked.report.status} />
+              {picked.system.connector_status !== 'NAVIGATION_ONLY' && <DataModeBadge mode={picked.system.data_mode} />}
               {picked.report.sensitivity === 'restricted' && <StatusPill tone="danger"><Lock />Restricted</StatusPill>}</div>
             <p className="text-ink-2">{picked.report.description}</p>
             <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-xs">
@@ -91,7 +95,7 @@ export function SourceExplorer({onAsk}: {onAsk: (text: string) => void}) {
             </dl>
             <div className="flex flex-wrap gap-2 pt-1">
               <Button size="sm" variant="accent" disabled={picked.report.row_access !== 'ROWS'} onClick={() => { onAsk(`Using the "${picked.report.name}" report in ${picked.system.name}, `); setPicked(null); }}>Ask about this report</Button>
-              <Button size="sm" variant="outline" disabled title="Synthetic fixture: there is no live source link in this build">Open in {picked.system.name}</Button>
+              <Button size="sm" variant="outline" disabled title="No source link is configured for this platform yet">Open in {picked.system.name}</Button>
             </div>
             {picked.report.row_access !== 'ROWS' && <p className="text-xs text-ink-3">Navigation only: Wizard can list this report but cannot read its numbers until a visualization is approved and parity-tested.</p>}
           </div>

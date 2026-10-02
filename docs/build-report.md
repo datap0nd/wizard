@@ -3,6 +3,19 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
+## 2026-10-02 (later) — Real-content loader, documentation kit, CI type fixes
+
+- **Content folder:** `WIZARD_CONTENT_DIR` loads an internal wizard-content repository instead of the synthetic examples.
+  It is validated at start-up (`wizard_connectors/content.py`, also `scripts/validate_content.py`). Real reports must be
+  NAVIGATION_ONLY with no data file; secrets, stray data files, bad front matter, wrong ids and summed percentages
+  stop the service. Not allowed with the replay runtime. Navigation-only platforms make no data-mode claim in the UI.
+- **Documentation kit:** `templates/content/` (layout, authoring rules, Gemini CLI commands `/wizard:platform-guide` and
+  `/wizard:report-catalog`, schema copy kept in sync by `verify_spec.py`); [documentation-guide.md](documentation-guide.md),
+  [how-it-works.md](how-it-works.md). The ASAP importer now emits strictly valid drafts.
+- **CI:** the first CI run failed only on mypy (18 typing findings; mypy had never run, as it was blocked on the dev PC).
+  All fixed, plus 3 more found once a source-built mypy ran locally. Local `verify_all.sh --allow-blocked=live-parity`:
+  every layer PASS (101 Python tests, 3 real-CLI tests, 10 E2E, types clean); only live parity BLOCKED.
+
 ## 2026-10-02 — Release A foundation (SYNTHETIC)
 
 **Mode of operation:** SYNTHETIC data only. Runtimes available: `replay` (default; recorded transcripts),

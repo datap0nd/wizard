@@ -9,7 +9,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..catalog import Report
+from ..catalog import Dimension, Measure, Report
 from ..fixture_source import Filter, Sort
 from .registry import UNTRUSTED_NOTICE, ToolContext, ToolError, ToolSpec
 
@@ -75,8 +75,9 @@ def search(ctx: ToolContext, query: str, limit: int, system_id: str | None) -> l
     scored = []
     for sid, report in visible_reports(ctx, system_id):
         name = report.name.casefold()
+        columns: list[Dimension | Measure] = [*report.dimensions, *report.measures]
         body = " ".join([report.description, " ".join(ctx.services.catalog.folder_path(sid, report.folder)),
-                         " ".join(f"{c.key} {c.label}" for c in (*report.dimensions, *report.measures)),
+                         " ".join(f"{c.key} {c.label}" for c in columns),
                          " ".join(ctx.services.catalog.contracts[sid].system.families)]).casefold()
         score = sum(4 * name.count(t) + body.count(t) for t in terms)
         if score:

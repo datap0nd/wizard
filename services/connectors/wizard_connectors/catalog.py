@@ -92,7 +92,8 @@ class Report(Strict):
     sensitivity: Literal["internal", "restricted"]
 
     def column(self, key: str) -> Dimension | Measure | Attribute | None:
-        for column in (*self.dimensions, *self.measures, *self.attributes):
+        columns: list[Dimension | Measure | Attribute] = [*self.dimensions, *self.measures, *self.attributes]
+        for column in columns:
             if column.key == key:
                 return column
         return None

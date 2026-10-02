@@ -12,7 +12,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from .runtime import AgentFailure, AgentRequest, Emit, ToolBridge
+from .runtime import AgentFailure, AgentRequest, Emit, RuntimeKind, ToolBridge
 
 PLACEHOLDER = re.compile(r"\{(E:[a-z0-9-]+|[a-z_][a-z0-9_]*)\}")
 NO_TRANSCRIPT = ("**Replay mode** has no recorded transcript for this question, and replay never improvises an answer.\n\n"
@@ -21,7 +21,7 @@ NO_TRANSCRIPT = ("**Replay mode** has no recorded transcript for this question, 
 
 
 class ReplayRuntime:
-    kind = "replay"
+    kind: RuntimeKind = "replay"
     model = "replay"
 
     def __init__(self, directory: Path, delay_s: float = 0.0):

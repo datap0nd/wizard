@@ -36,8 +36,9 @@ def draft_report(client: LibraryClient, item: dict[str, Any], folder_id: str) ->
         "id": f"asap-{item['id'].lower()[:32]}", "name": item["name"], "folder": folder_id,
         "type": "dossier" if item.get("type") == DOCUMENT else "report", "row_access": "NAVIGATION_ONLY", "file": None,
         "description": "", "grain": [], "as_of": None, "refresh": "Unknown", "dimensions": [], "measures": [],
-        "attributes": [], "prompts": [], "caveats": ["DRAFT imported from ASAP metadata: review before approval."],
-        "sensitivity": "internal", "source_object_id": item["id"],
+        "attributes": [], "prompts": [],
+        "caveats": [f"DRAFT imported from ASAP metadata (object {item['id']}): review before approval."],
+        "sensitivity": "internal",
     }
     if item.get("type") != REPORT:
         return entry
@@ -75,7 +76,7 @@ def build(client: LibraryClient, roots: list[tuple[str, str]]) -> dict[str, Any]
     reports: list[dict[str, Any]] = []
     for folder_id, name in roots:
         walk(client, folder_id, name, None, folders, reports)
-    return {"contract_version": 1, "draft": True,
+    return {"contract_version": 1,
             "system": {"id": "asap", "name": "ASAP", "description": "DRAFT imported catalog", "families": [],
                        "owner": "TBD", "connector": {"status": "NAVIGATION_ONLY", "data_mode": "LIVE_VERIFIED",
                                                      "transport": "library-rest", "live_interface": "MicroStrategy Library REST"},

@@ -199,8 +199,22 @@ def knowledge_and_links() -> None:
             check((doc.parent / target).exists(), f"{doc.relative_to(ROOT)}: broken link {target}")
 
 
+def templates() -> None:
+    copy = ROOT / "templates" / "content" / "schema" / "source-contract.schema.json"
+    check(copy.is_file() and copy.read_bytes() == (ROOT / "contracts" / "source-contract.schema.json").read_bytes(),
+          "templates/content/schema/source-contract.schema.json is out of sync with contracts/ (copy it again)")
+    for command in (ROOT / "templates" / "content" / ".gemini" / "commands").rglob("*.toml"):
+        import tomllib
+        try:
+            data = tomllib.loads(command.read_text(encoding="utf-8"))
+            check({"description", "prompt"} <= set(data) and "{{args}}" in data["prompt"], f"{command.name}: needs description, prompt and {{{{args}}}}")
+        except tomllib.TOMLDecodeError as error:
+            failures.append(f"{command.name}: invalid TOML ({error})")
+
+
 def main() -> int:
     fixtures_and_labels()
+    templates()
     reports = contracts()
     goldens()
     transcripts(reports)

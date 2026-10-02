@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wizard.internal/contracts/source-contract.schema.json",
+  "title": "Wizard source contract",
+  "description": "What a source owner approves for one system: reports, typed columns, prompts, row access and status. Connector status, row access and data mode are separate fields.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "system", "folders", "reports"],
+  "properties": {
+    "contract_version": {"const": 1},
+    "system": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "description", "families", "owner", "connector", "open_url_template"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9]{1,15}$"},
+        "name": {"type": "string"},
+        "description": {"type": "string"},
+        "families": {"type": "array", "items": {"type": "string"}},
+        "owner": {"type": "string"},
+        "connector": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "data_mode", "transport", "live_interface"],
+          "properties": {
+            "status": {"enum": ["SYNTHETIC_FIXTURE", "NAVIGATION_ONLY", "ROWS_VERIFIED", "BLOCKED"]},
+            "data_mode": {"enum": ["SYNTHETIC", "DATED_APPROVED_SNAPSHOT", "LIVE_VERIFIED"]},
+            "transport": {"type": "string"},
+            "live_interface": {"type": "string"}
+          }
+        },
+        "open_url_template": {"type": ["string", "null"]}
+      }
+    },
+    "folders": {
+      "type": "array",
+      "items": {"type": "object", "additionalProperties": false, "required": ["id", "name", "parent"],
+                "properties": {"id": {"type": "string"}, "name": {"type": "string"}, "parent": {"type": ["string", "null"]}}}
+    },
+    "reports": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "folder", "type", "row_access", "file", "description", "grain", "as_of", "refresh",
+                     "dimensions", "measures", "attributes", "prompts", "caveats", "sensitivity"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{2,79}$"},
+          "name": {"type": "string"},
+          "folder": {"type": "string"},
+          "type": {"enum": ["report", "dossier"]},
+          "row_access": {"enum": ["ROWS", "NAVIGATION_ONLY"]},
+          "file": {"type": ["string", "null"]},
+          "description": {"type": "string"},
+          "grain": {"type": "array", "items": {"type": "string"}},
+          "as_of": {"type": ["string", "null"]},
+          "refresh": {"type": "string"},
+          "dimensions": {"type": "array", "items": {"$ref": "#/$defs/dimension"}},
+          "measures": {"type": "array", "items": {"$ref": "#/$defs/measure"}},
+          "attributes": {"type": "array", "items": {"$ref": "#/$defs/attribute"}},
+          "prompts": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["key", "label"],
+                                                 "properties": {"key": {"type": "string"}, "label": {"type": "string"}, "multi": {"type": "boolean"}}}},
+          "caveats": {"type": "array", "items": {"type": "string"}},
+          "sensitivity": {"enum": ["internal", "restricted"]}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "columnType": {"enum": ["string", "text", "integer", "number", "percent", "currency", "month", "quarter"]},
+    "dimension": {"type": "object", "additionalProperties": false, "required": ["key", "label", "type"],
+                  "properties": {"key": {"type": "string"}, "label": {"type": "string"}, "type": {"$ref": "#/$defs/columnType"},
+                                 "role": {"enum": ["market", "period", "model"]}, "values_hint": {"type": "array", "items": {"type": "string"}}}},
+    "measure": {"type": "object", "additionalProperties": false, "required": ["key", "label", "type", "aggregation"],
+                "properties": {"key": {"type": "string"}, "label": {"type": "string"}, "type": {"$ref": "#/$defs/columnType"},
+                               "unit": {"type": "string"}, "aggregation": {"enum": ["sum", "sum_same_currency", "last", "none"]}}},
+    "attribute": {"type": "object", "additionalProperties": false, "required": ["key", "label", "type"],
+                  "properties": {"key": {"type": "string"}, "label": {"type": "string"}, "type": {"$ref": "#/$defs/columnType"}}}
+  }
+}

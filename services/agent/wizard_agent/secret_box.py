@@ -16,8 +16,9 @@ class _Blob(ctypes.Structure):
 
 
 def _dpapi(data: bytes, protect: bool) -> bytes:
-    crypt32 = ctypes.windll.crypt32  # type: ignore[attr-defined]
-    kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+    windll = getattr(ctypes, "windll")  # noqa: B009 - Windows-only attribute; getattr keeps type checks platform-neutral
+    crypt32 = windll.crypt32
+    kernel32 = windll.kernel32
     buffer = ctypes.create_string_buffer(data, len(data))
     source = _Blob(len(data), ctypes.cast(buffer, ctypes.POINTER(ctypes.c_char)))
     target = _Blob()

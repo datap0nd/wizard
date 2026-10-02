@@ -4,6 +4,7 @@ The registry is the only path from a model to a source. Every execution re-valid
 rights inside the handler, and returns data plus the evidence it recorded. There are no write, shell, URL or SQL tools."""
 from __future__ import annotations
 
+import builtins
 import copy
 import json
 import time
@@ -117,13 +118,13 @@ class ToolRegistry:
             raise ValueError("Wizard tools must be read-only")
         self.specs = {s.name: s for s in specs}
 
-    def list(self, scope: str | None = None) -> list[ToolSpec]:
+    def list(self, scope: str | None = None) -> builtins.list[ToolSpec]:
         return [s for s in self.specs.values() if scope in (None, s.scope)]
 
-    def scopes(self) -> list[str]:
+    def scopes(self) -> builtins.list[str]:
         return sorted({s.scope for s in self.specs.values()})
 
-    def describe(self, scope: str | None = None) -> list[dict[str, Any]]:
+    def describe(self, scope: str | None = None) -> builtins.list[dict[str, Any]]:
         return [{"name": s.name, "description": s.description, "inputSchema": flatten_schema(s.args_model),
                  "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False}}
                 for s in self.list(scope)]

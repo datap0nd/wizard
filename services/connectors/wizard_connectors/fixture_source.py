@@ -8,6 +8,7 @@ import csv
 import hashlib
 import json
 from dataclasses import dataclass, field
+from operator import itemgetter
 from pathlib import Path
 from typing import Any
 
@@ -174,10 +175,10 @@ class FixtureSource:
             if spec.field not in column_keys:
                 raise SourceError("invalid_sort", f"Cannot sort by '{spec.field}'; it is not in the result columns.")
         for spec in reversed(sort or []):
-            present = [r for r in out_rows if r.get(spec.field) is not None]
-            absent = [r for r in out_rows if r.get(spec.field) is None]
-            present.sort(key=lambda r, f=spec.field: r[f], reverse=spec.direction == "desc")
-            out_rows = present + absent
+            with_value = [r for r in out_rows if r.get(spec.field) is not None]
+            without_value = [r for r in out_rows if r.get(spec.field) is None]
+            with_value.sort(key=itemgetter(spec.field), reverse=spec.direction == "desc")
+            out_rows = with_value + without_value
         if not sort:
             order = [k for k in column_keys if k in dim_keys or k in report.grain]
             out_rows.sort(key=lambda r: tuple(str(r.get(k) or "") for k in order))

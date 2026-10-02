@@ -14,10 +14,10 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     try:
         settings = load_settings()
+        app = create_app(settings)
     except ConfigError as error:
         print(f"Wizard configuration error: {error}", file=sys.stderr)
         return 2
-    app = create_app(settings)
     uvicorn.run(app, host=settings.host, port=settings.port, log_level="info", proxy_headers=False)
     return 0
 

@@ -1,0 +1,38 @@
+description = "Draft a Wizard platform guide (knowledge/platforms/<platform>.md) from platform documentation"
+prompt = """
+Draft the platform guide for one data platform. Arguments: {{args}}
+Expected form: <platform id, e.g. asap> followed by the folder or files holding its documentation (e.g. inbox/asap/).
+Read every file given before writing anything.
+
+Purpose: Wizard's analyst (Gemini) reads this guide through the `wizard_lookup_definitions` tool before searching the
+platform's reports. It must orient a newcomer in under two minutes: what the platform is, how its content is organised,
+how to find the right report, and what commonly goes wrong.
+
+Write the file knowledge/platforms/<platform id>.md in exactly this format:
+
+---
+id: platform-<platform id>
+title: <Platform name> platform guide (<one-line kind, e.g. MicroStrategy BI>)
+status: DRAFT_UNSIGNED
+owner: TBD - <owning team if stated, else "ask the platform owner">
+tags: [<platform id>, platform, <8-15 lowercase business keywords people would search with>]
+---
+**What it is.** 2-4 sentences: purpose, who maintains it, which business data families it holds.
+
+**How it is organised.** Folders/modules/areas, object types (reports, dossiers, extracts, cubes), prompts or
+parameters and how they behave, security model if documented.
+
+**How to navigate it in Wizard.** Use `<platform id>_search_reports` with business words, then
+`<platform id>_get_report_schema`, then `<platform id>_run_report`. Mention what "navigation only" means for this
+platform (listed and openable by the user, numbers not readable by Wizard until approved).
+
+**What lives here.** Bullet list of the main report families or subject areas, by name as documented.
+
+**Pitfalls and terminology.** Definitions that differ from common usage, balances vs flows, rates that must not be
+summed, refresh lags and restatements, known gaps, currencies and calendars.
+
+**Open questions for the owner.** Every point the documentation does not settle.
+
+Rules: follow GEMINI.md; use only the referenced documentation; at most 600 words; no data values; no credentials or
+tokenised URLs; write UNKNOWN rather than guess. Show the finished file, list the sources you used, and stop.
+"""

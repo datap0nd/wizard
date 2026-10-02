@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from .prompting import system_prompt
-from .runtime import AgentFailure, AgentRequest, Emit, ToolBridge
+from .runtime import AgentFailure, AgentRequest, Emit, RuntimeKind, ToolBridge
 from .stream_json import map_event, parse_line
 
 PROMPT_FLAG_TEXT = "Respond to the request above as Wizard."
@@ -87,7 +87,7 @@ def classify(message: str) -> tuple[str, str]:
 
 
 class GeminiCliRuntime:
-    kind = "gemini-cli"
+    kind: RuntimeKind = "gemini-cli"
 
     def __init__(self, config: GeminiCliConfig):
         self.config = config
@@ -96,9 +96,10 @@ class GeminiCliRuntime:
 
     # Status ------------------------------------------------------------------------------------------------------------
     def version(self) -> str | None:
-        if self._version is None and self.config.cli_js and self._node():
+        node = self._node()
+        if self._version is None and self.config.cli_js and node:
             try:
-                out = subprocess.run([self._node(), str(self.config.cli_js), "--version"], capture_output=True, text=True,
+                out = subprocess.run([node, str(self.config.cli_js), "--version"], capture_output=True, text=True,
                                      timeout=60, env=self._base_env(Path(os.environ.get("TEMP", "."))))
                 self._version = out.stdout.strip().splitlines()[-1] if out.returncode == 0 and out.stdout.strip() else ""
             except (OSError, subprocess.TimeoutExpired):

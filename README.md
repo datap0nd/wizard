@@ -20,6 +20,7 @@ dated web reports. Every number links to the rows it came from, and every answer
 | Agent runtime **replay**: recorded transcripts over synthetic data for CI and demos | Working; labelled REPLAY everywhere |
 | Read-only tools: NERP, GSCM, ASAP (search, schema, run report) + catalog, definitions, calculate, visual, Check my data | Working over SYNTHETIC fixtures with per-user report and market rights |
 | ASAP MicroStrategy Library REST client | Groundwork only, not validated against the tenant; ASAP stays NAVIGATION_ONLY for live use |
+| Real platform documentation | `WIZARD_CONTENT_DIR` loads an internal wizard-content repo (template in `templates/content/`, Gemini CLI authoring commands, validator); real reports are navigation-only until live adapters exist | Working; no real content yet |
 | Corporate SSO | Trusted-header mode implemented for an SSO reverse proxy; not connected to a real IdP |
 
 ## Quick start (Windows, development)
@@ -77,5 +78,7 @@ scripts/              verify_spec, verify_all, fixture_reset, dev, spike_two_use
 ```
 
 Start with [AGENTS.md](AGENTS.md) (rules for anyone changing this repo), [docs/architecture.md](docs/architecture.md),
-[docs/platforms.md](docs/platforms.md) (how platforms, report catalogs and MCP servers fit together)
+[docs/platforms.md](docs/platforms.md) (how platforms, report catalogs and MCP servers fit together),
+[docs/how-it-works.md](docs/how-it-works.md) (flowcharts) and [docs/documentation-guide.md](docs/documentation-guide.md)
+(how the real platform documentation is written, with which model and prompts, and where it lives)
 and [docs/issue-board.md](docs/issue-board.md).

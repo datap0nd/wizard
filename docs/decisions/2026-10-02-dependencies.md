@@ -12,7 +12,8 @@
 - **TypeScript 5.9.3** (B2B's version) instead of the native TypeScript 7 compiler.
 - **pytest via `python -m pytest`** with the tmpdir plugin disabled (`-p no:tmpdir`): the `pytest.exe` shim is blocked
   and pytest's temp-dir symlinks are disabled by policy. Tests use a plain temporary-directory fixture.
-- **mypy** cannot run on this PC (its compiled `librt` module is blocked); it runs in CI on Linux. `verify_all.sh` reports
-  it as BLOCKED locally rather than skipping it.
+- **mypy**: the compiled wheel is blocked on this PC. A source build (`uv pip install --no-binary mypy mypy==2.4.0`) runs
+  locally; a fresh `uv sync` may reinstall the blocked wheel, in which case `verify_all.sh` reports types as BLOCKED
+  (never skipped). CI on Linux always runs it.
 
 **Consequence.** Revisit when IT allowlists newer builds; record any change here.

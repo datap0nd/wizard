@@ -24,12 +24,13 @@ from wizard_agent.gemini_cli import GeminiCliConfig, GeminiCliRuntime, resolve_c
 from wizard_agent.replay import ReplayRuntime
 from wizard_agent.runtime import AgentRuntime
 from wizard_agent.secret_box import SecretBox
+from wizard_connectors.content import errors, validate_content
 from wizard_connectors.entitlements import Identity, IdentityDirectory
 from wizard_connectors.paths import ROOT
 from wizard_connectors.tools import build_registry, build_services
 
 from . import __version__
-from .config import Settings, load_settings
+from .config import ConfigError, Settings, load_settings
 from .runs import Busy, RunManager, entitled_to
 from .security import REQUEST_HEADER, SECURITY_HEADERS, SESSION_COOKIE, session_token, verify
 from .store import Store
@@ -107,7 +108,17 @@ def _is_loopback(host: str | None) -> bool:
 def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = None,
                google_transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
     settings = settings or load_settings()
-    services = build_services()
+    if settings.content_dir:
+        problems = validate_content(settings.content_dir)
+        for problem in problems:
+            log.warning("content: %s", problem)
+        if errors(problems):
+            raise ConfigError(f"WIZARD_CONTENT_DIR {settings.content_dir} has {len(errors(problems))} error(s); run "
+                              "scripts/validate_content.py on it. First: " + str(errors(problems)[0]))
+        services = build_services(contracts=settings.content_dir / "contracts" / "sources",
+                                  knowledge=settings.content_dir / "knowledge")
+    else:
+        services = build_services()
     registry = build_registry(services)
     identities = IdentityDirectory.load(settings.identities_file)
     store = Store(settings.data_dir / "wizard.sqlite3")
@@ -189,6 +200,7 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
     @app.get("/api/v1/ready")
     async def ready() -> dict[str, Any]:
         checks = {"store": True, "catalog": bool(services.catalog.systems), "runtime": runtime.kind,
+                  "content": str(settings.content_dir) if settings.content_dir else "synthetic (built-in)",
                   "runtime_label": runtime.label(), "secret_store": secret_box.kind, "auth_mode": settings.auth_mode,
                   "frontend_built": (settings.web_dist / "index.html").is_file()}
         return {"ready": all(v for k, v in checks.items() if isinstance(v, bool) and k != "frontend_built"), "checks": checks}
@@ -212,7 +224,8 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
             return base
         store.touch_user(identity.id, identity.email, identity.name, identity.role)
         readiness = await runtime.readiness(settings.user_home(identity.id), identity.email)
-        modes = sorted({s.connector.data_mode for s in services.catalog.systems if identity.can_use_system(s.id)})
+        modes = sorted({s.connector.data_mode for s in services.catalog.systems if identity.can_use_system(s.id)
+                        and s.connector.status in ("SYNTHETIC_FIXTURE", "ROWS_VERIFIED")})
         return {**base, "identity": {"id": identity.id, "name": identity.name, "email": identity.email, "role": identity.role},
                 "runtime": {"kind": runtime.kind, "label": runtime.label(), "model": runtime.model, **readiness},
                 "gemini_account": await account_status(identity), "data_modes": modes}

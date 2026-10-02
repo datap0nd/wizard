@@ -54,6 +54,7 @@ class Settings:
     identities_file: Path = FIXTURES / "identities.json"
     transcripts_dir: Path = FIXTURES / "transcripts"
     web_dist: Path = ROOT / "apps" / "web" / "dist"
+    content_dir: Path | None = None
     max_concurrent_runs: int = 4
     run_timeout_s: int = 600
     max_tool_calls: int = 40
@@ -130,6 +131,12 @@ def load_settings(env: dict[str, str] | None = None, env_file: Path | None = Non
     transcripts = get("WIZARD_TRANSCRIPTS_DIR")
     if transcripts:
         settings.transcripts_dir = Path(transcripts)
+    content = get("WIZARD_CONTENT_DIR")
+    if content:
+        settings.content_dir = Path(content).resolve()
+        if settings.runtime == "replay":
+            raise ConfigError("WIZARD_CONTENT_DIR cannot be combined with the replay runtime: replay plays recorded "
+                              "transcripts over the synthetic catalog. Use gemini-cli or code-assist.")
     dist = get("WIZARD_WEB_DIST")
     if dist:
         settings.web_dist = Path(dist)

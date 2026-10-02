@@ -4,6 +4,7 @@ import httpx
 import pytest
 
 from wizard_connectors.asap_library import AsapError, LibraryClient, normalise_grid
+from wizard_connectors.catalog import SourceContract
 
 V2_RESULT = {
     "definition": {"grid": {
@@ -75,7 +76,8 @@ def test_catalog_importer_drafts_navigation_only_contract():
     client = LibraryClient("https://asap.example.invalid/Library", "P1", transport=httpx.MockTransport(handler))
     client.token = "t"
     draft = build(client, [("ROOT", "Shared Reports")])
-    assert draft["draft"] is True and [f["name"] for f in draft["folders"]] == ["Shared Reports", "Consumer"]
+    SourceContract.model_validate(draft)  # strict: the draft must load once reviewed
+    assert [f["name"] for f in draft["folders"]] == ["Shared Reports", "Consumer"]
     report = next(r for r in draft["reports"] if r["name"] == "Smart Switch by origin")
     assert report["row_access"] == "NAVIGATION_ONLY" and report["file"] is None
     assert [d["key"] for d in report["dimensions"]] == ["market", "origin_brand"]
