@@ -160,6 +160,7 @@ try {
                 403 { 'The token was refused: check SSO authorization and rate limits.' }
                 default { 'api.github.com is unreachable: check the proxy, TLS inspection and firewall.' }
             }
+            if (-not $githubToken -and $status -in 401, 404) { $hint = '' }
             throw "Cannot read $Ref of $Repository (HTTP $status). $tokenState $hint"
         }
         Write-Host "Installing Wizard $($commit.Substring(0, 12)) from $Repository"
