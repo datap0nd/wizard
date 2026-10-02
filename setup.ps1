@@ -108,8 +108,13 @@ function Get-LockedArchive($Item, [string]$Tag) {
     $asset = @($script:releaseAssets | Where-Object { $_.name -ceq $Item.filename -and $_.state -eq 'uploaded' })
     if ($asset.Count -ne 1) { throw "The portable runtime release is missing $($Item.filename)." }
     Write-Host "Downloading $($Item.filename)"
-    $binaryHeaders = $githubHeaders.Clone(); $binaryHeaders['Accept'] = 'application/octet-stream'
-    Download-File "https://api.github.com/repos/$Repository/releases/assets/$($asset[0].id)" $archivePath $binaryHeaders
+    if ($githubToken) {
+        $binaryHeaders = $githubHeaders.Clone(); $binaryHeaders['Accept'] = 'application/octet-stream'
+        Download-File "https://api.github.com/repos/$Repository/releases/assets/$($asset[0].id)" $archivePath $binaryHeaders
+    } else {
+        # Anonymous: the public download link does not count against GitHub's per-IP API limit.
+        Download-File $asset[0].browser_download_url $archivePath @{ 'User-Agent' = 'Wizard-Setup' }
+    }
     if ((Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash -ne $Item.sha256) { throw "Checksum mismatch for $($Item.filename)." }
     $script:downloads++
     return $archivePath
