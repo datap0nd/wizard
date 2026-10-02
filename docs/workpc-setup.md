@@ -15,7 +15,7 @@ git, no pip and no Node build. The PC only ever **pulls** `main` from GitHub; no
 
 | Need | Why | Check |
 |---|---|---|
-| `DG_GITHUB_TOKEN` (the token the B2B / data-governance installers already use) with **Contents: read** on `datap0nd/wizard` | setup downloads the private repository and its portable runtime release | setup explains a 404 if the repository is not added to the token |
+| Optional: `DG_GITHUB_TOKEN` (the token the B2B / data-governance installers already use) | The repository is public, so setup works without it, but anonymous GitHub API calls are limited to 60 per hour per IP address, which an office network shares. Setup uses about 4 per run. | setup names a rate-limit refusal (HTTP 403) |
 | Node.js and Gemini CLI, signed in with your enterprise Google account | Wizard's analyst runs through Gemini CLI; you also use Gemini CLI for the documentation tasks | `node --version`, `gemini --version` |
 | Outbound HTTPS to `api.github.com`, `github.com` release downloads, `accounts.google.com`, `oauth2.googleapis.com`, `codeassist.google.com`, `cloudcode-pa.googleapis.com` | install, Google sign-in, Gemini | task 00 tests each one |
 
@@ -27,10 +27,11 @@ the first setup and setup copies it into `.env`, or add it to `.env` yourself.
 Only `setup.ps1` is needed, as with B2B. It creates everything else.
 
 1. Create an empty folder, e.g. `C:\Wizard`.
-2. In it, create `setup.ps1` with the contents of [`setup.ps1`](../setup.ps1) from `main`. On GitHub, open the file and
-   use **Copy raw file**, paste it into Notepad, then **Save as** `setup.ps1` with *Save as type: All files*.
-3. Token: if `DG_GITHUB_TOKEN` is not already an environment variable, create `.env` in the same folder with one line,
-   `DG_GITHUB_TOKEN=<token>`.
+2. In it, create `setup.ps1` with the contents of [`setup.ps1`](../setup.ps1) from `main`. Open
+   <https://github.com/datap0nd/wizard/blob/main/setup.ps1>, use **Copy raw file**, paste it into Notepad, then
+   **Save as** `setup.ps1` with *Save as type: All files*.
+3. Optional token, recommended on an office network: if `DG_GITHUB_TOKEN` is not already an environment variable,
+   create `.env` in the same folder with one line, `DG_GITHUB_TOKEN=<token>`.
 4. In PowerShell, in that folder:
 
    ```powershell
@@ -42,11 +43,10 @@ Only `setup.ps1` is needed, as with B2B. It creates everything else.
 It does not matter that the pasted copy gets old. Setup always installs the newest `main`, and if `main` has a newer
 `setup.ps1` it continues with that one. It then replaces the folder's `setup.ps1` with the current copy.
 
-Alternatively, download it with the token instead of pasting:
+Alternatively, download it instead of pasting, from inside the folder:
 
 ```powershell
-$h = @{ Authorization = "Bearer $env:DG_GITHUB_TOKEN"; Accept = 'application/vnd.github.raw' }
-Invoke-WebRequest https://api.github.com/repos/datap0nd/wizard/contents/setup.ps1 -Headers $h -OutFile setup.ps1 -UseBasicParsing
+Invoke-WebRequest https://raw.githubusercontent.com/datap0nd/wizard/main/setup.ps1 -OutFile setup.ps1 -UseBasicParsing
 ```
 
 Unlike B2B, setup needs no Administrator rights and installs no Windows service. Wizard runs each question through
@@ -155,7 +155,8 @@ To roll back by hand, copy `previous.json` over `current.json` and run `.\start.
 
 | Symptom | Fix |
 |---|---|
-| `Cannot read main of datap0nd/wizard (HTTP 404)` | Add `datap0nd/wizard` to the token's repository access (Contents: read). |
+| `Cannot read main of datap0nd/wizard (HTTP 403)` without a token | GitHub's anonymous hourly limit for your office IP was reached: add `DG_GITHUB_TOKEN` (environment or `.env`) or try again later. |
+| `Cannot read main … (HTTP 401)` with a token | The token expired: replace it, or remove it (the repository is public). |
 | `The portable runtime release … is unavailable` | Proxy or token; task 00 shows which host is blocked. |
 | `WARN Gemini CLI …` during setup | Read the line: Node or Gemini CLI path not found, or the CLI version changed what it sends. Paste it to Claude. |
 | `The new release failed its check` | The named `.env` setting is invalid; fix it and run `.\setup.ps1` again. The previous release is still active. |

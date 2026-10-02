@@ -25,9 +25,10 @@ dated web reports. Every number links to the rows it came from, and every answer
 
 ## Work PC (install, test, update)
 
-Same model as B2B: **only `setup.ps1` is needed**. Save it in an empty folder (e.g. `C:\Wizard`) and run it. It
-downloads everything else from this private repository with `DG_GITHUB_TOKEN` (Contents: read), taken from the
-environment or from a `DG_GITHUB_TOKEN=` line in `.env` in that folder. No admin, git, pip or Node build.
+Same model as B2B: **only `setup.ps1` is needed**. Save it in an empty folder (e.g. `C:\Wizard`) and run it; it
+downloads everything else from this public repository. No admin, git, pip or Node build. A GitHub token is optional
+but recommended: `DG_GITHUB_TOKEN` in the environment or as a line in that folder's `.env`. Without one, GitHub limits
+anonymous API calls per IP address, and an office network shares one.
 
 ```powershell
 .\setup.ps1

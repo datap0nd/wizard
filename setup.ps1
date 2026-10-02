@@ -1,6 +1,7 @@
 # Install or refresh Wizard in this folder from GitHub. No admin rights, git, pip or Node build needed.
 # Only this file is needed on a work PC: save it as setup.ps1 in an empty folder (e.g. C:\Wizard) and run .\setup.ps1.
-# GitHub token: the DG_GITHUB_TOKEN environment variable, or a DG_GITHUB_TOKEN=<token> line in .env in the same folder.
+# Optional GitHub token (avoids the anonymous API limit on shared office IPs): the DG_GITHUB_TOKEN environment variable,
+# or a DG_GITHUB_TOKEN=<token> line in .env in the same folder.
 # Downloads the exact commit of `main`, a portable Python and locked libraries (SHA-256 verified) from this repository's
 # GitHub release, installs a clean release under releases\, keeps .env, data\, content\ and outbox\, refreshes the
 # Gemini CLI task folder, and checks the installation. Same model as the B2B installer.
@@ -153,7 +154,7 @@ try {
         }
         if (-not $commit) {
             $status = ''; try { $status = [int]$lookupError.Exception.Response.StatusCode } catch { }
-            $tokenState = if (-not $githubToken) { "No DG_GITHUB_TOKEN was found. Set it as an environment variable, or put the line DG_GITHUB_TOKEN=<token> in $envPath, then run setup.ps1 again." } else { "A token was found ($($githubToken.Length) characters)." }
+            $tokenState = if (-not $githubToken) { "No DG_GITHUB_TOKEN is set (optional: an environment variable, or the line DG_GITHUB_TOKEN=<token> in $envPath)." } else { "A token was found ($($githubToken.Length) characters)." }
             $hint = switch ($status) {
                 401 { 'The token is invalid or expired.' }
                 404 { "The token cannot see $Repository. Add this repository to the token (fine-grained: Contents read-only), or use a token with the repo scope." }
@@ -161,6 +162,7 @@ try {
                 default { 'api.github.com is unreachable: check the proxy, TLS inspection and firewall.' }
             }
             if (-not $githubToken -and $status -in 401, 404) { $hint = '' }
+            if (-not $githubToken -and $status -eq 403) { $hint = "GitHub's hourly limit for anonymous requests from this network was reached. Add a token as described, or try again later." }
             throw "Cannot read $Ref of $Repository (HTTP $status). $tokenState $hint"
         }
         Write-Host "Installing Wizard $($commit.Substring(0, 12)) from $Repository"
