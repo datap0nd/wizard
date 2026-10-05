@@ -104,9 +104,12 @@ def probe_gemini_cli(settings: Settings) -> tuple[bool, str]:
             sent = json.loads(message[message.index("{"):message.rindex("}") + 1])
         except ValueError:
             return False, f"unexpected CLI error: {message[:300]}"
-        declared = sorted(f["name"] for t in sent.get("config", {}).get("tools", []) for f in t.get("functionDeclarations", []))
+        from wizard_connectors.gemini_rules import function_problems
+        functions = [f for t in sent.get("config", {}).get("tools", []) for f in t.get("functionDeclarations", [])]
+        declared = sorted(f["name"] for f in functions)
         expected = sorted(f"mcp_{s.name}" for s in registry.list())
-        problems = []
+        problems = [f"Gemini would reject this request (400): {p}" for f in functions
+                    for p in function_problems(f["name"], f.get("parametersJsonSchema") or f.get("parameters"))]
         if declared != expected:
             problems.append(f"tools offered to the model differ: {len(declared)} offered, expected {len(expected)} "
                             f"({', '.join(sorted(set(declared) ^ set(expected)))[:300]})")

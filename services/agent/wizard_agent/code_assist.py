@@ -72,7 +72,7 @@ def retry_delay(body: str, attempt: int) -> float:
 def summarize_quota(raw: dict[str, Any], model: str) -> dict[str, Any]:
     """retrieveUserQuota buckets -> what the UI shows. The selected bucket is the configured model's most constraining one
     (a model can have several, e.g. requests and tokens); a model variant such as `<model>-preview` also matches."""
-    buckets = []
+    buckets: list[dict[str, Any]] = []
     for bucket in raw.get("buckets") or []:
         if not isinstance(bucket, dict) or bucket.get("remainingFraction") is None:
             continue
@@ -173,8 +173,8 @@ class CodeAssistRuntime:
             resolved = configured
         else:
             tier = next((t.get("id") for t in load.get("allowedTiers", []) if t.get("isDefault")), "free-tier")
-            onboard = {**body, "tierId": tier}
-            operation = await self._post(http, token, "onboardUser", onboard)
+            onboarding = {**body, "tierId": tier}
+            operation = await self._post(http, token, "onboardUser", onboarding)
             for _ in range(15):
                 if operation.get("done") or not operation.get("name"):
                     break

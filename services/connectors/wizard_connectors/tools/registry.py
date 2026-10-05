@@ -82,9 +82,44 @@ class ToolOutcome:
         return json.dumps(payload, ensure_ascii=False, default=str)
 
 
+# Gemini's documented JSON Schema support (ai.google.dev/gemini-api/docs/structured-output) plus anyOf, which its
+# Schema type and examples use. Anything else is described in words instead (see `documented_only`); the registry
+# still enforces every constraint when it validates arguments with the closed pydantic model.
+GEMINI_KEYWORDS = frozenset({"type", "description", "properties", "required", "additionalProperties", "enum", "format",
+                             "minimum", "maximum", "items", "prefixItems", "minItems", "maxItems", "anyOf"})
+
+
+def documented_only(node: Any) -> Any:
+    """Keep only Gemini-documented keywords; fold pattern, length limits, const and defaults into the description."""
+    if isinstance(node, list):
+        return [documented_only(item) for item in node]
+    if not isinstance(node, dict):
+        return node
+    notes = []
+    if "const" in node:
+        node = {**node, "enum": [node["const"]]}
+    if "pattern" in node:
+        notes.append(f"pattern {node['pattern']}")
+    if "minLength" in node or "maxLength" in node:
+        notes.append(f"{node.get('minLength', 0)}-{node['maxLength']} characters" if "maxLength" in node
+                     else f"at least {node['minLength']} characters")
+    if node.get("default") is not None:
+        notes.append(f"default {json.dumps(node['default'])}")
+    out: dict[str, Any] = {}
+    for key, value in node.items():
+        if key == "properties" and isinstance(value, dict):
+            out[key] = {name: documented_only(child) for name, child in value.items()}
+        elif key in GEMINI_KEYWORDS:
+            out[key] = documented_only(value)
+    if notes:
+        out["description"] = (str(out.get("description", "")).rstrip(". ") + f" ({'; '.join(notes)})").strip()
+    return out
+
+
 def flatten_schema(model: type[BaseModel]) -> dict[str, Any]:
-    """Pydantic JSON schema with $defs inlined, titles dropped and Optional[X] reduced to X (clients that cannot read
-    references or null unions still get a complete, closed schema)."""
+    """Pydantic JSON schema with $defs inlined, titles dropped, Optional[X] reduced to X, and only keywords Gemini
+    documents (clients that cannot read references, null unions or other keywords still get a complete, closed schema;
+    Gemini rejects the whole request, HTTP 400, on a schema it cannot accept)."""
     raw = model.model_json_schema()
     defs = raw.pop("$defs", {})
 
@@ -92,7 +127,11 @@ def flatten_schema(model: type[BaseModel]) -> dict[str, Any]:
         if isinstance(node, dict):
             if "$ref" in node:
                 return resolve(copy.deepcopy(defs[node["$ref"].split("/")[-1]]))
-            node = {k: resolve(v) for k, v in node.items() if k != "title"}
+            # "title" is schema metadata here, except as a key of "properties", where it is a parameter's name
+            # (dropping it there left `required: ["title"]` undefined: Gemini answers 400 INVALID_ARGUMENT).
+            node = {k: ({name: resolve(child) for name, child in v.items()} if k == "properties" and isinstance(v, dict)
+                        else resolve(v))
+                    for k, v in node.items() if k != "title"}
             if "anyOf" in node:
                 options = [o for o in node["anyOf"] if o != {"type": "null"}]
                 if len(options) == 1:
@@ -106,7 +145,7 @@ def flatten_schema(model: type[BaseModel]) -> dict[str, Any]:
             return [resolve(item) for item in node]
         return node
 
-    return resolve(raw)
+    return dict(documented_only(resolve(raw)))
 
 
 class ToolRegistry:

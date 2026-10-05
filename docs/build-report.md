@@ -3,6 +3,45 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
+## 2026-10-05 (night) — Tool schemas checked against Gemini's rules (fixes 400 on every question)
+
+**Work PC.** Every question failed with
+`400 INVALID_ARGUMENT: schema at top-level requires unspecified property 'title'`.
+
+**Cause.**
+- `flatten_schema` dropped every `"title"` key to remove pydantic's metadata titles.
+- That also deleted `wizard_render_visual`'s real `title` parameter from `properties`, while it stayed in `required`.
+- All 15 tools are declared on every request, so Google rejected every request before the model ran.
+- The offline fake-response tests never send schemas to Google, so they could not see it.
+
+**Fixes.**
+- Only metadata titles are dropped; property names are kept.
+- Tool schemas now carry only the keywords Gemini documents
+  ([structured output](https://ai.google.dev/gemini-api/docs/structured-output),
+  [`FunctionDeclaration`/`Schema`](https://ai.google.dev/api/generate-content)), plus `anyOf`.
+- `pattern`, `minLength`, `maxLength`, `const` and `default` are folded into the description. The registry still
+  enforces them through the closed pydantic models.
+
+**New guard: `wizard_connectors/gemini_rules.py`.** It checks:
+- every `required` name exists in `properties`;
+- only documented keywords, and no `$ref`/`$defs`/`oneOf`/`allOf`;
+- single `type` values, and no `anyOf` with null;
+- arrays declare `items`, and enums are strings;
+- parameter names match `[A-Za-z_][A-Za-z0-9_]{0,63}`;
+- function names follow Gemini CLI 0.62's `generateValidName` limits.
+
+**Where it runs.**
+- Contract tests on every tool, in both forms: as the CLI declares it (`mcp_<tool>`, `parametersJsonSchema`) and as
+  the Code Assist runtime converts it (`parameters`).
+- The real-CLI integration test, on the exact request body the CLI sends to Google.
+- `run.py --check` on the work PC. That one FAILs with "Gemini would reject this request (400)" instead of letting a
+  question fail.
+
+**Also fixed.** `mypy` found that a local `onboard` variable shadowed `resolve_project`'s new `onboard` parameter.
+
+**Still unverified.** A live call to Google cannot run on the dev laptop. These checks enforce Google's documented
+rules.
+
 ## 2026-10-05 (evening) — Gemini quota ring
 
 - **What it shows.** A small ring next to the account at the bottom left shows how much of the person's quota for the

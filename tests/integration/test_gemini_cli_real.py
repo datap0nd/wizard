@@ -102,6 +102,15 @@ def test_cli_tool_declarations(live_server, tmp_path):
     assert not [n for n in names if any(w in n for w in ("shell", "write", "file", "web", "fetch", "memory"))]
     assert sent["config"]["systemInstruction"].startswith("You are Wizard")
     assert sent["config"]["thinkingConfig"]["thinkingLevel"] == "HIGH"
+    # Exactly what the CLI sends to Google, checked against Gemini's function-declaration rules (a violation is a 400
+    # for every question, e.g. `required` naming an undefined property).
+    from wizard_connectors.gemini_rules import function_problems
+    declarations = [f for t in sent["config"]["tools"] for f in t["functionDeclarations"]]
+    problems = [p for f in declarations for p in function_problems(f["name"], f.get("parametersJsonSchema") or f.get("parameters"))]
+    assert not problems, problems
+    visual = next(f for f in declarations if f["name"] == "mcp_wizard_render_visual")
+    schema = visual.get("parametersJsonSchema") or visual.get("parameters")
+    assert "title" in schema["required"] and "title" in schema["properties"]
 
 
 def test_installation_probe_passes_and_ignores_parent_gemini_md(tmp_path):
