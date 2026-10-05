@@ -10,6 +10,7 @@ import contextlib
 import json
 import logging
 import re
+import traceback
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -325,13 +326,19 @@ class RunManager:
             await self._fail(run, "timeout", f"The run did not finish within {self.settings.run_timeout_s} seconds.")
         except asyncio.CancelledError:
             await self._fail(run, "cancelled", "The run was cancelled.", status="cancelled")
-        except Exception:  # noqa: BLE001 - every failure must surface as a clear run state, never a hung spinner
+        except Exception as error:  # noqa: BLE001 - every failure must surface as a clear run state, never a hung spinner
             log.exception("run %s failed", run.id)
+            if self.settings.diagnostics:
+                with contextlib.suppress(Exception):
+                    await self.emit(run, "diagnostic", {"source": "wizard", "outcome": "internal_error",
+                                                        "error": f"{type(error).__name__}: {error}",
+                                                        "traceback": traceback.format_exc()[-6000:]})
             await self._fail(run, "internal_error", "Wizard hit an internal error. The failure was logged.")
         finally:
             self.active.pop(run.id, None)
 
     async def _fail(self, run: ActiveRun, code: str, message: str, status: str = "failed") -> None:
+        log.warning("run %s %s: %s %s", run.id, status, code, message)
         with contextlib.suppress(Exception):
             self.store.update_run(run.id, status=status, error_code=code, error_message=message, finished_at=now(),
                                   stats=json.dumps(run.stats))

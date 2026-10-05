@@ -171,7 +171,11 @@ def run_checks(settings: Settings) -> int:
         if node and cli_js:
             version = GeminiCliRuntime(GeminiCliConfig(model=settings.model, internal_url="", cli_js=cli_js, node=node)).version()
             _line("PASS", f"Gemini CLI {version or '(version unknown)'} at {cli_js}")
-            if not (settings.google_cloud_project or os.environ.get("GOOGLE_CLOUD_PROJECT")):
+            from wizard_agent.gemini_cli import inherited_project
+            project, source = (settings.google_cloud_project, ".env") if settings.google_cloud_project else inherited_project()
+            if project:
+                _line("PASS", f"Gemini project: {project} (from {source})")
+            else:
                 _line("WARN", "GOOGLE_CLOUD_PROJECT is not set; enterprise Gemini usually needs your organisation's project id")
             try:
                 passed, detail = probe_gemini_cli(settings)

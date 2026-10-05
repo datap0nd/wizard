@@ -1,8 +1,8 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {AlertTriangle} from 'lucide-react';
 import {api, ApiError, eventsUrl} from './api';
 import {applyEvent, emptyRun, fromRecord, TERMINAL} from './runState';
 import {AccountDialog} from './components/AccountDialog';
+import {LogDialog} from './components/LogDialog';
 import {RuntimeBadge} from './components/Badges';
 import {Composer} from './components/Composer';
 import {Conversation} from './components/Conversation';
@@ -10,7 +10,6 @@ import {EmptyState} from './components/EmptyState';
 import {EvidenceDrawer} from './components/EvidenceDrawer';
 import {LoginScreen} from './components/LoginScreen';
 import {Sidebar} from './components/Sidebar';
-import {Button} from './components/ui/button';
 import type {Bootstrap, ConversationSummary, EvidenceSummary, RunEvent, RunView} from './types';
 
 const LAST = 'wizard-conversation';
@@ -25,6 +24,7 @@ export function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [drawer, setDrawer] = useState<{items: EvidenceSummary[]; focus: string | null} | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [logOpen, setLogOpen] = useState(false);
   const streams = useRef(new Map<string, EventSource>());
 
   const refreshConversations = useCallback(async () => { try { setConversations((await api.conversations()).conversations); } catch { /* keep list */ } }, []);
@@ -116,14 +116,13 @@ export function App() {
       <Sidebar boot={boot} conversations={conversations} currentId={currentId} onNew={newChat}
         onSelect={id => void loadConversation(id)} onRename={(id, t) => void api.rename(id, t).then(refreshConversations)}
         onDelete={id => void api.remove(id).then(async () => { if (id === currentId) newChat(); await refreshConversations(); })}
-        onAccount={() => setAccountOpen(true)} onLogout={() => void api.logout().then(() => { localStorage.removeItem(LAST); void loadBoot(); })}
+        onAccount={() => setAccountOpen(true)} onLog={() => setLogOpen(true)} onLogout={() => void api.logout().then(() => { localStorage.removeItem(LAST); void loadBoot(); })}
         onAsk={text => setDraft(text)} />
       <main className="flex min-w-0 flex-1 flex-col">
         <div className="flex flex-wrap items-center gap-2 border-b border-line bg-canvas px-4 py-2.5 md:px-6">
           <h2 className="mr-2 truncate text-[14px] font-semibold" data-testid="conversation-title">{title}</h2>
-          <RuntimeBadge kind={runtime.kind} label={runtime.label} />
-          {synthetic && <span className="inline-flex items-center gap-1 rounded-full border border-warn-line bg-warn-soft px-2 py-0.5 text-[11.5px] font-semibold text-warn" data-testid="synthetic-banner">SYNTHETIC DATA · not corporate figures</span>}
-          {blocked && <Button size="xs" variant="outline" className="ml-auto border-warn-line text-warn" onClick={() => setAccountOpen(true)}><AlertTriangle />{blocked}</Button>}
+          {runtime.kind === 'replay' && <RuntimeBadge kind={runtime.kind} label={runtime.label} />}
+          {synthetic && <span className="inline-flex items-center gap-1 rounded-full border border-warn-line bg-warn-soft px-2 py-0.5 text-[11.5px] font-semibold text-warn" data-testid="synthetic-banner">SYNTHETIC DATA</span>}
         </div>
         <Conversation runs={runs} busy={busy}
           empty={<EmptyState suggestions={boot.suggestions} synthetic={synthetic} onPick={q => { if (!blocked) void ask(q); else setDraft(q); }} />}
@@ -136,6 +135,7 @@ export function App() {
         </div>
       </main>
       <EvidenceDrawer conversationId={currentId} open={!!drawer} focus={drawer?.focus ?? null} items={drawer?.items ?? []} onClose={() => setDrawer(null)} />
+      <LogDialog open={logOpen} onClose={() => setLogOpen(false)} />
       <AccountDialog open={accountOpen} boot={boot} onClose={() => setAccountOpen(false)}
         onChanged={account => { setBoot(b => (b ? {...b, gemini_account: account} : b)); void loadBoot(); }} />
     </div>

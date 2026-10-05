@@ -3,6 +3,37 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
+## 2026-10-05 (later) — Dev diagnostics in the UI, minimal chrome
+
+**Feedback.** "Hey" failed after 59 s with "Gemini stopped with an error". Gemini CLI was named in three places.
+
+**Diagnostics** (`WIZARD_DIAGNOSTICS`, on by default while in dev):
+- Every Gemini CLI run attaches a diagnostic, shown under the answer and opened automatically on failure:
+  - the CLI's full stderr and any non-JSON stdout;
+  - the CLI's own error report (message and stack);
+  - exit code and elapsed time;
+  - the setup it ran with: CLI version, node, model, proxy, certificates, project.
+- Unexpected failures attach their traceback.
+- A **Log** button in the sidebar shows the server's recent log.
+- Secrets are redacted.
+
+**Bug found.** An earlier shell edit had turned the classifier's `\b` word boundaries into backspace characters, so
+401, 403 and 429 never matched and fell through to the generic message. Fixed, and two guards added:
+- a regression test for the classifier;
+- a test that rejects control characters in source files.
+
+New codes: `project_required`, `model_not_found`, `model_unavailable`, `model_rejected_request`, plus broader network
+patterns.
+
+**Project.** `GOOGLE_CLOUD_PROJECT` now falls back to the person's own Gemini CLI `.env` (`~/.gemini/.env`,
+`~/.env`), which Wizard's isolated CLI home cannot see. `run.py --check` prints the project and where it came from.
+
+**UI.** Gemini is named only in the account status at the bottom of the sidebar. Replay stays labelled. Dated reports
+keep their runtime badge as provenance.
+
+**Local build note.** Smart App Control blocks Tailwind's arm64 native module. Building with
+`@tailwindcss/oxide-wasm32-wasi` installed via `--no-save` works and leaves `package.json` unchanged.
+
 ## 2026-10-05 — Work-PC Gemini sign-in fixes (first feedback from the work PC)
 
 **Feedback.** The user saw only the synthetic test identities, none with their email. Pasting the Google code gave

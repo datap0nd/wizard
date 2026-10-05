@@ -7,6 +7,7 @@ import {DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, 
 import {ActivityTimeline} from './ActivityTimeline';
 import {AnswerMarkdown} from './AnswerMarkdown';
 import {CheckBadge, DataModeBadge, RuntimeBadge} from './Badges';
+import {Diagnostics} from './Diagnostics';
 import {VisualBlock} from './VisualBlock';
 import type {RunView} from '@/types';
 
@@ -54,7 +55,7 @@ export const RunCard = memo(function RunCard({run, onEvidence, onCheck, onCancel
       data-testid="run-card" data-status={run.status} data-run-id={run.id}>
       <header className="flex flex-wrap items-center gap-2 px-5 pt-4 sm:px-6">
         <span className="text-[13px] font-semibold text-accent">{run.kind === 'check' ? 'Check my data' : 'Wizard'}</span>
-        {run.runtimeLabel && <RuntimeBadge kind={run.runtime} label={run.runtimeLabel} />}
+        {run.runtime === 'replay' && <RuntimeBadge kind={run.runtime} label={run.runtimeLabel} />}
         {(run.dataMode || run.status === 'succeeded') && <DataModeBadge mode={run.dataMode} />}
         {run.status === 'succeeded' && run.kind === 'ask' && <CheckBadge status={run.checkStatus} />}
         {took && <span className="ml-auto text-xs text-ink-3">{took}</span>}
@@ -62,7 +63,7 @@ export const RunCard = memo(function RunCard({run, onEvidence, onCheck, onCancel
       <div className="space-y-4 px-5 py-4 sm:px-6">
         <ActivityTimeline run={run} onEvidence={id => onEvidence(run, id)} />
         {text && <AnswerMarkdown text={text} visuals={run.visuals} streaming={running} onEvidence={id => onEvidence(run, id)} />}
-        {!text && running && <p className="text-sm text-ink-3" role="status">Gemini is working on it…</p>}
+        {!text && running && <p className="text-sm text-ink-3" role="status">Working on it…</p>}
         {loose.map(v => <VisualBlock key={v.id} visual={v} onEvidence={id => onEvidence(run, id)} />)}
         <CheckPanel run={run} />
         {run.warnings.length > 0 && run.status !== 'running' && (
@@ -73,11 +74,12 @@ export const RunCard = memo(function RunCard({run, onEvidence, onCheck, onCancel
         {run.error && (
           <div className="rounded-xl border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger" role="alert" data-testid="run-error" data-code={run.error.code}>
             <p className="font-medium">{run.status === 'cancelled' ? 'Cancelled' : 'Wizard could not finish this answer'}</p>
-            <p className="mt-1">{run.error.message}</p>
+            <p className="mt-1">{run.error.message}{run.diagnostics.length > 0 && ' Details are under Diagnostics below.'}</p>
             {run.status !== 'cancelled' && <Button variant="outline" size="sm" className="mt-2" onClick={() => onRetry(run)} disabled={busy}><RotateCcw />Ask again</Button>}
           </div>
         )}
       </div>
+      {run.diagnostics.length > 0 && <Diagnostics items={run.diagnostics} open={run.status === 'failed'} />}
       <footer className="no-print flex flex-wrap items-center gap-1.5 border-t border-line px-5 py-2.5 sm:px-6" data-testid="run-actions">
         {running && <Button variant="outline" size="sm" onClick={() => onCancel(run)}><Square />Stop</Button>}
         {run.status === 'succeeded' && run.kind === 'ask' && run.evidence.length > 0 && (

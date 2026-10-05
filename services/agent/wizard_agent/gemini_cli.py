@@ -53,6 +53,31 @@ class GeminiCliConfig:
     timeout_s: int = 600
     shim_command: list[str] = field(default_factory=lambda: ["-m", "wizard_connectors.mcp_shim"])
     proxy: str | None = None  # WIZARD_PROXY: a URL or "direct"; None resolves it (see outbound.proxy_for)
+    diagnostics: bool = True  # emit the full CLI diagnostics for every run (dev mode); failures always emit them
+
+
+def inherited_project(env: dict[str, str] | None = None) -> tuple[str | None, str]:
+    """The Gemini project the person's own Gemini CLI uses. The CLI reads GOOGLE_CLOUD_PROJECT from the environment or
+    from ~/.gemini/.env and ~/.env; Wizard's CLI runs with an isolated HOME and would not see those files."""
+    env = dict(os.environ) if env is None else env
+    for name in ("GOOGLE_CLOUD_PROJECT", "GOOGLE_CLOUD_PROJECT_ID"):
+        if env.get(name):
+            return env[name], f"{name} environment variable"
+    profile = env.get("USERPROFILE") or env.get("HOME")
+    for path in ([Path(profile) / ".gemini" / ".env", Path(profile) / ".env"] if profile else []):
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError):
+            continue
+        values = {}
+        for line in lines:
+            match = re.match(r"\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$", line)
+            if match and not line.lstrip().startswith("#"):
+                values[match.group(1)] = match.group(2).strip("'\"")
+        for name in ("GOOGLE_CLOUD_PROJECT", "GOOGLE_CLOUD_PROJECT_ID"):
+            if values.get(name):
+                return values[name], f"your Gemini CLI settings ({path})"
+    return None, "not set"
 
 
 def resolve_cli_js(explicit: str | None, repo_root: Path) -> Path | None:
@@ -77,16 +102,26 @@ def classify(message: str) -> tuple[str, str]:
 
     if "no more mock responses" in text:
         return "fake_responses_exhausted", "The offline test transcript ended before the run finished."
-    if has(r"auth method", r"unauthenticated", r"invalid_grant", r"401", r"failed to login", r"login required",
+    if has(r"auth method", r"\bunauthenticated\b", r"invalid_grant", r"\b401\b", r"failed to login", r"login required",
            r"oauth credentials"):
         return "gemini_signin_required", "Your Gemini sign-in is missing or expired. Link your Gemini account again."
-    if has(r"429", r"resource_exhausted", r"quota", r"at capacity"):
+    if has(r"\b429\b", r"resource_exhausted", r"quota", r"at capacity"):
         return "model_capacity", "Gemini is at capacity or your quota is exhausted. Try again in a few minutes."
-    if has(r"permission_denied", r"403", r"not entitled"):
+    if has(r"requires setting the google_cloud_project", r"google_cloud_project.{0,60}must be set", r"projectidrequired"):
+        return "project_required", ("Your Gemini licence needs a Google Cloud project id. Put GOOGLE_CLOUD_PROJECT=<id> in "
+                                    "Wizard's .env (the id your own Gemini CLI uses) and restart.")
+    if has(r"permission_denied", r"\b403\b", r"not entitled"):
         return "model_permission_denied", "Your Gemini entitlement does not allow this model or project."
-    if has(r"enotfound", r"econnrefused", r"etimedout", r"fetch failed", r"econnreset", r"certificate"):
+    if has(r"\b404\b", r"not_found", r"model.{0,40}not (?:found|available|supported)"):
+        return "model_not_found", "Gemini does not offer this model to your account. Check WIZARD_GEMINI_MODEL."
+    if has(r"enotfound", r"econnrefused", r"etimedout", r"fetch failed", r"econnreset", r"certificate", r"und_err",
+           r"connect timeout", r"socket hang up", r"enetunreach", r"ehostunreach", r"self.signed"):
         return "model_unreachable", "Gemini could not be reached from this host (network, proxy or certificate)."
-    return "model_error", "Gemini stopped with an error. See the run diagnostics."
+    if has(r"\b50[0-4]\b", r"unavailable", r"overloaded", r"internal error encountered"):
+        return "model_unavailable", "Gemini is temporarily unavailable. Try again in a minute."
+    if has(r"invalid_argument", r"\b400\b"):
+        return "model_rejected_request", "Gemini rejected the request (invalid argument)."
+    return "model_error", "Gemini stopped with an error."
 
 
 class GeminiCliRuntime:
@@ -233,7 +268,9 @@ class GeminiCliRuntime:
 
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue[tuple[str, str | None]] = asyncio.Queue()
-        stderr_tail: deque[str] = deque(maxlen=60)
+        stderr_tail: deque[str] = deque(maxlen=300)
+        stdout_other: deque[str] = deque(maxlen=80)
+        started = time.monotonic()
 
         def pump(stream: Any, tag: str) -> None:
             for raw in iter(stream.readline, b""):
@@ -274,7 +311,11 @@ class GeminiCliRuntime:
                     open_streams -= 1
                     continue
                 event = parse_line(line or "")
-                mapped = map_event(event) if event else None
+                if event is None:
+                    if (line or "").strip():
+                        stdout_other.append((line or "").rstrip())
+                    continue
+                mapped = map_event(event)
                 if mapped is None:
                     continue
                 if mapped.kind == "agent_result":
@@ -285,17 +326,52 @@ class GeminiCliRuntime:
                 else:
                     await emit(mapped.kind, mapped.payload)
             await asyncio.to_thread(proc.wait, 30)
+        except AgentFailure as failure:
+            if proc.poll() is None:
+                kill_tree(proc.pid)
+            if failure.code != "cancelled":
+                await emit("diagnostic", self._diagnostic(request, env, home, proc.returncode, started, failure.code, errors,
+                                                          result, stderr_tail, stdout_other))
+            raise
         finally:
             if proc.poll() is None:
                 kill_tree(proc.pid)
-        if result and result.get("status") == "success":
-            await emit("agent_stats", {"stats": result.get("stats") or {}, "exit_code": proc.returncode})
-            return
-        detail = " ".join(filter(None, [*(errors or []), (result or {}).get("error") or "", *list(stderr_tail)[-8:]]))
-        code, message = classify(detail)
-        await emit("diagnostic", {"exit_code": proc.returncode, "detail": redact(detail[-1500:], request.run_token),
-                                  "at": datetime.now(UTC).isoformat()})
-        raise AgentFailure(code, message)
+        ok = bool(result and result.get("status") == "success")
+        if ok:
+            await emit("agent_stats", {"stats": (result or {}).get("stats") or {}, "exit_code": proc.returncode})
+        error = (result or {}).get("error")
+        detail = " ".join(filter(None, [*errors, json.dumps(error) if isinstance(error, dict) else str(error or ""),
+                                        *list(stdout_other)[-8:], *list(stderr_tail)[-30:]]))
+        code, message = ("ok", "") if ok else classify(detail)
+        if self.config.diagnostics or not ok:
+            await emit("diagnostic", self._diagnostic(request, env, home, proc.returncode, started, code, errors, result,
+                                                      stderr_tail, stdout_other))
+        if not ok:
+            raise AgentFailure(code, message)
+
+    def _diagnostic(self, request: AgentRequest, env: dict[str, str], home: Path, exit_code: int | None, started: float,
+                    outcome: str, errors: list[str], result: dict[str, Any] | None, stderr: deque[str],
+                    stdout_other: deque[str]) -> dict[str, Any]:
+        """Everything needed to see why a run behaved as it did, shown in the UI in dev mode. Secrets are redacted."""
+        payload = {
+            "source": "gemini-cli", "outcome": outcome, "exit_code": exit_code,
+            "elapsed_s": round(time.monotonic() - started, 1), "at": datetime.now(UTC).isoformat(),
+            "setup": {
+                "cli": f"Gemini CLI {self.version() or '(version unknown)'} at {self.config.cli_js}",
+                "node": self._node(), "model": self.model,
+                "proxy": env.get("HTTPS_PROXY") or "none (direct)",
+                "node_certificates": "Windows store requested (NODE_USE_SYSTEM_CA=1)"
+                                     + ("; NODE_EXTRA_CA_CERTS set" if env.get("NODE_EXTRA_CA_CERTS") else ""),
+                "google_cloud_project": env.get("GOOGLE_CLOUD_PROJECT") or "not set",
+                "isolated_home": str(home),
+            },
+            "cli_errors": errors,
+            "result": {k: v for k, v in (result or {}).items() if k in ("status", "error", "stats")},
+            "stdout_other": list(stdout_other),
+            "stderr": list(stderr),
+            "error_report": _error_report(stderr),
+        }
+        return json.loads(redact(json.dumps(payload, default=str), request.run_token))
 
 
 def policy_toml(scopes: list[str]) -> str:
@@ -306,6 +382,22 @@ def policy_toml(scopes: list[str]) -> str:
         rules.append(f'[[rule]]\ntoolName = "*"\nmcpName = "{scope}"\ndecision = "allow"\npriority = 900\n')
     rules.append('[[rule]]\ntoolName = "*"\nmcpName = "*"\ndecision = "deny"\npriority = 100\n')
     return "\n".join(rules)
+
+
+def _error_report(stderr: deque[str]) -> dict[str, Any] | None:
+    """Gemini CLI writes the full error to a JSON report and prints its path; keep the error part (not the request)."""
+    for line in reversed(stderr):
+        match = re.search(r"Full report available at:\s*(\S+\.json)", line)
+        if match:
+            try:
+                report = json.loads(Path(match.group(1)).read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                return {"path": match.group(1), "unreadable": True}
+            error = report.get("error") if isinstance(report, dict) else None
+            if isinstance(error, dict):
+                return {"message": str(error.get("message", ""))[:4000], "stack": str(error.get("stack", ""))[:4000]}
+            return {"error": str(error)[:4000]}
+    return None
 
 
 def redact(text: str, *secrets: str) -> str:

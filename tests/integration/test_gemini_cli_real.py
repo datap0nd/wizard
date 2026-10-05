@@ -49,6 +49,9 @@ def test_cli_calls_wizard_tools_through_mcp(live_server):
     assert [f["name"] for f in finished] == ["wizard_search_catalog", "nerp_run_report"] and finished[1]["evidence"]["id"] == "E1"
     assert run["answer"].startswith("EG spent $1.5M in 2026-Q3 [E1]") and run["data_mode"] == "SYNTHETIC"
     assert [e["payload"]["text"] for e in run["events"] if e["type"] == "note"] == ["I'll look for marketing spend first."]
+    ok = next(e["payload"] for e in run["events"] if e["type"] == "diagnostic")
+    assert ok["outcome"] == "ok" and ok["exit_code"] == 0 and ok["setup"]["model"], "dev mode: diagnostics for every run"
+    assert "WIZARD_RUN_TOKEN" not in json.dumps(ok) and "ya29." not in json.dumps(ok)
 
 
 def test_cli_declares_only_wizard_tools_and_uses_per_user_file_credentials(live_server, tmp_path):
@@ -57,7 +60,9 @@ def test_cli_declares_only_wizard_tools_and_uses_per_user_file_credentials(live_
     app = live_server(WIZARD_AGENT_RUNTIME="gemini-cli", WIZARD_GEMINI_FAKE_RESPONSES=str(empty))
     run = start_run(app, "u-cfo", "hello")
     assert run["status"] == "failed" and run["error_code"] == "fake_responses_exhausted"
-    detail = next(e["payload"]["detail"] for e in app.state.store.events(run["id"]) if e["type"] == "diagnostic")
+    diagnostic = next(e["payload"] for e in app.state.store.events(run["id"]) if e["type"] == "diagnostic")
+    detail = json.dumps(diagnostic)
+    assert diagnostic["outcome"] == "fake_responses_exhausted" and diagnostic["setup"]["model"] and diagnostic["stderr"]
     assert "Blocked dangerous environment variable" not in detail
     settings = app.state.settings
     home = settings.user_home("u-cfo") / "gemini"

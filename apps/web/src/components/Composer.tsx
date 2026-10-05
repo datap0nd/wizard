@@ -43,7 +43,7 @@ export function Composer({onSubmit, busy, draft, onDraftChange, placeholder, dis
           <ArrowUp className="size-4" />
         </button>
       </div>
-      <p className="mt-1.5 text-center text-[11.5px] text-ink-3">Gemini chooses which approved sources to read. Check the evidence before acting on a number.</p>
+      <p className="mt-1.5 text-center text-[11.5px] text-ink-3">Check the evidence before acting on a number.</p>
     </form>
   );
 }

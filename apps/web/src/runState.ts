@@ -6,7 +6,7 @@ export function emptyRun(id: string, conversationId: string, question: string, k
   return {id, conversationId, kind, question, status: 'queued', runtime: 'replay', runtimeLabel: '', model: '', timeline: [],
     streamText: '', answer: null, visuals: [], evidence: [], check: null, checkStatus: 'NOT_CHECKED', checkSummary: null,
     dataMode: null, reportId: null, error: null, warnings: [], lastSeq: 0, createdAt: new Date().toISOString(), finishedAt: null,
-    parentRunId: null};
+    parentRunId: null, diagnostics: []};
 }
 
 /** Apply one observed run event. Pure: the same reducer rebuilds a stored run and follows a live one. */
@@ -40,6 +40,8 @@ export function applyEvent(run: RunView, event: RunEvent): RunView {
       return {...next, check: {overall: p.overall, summary: p.summary, claims: p.claims ?? [], replays: p.replays ?? []}};
     case 'warning':
       return {...next, warnings: [...next.warnings, String(p.message)], timeline: [...next.timeline, {key: `w${event.seq}`, kind: 'warning', label: String(p.message)}]};
+    case 'diagnostic':
+      return {...next, diagnostics: [...next.diagnostics, p as Record<string, unknown>]};
     case 'run_finished':
       return {...next, status: 'succeeded', streamText: '', answer: String(p.answer ?? ''), reportId: p.report_id, dataMode: p.data_mode,
         checkStatus: p.check_status ?? 'NOT_CHECKED', checkSummary: p.check_summary ?? null,

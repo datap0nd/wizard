@@ -6,6 +6,7 @@ import ipaddress
 import json
 import logging
 import time
+from collections import deque
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -20,7 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from wizard_agent import google_oauth, outbound
 from wizard_agent.code_assist import CodeAssistRuntime
-from wizard_agent.gemini_cli import GeminiCliConfig, GeminiCliRuntime, resolve_cli_js
+from wizard_agent.gemini_cli import GeminiCliConfig, GeminiCliRuntime, inherited_project, resolve_cli_js
 from wizard_agent.replay import ReplayRuntime
 from wizard_agent.runtime import AgentRuntime
 from wizard_agent.secret_box import SecretBox
@@ -37,6 +38,27 @@ from .store import Store
 
 OWNER_ID = "local-owner"
 log = logging.getLogger("wizard.api")
+
+
+class LogBuffer(logging.Handler):
+    """The most recent server log records, shown in the UI's Log view in dev mode (WIZARD_DIAGNOSTICS)."""
+
+    def __init__(self, size: int = 400):
+        super().__init__(logging.INFO)
+        self.lines: deque[str] = deque(maxlen=size)
+        self.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            self.lines.append(self.format(record))
+        except Exception:  # noqa: BLE001 - logging must never break a request
+            self.handleError(record)
+
+
+LOG_BUFFER = LogBuffer()
+for _name in ("wizard", "uvicorn.error"):
+    if LOG_BUFFER not in logging.getLogger(_name).handlers:
+        logging.getLogger(_name).addHandler(LOG_BUFFER)
 PUBLIC_PATHS = {"/api/v1/health", "/api/v1/ready", "/api/v1/bootstrap", "/api/v1/session/login",
                 "/api/v1/session/logout", "/api/v1/session/identities"}
 TIMELINE_EVENTS = {"run_started", "status", "agent_session", "note", "tool_started", "tool_finished", "visual_added",
@@ -86,16 +108,21 @@ class InternalCall(Body):
     scope: str | None = Field(default=None, max_length=32)
 
 
+def gemini_project(settings: Settings) -> str | None:
+    """Wizard's GOOGLE_CLOUD_PROJECT, else the one the person's own Gemini CLI uses (~/.gemini/.env, ~/.env)."""
+    return settings.google_cloud_project or inherited_project()[0]
+
+
 def build_runtime(settings: Settings, secret_box: SecretBox, scopes: list[str]) -> AgentRuntime:
     if settings.runtime == "gemini-cli":
         cli_js = resolve_cli_js(settings.gemini_cli_js, ROOT)
         return GeminiCliRuntime(GeminiCliConfig(
             model=settings.model, internal_url=settings.internal_url, cli_js=cli_js, node=settings.node, scopes=scopes,
-            google_cloud_project=settings.google_cloud_project, timeout_s=settings.run_timeout_s,
+            google_cloud_project=gemini_project(settings), timeout_s=settings.run_timeout_s,
             fake_responses=Path(settings.gemini_fake_responses).resolve() if settings.gemini_fake_responses else None,
-            shim_command=[str(ROOT / "wizard_mcp_shim.py")], proxy=settings.proxy))
+            shim_command=[str(ROOT / "wizard_mcp_shim.py")], proxy=settings.proxy, diagnostics=settings.diagnostics))
     if settings.runtime == "code-assist":
-        return CodeAssistRuntime(settings.model, secret_box, settings.google_cloud_project, settings.thinking,
+        return CodeAssistRuntime(settings.model, secret_box, gemini_project(settings), settings.thinking,
                                  proxy=settings.proxy)
     return ReplayRuntime(settings.transcripts_dir, settings.replay_delay_s)
 
@@ -242,7 +269,8 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         readiness = await runtime.readiness(settings.user_home(identity.id), identity.email)
         modes = sorted({s.connector.data_mode for s in services.catalog.systems if identity.can_use_system(s.id)
                         and s.connector.status in ("SYNTHETIC_FIXTURE", "ROWS_VERIFIED")})
-        return {**base, "identity": {"id": identity.id, "name": identity.name, "email": identity.email, "role": identity.role},
+        return {**base, "diagnostics": settings.diagnostics,
+                "identity": {"id": identity.id, "name": identity.name, "email": identity.email, "role": identity.role},
                 "runtime": {"kind": runtime.kind, "label": runtime.label(), "model": runtime.model, **readiness},
                 "gemini_account": await account_status(identity), "data_modes": modes}
 
@@ -283,7 +311,8 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         return {"conversation_id": store.create_conversation(me(request).id)}
 
     def run_detail(identity: Identity, run: dict[str, Any]) -> dict[str, Any]:
-        events = [e for e in store.events(run["id"]) if e["type"] in TIMELINE_EVENTS]
+        shown = TIMELINE_EVENTS | {"diagnostic"} if settings.diagnostics else TIMELINE_EVENTS
+        events = [e for e in store.events(run["id"]) if e["type"] in shown]
         visuals = store.visuals(run["conversation_id"], run["id"])
         evidence = [{k: e.get(k) for k in ("id", "system", "system_name", "report_id", "report_name", "data_mode",
                                            "as_of", "total_rows", "truncated", "warnings", "access_note", "run_id")}
@@ -478,6 +507,14 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
                              "status": "NAVIGATION_ONLY" if r.row_access == "NAVIGATION_ONLY" else
                              ("ROWS_VERIFIED" if contract.system.connector.status == "ROWS_VERIFIED" else contract.system.connector.status)}
                             for r in visible]}
+
+    # Dev diagnostics -----------------------------------------------------------------------------------------------------
+    @app.get("/api/v1/dev/log")
+    async def dev_log(request: Request) -> dict[str, Any]:
+        me(request)
+        if not settings.diagnostics:
+            raise HTTPException(404, "Diagnostics are off (WIZARD_DIAGNOSTICS=false).")
+        return {"lines": list(LOG_BUFFER.lines)}
 
     # Gemini account ----------------------------------------------------------------------------------------------------
     @app.get("/api/v1/account/gemini")

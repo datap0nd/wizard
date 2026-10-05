@@ -21,6 +21,7 @@ async function request<T>(path: string, init: {method?: string; body?: unknown} 
 
 export const api = {
   bootstrap: () => request<Bootstrap>('/api/v1/bootstrap'),
+  devLog: () => request<{lines: string[]}>('/api/v1/dev/log'),
   identities: () => request<{identities: {id: string; name: string; role: string; email: string}[]; notice: string}>('/api/v1/session/identities'),
   login: (userId: string) => request<{ok: true}>('/api/v1/session/login', {body: {user_id: userId}}),
   logout: () => request<{ok: true}>('/api/v1/session/logout', {body: {}}),

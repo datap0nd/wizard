@@ -43,6 +43,19 @@ describe('run reducer', () => {
   });
 });
 
+describe('diagnostics', () => {
+  it('keeps every diagnostic the server attached, with the failure', () => {
+    seq = 0;
+    let run = emptyRun('run_d', 'cnv_1', 'Hey');
+    run = applyEvent(run, ev('run_started', {runtime: 'gemini-cli', runtime_label: 'x', model: 'm'}));
+    run = applyEvent(run, ev('diagnostic', {source: 'gemini-cli', outcome: 'model_unavailable', exit_code: 1, stderr: ['Attempt 1 failed: 503']}));
+    run = applyEvent(run, ev('run_failed', {code: 'model_unavailable', message: 'Gemini is temporarily unavailable.'}));
+    expect(run.diagnostics).toHaveLength(1);
+    expect(run.diagnostics[0].stderr).toEqual(['Attempt 1 failed: 503']);
+    expect(run.status).toBe('failed');
+  });
+});
+
 describe('citations', () => {
   it('turns evidence ids into chips and standalone visual ids into blocks, never touching code blocks', () => {
     const text = 'Spend was $1.5M [E1] and [E12].\n\n[V1]\n\n```\n[E2]\n```';

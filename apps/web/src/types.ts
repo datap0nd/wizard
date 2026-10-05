@@ -26,6 +26,8 @@ export interface Bootstrap {
   identity?: Identity;
   runtime?: {kind: RuntimeKind; label: string; model: string; ready: boolean; reason: string | null};
   gemini_account?: GeminiAccount;
+  /** Dev mode: show full run diagnostics and the server log. */
+  diagnostics?: boolean;
   data_modes?: DataMode[];
 }
 
@@ -138,6 +140,8 @@ export interface RunView {
   dataMode: DataMode | null;
   reportId: string | null;
   error: {code: string; message: string} | null;
+  /** Raw diagnostics the server attached to this run (CLI output, setup, tracebacks). */
+  diagnostics: Record<string, unknown>[];
   warnings: string[];
   lastSeq: number;
   createdAt: string;

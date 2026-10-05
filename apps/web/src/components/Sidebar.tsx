@@ -1,5 +1,5 @@
 import {useMemo, useState} from 'react';
-import {Database, LogOut, MessagesSquare, MoreHorizontal, Pencil, Plus, Search, Trash2, UserRound} from 'lucide-react';
+import {Database, LogOut, MessagesSquare, MoreHorizontal, Pencil, Plus, ScrollText, Search, Trash2, UserRound} from 'lucide-react';
 import {cn} from '@/lib/utils';
 import {Button} from './ui/button';
 import {DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, Hint} from './ui/menu';
@@ -15,6 +15,7 @@ interface Props {
   onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
   onAccount: () => void;
+  onLog: () => void;
   onLogout: () => void;
   onAsk: (text: string) => void;
 }
@@ -26,7 +27,7 @@ function group(iso: string): string {
   return diff < day ? 'Today' : diff < 2 * day ? 'Yesterday' : diff < 7 * day ? 'Previous 7 days' : 'Earlier';
 }
 
-export function Sidebar({boot, conversations, currentId, onNew, onSelect, onRename, onDelete, onAccount, onLogout, onAsk}: Props) {
+export function Sidebar({boot, conversations, currentId, onNew, onSelect, onRename, onDelete, onAccount, onLog, onLogout, onAsk}: Props) {
   const [tab, setTab] = useState<'chats' | 'sources'>('chats');
   const [query, setQuery] = useState('');
   const [renaming, setRenaming] = useState<{id: string; title: string} | null>(null);
@@ -41,7 +42,6 @@ export function Sidebar({boot, conversations, currentId, onNew, onSelect, onRena
     return out;
   }, [conversations, query]);
   const account = boot.gemini_account;
-  const needsLink = !!account?.needs_link && !account.linked;
   return (
     <aside aria-label="Navigation" className="flex h-full w-[272px] shrink-0 flex-col border-r border-line bg-surface">
       <div className="flex items-center gap-2 px-3 py-3">
@@ -106,8 +106,10 @@ export function Sidebar({boot, conversations, currentId, onNew, onSelect, onRena
             </span>
           </span>
         </button>
-        {needsLink && <p className="px-2 pb-1 text-[11.5px] text-warn">Questions run under your own Gemini account.</p>}
-        <Button variant="ghost" size="xs" className="w-full justify-start text-ink-3" onClick={onLogout}><LogOut />Sign out</Button>
+        <div className="flex">
+          <Button variant="ghost" size="xs" className="flex-1 justify-start text-ink-3" onClick={onLogout}><LogOut />Sign out</Button>
+          {boot.diagnostics && <Button variant="ghost" size="xs" className="text-ink-3" onClick={onLog} data-testid="log-button"><ScrollText />Log</Button>}
+        </div>
       </div>
     </aside>
   );

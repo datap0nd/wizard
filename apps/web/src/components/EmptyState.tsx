@@ -7,7 +7,7 @@ export function EmptyState({suggestions, onPick, synthetic}: {suggestions: {stor
     <div className="mx-auto mt-[8vh] max-w-[860px] px-2 text-center" data-testid="empty-state">
       <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-accent">Wizard · executive analyst</p>
       <h1 className="text-[clamp(28px,4vw,42px)] font-semibold leading-tight tracking-tight">Every approved source.<br />One question away.</h1>
-      <p className="mx-auto mt-4 max-w-[540px] text-[15px] text-ink-2">Gemini searches NERP, GSCM and ASAP for you, compares what it finds and shows every number with its source. You see each step it takes.</p>
+      <p className="mx-auto mt-4 max-w-[540px] text-[15px] text-ink-2">Wizard searches NERP, GSCM and ASAP, compares what it finds and shows every number with its source. You see each step it takes.</p>
       {synthetic && <p className="mx-auto mt-3 w-fit rounded-full border border-warn-line bg-warn-soft px-3 py-1 text-xs font-medium text-warn">All connected sources are SYNTHETIC test data in this build</p>}
       <div className="mt-8 grid gap-3 text-left sm:grid-cols-3">
         {suggestions.map(s => (
