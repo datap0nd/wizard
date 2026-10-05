@@ -46,6 +46,21 @@ jobs:
       - name: Verify all layers (fail closed; live parity cannot run here)
         run: bash scripts/verify_all.sh --allow-blocked=live-parity
 
+      # The committed apps/web/dist must be built with the native Tailwind binary. On a PC where Application Control
+      # blocks it, take this artifact instead (gh run download <id> -n web-dist -D apps/web/dist) and commit it.
+      - name: Build the web app (native toolchain)
+        if: always()
+        run: npm --prefix apps/web run build
+
+      - name: Keep the built web app
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: apps/web/dist/
+          include-hidden-files: true
+          retention-days: 14
+
       - name: Keep verification logs
         if: always()
         uses: actions/upload-artifact@v4
