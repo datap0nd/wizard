@@ -27,6 +27,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from . import outbound
 from .prompting import system_prompt
 from .runtime import AgentFailure, AgentRequest, Emit, RuntimeKind, ToolBridge
 from .stream_json import map_event, parse_line
@@ -35,6 +36,7 @@ PROMPT_FLAG_TEXT = "Respond to the request above as Wizard."
 PASSTHROUGH_ENV = ("SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT", "PATH", "LANG", "LC_ALL", "TZ", "HTTPS_PROXY", "HTTP_PROXY",
                    "NO_PROXY", "https_proxy", "http_proxy", "no_proxy", "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE",
                    "PROGRAMFILES", "PROGRAMDATA", "SYSTEMDRIVE", "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE")
+GEMINI_API_URL = "https://cloudcode-pa.googleapis.com/"
 CREDENTIAL_FILES = ("gemini-credentials.json", "oauth_creds.json")
 
 
@@ -50,6 +52,7 @@ class GeminiCliConfig:
     fake_responses: Path | None = None
     timeout_s: int = 600
     shim_command: list[str] = field(default_factory=lambda: ["-m", "wizard_connectors.mcp_shim"])
+    proxy: str | None = None  # WIZARD_PROXY: a URL or "direct"; None resolves it (see outbound.proxy_for)
 
 
 def resolve_cli_js(explicit: str | None, repo_root: Path) -> Path | None:
@@ -168,8 +171,25 @@ class GeminiCliRuntime:
         env.update({"GEMINI_CLI_HOME": str(home), "USERPROFILE": str(home), "HOME": str(home),
                     "APPDATA": str(home / "AppData" / "Roaming"), "LOCALAPPDATA": str(home / "AppData" / "Local"),
                     "TEMP": str(home / "tmp"), "TMP": str(home / "tmp"), "GEMINI_FORCE_FILE_STORAGE": "true",
-                    "NO_BROWSER": "true", "NO_COLOR": "1", "FORCE_COLOR": "0"})
+                    "NO_BROWSER": "true", "NO_COLOR": "1", "FORCE_COLOR": "0",
+                    # Trust the Windows certificate store (corporate TLS inspection); ignored by Node versions without it.
+                    "NODE_USE_SYSTEM_CA": "1"})
+        if not self.config.fake_responses:
+            self._apply_proxy(env)
         return env
+
+    def _apply_proxy(self, env: dict[str, str]) -> None:
+        """The CLI's HOME is the user's isolated folder, so it cannot read the person's own Gemini CLI proxy setting or
+        evaluate a Windows PAC script: hand it the proxy Wizard resolved for the Gemini API."""
+        names = ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy")
+        if self.config.proxy is None and any(env.get(n) for n in names):
+            return
+        proxy, _ = outbound.proxy_for(GEMINI_API_URL, self.config.proxy)
+        for name in names:
+            env.pop(name, None)
+        if proxy:
+            env["HTTPS_PROXY"] = env["HTTP_PROXY"] = proxy
+            env["NO_PROXY"] = ",".join(filter(None, [env.get("NO_PROXY") or env.pop("no_proxy", ""), "127.0.0.1,localhost"]))
 
     def build_env(self, home: Path, request: AgentRequest) -> dict[str, str]:
         env = self._base_env(home)

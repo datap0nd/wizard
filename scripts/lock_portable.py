@@ -5,10 +5,13 @@ Work PCs get no pip, no PyPI and no Node build. setup.ps1 downloads, from this r
   - every runtime wheel for CPython 3.13 / Windows x64 (dependencies.lock.json)
 and verifies each SHA-256 before use (same model as the B2B installer).
 
-  uv run python scripts/lock_portable.py            # resolve, download, hash, write the three lock files
-  uv run python scripts/lock_portable.py --publish  # also create the GitHub release with the archives
+  python scripts/lock_portable.py            # resolve, download, hash, write the three lock files
+  python scripts/lock_portable.py --publish  # also create the GitHub release with the archives
 
-Re-run after changing runtime dependencies in pyproject.toml, then commit the lock files."""
+Needs only a Python with pip (no uv, no compiled packages), so it runs on PCs where Application Control blocks
+unsigned binaries. Existing pins are kept as constraints: adding a dependency never silently upgrades the others
+(pass --upgrade to re-resolve everything). Re-run after changing runtime dependencies in pyproject.toml, then commit the
+lock files."""
 from __future__ import annotations
 
 import argparse
@@ -17,6 +20,8 @@ import json
 import shutil
 import subprocess
 import sys
+import tempfile
+import tomllib
 import urllib.request
 from pathlib import Path
 
@@ -33,35 +38,42 @@ def sha256(path: Path) -> str:
         return hashlib.file_digest(handle, "sha256").hexdigest()
 
 
-def run(*cmd: str) -> str:
-    return subprocess.run(cmd, check=True, capture_output=True, text=True, cwd=ROOT).stdout
+PLATFORM = ["--platform", "win_amd64", "--python-version", "3.13", "--implementation", "cp", "--abi", "cp313",
+            "--abi", "abi3", "--abi", "none", "--only-binary=:all:"]
 
 
-def resolve() -> list[tuple[str, str]]:
-    out = run("uv", "pip", "compile", "pyproject.toml", "--python-platform", "x86_64-pc-windows-msvc", "--python-version",
-              "3.13", "--no-header", "--no-annotate")
-    pins = []
-    for line in out.splitlines():
-        line = line.strip()
-        if line and not line.startswith("#"):
-            name, _, version = line.partition("==")
-            pins.append((name, version))
-    return pins
+def pip(*args: str) -> None:
+    subprocess.run([sys.executable, "-m", "pip", *args, "--disable-pip-version-check"], check=True, cwd=ROOT)
+
+
+def resolve(upgrade: bool) -> list[tuple[str, str]]:
+    """Pins for CPython 3.13 / Windows x64, resolved by pip for that target (not for this machine)."""
+    requirements = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["dependencies"]
+    with tempfile.TemporaryDirectory() as scratch:
+        constraints = Path(scratch) / "constraints.txt"
+        current = ROOT / "dependencies.lock.json"
+        pinned = [] if upgrade or not current.is_file() else json.loads(current.read_text(encoding="utf-8"))["packages"]
+        constraints.write_text("".join(f"{p['name']}=={p['version']}\n" for p in pinned), encoding="utf-8")
+        report = Path(scratch) / "report.json"
+        pip("install", "--dry-run", "--ignore-installed", "--quiet", "--report", str(report), "--target",
+            str(Path(scratch) / "target"), *PLATFORM, "-c", str(constraints), *requirements)
+        installs = json.loads(report.read_text(encoding="utf-8"))["install"]
+    return sorted((i["metadata"]["name"], i["metadata"]["version"]) for i in installs)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--publish", action="store_true")
+    parser.add_argument("--upgrade", action="store_true", help="re-resolve every pin instead of keeping current ones")
     args = parser.parse_args()
+    pins = resolve(args.upgrade)
     wheels = WORK / "wheels"
     shutil.rmtree(WORK, ignore_errors=True)
     wheels.mkdir(parents=True)
 
     packages = []
-    for name, version in resolve():
-        subprocess.run(["uvx", "pip", "download", f"{name}=={version}", "--no-deps", "--only-binary=:all:",
-                        "--platform", "win_amd64", "--python-version", "3.13", "--implementation", "cp", "--abi", "cp313",
-                        "--abi", "abi3", "--abi", "none", "-d", str(wheels), "-q"], check=True, cwd=ROOT)
+    for name, version in pins:
+        pip("download", f"{name}=={version}", "--no-deps", *PLATFORM, "-d", str(wheels), "-q")
     for wheel in sorted(wheels.glob("*.whl")):
         project = wheel.name.split("-")[0]
         version = wheel.name.split("-")[1]

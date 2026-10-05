@@ -16,7 +16,7 @@ from typing import Any
 
 import httpx
 
-from . import google_oauth
+from . import google_oauth, outbound
 from .prompting import system_prompt
 from .runtime import AgentFailure, AgentRequest, Emit, RuntimeKind, ToolBridge
 from .secret_box import SecretBox
@@ -73,8 +73,9 @@ class CodeAssistRuntime:
     kind: RuntimeKind = "code-assist"
 
     def __init__(self, model: str, secret_box: SecretBox, project: str | None = None, thinking: str = "high",
-                 api_base: str = API_BASE, transport: httpx.AsyncBaseTransport | None = None):
+                 api_base: str = API_BASE, transport: httpx.AsyncBaseTransport | None = None, proxy: str | None = None):
         self.model = model
+        self.proxy = proxy
         self.secret_box = secret_box
         self.project_override = project
         self.thinking = thinking
@@ -95,7 +96,10 @@ class CodeAssistRuntime:
         return {"ready": True, "reason": None}
 
     def _http(self) -> httpx.AsyncClient:
-        return httpx.AsyncClient(timeout=httpx.Timeout(180.0, connect=20.0), transport=self.transport)
+        timeout = httpx.Timeout(180.0, connect=20.0)
+        if self.transport:
+            return httpx.AsyncClient(timeout=timeout, transport=self.transport)
+        return outbound.client(self.api_base, override=self.proxy, timeout=timeout)
 
     async def _access_token(self, http: httpx.AsyncClient, request: AgentRequest) -> str:
         refresh_token = self.secret_box.read(self.token_path(request.user_home))
@@ -209,6 +213,12 @@ class CodeAssistRuntime:
                 calls.append(part["functionCall"])
 
     async def run(self, request: AgentRequest, emit: Emit, tools: ToolBridge, cancelled: Any) -> None:
+        try:
+            await self._run(request, emit, tools, cancelled)
+        except httpx.HTTPError as error:
+            raise AgentFailure("network_error", outbound.explain(error, self.api_base, self.proxy)) from None
+
+    async def _run(self, request: AgentRequest, emit: Emit, tools: ToolBridge, cancelled: Any) -> None:
         async with self._http() as http:
             token = await self._access_token(http, request)
             project = await self.resolve_project(http, token, request.user_id)

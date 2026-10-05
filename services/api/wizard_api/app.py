@@ -18,7 +18,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from wizard_agent import google_oauth
+from wizard_agent import google_oauth, outbound
 from wizard_agent.code_assist import CodeAssistRuntime
 from wizard_agent.gemini_cli import GeminiCliConfig, GeminiCliRuntime, resolve_cli_js
 from wizard_agent.replay import ReplayRuntime
@@ -35,6 +35,7 @@ from .runs import Busy, RunManager, entitled_to
 from .security import REQUEST_HEADER, SECURITY_HEADERS, SESSION_COOKIE, session_token, verify
 from .store import Store
 
+OWNER_ID = "local-owner"
 log = logging.getLogger("wizard.api")
 PUBLIC_PATHS = {"/api/v1/health", "/api/v1/ready", "/api/v1/bootstrap", "/api/v1/session/login",
                 "/api/v1/session/logout", "/api/v1/session/identities"}
@@ -92,9 +93,10 @@ def build_runtime(settings: Settings, secret_box: SecretBox, scopes: list[str]) 
             model=settings.model, internal_url=settings.internal_url, cli_js=cli_js, node=settings.node, scopes=scopes,
             google_cloud_project=settings.google_cloud_project, timeout_s=settings.run_timeout_s,
             fake_responses=Path(settings.gemini_fake_responses).resolve() if settings.gemini_fake_responses else None,
-            shim_command=[str(ROOT / "wizard_mcp_shim.py")]))
+            shim_command=[str(ROOT / "wizard_mcp_shim.py")], proxy=settings.proxy))
     if settings.runtime == "code-assist":
-        return CodeAssistRuntime(settings.model, secret_box, settings.google_cloud_project, settings.thinking)
+        return CodeAssistRuntime(settings.model, secret_box, settings.google_cloud_project, settings.thinking,
+                                 proxy=settings.proxy)
     return ReplayRuntime(settings.transcripts_dir, settings.replay_delay_s)
 
 
@@ -121,13 +123,15 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         services = build_services()
     registry = build_registry(services)
     identities = IdentityDirectory.load(settings.identities_file)
-    if settings.local_user_email:
-        # The person testing on this PC, with their real work email so Gemini account linking passes the email match.
-        owner = Identity(id="local-owner", email=settings.local_user_email.lower(), name=settings.local_user_name or "You",
-                         role="Owner (local test)", entitlements={s.id: SystemRights(reports=["*"], markets=["*"])
-                                                                  for s in services.catalog.systems})
-        identities = IdentityDirectory([owner, *[i for i in identities.all() if i.email != owner.email]])
     store = Store(settings.data_dir / "wizard.sqlite3")
+    if settings.install_mode or settings.local_user_email:
+        # The person at this PC, with every platform right. Their email is the Google account they link (so `whoami
+        # /upn` returning nothing, or a different domain, never blocks them); until then the configured one, if any.
+        linked = store.link(OWNER_ID)
+        email = (linked["google_email"] if linked else settings.local_user_email) or ""
+        owner = Identity(id=OWNER_ID, email=email.lower(), name=settings.local_user_name or "You", role="Owner (local test)",
+                         entitlements={s.id: SystemRights(reports=["*"], markets=["*"]) for s in services.catalog.systems})
+        identities = IdentityDirectory([owner, *[i for i in identities.all() if not owner.email or i.email != owner.email]])
     interrupted = store.mark_interrupted()
     secret_box = SecretBox()
     runtime = runtime or build_runtime(settings, secret_box, registry.scopes())
@@ -216,7 +220,13 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         link = store.link(identity.id)
         cli_present = any((GeminiCliRuntime.gemini_home(home) / ".gemini" / name).is_file()
                           for name in ("gemini-credentials.json", "oauth_creds.json"))
+        owner = identities.get(OWNER_ID)
+        note = None
+        if owner and identity.id != OWNER_ID and settings.require_google_email_match:
+            note = (f"{identity.name} is a synthetic test identity, so no real Google account can be linked to it. Sign "
+                    f"out and choose {owner.name} (Owner) to ask questions with your own Gemini account.")
         return {"linked": bool(link) or cli_present, "google_email": link["google_email"] if link else None,
+                "link_note": note, "adopts_google_email": identity.id == OWNER_ID,
                 "linked_at": link["linked_at"] if link else None, "method": link["method"] if link else
                 ("gemini-cli (host sign-in)" if cli_present else None), "cli_credentials_present": cli_present,
                 "secret_store": secret_box.kind, "needs_link": runtime.kind != "replay"}
@@ -489,17 +499,35 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         verifier = store.take_pending(body.state, identity.id, time.time() - 600)
         if not verifier:
             raise HTTPException(400, "This sign-in attempt expired. Start the link again.")
-        async with httpx.AsyncClient(timeout=30, transport=google_transport) as http:
+        # The first proxy lookup may evaluate a Windows PAC script (a PowerShell call): keep it off the event loop.
+        http = (httpx.AsyncClient(timeout=30, transport=google_transport) if google_transport
+                else await asyncio.to_thread(outbound.client, google_oauth.TOKEN_ENDPOINT, override=settings.proxy))
+        async with http:
             try:
                 tokens = await google_oauth.exchange_code(http, body.code, verifier)
                 info = await google_oauth.userinfo(http, tokens.access_token)
             except google_oauth.OAuthError as error:
                 store.audit(identity.id, "gemini:link", outcome=error.code)
                 raise HTTPException(400, error.message) from None
-        if settings.require_google_email_match and info["email"].lower() != identity.email.lower():
+            except httpx.HTTPError as error:
+                message = outbound.explain(error, google_oauth.TOKEN_ENDPOINT, settings.proxy)
+                log.warning("gemini link: %s", message)
+                store.audit(identity.id, "gemini:link", outcome="network_error")
+                raise HTTPException(502, message) from None
+        if not info["email"]:
+            store.audit(identity.id, "gemini:link", outcome="no_email")
+            raise HTTPException(400, "Google did not say which account signed in. Start the link again.")
+        if identity.id == OWNER_ID:
+            if info["email"].lower() != identity.email.lower():
+                identity = identity.model_copy(update={"email": info["email"].lower()})
+                identities.replace(identity)
+        elif settings.require_google_email_match and info["email"].lower() != identity.email.lower():
             store.audit(identity.id, "gemini:link", outcome="email_mismatch")
-            raise HTTPException(403, f"Sign in with your own enterprise Google account ({identity.email}). Wizard does not "
-                                     "run your questions under another person's Gemini entitlement.")
+            owner = identities.get(OWNER_ID)
+            hint = (f" {identity.name} is a synthetic test identity: sign out and choose {owner.name} (Owner) instead."
+                    if owner else "")
+            raise HTTPException(403, f"This Google account ({info['email']}) is not {identity.name}'s ({identity.email}). "
+                                     "Wizard does not run questions under another person's Gemini entitlement." + hint)
         home = settings.user_home(identity.id)
         secret_box.write(CodeAssistRuntime.token_path(home), tokens.refresh_token)
         google_oauth.write_cli_credentials(GeminiCliRuntime.gemini_home(home), tokens)

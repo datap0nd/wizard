@@ -13,6 +13,10 @@ export interface GeminiAccount {
   cli_credentials_present: boolean;
   secret_store: string;
   needs_link: boolean;
+  /** Set for a synthetic test identity on a work-PC install: no real Google account can be linked to it. */
+  link_note?: string | null;
+  /** The local Owner: its email becomes the Google account it links. */
+  adopts_google_email?: boolean;
 }
 
 export interface Bootstrap {

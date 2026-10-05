@@ -3,6 +3,44 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
+## 2026-10-05 — Work-PC Gemini sign-in fixes (first feedback from the work PC)
+
+**Feedback.** The user saw only the synthetic test identities, none with their email. Pasting the Google code gave
+"Wizard hit an internal error".
+
+**Causes and fixes:**
+- **No Owner identity.** The Owner was only added when `whoami /upn` produced an email, which often fails or returns a
+  directory domain that differs from Google. An install now always lists the Owner first, and the Owner takes its email
+  from the Google account it links (kept across restarts). Test identities explain that no real account can be linked
+  to them, and point to the Owner.
+- **The "internal error".** Wizard's Python called Google with certifi and no proxy. On a corporate PC, TLS inspection
+  and proxy/PAC routing break that, as the data-governance app found on the same PCs. All Google calls now verify
+  against the Windows certificate store (`truststore`) and use the resolved proxy, in this order:
+  1. `WIZARD_PROXY`
+  2. `HTTPS_PROXY`
+  3. the user's own Gemini CLI `proxy` setting
+  4. the Windows/PAC settings
+  5. direct
+
+  The Gemini CLI that Wizard starts receives that proxy and `NODE_USE_SYSTEM_CA=1`.
+- **Error messages.** A network failure is now a 502 that names the host, the cause and the route, with the
+  `WIZARD_PROXY` fix. `run.py --check` now tests both Google hosts.
+
+**Portable runtime.** Republished as `portable-cp313-win_amd64-6bfe2f91b55233a53dd8`, which adds `truststore` 0.10.4
+and leaves every other pin unchanged.
+
+**Verification.**
+- Smart App Control now blocks `uv` and the arm64 `pydantic_core` on this laptop (see
+  [decisions/2026-10-02-dependencies.md](decisions/2026-10-02-dependencies.md)).
+- Tests ran on the portable amd64 runtime: 122 passed. 2 failed, both contract tests that start the shim with `-m`
+  from a working directory; the embeddable Python ignores the working directory by design, so they run in CI.
+- `ruff`, `verify_spec` and the secret scan are clean. `mypy` and the full `verify_all` run in CI.
+- New tests cover:
+  - an Owner without an email, and one whose `whoami /upn` differs from the Google email;
+  - a test identity being refused with a pointer to the Owner;
+  - TLS and timeout failures returning 502 with an explanation;
+  - the proxy resolution order and the CLI environment.
+
 ## 2026-10-02 (evening) — Work-PC install, update loop and Gemini CLI task kit
 
 - **Install like B2B:** `setup.ps1` / `start.ps1` / `update_app.ps1` at the repository root, guide in

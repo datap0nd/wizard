@@ -116,3 +116,68 @@ def test_powershell_scripts_parse(script):
                "if ($errors) { $errors | ForEach-Object { $_.ToString() }; exit 1 }")
     result = subprocess.run([shell, "-NoProfile", "-Command", command], capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def _google(email: str):
+    import httpx
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "token" in str(request.url):
+            return httpx.Response(200, json={"access_token": "ya29.x", "refresh_token": "1//r", "expires_in": 3600})
+        return httpx.Response(200, json={"email": email})
+    return httpx.MockTransport(handler)
+
+
+def _link(client):
+    state = client.post("/api/v1/account/gemini/link", headers=HEADERS).json()["state"]
+    return client.post("/api/v1/account/gemini/link/complete", json={"state": state, "code": "4/abc"}, headers=HEADERS)
+
+
+def test_install_owner_exists_without_an_email_and_adopts_the_linked_google_account(tmp_path):
+    """`whoami /upn` is often empty or a different domain than Google: the Owner must still be able to link."""
+    settings = load_settings(env={"WIZARD_AGENT_RUNTIME": "code-assist", "WIZARD_LOCAL_USER_NAME": "Rafael"}, home=tmp_path)
+    with TestClient(create_app(settings, google_transport=_google("Rafael.Cunha@Company.example"))) as client:
+        first = client.get("/api/v1/session/identities").json()["identities"][0]
+        assert first == {"id": "local-owner", "name": "Rafael", "role": "Owner (local test)", "email": ""}
+        client.post("/api/v1/session/login", json={"user_id": "local-owner"}, headers=HEADERS)
+        linked = _link(client)
+        assert linked.status_code == 200 and linked.json()["google_email"] == "Rafael.Cunha@Company.example"
+        assert client.get("/api/v1/bootstrap").json()["identity"]["email"] == "rafael.cunha@company.example"
+    with TestClient(create_app(settings)) as client:  # restart: the Owner keeps the linked email
+        assert client.get("/api/v1/session/identities").json()["identities"][0]["email"] == "rafael.cunha@company.example"
+
+
+def test_install_owner_with_a_different_upn_still_links(tmp_path):
+    settings = load_settings(env={"WIZARD_AGENT_RUNTIME": "code-assist", "WIZARD_LOCAL_USER_EMAIL": "rcunha@corp.local"},
+                             home=tmp_path)
+    with TestClient(create_app(settings, google_transport=_google("rafael@company.example"))) as client:
+        client.post("/api/v1/session/login", json={"user_id": "local-owner"}, headers=HEADERS)
+        assert _link(client).json()["google_email"] == "rafael@company.example"
+
+
+def test_test_identity_on_an_install_points_to_the_owner(tmp_path):
+    settings = load_settings(env={"WIZARD_AGENT_RUNTIME": "code-assist", "WIZARD_LOCAL_USER_NAME": "Rafael"}, home=tmp_path)
+    with TestClient(create_app(settings, google_transport=_google("rafael@company.example"))) as client:
+        client.post("/api/v1/session/login", json={"user_id": "u-ceo"}, headers=HEADERS)
+        assert "choose Rafael (Owner)" in client.get("/api/v1/account/gemini").json()["link_note"]
+        refused = _link(client)
+        assert refused.status_code == 403 and "choose Rafael (Owner) instead" in refused.json()["error"]
+
+
+@pytest.mark.parametrize("failure", ["tls", "connect"])
+def test_link_network_failure_is_explained_not_an_internal_error(tmp_path, failure):
+    import httpx
+
+    def broken(request: httpx.Request) -> httpx.Response:
+        if failure == "tls":
+            raise httpx.ConnectError("[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer")
+        raise httpx.ConnectTimeout("timed out")
+
+    settings = load_settings(env={"WIZARD_AGENT_RUNTIME": "code-assist", "WIZARD_PROXY": "direct"}, home=tmp_path)
+    with TestClient(create_app(settings, google_transport=httpx.MockTransport(broken))) as client:
+        client.post("/api/v1/session/login", json={"user_id": "local-owner"}, headers=HEADERS)
+        response = _link(client)
+        message = response.json()["error"]
+        assert response.status_code == 502 and "could not reach oauth2.googleapis.com" in message and "WIZARD_PROXY" in message
+        assert ("TLS certificate is not trusted" if failure == "tls" else "timed out") in message
+        assert "internal error" not in message

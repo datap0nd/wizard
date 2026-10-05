@@ -28,12 +28,13 @@ export function AccountDialog({open, boot, onClose, onChanged}: {open: boolean; 
   }
   return (
     <Dialog open={open} onOpenChange={value => { if (!value) onClose(); }}>
-      <DialogContent title="Your account" description={`${boot.identity?.name} · ${boot.identity?.email} · ${boot.identity?.role}`}>
+      <DialogContent title="Your account" description={[boot.identity?.name, boot.identity?.email, boot.identity?.role].filter(Boolean).join(' · ')}>
         <div className="space-y-4 text-sm" data-testid="account-dialog">
           <section className="rounded-xl border border-line p-4">
             <h3 className="font-semibold">Gemini</h3>
             <p className="mt-1 text-ink-2">Runtime: {runtime?.label}. {runtime?.reason}</p>
             {!account?.needs_link ? <p className="mt-2 text-ink-3">Replay mode does not call Gemini, so no account is needed.</p>
+              : account.link_note && !account.linked ? <p className="mt-3 rounded-lg bg-warn-soft px-3 py-2 text-ink" data-testid="link-note">{account.link_note}</p>
               : account.linked ? <div className="mt-3 space-y-2">
                   <p>Linked{account.google_email ? <> as <strong>{account.google_email}</strong></> : ' through a host sign-in'}{account.linked_at ? ` on ${formatDate(account.linked_at, true)}` : ''}.</p>
                   <p className="text-xs text-ink-3">Questions run under this account only. Token storage: {account.secret_store}.</p>
@@ -43,7 +44,7 @@ export function AccountDialog({open, boot, onClose, onChanged}: {open: boolean; 
                   <p className="text-ink-2">Wizard runs your questions under your own enterprise Gemini entitlement, never someone else's.</p>
                   <ol className="list-decimal space-y-2 pl-5 text-[13.5px]">
                     <li><Button size="sm" variant="accent" onClick={() => void start()} data-testid="link-start"><ExternalLink />Sign in with Google</Button>
-                      <span className="mt-1 block text-xs text-ink-3">Use your own enterprise account ({boot.identity?.email}). A new tab opens at Google.</span></li>
+                      <span className="mt-1 block text-xs text-ink-3">{account.adopts_google_email || !boot.identity?.email ? 'Use your own enterprise Google account' : `Use your own enterprise account (${boot.identity.email})`}. A new tab opens at Google.</span></li>
                     <li>After signing in, Google shows an authorization code. Paste it here:
                       <form className="mt-2 flex gap-2" onSubmit={e => { e.preventDefault(); void complete(); }}>
                         <input value={code} onChange={e => setCode(e.target.value)} disabled={!pending} placeholder={pending ? 'Authorization code' : 'Start the sign-in first'}

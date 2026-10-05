@@ -117,7 +117,7 @@ def test_account_link_rejects_someone_elses_google_account(tmp_path):
         login(client, "u-ceo")
         state = client.post("/api/v1/account/gemini/link", headers=HEADERS).json()["state"]
         refused = client.post("/api/v1/account/gemini/link/complete", json={"state": state, "code": "4/abc"}, headers=HEADERS)
-        assert refused.status_code == 403 and "own enterprise Google account" in refused.json()["error"]
+        assert refused.status_code == 403 and "another person's Gemini entitlement" in refused.json()["error"]
         assert not client.get("/api/v1/account/gemini").json()["linked"]
         replayed = client.post("/api/v1/account/gemini/link/complete", json={"state": state, "code": "4/abc"}, headers=HEADERS)
         assert replayed.status_code == 400, "a sign-in attempt can be used once"

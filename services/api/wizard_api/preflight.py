@@ -25,6 +25,27 @@ def _line(status: str, text: str) -> None:
     print(f"{status:<5} {text}", flush=True)
 
 
+GOOGLE_HOSTS = ("https://oauth2.googleapis.com/token", "https://cloudcode-pa.googleapis.com/")
+
+
+def _check_google(settings: Settings) -> bool:
+    """Reach Google's sign-in and Gemini hosts exactly as linking and code-assist do (OS certificates, resolved proxy).
+    Any HTTP status means TLS and routing work; only connection failures count."""
+    import httpx
+
+    from wizard_agent import outbound
+    for url in GOOGLE_HOSTS:
+        proxy, _ = outbound.proxy_for(url, settings.proxy)
+        try:
+            with httpx.Client(verify=outbound.ssl_context(), proxy=proxy, trust_env=False, timeout=20) as http:
+                http.get(url)
+        except httpx.HTTPError as error:
+            _line("FAIL", outbound.explain(error, url, settings.proxy))
+            return False
+    _line("PASS", f"Google reachable (sign-in and Gemini API): {outbound.describe(GOOGLE_HOSTS[1], settings.proxy)}")
+    return True
+
+
 def _free_port() -> int:
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
@@ -131,10 +152,11 @@ def run_checks(settings: Settings) -> int:
     except ConfigError as error:
         _line("FAIL", str(error))
         return 2
-    if settings.local_user_email:
-        _line("PASS", f"your sign-in identity: {settings.local_user_name} <{settings.local_user_email}>")
-    else:
-        _line("WARN", "WIZARD_LOCAL_USER_EMAIL is not set: you can only use test identities and cannot link Gemini")
+    if settings.install_mode or settings.local_user_email:
+        _line("PASS", f"sign in as {settings.local_user_name or 'You'} (Owner); your email will be the Google account "
+                      "you link")
+    if settings.runtime != "replay":
+        gemini_ok = _check_google(settings) and gemini_ok
     if settings.runtime == "gemini-cli":
         from wizard_agent.gemini_cli import GeminiCliConfig, GeminiCliRuntime, resolve_cli_js
         from wizard_connectors.paths import ROOT

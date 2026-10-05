@@ -44,7 +44,16 @@ class Identity(BaseModel):
 class IdentityDirectory:
     def __init__(self, identities: list[Identity]):
         self.by_id = {i.id: i for i in identities}
-        self.by_email = {i.email.lower(): i for i in identities}
+        self.by_email = {i.email.lower(): i for i in identities if i.email}
+
+    def replace(self, identity: Identity) -> None:
+        """Swap an identity in place (the local Owner learns its email from the Google account it links)."""
+        old = self.by_id.get(identity.id)
+        if old and old.email:
+            self.by_email.pop(old.email.lower(), None)
+        self.by_id[identity.id] = identity
+        if identity.email:
+            self.by_email[identity.email.lower()] = identity
 
     @classmethod
     def load(cls, path: Path) -> IdentityDirectory:

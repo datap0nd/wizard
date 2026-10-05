@@ -87,11 +87,13 @@ Setup does, in order:
 
 This opens <http://127.0.0.1:8770>, and the window shows Wizard's log.
 
-1. Sign in as **your name (Owner (local test))**. This identity uses your real work email and has rights to every
-   platform. The other identities are SYNTHETIC test people with narrower rights, so you can see how permissions behave.
+1. Sign in as **your name (Owner (local test))**. It is always first and has rights to every platform. The other
+   identities are SYNTHETIC test people with narrower rights, so you can see how permissions behave; no real Google
+   account can be linked to them.
 2. Open **Account → Sign in with Google**, sign in with *your* enterprise account and paste the code Google shows.
-   Wizard keeps this sign-in in its own isolated Gemini home under `data\`; it does not reuse your personal Gemini CLI
-   sign-in.
+   The Owner takes its email from the Google account you link, so it does not matter whether `whoami /upn` found your
+   email or shows a different domain. Wizard keeps this sign-in in its own isolated Gemini home under `data\`; it does
+   not reuse your personal Gemini CLI sign-in.
 3. Ask one of the three demonstration questions. Until real content is enabled, the data is SYNTHETIC, labelled so on
    every answer.
 
@@ -161,3 +163,5 @@ To roll back by hand, copy `previous.json` over `current.json` and run `.\start.
 | `WARN Gemini CLI …` during setup | Read the line: Node or Gemini CLI path not found, or the CLI version changed what it sends. Paste it to Claude. |
 | `The new release failed its check` | The named `.env` setting is invalid; fix it and run `.\setup.ps1` again. The previous release is still active. |
 | Port 8770 is taken | Set `WIZARD_PORT=8771` in `.env`. |
+| `Wizard could not reach oauth2.googleapis.com …` when you paste the code, or `FAIL Wizard could not reach …` in the check | The message names the cause (untrusted certificate, proxy refused, timeout) and the route Wizard used. Wizard checks certificates against the Windows store and finds the proxy from `HTTPS_PROXY`, your own Gemini CLI `proxy` setting, or the Windows/PAC settings. If it still fails, put the proxy your browser uses in `.env` as `WIZARD_PROXY=http://host:port` and restart. |
+| "Test CEO is a synthetic test identity…" | Sign out and choose yourself (Owner). Test identities cannot use a real Google account. |
