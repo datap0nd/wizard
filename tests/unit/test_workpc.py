@@ -34,6 +34,15 @@ def test_install_folder_settings_resolve_relative_paths(tmp_path):
         load_settings(env={"WIZARD_LOCAL_USER_EMAIL": "not-an-email"}, home=tmp_path)
 
 
+def test_html_reports_folder_is_optional_and_must_exist(tmp_path):
+    assert load_settings(env={}, home=tmp_path).html_reports_dir is None
+    (tmp_path / "reports").mkdir()
+    settings = load_settings(env={"WIZARD_HTML_REPORTS_DIR": "reports"}, home=tmp_path)
+    assert settings.html_reports_dir == (tmp_path / "reports").resolve()
+    with pytest.raises(ConfigError, match="WIZARD_HTML_REPORTS_DIR"):
+        load_settings(env={"WIZARD_HTML_REPORTS_DIR": str(tmp_path / "missing")}, home=tmp_path)
+
+
 def test_local_owner_identity_signs_in_with_the_real_email(tmp_path):
     settings = load_settings(env={"WIZARD_LOCAL_USER_EMAIL": "Rafael@Corp.test", "WIZARD_LOCAL_USER_NAME": "Rafael"}, home=tmp_path)
     with TestClient(create_app(settings)) as client:

@@ -129,6 +129,11 @@ def run_checks(settings: Settings) -> int:
     print("Wizard installation check", flush=True)
     _line("INFO", f"runtime {settings.runtime} | model {settings.model} | auth {settings.auth_mode} | port {settings.port}")
     _line("INFO", f"data {settings.data_dir} | content {settings.content_dir or 'built-in SYNTHETIC examples'}")
+    if settings.html_reports_dir:
+        count = sum(1 for p in settings.html_reports_dir.rglob("*") if p.suffix.lower() in (".html", ".htm") and p.is_file())
+        _line("INFO", f"HTML reports {settings.html_reports_dir} ({count} HTML file{'' if count == 1 else 's'})")
+    else:
+        _line("INFO", "HTML reports not configured (WIZARD_HTML_REPORTS_DIR)")
     try:
         settings.data_dir.mkdir(parents=True, exist_ok=True)
         probe = settings.data_dir / ".write-test"

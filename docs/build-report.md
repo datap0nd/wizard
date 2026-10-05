@@ -3,6 +3,19 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
+## 2026-10-05 (latest) — HTML reports folder setting
+
+**Decision.** Power BI is dropped; standalone HTML reports (local files for now, fed from PostgreSQL) are the
+reporting path.
+
+**Setting.** `WIZARD_HTML_REPORTS_DIR` names the folder of HTML reports (subfolders allowed; relative paths resolve
+against the install folder). It is configuration only: no tool reads the folder yet.
+- A path that is not a folder stops start-up with a clear message.
+- `run.py --check` prints the folder and how many `.html`/`.htm` files it holds.
+- `setup.ps1` adds a commented `# WIZARD_HTML_REPORTS_DIR=` line to `.env` once, for you to fill in.
+
+**Tests.** `uv run python -m pytest tests`: 130 passed, 1 skipped. `verify_spec.py` passed.
+
 ## 2026-10-05 (later) — Dev diagnostics in the UI, minimal chrome
 
 **Feedback.** "Hey" failed after 59 s with "Gemini stopped with an error". Gemini CLI was named in three places.

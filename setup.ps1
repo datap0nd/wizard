@@ -136,6 +136,16 @@ function Set-EnvDefault([string]$Key, [string]$Value, [string]$Comment) {
     [IO.File]::WriteAllText($envPath, $text, $utf8)
     Write-Host "  .env: $Key=$Value"
 }
+function Add-EnvPlaceholder([string]$Key, [string]$Example, [string]$Comment) {
+    # A commented-out line you fill in yourself; added once, never when the key is already mentioned.
+    $text = ''
+    if (Test-Path -LiteralPath $envPath) { $text = [IO.File]::ReadAllText($envPath) }
+    if ($text -match "(?m)^\s*#?\s*$([regex]::Escape($Key))\s*=") { return }
+    if ($text -and -not $text.EndsWith("`n")) { $text += "`r`n" }
+    $text += "# $Comment`r`n# $Key=$Example`r`n"
+    [IO.File]::WriteAllText($envPath, $text, $utf8)
+    Write-Host "  .env: added a commented $Key line to fill in"
+}
 
 try {
     if ($Repository -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') { throw 'Repository must use owner/name format.' }
@@ -242,6 +252,7 @@ try {
     $node = Get-Command node.exe -ErrorAction SilentlyContinue
     if ($node) { Set-EnvDefault 'WIZARD_NODE' $node.Source '' }
     if ($env:GOOGLE_CLOUD_PROJECT) { Set-EnvDefault 'GOOGLE_CLOUD_PROJECT' $env:GOOGLE_CLOUD_PROJECT 'Enterprise Gemini project (from your environment)' }
+    Add-EnvPlaceholder 'WIZARD_HTML_REPORTS_DIR' 'C:\Reports\html' 'Folder with the HTML reports: remove the # and set your path'
 
     # Folders you own (never overwritten) and Gemini CLI task files (refreshed every update).
     foreach ($folder in @('outbox', 'data')) { New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir $folder) | Out-Null }

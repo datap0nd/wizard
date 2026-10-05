@@ -55,6 +55,8 @@ class Settings:
     transcripts_dir: Path = FIXTURES / "transcripts"
     web_dist: Path = ROOT / "apps" / "web" / "dist"
     content_dir: Path | None = None
+    # Folder of standalone HTML reports (local files for now). Configured only; no tool reads it yet.
+    html_reports_dir: Path | None = None
     max_concurrent_runs: int = 4
     run_timeout_s: int = 600
     max_tool_calls: int = 40
@@ -152,6 +154,12 @@ def load_settings(env: dict[str, str] | None = None, env_file: Path | None = Non
         if settings.runtime == "replay":
             raise ConfigError("WIZARD_CONTENT_DIR cannot be combined with the replay runtime: replay plays recorded "
                               "transcripts over the synthetic catalog. Use gemini-cli or code-assist.")
+    html_reports = get("WIZARD_HTML_REPORTS_DIR")
+    if html_reports:
+        settings.html_reports_dir = local(html_reports)
+        if not settings.html_reports_dir.is_dir():
+            raise ConfigError(f"WIZARD_HTML_REPORTS_DIR {settings.html_reports_dir} is not a folder. Point it at the folder "
+                              "that holds the HTML reports, or remove the line.")
     settings.local_user_email = get("WIZARD_LOCAL_USER_EMAIL")
     if settings.local_user_email and "@" not in settings.local_user_email:
         raise ConfigError("WIZARD_LOCAL_USER_EMAIL must be your work email address")
