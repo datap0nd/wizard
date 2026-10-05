@@ -765,6 +765,26 @@
         }
       }
     },
+    "/api/v1/dev/log": {
+      "get": {
+        "summary": "Dev Log",
+        "operationId": "dev_log_api_v1_dev_log_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Dev Log Api V1 Dev Log Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/account/gemini": {
       "get": {
         "summary": "Gemini Account",

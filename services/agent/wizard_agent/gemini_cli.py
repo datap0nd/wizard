@@ -339,8 +339,8 @@ class GeminiCliRuntime:
         ok = bool(result and result.get("status") == "success")
         if ok:
             await emit("agent_stats", {"stats": (result or {}).get("stats") or {}, "exit_code": proc.returncode})
-        error = (result or {}).get("error")
-        detail = " ".join(filter(None, [*errors, json.dumps(error) if isinstance(error, dict) else str(error or ""),
+        result_error = (result or {}).get("error")
+        detail = " ".join(filter(None, [*errors, json.dumps(result_error) if isinstance(result_error, dict) else str(result_error or ""),
                                         *list(stdout_other)[-8:], *list(stderr_tail)[-30:]]))
         code, message = ("ok", "") if ok else classify(detail)
         if self.config.diagnostics or not ok:

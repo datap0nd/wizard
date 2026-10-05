@@ -56,9 +56,15 @@ class LogBuffer(logging.Handler):
 
 
 LOG_BUFFER = LogBuffer()
-for _name in ("wizard", "uvicorn.error"):
-    if LOG_BUFFER not in logging.getLogger(_name).handlers:
-        logging.getLogger(_name).addHandler(LOG_BUFFER)
+
+
+def capture_logs() -> None:
+    """Attach the buffer to the root logger (Wizard and libraries) and to uvicorn's own logger (it does not propagate;
+    request tracebacks land there). Called at start-up because uvicorn replaces handlers when it configures logging."""
+    for name in ("", "uvicorn"):
+        logger = logging.getLogger(name)
+        if LOG_BUFFER not in logger.handlers:
+            logger.addHandler(LOG_BUFFER)
 PUBLIC_PATHS = {"/api/v1/health", "/api/v1/ready", "/api/v1/bootstrap", "/api/v1/session/login",
                 "/api/v1/session/logout", "/api/v1/session/identities"}
 TIMELINE_EVENTS = {"run_started", "status", "agent_session", "note", "tool_started", "tool_finished", "visual_added",
@@ -166,6 +172,10 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        if settings.diagnostics:
+            capture_logs()
+            log.info("Wizard %s started: runtime %s (%s), model %s, data %s, proxy %s", __version__, runtime.kind,
+                     runtime.label(), settings.model, settings.data_dir, settings.proxy or "resolved per request")
         if interrupted:
             log.warning("%d run(s) were interrupted by a restart and marked failed", interrupted)
         yield
