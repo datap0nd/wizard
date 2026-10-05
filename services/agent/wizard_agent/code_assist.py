@@ -69,6 +69,26 @@ def retry_delay(body: str, attempt: int) -> float:
     return min(90, max(backoff, hint)) * (1 + 0.2 * random.random())  # noqa: S311 - jitter, not security
 
 
+def summarize_quota(raw: dict[str, Any], model: str) -> dict[str, Any]:
+    """retrieveUserQuota buckets -> what the UI shows. The selected bucket is the configured model's most constraining one
+    (a model can have several, e.g. requests and tokens); a model variant such as `<model>-preview` also matches."""
+    buckets = []
+    for bucket in raw.get("buckets") or []:
+        if not isinstance(bucket, dict) or bucket.get("remainingFraction") is None:
+            continue
+        fraction = max(0.0, min(1.0, float(bucket["remainingFraction"])))
+        amount = str(bucket.get("remainingAmount") or "")
+        remaining = int(amount) if amount.isdigit() else None
+        limit = round(remaining / fraction) if remaining is not None and fraction > 0 else None
+        buckets.append({"model_id": str(bucket.get("modelId") or ""), "token_type": bucket.get("tokenType"),
+                        "remaining_fraction": fraction, "used_fraction": round(1 - fraction, 4), "remaining": remaining,
+                        "limit": limit, "reset_time": bucket.get("resetTime")})
+    exact = [b for b in buckets if b["model_id"] == model]
+    related = exact or [b for b in buckets if b["model_id"] and (b["model_id"].startswith(model) or model.startswith(b["model_id"]))]
+    selected = min(related, key=lambda b: b["remaining_fraction"]) if related else None
+    return {"model": model, "selected": selected, "buckets": buckets}
+
+
 class CodeAssistRuntime:
     kind: RuntimeKind = "code-assist"
 
@@ -102,7 +122,10 @@ class CodeAssistRuntime:
         return outbound.client(self.api_base, override=self.proxy, timeout=timeout)
 
     async def _access_token(self, http: httpx.AsyncClient, request: AgentRequest) -> str:
-        refresh_token = self.secret_box.read(self.token_path(request.user_home))
+        return await self._access_token_for(http, request.user_home)
+
+    async def _access_token_for(self, http: httpx.AsyncClient, user_home: Path) -> str:
+        refresh_token = self.secret_box.read(self.token_path(user_home))
         if not refresh_token:
             raise AgentFailure("gemini_signin_required", "Link your own Gemini account before asking questions.")
         try:
@@ -119,7 +142,18 @@ class CodeAssistRuntime:
             raise AgentFailure("model_error", f"Gemini {method} failed ({response.status_code}).")
         return dict(response.json())
 
-    async def resolve_project(self, http: httpx.AsyncClient, token: str, user_id: str) -> str:
+    async def quota(self, user_home: Path, user_id: str) -> dict[str, Any]:
+        """Gemini CLI's retrieveUserQuota for this person, under their own sign-in and project: per-model buckets with
+        remainingFraction, optional remainingAmount and resetTime. Read-only: never onboards an account."""
+        try:
+            async with self._http() as http:
+                token = await self._access_token_for(http, user_home)
+                project = await self.resolve_project(http, token, user_id, onboard=False)
+                return await self._post(http, token, "retrieveUserQuota", {"project": project})
+        except httpx.HTTPError as error:
+            raise AgentFailure("network_error", outbound.explain(error, self.api_base, self.proxy)) from None
+
+    async def resolve_project(self, http: httpx.AsyncClient, token: str, user_id: str, onboard: bool = True) -> str:
         """Mirror Gemini CLI: an onboarded account uses loadCodeAssist's project or GOOGLE_CLOUD_PROJECT; a new account is
         onboarded once. Never call generateContent with an empty project (Google answers with an opaque HTTP 500)."""
         if user_id in self._projects:
@@ -135,6 +169,8 @@ class CodeAssistRuntime:
         project = str(load.get("cloudaicompanionProject") or "")
         if isinstance(load.get("currentTier"), dict):
             resolved = project or configured
+        elif not onboard:
+            resolved = configured
         else:
             tier = next((t.get("id") for t in load.get("allowedTiers", []) if t.get("isDefault")), "free-tier")
             onboard = {**body, "tierId": tier}

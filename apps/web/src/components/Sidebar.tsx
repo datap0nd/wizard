@@ -3,6 +3,7 @@ import {Database, LogOut, MessagesSquare, MoreHorizontal, Pencil, Plus, ScrollTe
 import {cn} from '@/lib/utils';
 import {Button} from './ui/button';
 import {DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, Hint} from './ui/menu';
+import {QuotaRing} from './QuotaRing';
 import {SourceExplorer} from './SourceExplorer';
 import type {Bootstrap, ConversationSummary} from '@/types';
 
@@ -16,6 +17,7 @@ interface Props {
   onDelete: (id: string) => void;
   onAccount: () => void;
   onLog: () => void;
+  busy: boolean;
   onLogout: () => void;
   onAsk: (text: string) => void;
 }
@@ -27,7 +29,7 @@ function group(iso: string): string {
   return diff < day ? 'Today' : diff < 2 * day ? 'Yesterday' : diff < 7 * day ? 'Previous 7 days' : 'Earlier';
 }
 
-export function Sidebar({boot, conversations, currentId, onNew, onSelect, onRename, onDelete, onAccount, onLog, onLogout, onAsk}: Props) {
+export function Sidebar({boot, conversations, currentId, onNew, onSelect, onRename, onDelete, onAccount, onLog, onLogout, onAsk, busy}: Props) {
   const [tab, setTab] = useState<'chats' | 'sources'>('chats');
   const [query, setQuery] = useState('');
   const [renaming, setRenaming] = useState<{id: string; title: string} | null>(null);
@@ -96,7 +98,8 @@ export function Sidebar({boot, conversations, currentId, onNew, onSelect, onRena
         </>}
       </div>
       <div className="border-t border-line p-2">
-        <button type="button" onClick={onAccount} data-testid="account-button" className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left hover:bg-canvas">
+        <div className="flex items-center gap-1">
+        <button type="button" onClick={onAccount} data-testid="account-button" className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-2 text-left hover:bg-canvas">
           <span className="grid size-8 shrink-0 place-items-center rounded-full bg-canvas text-ink-2 shadow-sm"><UserRound className="size-4" /></span>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-[13px] font-medium">{boot.identity?.name}</span>
@@ -106,6 +109,8 @@ export function Sidebar({boot, conversations, currentId, onNew, onSelect, onRena
             </span>
           </span>
         </button>
+        <QuotaRing enabled={!!account?.needs_link && !!account.linked} busy={busy} />
+        </div>
         <div className="flex">
           <Button variant="ghost" size="xs" className="flex-1 justify-start text-ink-3" onClick={onLogout}><LogOut />Sign out</Button>
           {boot.diagnostics && <Button variant="ghost" size="xs" className="text-ink-3" onClick={onLog} data-testid="log-button"><ScrollText />Log</Button>}

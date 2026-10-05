@@ -19,6 +19,26 @@ export interface GeminiAccount {
   adopts_google_email?: boolean;
 }
 
+export interface QuotaBucket {
+  model_id: string;
+  token_type: string | null;
+  remaining_fraction: number;
+  used_fraction: number;
+  remaining: number | null;
+  limit: number | null;
+  reset_time: string | null;
+}
+
+export interface GeminiQuota {
+  available: boolean;
+  reason?: string;
+  code?: string;
+  model?: string;
+  selected?: QuotaBucket | null;
+  buckets?: QuotaBucket[];
+  fetched_at?: string;
+}
+
 export interface Bootstrap {
   version: string;
   auth: {mode: 'fixture' | 'trusted-header'; login_required: boolean};

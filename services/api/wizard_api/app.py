@@ -20,10 +20,10 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from wizard_agent import google_oauth, outbound
-from wizard_agent.code_assist import CodeAssistRuntime
+from wizard_agent.code_assist import CodeAssistRuntime, summarize_quota
 from wizard_agent.gemini_cli import GeminiCliConfig, GeminiCliRuntime, inherited_project, resolve_cli_js
 from wizard_agent.replay import ReplayRuntime
-from wizard_agent.runtime import AgentRuntime
+from wizard_agent.runtime import AgentFailure, AgentRuntime
 from wizard_agent.secret_box import SecretBox
 from wizard_connectors.content import errors, validate_content
 from wizard_connectors.entitlements import Identity, IdentityDirectory, SystemRights
@@ -581,6 +581,30 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         store.save_link(identity.id, info["email"], settings.google_cloud_project, "user-code")
         store.audit(identity.id, "gemini:link")
         return await account_status(identity)
+
+    # The person's own Gemini quota (Gemini CLI's retrieveUserQuota), under their own sign-in and project.
+    quota_client = runtime if isinstance(runtime, CodeAssistRuntime) else CodeAssistRuntime(
+        settings.model, secret_box, gemini_project(settings), settings.thinking, proxy=settings.proxy,
+        transport=google_transport)
+    quota_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+
+    @app.get("/api/v1/account/gemini/quota")
+    async def gemini_quota(request: Request, refresh: bool = False) -> dict[str, Any]:
+        identity = me(request)
+        if runtime.kind == "replay":
+            return {"available": False, "reason": "Replay mode does not use Gemini."}
+        cached = quota_cache.get(identity.id)
+        if cached and not refresh and time.time() - cached[0] < 60:
+            return cached[1]
+        try:
+            raw = await quota_client.quota(settings.user_home(identity.id), identity.id)
+            result: dict[str, Any] = {"available": True, **summarize_quota(raw, settings.model),
+                                      "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+        except AgentFailure as failure:
+            result = {"available": False, "code": failure.code, "reason": failure.message}
+            log.warning("gemini quota for %s: %s %s", identity.id, failure.code, failure.message)
+        quota_cache[identity.id] = (time.time(), result)
+        return result
 
     @app.delete("/api/v1/account/gemini")
     async def gemini_unlink(request: Request) -> dict[str, Any]:

@@ -883,6 +883,48 @@
         }
       }
     },
+    "/api/v1/account/gemini/quota": {
+      "get": {
+        "summary": "Gemini Quota",
+        "operationId": "gemini_quota_api_v1_account_gemini_quota_get",
+        "parameters": [
+          {
+            "name": "refresh",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Refresh"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Gemini Quota Api V1 Account Gemini Quota Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/internal/v1/tools": {
       "get": {
         "summary": "Internal Tools",

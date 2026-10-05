@@ -3,6 +3,21 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
+## 2026-10-05 (evening) — Gemini quota ring
+
+- **What it shows.** A small ring next to the account at the bottom left shows how much of the person's quota for the
+  configured model (`gemini-3.8-flash`) is used. The hover text gives the % left (or N of M left) and the reset time.
+- **Where the number comes from.** `GET /api/v1/account/gemini/quota` calls the Code Assist `retrieveUserQuota` method,
+  the call Gemini CLI 0.62 makes. It uses the person's own linked sign-in and their project. The lookup:
+  - never onboards an account;
+  - is cached for a minute;
+  - refreshes after each answer and every 5 minutes.
+
+  The ring is hidden when quota is unavailable, and the reason goes to the server log.
+- **Selection.** `summarize_quota` picks the configured model's most constraining bucket; a `-preview` variant also
+  matches.
+- **Not verified live.** Real bucket names for the enterprise licence are still to be confirmed on the work PC.
+
 ## 2026-10-05 (latest) — HTML reports folder setting
 
 **Decision.** Power BI is dropped; standalone HTML reports (local files for now, fed from PostgreSQL) are the

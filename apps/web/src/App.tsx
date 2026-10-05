@@ -116,7 +116,7 @@ export function App() {
       <Sidebar boot={boot} conversations={conversations} currentId={currentId} onNew={newChat}
         onSelect={id => void loadConversation(id)} onRename={(id, t) => void api.rename(id, t).then(refreshConversations)}
         onDelete={id => void api.remove(id).then(async () => { if (id === currentId) newChat(); await refreshConversations(); })}
-        onAccount={() => setAccountOpen(true)} onLog={() => setLogOpen(true)} onLogout={() => void api.logout().then(() => { localStorage.removeItem(LAST); void loadBoot(); })}
+        busy={busy} onAccount={() => setAccountOpen(true)} onLog={() => setLogOpen(true)} onLogout={() => void api.logout().then(() => { localStorage.removeItem(LAST); void loadBoot(); })}
         onAsk={text => setDraft(text)} />
       <main className="flex min-w-0 flex-1 flex-col">
         <div className="flex flex-wrap items-center gap-2 border-b border-line bg-canvas px-4 py-2.5 md:px-6">
