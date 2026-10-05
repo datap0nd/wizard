@@ -92,3 +92,21 @@ test('keyboard users can ask a question and reach the actions', async ({page}) =
   await page.keyboard.press('Enter');
   await expect(page.getByTestId('evidence-drawer')).toBeVisible();
 });
+
+test('a file attached to a question is read first, then shown under the question', async ({page}) => {
+  await signIn(page, 'u-ceo');
+  await page.getByTestId('file-input').setInputFiles([
+    {name: 'gulf markets.csv', mimeType: 'text/csv', buffer: Buffer.from('Market,Units\nEG,1200\nSA,4500\n')},
+    {name: 'broken.pptx', mimeType: 'application/octet-stream', buffer: Buffer.from('not a deck')},
+  ]);
+  const files = page.getByTestId('pending-file');
+  await expect(files.filter({hasText: 'gulf markets.csv'})).toHaveAttribute('data-state', 'ok');
+  await expect(files.filter({hasText: 'broken.pptx'})).toHaveAttribute('data-state', 'failed');
+  await page.getByRole('button', {name: 'Remove broken.pptx'}).click();
+  await page.getByLabel('Your question').fill('Which market gave us the best return on marketing investment last quarter?');
+  await page.getByLabel('Your question').press('Enter');
+  await expect(page.getByTestId('sent-files')).toContainText('F1');
+  await expect(page.getByTestId('sent-files')).toContainText('gulf markets.csv');
+  await expect(page.getByTestId('pending-file')).toHaveCount(0);
+  await expect(page.getByTestId('run-card').first()).toHaveAttribute('data-status', 'succeeded', {timeout: 30_000});
+});

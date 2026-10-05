@@ -3,6 +3,73 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
+## 2026-10-05 (late) — Company documentation kit, expert quizzes and attached files
+
+Decision: [2026-10-05 company documentation](decisions/2026-10-05-company-documentation.md).
+
+**Knowledge retrieval.**
+- `wizard_lookup_definitions` now ranks `##` sections (glossary entries one by one) with BM25 and stopwords, and
+  boosts title, aliases, tags and summary.
+- A long note returns its lead plus the matching sections and the headings it left out.
+- New tools `wizard_browse_knowledge` (index with summaries) and `wizard_read_knowledge` (by id); 18 tools in all.
+- Notes gain `type`, `summary`, `aliases`, `related`, `sources`, `updated`, `reviewed`, `reviewed_by`, under
+  [the knowledge standard](../templates/content/schema/knowledge-standard.md).
+- The content validator enforces the standard: flat front matter, unique kebab-case ids, known types, ISO dates, no
+  email addresses. It warns about missing summaries, oversized notes and dangling `related` ids.
+- A content folder with notes but no report catalogs is accepted.
+
+**Document converter (`services/documents`, `scripts/wizard_docs.py`, `docs.ps1`).**
+- Office through pywin32, following data_governance's rules: borrow a running application, open read-only in place,
+  macros off, no SaveAs, restore settings, quit only what it started.
+  - PowerPoint: text, tables, SmartArt, chart values, speaker notes, pictures of mostly-visual slides.
+  - Excel: column profiles with formulas, pivot tables, charts, named ranges.
+  - Word: headings and tables.
+  - Outlook: display names, body, attachments.
+- Standard-library fallback for plain .docx/.pptx/.xlsx, plus .eml, text, CSV and HTML. Office parts that declare a
+  DOCTYPE are refused.
+- Bulk inbox:
+  - stable source ids (`S-` + SHA-256 prefix), with duplicates recognised;
+  - email attachments followed and linked to their email;
+  - email addresses and phone numbers masked;
+  - folders listed in `inbox/_sources.txt` read in place (for NASCA files);
+  - incremental re-runs.
+- Outlook export of chosen folders and dates; private and confidential items skipped.
+- Kit commands: progress, next sources, topics, coverage, quiz check, quiz answers.
+- `run.py --check` reports whether pywin32 loads.
+- pywin32 312 is added to the portable runtime (release `portable-cp313-win_amd64-19ef1695a72713055a2f`). It was
+  verified to load from a vendor folder in the x64 embeddable Python with `site` off.
+
+**Gemini CLI tasks 20-25 and 30-31.**
+- Collect, digest (Gemini 3.5 Flash), topic map, write, glossary and ambiguous terms, coverage.
+- One HTML quiz per area and stakeholder (`workpc/templates/quiz-template.html`: offline, autosave, "Save my answers"
+  produces a filled copy to attach, "Copy my answers" gives a base64 block safe in quoted replies).
+- Applying answers as cited sources (`A-<quiz>-<question>`).
+- `setup.ps1` installs `docs.ps1`, `templates\` and `documents\quiz-*`, and refreshes `content\schema\` and
+  `content\.gemini\commands\`.
+
+**Attached files.**
+- Upload or "From this PC" (`WIZARD_ATTACHMENT_FOLDERS`; off behind SSO).
+- Conversion in a time-limited child process, one at a time.
+- Files bound to the run as F1, F2…, listed in Gemini's prompt and read with `wizard_read_attachment`.
+- Evidence uses the new data mode `USER_PROVIDED` (above SYNTHETIC, below approved sources). The drawer shows the text
+  read.
+
+**Tests.**
+- `verify_all.sh --allow-blocked=live-parity`: every required layer PASS.
+  - 189 Python tests, including new converter tests with fake COM objects, kit, knowledge, attachment and validator
+    tests.
+  - The real Gemini CLI accepts all 18 tool schemas.
+  - 12 Playwright tests, including attaching a file.
+  - live-parity is BLOCKED (no corporate access).
+- The quiz page was exercised in a browser: answer, copy, reopen the saved answers, phone width.
+
+**Not verified here.**
+- Office and Outlook automation: this development session cannot start Office COM servers (`CO_E_SERVER_EXEC_FAILURE`).
+  The first real run is task 20 on the work PC, which reports every file it could not read.
+- `uv.exe` is now blocked by Application Control on the development PC, so `uv.lock` was not refreshed for pywin32.
+  CI re-locks on Linux, where pywin32 is skipped. `WIZARD_E2E_PYTHON` lets Playwright start the E2E server without
+  uv.
+
 ## 2026-10-05 (night) — Tool schemas checked against Gemini's rules (fixes 400 on every question)
 
 **Work PC.** Every question failed with

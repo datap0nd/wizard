@@ -6,6 +6,12 @@
       "runtimeExecutable": "uv",
       "runtimeArgs": ["run", "python", "-m", "wizard_api"],
       "port": 8770
+    },
+    {
+      "name": "wizard-venv",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": ["run.py"],
+      "port": 8770
     }
   ]
 }

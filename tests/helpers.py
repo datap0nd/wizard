@@ -26,6 +26,7 @@ class MemoryRecorder:
         self.evidence: list[dict[str, Any]] = []
         self.visuals: list[dict[str, Any]] = []
         self.checks: list[dict[str, Any]] = []
+        self.files = {}
 
     def add_evidence(self, payload: dict[str, Any]) -> str:
         evidence_id = f"E{len(self.evidence) + 1}"
@@ -46,9 +47,18 @@ class MemoryRecorder:
     def add_check(self, payload: dict[str, Any]) -> None:
         self.checks.append(payload)
 
+    files: dict[str, tuple[dict[str, Any], str]]
+
+    def attachments(self) -> list[dict[str, Any]]:
+        return [row for row, _ in self.files.values()]
+
+    def attachment(self, label: str) -> tuple[dict[str, Any], str] | None:
+        return self.files.get(label)
+
 
 def make_settings(tmp_path: Path, **overrides: str) -> Settings:
-    env = {"WIZARD_DATA_DIR": str(tmp_path / "var"), "WIZARD_AGENT_RUNTIME": "replay", **overrides}
+    env = {"WIZARD_DATA_DIR": str(tmp_path / "var"), "WIZARD_AGENT_RUNTIME": "replay", "WIZARD_ATTACHMENT_OFFICE": "never",
+           "WIZARD_ATTACHMENT_FOLDERS": "none", **overrides}
     return load_settings(env=env, env_file=tmp_path / "absent.env")
 
 

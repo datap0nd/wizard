@@ -5,7 +5,9 @@
 
 ## Steps
 
-1. List the subfolders of `content\inbox\`. Each subfolder is one platform, named by its short lowercase id
+1. Run `.\docs.ps1 extract` first: Office files and emails are converted to text in `content\inbox\_text\` (you
+   cannot read them otherwise). PDFs and images you read directly. List the subfolders of `content\inbox\` (not the
+   ones starting with `_`). Each subfolder is one platform, named by its short lowercase id
    (`asap`, `gscm`, `nerp`, and possibly `smartswitch`, `share`, others). If documents sit directly in `content\inbox\`
    or a folder name is unclear, ask the user which platform they belong to.
 2. For every file: name, type, size, and a one-line description of what it contains after reading it

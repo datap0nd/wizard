@@ -10,6 +10,9 @@ dependencies = [
   "httpx>=0.28",
   # Verify HTTPS against the OS certificate store (corporate TLS inspection), as the data-governance app does.
   "truststore>=0.10",
+  # Office automation (PowerPoint, Excel, Word, Outlook) for documents and chat attachments; opens NASCA-protected files
+  # through Office for the signed-in user, as the data-governance app does.
+  "pywin32>=306; sys_platform == 'win32'",
 ]
 
 [dependency-groups]
@@ -30,14 +33,15 @@ packages = [
   "services/agent/wizard_agent",
   "services/connectors/wizard_connectors",
   "services/checks/wizard_checks",
+  "services/documents/wizard_documents",
 ]
 
 [tool.hatch.build]
-dev-mode-dirs = ["services/api", "services/agent", "services/connectors", "services/checks"]
+dev-mode-dirs = ["services/api", "services/agent", "services/connectors", "services/checks", "services/documents"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["services/api", "services/agent", "services/connectors", "services/checks", "."]
+pythonpath = ["services/api", "services/agent", "services/connectors", "services/checks", "services/documents", "."]
 markers = [
   "gemini_cli: runs the real Gemini CLI with fake model responses (needs WIZARD_GEMINI_CLI_JS or .tools)",
   "live: needs live corporate sources or a signed-in Gemini account; reported as BLOCKED when not configured",
@@ -47,7 +51,7 @@ addopts = "-q -p no:cacheprovider -p no:tmpdir"
 [tool.ruff]
 line-length = 120
 target-version = "py311"
-src = ["services/api", "services/agent", "services/connectors", "services/checks", "scripts", "tests"]
+src = ["services/api", "services/agent", "services/connectors", "services/checks", "services/documents", "scripts", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "S"]

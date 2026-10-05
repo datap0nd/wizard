@@ -261,6 +261,19 @@ try {
         Copy-Tree (Join-Path $release 'templates\content') $content
         Write-Host 'Created content\ from the documentation template (put platform documents in content\inbox\<platform>\).'
     }
+    # Wizard-owned parts of content\ follow the release (writing standard, schemas, Gemini commands); notes, catalogs,
+    # registers and the inbox are yours and never touched.
+    foreach ($part in @('schema', '.gemini\commands\wizard')) {
+        $target = Join-Path $content $part
+        New-Item -ItemType Directory -Force -Path $target | Out-Null
+        Copy-Item -Path (Join-Path $release "templates\content\$part\*") -Destination $target -Force
+    }
+    foreach ($folder in @('content\inbox\files', 'content\knowledge', 'content\register', 'documents\quiz-questions', 'documents\quiz-answers')) {
+        New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir $folder) | Out-Null
+    }
+    $templates = Join-Path $InstallDir 'templates'
+    if (Test-Path -LiteralPath $templates) { Remove-Item -LiteralPath $templates -Recurse -Force }
+    Copy-Tree (Join-Path $release 'workpc\templates') $templates
     $tasks = Join-Path $InstallDir 'tasks'
     if (Test-Path -LiteralPath $tasks) { Remove-Item -LiteralPath $tasks -Recurse -Force }
     Copy-Tree (Join-Path $release 'workpc\tasks') $tasks
@@ -283,7 +296,7 @@ try {
     [IO.File]::WriteAllText($pending, $pointer, $utf8)
     $current = Join-Path $InstallDir 'current.json'
     if (Test-Path -LiteralPath $current) { [IO.File]::Replace($pending, $current, (Join-Path $InstallDir 'previous.json')) } else { [IO.File]::Move($pending, $current) }
-    foreach ($name in @('setup.ps1', 'start.ps1', 'update_app.ps1')) { Copy-Item -LiteralPath (Join-Path $release $name) -Destination (Join-Path $InstallDir $name) -Force }
+    foreach ($name in @('setup.ps1', 'start.ps1', 'update_app.ps1', 'docs.ps1')) { Copy-Item -LiteralPath (Join-Path $release $name) -Destination (Join-Path $InstallDir $name) -Force }
 
     # Keep the three newest releases (the selected and previous ones are always kept).
     $keep = @($release)
@@ -297,6 +310,7 @@ try {
     Write-Host "Active release: $release"
     if ($checkCode -eq 1) { Write-Host 'Gemini CLI is not ready yet (see the check above). Replay mode works: set WIZARD_AGENT_RUNTIME=replay in .env to demo without Gemini.' -ForegroundColor Yellow }
     Write-Host 'Next: .\start.ps1   (Gemini CLI tasks: run gemini in this folder, trust the folder, then /wizard:tasks)'
+    Write-Host 'Company documentation: in Gemini CLI, /wizard:tasks 20-25 (then 30-31 for expert quizzes); .\docs.ps1 help lists the kit.'
 } catch {
     Write-Host "Setup failed: $($_.Exception.Message)" -ForegroundColor Red
     exit 1

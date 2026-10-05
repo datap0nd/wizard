@@ -1,4 +1,4 @@
-export type DataMode = 'SYNTHETIC' | 'DATED_APPROVED_SNAPSHOT' | 'LIVE_VERIFIED';
+export type DataMode = 'SYNTHETIC' | 'DATED_APPROVED_SNAPSHOT' | 'LIVE_VERIFIED' | 'USER_PROVIDED';
 export type CheckStatus = 'CHECKED' | 'NOT_CHECKED' | 'DISCREPANCY';
 export type RunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
 export type RuntimeKind = 'gemini-cli' | 'code-assist' | 'replay';
@@ -49,7 +49,28 @@ export interface Bootstrap {
   /** Dev mode: show full run diagnostics and the server log. */
   diagnostics?: boolean;
   data_modes?: DataMode[];
+  attachments?: {from_this_pc: boolean; max_mb: number};
 }
+
+/** A file attached to a question: converted to text that Gemini reads with wizard_read_attachment. */
+export interface Attachment {
+  id: string;
+  /** F1, F2... once sent with a question. */
+  label: string | null;
+  filename: string;
+  kind: 'slides' | 'spreadsheet' | 'document' | 'email' | 'text';
+  bytes: number;
+  origin: 'upload' | 'local';
+  status: 'ok' | 'failed' | 'empty';
+  method: string | null;
+  chars: number;
+  note: string | null;
+  parts: number;
+  created_at: string;
+  run_id: string | null;
+}
+
+export interface LocalFile { path: string; name: string; kind: Attachment['kind']; bytes: number; folder: string; modified: string }
 
 export interface ConversationSummary { id: string; title: string; created_at: string; updated_at: string }
 
@@ -81,6 +102,8 @@ export interface Evidence extends EvidenceSummary {
   digest: string;
   caveats: string[];
   locator: {system: string; report_id: string; open_url: string | null};
+  /** Attached files: the text Gemini read (no rows). */
+  excerpt?: string;
 }
 
 export interface Visual {
@@ -125,6 +148,7 @@ export interface RunRecord {
   events: RunEvent[];
   visuals: Visual[];
   evidence: EvidenceSummary[];
+  attachments?: Attachment[];
   active: boolean;
 }
 
@@ -164,6 +188,8 @@ export interface RunView {
   diagnostics: Record<string, unknown>[];
   warnings: string[];
   lastSeq: number;
+  /** Files sent with this question (F1, F2...). */
+  attachments: Attachment[];
   createdAt: string;
   finishedAt: string | null;
   parentRunId: string | null;

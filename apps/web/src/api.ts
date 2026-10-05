@@ -1,15 +1,23 @@
-import type {Bootstrap, ConversationSummary, Evidence, GeminiAccount, GeminiQuota, Report, RunRecord, SourceCatalog, SourceSummary} from './types';
+import type {Attachment, Bootstrap, ConversationSummary, Evidence, GeminiAccount, GeminiQuota, LocalFile, Report, RunRecord, SourceCatalog, SourceSummary} from './types';
 
 export class ApiError extends Error {
   constructor(message: string, public status: number, public code?: string, public loginRequired = false) { super(message); }
 }
 
-async function request<T>(path: string, init: {method?: string; body?: unknown} = {}): Promise<T> {
-  const method = init.method ?? (init.body === undefined ? 'GET' : 'POST');
+async function request<T>(path: string, init: {method?: string; body?: unknown; file?: File} = {}): Promise<T> {
+  const method = init.method ?? (init.body === undefined && !init.file ? 'GET' : 'POST');
   const headers: Record<string, string> = {};
   if (method !== 'GET') headers['X-Wizard-Request'] = '1';
-  if (init.body !== undefined) headers['Content-Type'] = 'application/json';
-  const response = await fetch(path, {method, headers, body: init.body === undefined ? undefined : JSON.stringify(init.body), credentials: 'same-origin'});
+  let body: BodyInit | undefined;
+  if (init.file) {
+    headers['Content-Type'] = 'application/octet-stream';
+    headers['X-File-Name'] = encodeURIComponent(init.file.name);
+    body = init.file;
+  } else if (init.body !== undefined) {
+    headers['Content-Type'] = 'application/json';
+    body = JSON.stringify(init.body);
+  }
+  const response = await fetch(path, {method, headers, body, credentials: 'same-origin'});
   let payload: Record<string, any> = {};
   try { payload = await response.json(); } catch { /* not JSON */ }
   if (!response.ok) {
@@ -30,7 +38,11 @@ export const api = {
   conversation: (id: string) => request<{conversation: ConversationSummary; runs: RunRecord[]}>(`/api/v1/conversations/${encodeURIComponent(id)}`),
   rename: (id: string, title: string) => request<{ok: true}>(`/api/v1/conversations/${encodeURIComponent(id)}`, {method: 'PATCH', body: {title}}),
   remove: (id: string) => request<{ok: true}>(`/api/v1/conversations/${encodeURIComponent(id)}`, {method: 'DELETE'}),
-  ask: (question: string, conversationId: string | null) => request<{run_id: string; conversation_id: string}>('/api/v1/runs', {body: {question, conversation_id: conversationId}}),
+  ask: (question: string, conversationId: string | null, attachmentIds: string[] = []) => request<{run_id: string; conversation_id: string; attachments: Attachment[]}>('/api/v1/runs', {body: {question, conversation_id: conversationId, attachment_ids: attachmentIds}}),
+  upload: (file: File) => request<{attachment: Attachment}>('/api/v1/attachments', {file}),
+  localFiles: (q = '') => request<{enabled: boolean; folders: string[]; files: LocalFile[]}>('/api/v1/attachments/local' + (q ? `?q=${encodeURIComponent(q)}` : '')),
+  attachLocal: (path: string) => request<{attachment: Attachment}>('/api/v1/attachments/local', {body: {path}}),
+  removeAttachment: (id: string) => request<{ok: true}>(`/api/v1/attachments/${encodeURIComponent(id)}`, {method: 'DELETE'}),
   check: (runId: string) => request<{run_id: string; conversation_id: string}>(`/api/v1/runs/${encodeURIComponent(runId)}/check`, {body: {}}),
   run: (runId: string) => request<RunRecord>(`/api/v1/runs/${encodeURIComponent(runId)}`),
   cancel: (runId: string) => request<{cancelled: boolean}>(`/api/v1/runs/${encodeURIComponent(runId)}/cancel`, {body: {}}),

@@ -1,4 +1,4 @@
-import {AlertTriangle, BadgeCheck, CircleDashed, FlaskConical, PlayCircle, Radio, Sparkles} from 'lucide-react';
+import {AlertTriangle, BadgeCheck, CircleDashed, FlaskConical, Paperclip, PlayCircle, Radio, Sparkles} from 'lucide-react';
 import {Hint} from './ui/menu';
 import {CHECK_TEXT, DATA_MODE_TEXT} from '@/format';
 import {cn} from '@/lib/utils';
@@ -9,9 +9,10 @@ const base = 'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 tex
 export function DataModeBadge({mode, className}: {mode: DataMode | null | undefined; className?: string}) {
   if (!mode) return <span className={cn(base, 'border-line bg-surface text-ink-3', className)}>No source data</span>;
   const text = DATA_MODE_TEXT[mode];
-  const tone = mode === 'SYNTHETIC' ? 'border-warn-line bg-warn-soft text-warn' : mode === 'LIVE_VERIFIED' ? 'border-ok-line bg-ok-soft text-ok' : 'border-accent-line bg-accent-soft text-accent';
+  const tone = mode === 'SYNTHETIC' ? 'border-warn-line bg-warn-soft text-warn' : mode === 'LIVE_VERIFIED' ? 'border-ok-line bg-ok-soft text-ok'
+    : mode === 'USER_PROVIDED' ? 'border-line-2 bg-surface text-ink-2' : 'border-accent-line bg-accent-soft text-accent';
   return <Hint text={text.hint}><span tabIndex={0} className={cn(base, tone, className)} data-testid="data-mode" data-mode={mode}>
-    {mode === 'SYNTHETIC' ? <FlaskConical /> : mode === 'LIVE_VERIFIED' ? <Radio /> : <BadgeCheck />}{mode === 'SYNTHETIC' ? 'SYNTHETIC' : text.label}
+    {mode === 'SYNTHETIC' ? <FlaskConical /> : mode === 'LIVE_VERIFIED' ? <Radio /> : mode === 'USER_PROVIDED' ? <Paperclip /> : <BadgeCheck />}{mode === 'SYNTHETIC' ? 'SYNTHETIC' : text.label}
   </span></Hint>;
 }
 

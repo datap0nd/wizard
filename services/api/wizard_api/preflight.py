@@ -151,6 +151,13 @@ def run_checks(settings: Settings) -> int:
     else:
         ok = False
         _line("FAIL", f"web app missing at {settings.web_dist}")
+    from wizard_documents.office import pywin32_status
+    office_ok, office_detail = pywin32_status()
+    if office_ok:
+        _line("PASS", f"Office documents: {office_detail} (PowerPoint, Excel, Word and Outlook through Office)")
+    else:
+        _line("WARN", f"Office documents: {office_detail}. Attachments and the documentation kit then read only plain "
+                      ".docx/.pptx/.xlsx: no NASCA-protected, legacy or .msg files, no slide images")
     try:
         from .app import create_app
         app = create_app(settings)

@@ -34,6 +34,7 @@ export const DATA_MODE_TEXT: Record<string, {label: string; hint: string}> = {
   SYNTHETIC: {label: 'Synthetic data', hint: 'Invented test data. Not corporate figures.'},
   DATED_APPROVED_SNAPSHOT: {label: 'Approved snapshot', hint: 'An approved, dated copy of source data.'},
   LIVE_VERIFIED: {label: 'Live · verified retrieval', hint: 'Retrieved live; retrieval parity-checked against the source. Interpretation is reviewed separately.'},
+  USER_PROVIDED: {label: 'Your file', hint: 'Figures from a file attached to the question. Not checked against a source system.'},
 };
 
 export const CHECK_TEXT: Record<string, {label: string; hint: string}> = {

@@ -15,8 +15,9 @@ around a precomputed result is withdrawn. Its credential, entitlement, DLP and h
   does not choose the analysis.
 - Capture evidence for every source read (request, rows within approved retention, as-of, digest, data mode) so a
   numeric claim can be reviewed. Show what Gemini actually did; never invent steps or expose private chain of thought.
-- Keep data mode (SYNTHETIC / DATED_APPROVED_SNAPSHOT / LIVE_VERIFIED), connector status (SYNTHETIC_FIXTURE /
-  NAVIGATION_ONLY / ROWS_VERIFIED / BLOCKED) and check status (CHECKED / NOT_CHECKED / DISCREPANCY) as separate fields.
+- Keep data mode (SYNTHETIC / USER_PROVIDED / DATED_APPROVED_SNAPSHOT / LIVE_VERIFIED), connector status
+  (SYNTHETIC_FIXTURE / NAVIGATION_ONLY / ROWS_VERIFIED / BLOCKED) and check status (CHECKED / NOT_CHECKED /
+  DISCREPANCY) as separate fields. USER_PROVIDED marks a file a user attached: never present it as a verified source.
 - Run each Gemini request under the requesting user's own enterprise identity, with isolated per-user state
   (`GEMINI_CLI_HOME` + `GEMINI_FORCE_FILE_STORAGE=true`, or the per-user Code Assist token).
 - Work one numbered plan step or small ticket at a time ([docs/issue-board.md](docs/issue-board.md)). Name the files

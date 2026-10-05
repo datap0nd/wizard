@@ -11,7 +11,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Literal
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
@@ -31,6 +31,7 @@ from wizard_connectors.paths import ROOT
 from wizard_connectors.tools import build_registry, build_services
 
 from . import __version__
+from .attachments import AttachmentError, public
 from .config import ConfigError, Settings, load_settings
 from .runs import Busy, RunManager, entitled_to
 from .security import REQUEST_HEADER, SECURITY_HEADERS, SESSION_COOKIE, session_token, verify
@@ -92,6 +93,11 @@ class LoginBody(Body):
 class RunBody(Body):
     question: str = Field(min_length=1, max_length=4000)
     conversation_id: str | None = Field(default=None, max_length=64)
+    attachment_ids: list[str] = Field(default_factory=list, max_length=5)
+
+
+class LocalFileBody(Body):
+    path: str = Field(min_length=3, max_length=1000)
 
 
 class TitleBody(Body):
@@ -282,7 +288,8 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         return {**base, "diagnostics": settings.diagnostics,
                 "identity": {"id": identity.id, "name": identity.name, "email": identity.email, "role": identity.role},
                 "runtime": {"kind": runtime.kind, "label": runtime.label(), "model": runtime.model, **readiness},
-                "gemini_account": await account_status(identity), "data_modes": modes}
+                "gemini_account": await account_status(identity), "data_modes": modes,
+                "attachments": {"from_this_pc": manager.attachments.local_enabled(), "max_mb": settings.max_attachment_mb}}
 
     # Session (fixture identities only) ---------------------------------------------------------------------------------
     @app.get("/api/v1/session/identities")
@@ -327,9 +334,11 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         evidence = [{k: e.get(k) for k in ("id", "system", "system_name", "report_id", "report_name", "data_mode",
                                            "as_of", "total_rows", "truncated", "warnings", "access_note", "run_id")}
                     for e in store.evidence(run["conversation_id"]) if e.get("run_id") == run["id"]]
-        public = {k: v for k, v in run.items() if k not in ("user_id", "stats")}
-        public["stats"] = json.loads(run["stats"]) if run.get("stats") else {}
-        return {**public, "events": events, "visuals": visuals, "evidence": evidence, "active": run["id"] in manager.active}
+        shown_run = {k: v for k, v in run.items() if k not in ("user_id", "stats")}
+        shown_run["stats"] = json.loads(run["stats"]) if run.get("stats") else {}
+        files = [public(a) for a in store.conversation_attachments(run["conversation_id"]) if a["run_id"] == run["id"]]
+        return {**shown_run, "events": events, "visuals": visuals, "evidence": evidence, "attachments": files,
+                "active": run["id"] in manager.active}
 
     @app.get("/api/v1/conversations/{conversation_id}")
     def conversation(request: Request, conversation_id: str) -> dict[str, Any]:
@@ -372,12 +381,56 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         conversation_id = body.conversation_id
         if conversation_id and not store.conversation(identity.id, conversation_id):
             raise HTTPException(404, "Conversation not found.")
+        files = []
+        for attachment_id in dict.fromkeys(body.attachment_ids):
+            found = store.attachment(identity.id, attachment_id)
+            if not found or found["conversation_id"]:
+                raise HTTPException(404, "An attached file is no longer available. Attach it again.")
+            if found["status"] != "ok":
+                raise HTTPException(400, f"{found['filename']} could not be read; remove it before sending.")
+            files.append(attachment_id)
         conversation_id = conversation_id or store.create_conversation(identity.id)
         try:
             run = manager.start(identity, conversation_id, body.question.strip())
         except Busy as busy:
             raise HTTPException(429, str(busy)) from None
-        return {"run_id": run["id"], "conversation_id": conversation_id}
+        # Bound before the run's task first runs (no await in between), so its prompt lists these files.
+        bound = store.bind_attachments(identity.id, files, conversation_id, run["id"]) if files else []
+        return {"run_id": run["id"], "conversation_id": conversation_id, "attachments": [public(a) for a in bound]}
+
+    # Attached files ----------------------------------------------------------------------------------------------------
+    @app.post("/api/v1/attachments")
+    async def upload_attachment(request: Request) -> dict[str, Any]:
+        identity = me(request)
+        limit = settings.max_attachment_mb * 1024 * 1024
+        if int(request.headers.get("content-length") or 0) > limit:
+            raise HTTPException(413, f"The file is larger than {settings.max_attachment_mb} MB.")
+        data = await request.body()
+        try:
+            return {"attachment": await manager.attachments.upload(identity, unquote(request.headers.get("X-File-Name", "")), data)}
+        except AttachmentError as error:
+            raise HTTPException(error.status, error.message) from None
+
+    @app.get("/api/v1/attachments/local")
+    def local_files(request: Request, q: str | None = None) -> dict[str, Any]:
+        me(request)
+        enabled = manager.attachments.local_enabled()
+        return {"enabled": enabled, "folders": [str(f) for f in settings.attachment_folders] if enabled else [],
+                "files": manager.attachments.local_files((q or "")[:100]) if enabled else []}
+
+    @app.post("/api/v1/attachments/local")
+    async def attach_local(request: Request, body: LocalFileBody) -> dict[str, Any]:
+        identity = me(request)
+        try:
+            return {"attachment": await manager.attachments.attach_local(identity, body.path)}
+        except AttachmentError as error:
+            raise HTTPException(error.status, error.message) from None
+
+    @app.delete("/api/v1/attachments/{attachment_id}")
+    def remove_attachment(request: Request, attachment_id: str) -> dict[str, Any]:
+        if not manager.attachments.remove(me(request), attachment_id):
+            raise HTTPException(404, "File not found, or already sent with a question.")
+        return {"ok": True}
 
     @app.post("/api/v1/runs/{run_id}/check")
     async def check_run(request: Request, run_id: str) -> dict[str, Any]:

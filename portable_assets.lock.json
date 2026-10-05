@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "release_tag": "portable-cp313-win_amd64-6bfe2f91b55233a53dd8",
-  "dependency_lock_sha256": "f81ea522a967c27f3f3bfac6d60d26a5267b8a5f40fa5c17ebcb725e9deab21a",
+  "release_tag": "portable-cp313-win_amd64-19ef1695a72713055a2f",
+  "dependency_lock_sha256": "9d7756fa4f6d7667fde56946b2b9dd681a16ddac1053347ddf8cd90e20112754",
   "runtime_lock_sha256": "7e866984d7c4342fe669705360c208556351323c6d83785bfb6cee5874a1a798"
 }

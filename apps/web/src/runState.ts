@@ -5,8 +5,8 @@ export const TERMINAL = new Set(['run_finished', 'run_failed']);
 export function emptyRun(id: string, conversationId: string, question: string, kind: 'ask' | 'check' = 'ask'): RunView {
   return {id, conversationId, kind, question, status: 'queued', runtime: 'replay', runtimeLabel: '', model: '', timeline: [],
     streamText: '', answer: null, visuals: [], evidence: [], check: null, checkStatus: 'NOT_CHECKED', checkSummary: null,
-    dataMode: null, reportId: null, error: null, warnings: [], lastSeq: 0, createdAt: new Date().toISOString(), finishedAt: null,
-    parentRunId: null, diagnostics: []};
+    dataMode: null, reportId: null, error: null, warnings: [], lastSeq: 0, attachments: [], createdAt: new Date().toISOString(),
+    finishedAt: null, parentRunId: null, diagnostics: []};
 }
 
 /** Apply one observed run event. Pure: the same reducer rebuilds a stored run and follows a live one. */
@@ -63,7 +63,7 @@ export function fromRecord(record: RunRecord): RunView {
     dataMode: record.data_mode ?? view.dataMode, checkStatus: record.check_status, checkSummary: record.check_summary,
     visuals: record.visuals.length ? record.visuals : view.visuals, evidence: record.evidence.length ? record.evidence : view.evidence,
     error: record.error_code ? {code: record.error_code, message: record.error_message ?? ''} : view.error,
-    finishedAt: record.finished_at};
+    attachments: record.attachments ?? [], finishedAt: record.finished_at};
 }
 
 export function sourcesConsulted(run: RunView): string[] {

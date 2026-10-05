@@ -12,9 +12,18 @@ wizard-content/
   inbox/                            raw source documents (PDF, DOCX, exports) — never committed (.gitignore)
   knowledge/platforms/<platform>.md platform guides (Markdown + front matter)
   knowledge/metrics/<topic>.md      business definitions (Markdown + front matter)
+  knowledge/<area>/<note>.md        company documentation: company, org, products, markets, processes, glossary...
+  schema/knowledge-standard.md      how every note is written (refreshed by Wizard updates)
+  register/                         topic map, stakeholders, quiz and review logs, coverage
   contracts/sources/<platform>.json report catalog per platform (JSON, one entry per report)
   register/source-register.csv      tracking: one row per candidate report, owner and approval status
 ```
+
+## Company documentation
+
+Built by Gemini CLI on the work PC from your Outlook mail and files: Wizard tasks 20-25 collect, digest and write the
+notes, tasks 30-31 send expert quizzes and apply the answers (see `tasks\START_HERE.md` in the Wizard folder).
+Converted text and digests stay under `inbox/` and are never committed.
 
 ## Workflow per platform
 

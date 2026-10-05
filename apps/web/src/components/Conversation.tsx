@@ -1,6 +1,7 @@
 import {useEffect, useRef, useState} from 'react';
 import {ArrowDown} from 'lucide-react';
 import {Button} from './ui/button';
+import {SentFiles} from './Attachments';
 import {RunCard} from './RunCard';
 import type {RunView} from '@/types';
 
@@ -38,7 +39,10 @@ export function Conversation({runs, empty, ...handlers}: Props) {
           {runs.length === 0 && empty}
           {runs.map(run => (
             <article key={run.id} className="flex flex-col gap-3" data-testid="turn">
-              {run.kind === 'ask' && <div className="flex justify-end"><p className="max-w-[760px] whitespace-pre-wrap rounded-2xl bg-accent-soft px-4 py-2.5 text-[15px]" data-testid="user-turn">{run.question}</p></div>}
+              {run.kind === 'ask' && <div className="flex flex-col items-end gap-1.5">
+                <p className="max-w-[760px] whitespace-pre-wrap rounded-2xl bg-accent-soft px-4 py-2.5 text-[15px]" data-testid="user-turn">{run.question}</p>
+                <SentFiles files={run.attachments} />
+              </div>}
               <RunCard run={run} {...handlers} />
             </article>
           ))}

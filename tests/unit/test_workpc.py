@@ -114,10 +114,17 @@ def test_gemini_task_kit_is_complete():
     assert "{{args}}" in command["prompt"] and "START_HERE" in command["prompt"]
     ignore = (ROOT / "workpc" / ".geminiignore").read_text(encoding="utf-8").split()
     assert {"data/", ".env", "releases/"} <= set(ignore), "Gemini sessions must not read sign-ins or secrets"
+    # The documentation track: every file a task names is shipped (setup.ps1 installs them).
+    named = " ".join(t.read_text(encoding="utf-8") for t in files)
+    assert (ROOT / "workpc" / "templates" / "quiz-template.html").is_file() and r"templates\quiz-template.html" in named
+    assert (ROOT / "templates" / "content" / "schema" / "knowledge-standard.md").is_file()
+    assert "knowledge-standard.md" in named and r".\docs.ps1 extract" in named
+    setup = (ROOT / "setup.ps1").read_text(encoding="utf-8")
+    assert "'docs.ps1'" in setup and r"workpc\templates" in setup and r"documents\quiz-questions" in setup
 
 
 @pytest.mark.skipif(not (shutil.which("pwsh") or shutil.which("powershell")), reason="BLOCKED: no PowerShell available")
-@pytest.mark.parametrize("script", ["setup.ps1", "start.ps1", "update_app.ps1", "scripts/dev.ps1"])
+@pytest.mark.parametrize("script", ["setup.ps1", "start.ps1", "update_app.ps1", "docs.ps1", "scripts/dev.ps1"])
 def test_powershell_scripts_parse(script):
     shell = shutil.which("pwsh") or shutil.which("powershell")
     command = ("$errors = $null; [System.Management.Automation.Language.Parser]::ParseFile("

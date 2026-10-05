@@ -2,6 +2,7 @@ import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {api, ApiError, eventsUrl} from './api';
 import {applyEvent, emptyRun, fromRecord, TERMINAL} from './runState';
 import {AccountDialog} from './components/AccountDialog';
+import {LocalFilesDialog, type PendingFile} from './components/Attachments';
 import {LogDialog} from './components/LogDialog';
 import {RuntimeBadge} from './components/Badges';
 import {Composer} from './components/Composer';
@@ -10,7 +11,7 @@ import {EmptyState} from './components/EmptyState';
 import {EvidenceDrawer} from './components/EvidenceDrawer';
 import {LoginScreen} from './components/LoginScreen';
 import {Sidebar} from './components/Sidebar';
-import type {Bootstrap, ConversationSummary, EvidenceSummary, RunEvent, RunView} from './types';
+import type {Attachment, Bootstrap, ConversationSummary, EvidenceSummary, LocalFile, RunEvent, RunView} from './types';
 
 const LAST = 'wizard-conversation';
 
@@ -25,7 +26,35 @@ export function App() {
   const [drawer, setDrawer] = useState<{items: EvidenceSummary[]; focus: string | null} | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
+  const [files, setFiles] = useState<PendingFile[]>([]);
+  const [localOpen, setLocalOpen] = useState(false);
   const streams = useRef(new Map<string, EventSource>());
+
+  const settle = useCallback((key: string, attempt: Promise<{attachment: Attachment}>) => {
+    attempt.then(({attachment}) => setFiles(prev => prev.map(f => (f.key === key
+      ? {...f, attachment, state: attachment.status === 'ok' ? 'ok' : 'failed', note: attachment.note} : f))))
+      .catch((e: unknown) => setFiles(prev => prev.map(f => (f.key === key
+        ? {...f, state: 'failed', note: e instanceof Error ? e.message : 'The file could not be read.'} : f))));
+  }, []);
+  const addFiles = useCallback((chosen: File[]) => {
+    for (const file of chosen.slice(0, 5)) {
+      const key = `${file.name}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      setFiles(prev => [...prev, {key, filename: file.name, state: 'reading'}]);
+      settle(key, api.upload(file));
+    }
+  }, [settle]);
+  const addLocal = useCallback((file: LocalFile) => {
+    const key = `${file.path}-${Date.now()}`;
+    setFiles(prev => [...prev, {key, filename: file.name, state: 'reading'}]);
+    settle(key, api.attachLocal(file.path));
+  }, [settle]);
+  const removeFile = useCallback((key: string) => {
+    setFiles(prev => {
+      const found = prev.find(f => f.key === key);
+      if (found?.attachment) void api.removeAttachment(found.attachment.id).catch(() => undefined);
+      return prev.filter(f => f.key !== key);
+    });
+  }, []);
 
   const refreshConversations = useCallback(async () => { try { setConversations((await api.conversations()).conversations); } catch { /* keep list */ } }, []);
   const loadBoot = useCallback(async () => {
@@ -75,16 +104,20 @@ export function App() {
   const ask = useCallback(async (question: string) => {
     setNotice(null);
     try {
-      const started = await api.ask(question, currentId);
+      const ready = files.filter(f => f.state === 'ok' && f.attachment).map(f => f.attachment!.id);
+      const started = await api.ask(question, currentId, ready);
       if (started.conversation_id !== currentId) { setCurrentId(started.conversation_id); localStorage.setItem(LAST, started.conversation_id); }
-      setRuns(prev => [...(started.conversation_id === currentId ? prev : []), emptyRun(started.run_id, started.conversation_id, question)]);
+      setRuns(prev => [...(started.conversation_id === currentId ? prev : []),
+        {...emptyRun(started.run_id, started.conversation_id, question), attachments: started.attachments ?? []}]);
       setDraft('');
+      files.filter(f => f.state === 'failed' && f.attachment).forEach(f => void api.removeAttachment(f.attachment!.id).catch(() => undefined));
+      setFiles([]);
       follow(started.run_id, 0, null);
       void refreshConversations();
     } catch (e) {
       setNotice(e instanceof ApiError && e.loginRequired ? 'Your session expired. Reload the page to sign in again.' : e instanceof Error ? e.message : 'The question could not be sent.');
     }
-  }, [currentId, follow, refreshConversations]);
+  }, [currentId, files, follow, refreshConversations]);
 
   const check = useCallback(async (run: RunView) => {
     try {
@@ -131,11 +164,13 @@ export function App() {
           onFeedback={(run, category) => void api.feedback(run.id, category).then(() => setNotice('Thanks — recorded in the evaluation log.'))} />
         <div className="border-t border-line bg-canvas px-4 pb-3 pt-3 md:px-6">
           {notice && <p className="mx-auto mb-2 max-w-[820px] rounded-lg bg-surface px-3 py-2 text-[13px] text-ink-2" role="status">{notice}</p>}
-          <Composer busy={busy} draft={draft} onDraftChange={setDraft} onSubmit={ask} disabledReason={blocked} />
+          <Composer busy={busy} draft={draft} onDraftChange={setDraft} onSubmit={ask} disabledReason={blocked}
+            files={files} onFiles={addFiles} onRemoveFile={removeFile} onLocal={boot.attachments?.from_this_pc ? () => setLocalOpen(true) : undefined} />
         </div>
       </main>
       <EvidenceDrawer conversationId={currentId} open={!!drawer} focus={drawer?.focus ?? null} items={drawer?.items ?? []} onClose={() => setDrawer(null)} />
       <LogDialog open={logOpen} onClose={() => setLogOpen(false)} />
+      <LocalFilesDialog open={localOpen} onClose={() => setLocalOpen(false)} onPick={addLocal} />
       <AccountDialog open={accountOpen} boot={boot} onClose={() => setAccountOpen(false)}
         onChanged={account => { setBoot(b => (b ? {...b, gemini_account: account} : b)); void loadBoot(); }} />
     </div>

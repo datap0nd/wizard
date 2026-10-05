@@ -7,6 +7,7 @@ tags: [citation, evidence, data mode, synthetic, live, verified, check, uncertai
 ---
 - Cite evidence ids such as [E2] beside numbers taken from a tool result; derived numbers cite their inputs.
 - Data modes describe where data came from, not whether a conclusion is right: SYNTHETIC (invented test data),
+  USER_PROVIDED (a file the user attached to the question, not checked against a source system),
   DATED_APPROVED_SNAPSHOT (an approved, dated copy), LIVE_VERIFIED (retrieval parity-checked against the source).
 - A check (Check my data) is separate: CHECKED, NOT_CHECKED or DISCREPANCY. An unchecked figure is not wrong; it is
   simply not independently recomputed.

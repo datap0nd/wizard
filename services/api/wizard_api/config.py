@@ -57,6 +57,12 @@ class Settings:
     content_dir: Path | None = None
     # Folder of standalone HTML reports (local files for now). Configured only; no tool reads it yet.
     html_reports_dir: Path | None = None
+    # Files people attach to questions: "From this PC" lists these folders (local installs; empty behind an SSO proxy,
+    # where the server's folders are not the user's), uploads are capped, and each conversion has a time limit.
+    attachment_folders: list[Path] = field(default_factory=list)
+    max_attachment_mb: int = 50
+    attachment_timeout_s: int = 180
+    attachment_office: str = "auto"  # "never": read only plain Office Open XML files, without starting Office (tests)
     max_concurrent_runs: int = 4
     run_timeout_s: int = 600
     max_tool_calls: int = 40
@@ -170,6 +176,20 @@ def load_settings(env: dict[str, str] | None = None, env_file: Path | None = Non
     dist = get("WIZARD_WEB_DIST")
     if dist:
         settings.web_dist = Path(dist)
+    folders = get("WIZARD_ATTACHMENT_FOLDERS")
+    if folders is None and settings.auth_mode == "fixture":
+        settings.attachment_folders = [p for p in (Path.home() / n for n in ("Downloads", "Desktop", "Documents")) if p.is_dir()]
+    elif folders and folders.strip().lower() != "none":
+        settings.attachment_folders = [local(f.strip()) for f in folders.split(";") if f.strip()]
+        missing = [str(f) for f in settings.attachment_folders if not f.is_dir()]
+        if missing:
+            raise ConfigError(f"WIZARD_ATTACHMENT_FOLDERS: {', '.join(missing)} is not a folder (separate folders with ;)")
+    settings.attachment_office = get("WIZARD_ATTACHMENT_OFFICE", "auto") or "auto"
+    if settings.attachment_office not in ("auto", "never"):
+        raise ConfigError("WIZARD_ATTACHMENT_OFFICE must be auto or never")
+    settings.max_attachment_mb = _int(get("WIZARD_MAX_ATTACHMENT_MB", "50") or "50", "WIZARD_MAX_ATTACHMENT_MB", 1, 500)
+    settings.attachment_timeout_s = _int(get("WIZARD_ATTACHMENT_TIMEOUT_S", "180") or "180", "WIZARD_ATTACHMENT_TIMEOUT_S",
+                                         10, 3600)
     settings.max_concurrent_runs = _int(get("WIZARD_MAX_CONCURRENT_RUNS", "4") or "4", "WIZARD_MAX_CONCURRENT_RUNS", 1, 64)
     settings.run_timeout_s = _int(get("WIZARD_RUN_TIMEOUT_S", "600") or "600", "WIZARD_RUN_TIMEOUT_S", 10, 3600)
     settings.max_tool_calls = _int(get("WIZARD_MAX_TOOL_CALLS", "40") or "40", "WIZARD_MAX_TOOL_CALLS", 1, 200)

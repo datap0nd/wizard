@@ -95,6 +95,13 @@
       "sha256": "15f4a94963c95accac15b7b657bb177d3ad82bb90b0d0526d9a9b85079925db5"
     },
     {
+      "name": "pywin32",
+      "version": "312",
+      "filename": "pywin32-312-cp313-cp313-win_amd64.whl",
+      "url": "https://files.pythonhosted.org/packages/ba/db/36a78e3403099d31d9746d13fdcde5accc43c1155f375a34d15983a479a7/pywin32-312-cp313-cp313-win_amd64.whl",
+      "sha256": "c53e878d15a1c44788082bfe712a905433473aa38f86375b7cf8b45e3acbaaf9"
+    },
+    {
       "name": "starlette",
       "version": "1.7.0",
       "filename": "starlette-1.7.0-py3-none-any.whl",

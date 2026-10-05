@@ -8,7 +8,8 @@
 1. Read `content\GEMINI.md` (authoring rules) and `outbox\10-inventory.md`.
 2. Read the procedure in `content\.gemini\commands\wizard\platform-guide.toml` (the text inside `prompt = """ ... """`).
    Follow it with these adjustments: the platform id is the inbox folder name, the documentation is every file in
-   `content\inbox\<platform>\`, and the output path is `content\knowledge\platforms\<platform>.md`.
+   `content\inbox\<platform>\` (read Office files and emails as their converted text in
+   `content\inbox\_text\<platform>\`), and the output path is `content\knowledge\platforms\<platform>.md`.
 3. Do this for every platform that has documentation. If a guide already exists with `status: SIGNED`, do not change
    it; list proposed changes in your summary instead. If it exists as a draft, update it.
 4. Keep the open questions in each guide; they feed task 16.

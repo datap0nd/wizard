@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-for entry in ("services/checks", "services/connectors", "services/agent", "services/api", "vendor"):
+for entry in ("services/checks", "services/connectors", "services/documents", "services/agent", "services/api", "vendor"):
     sys.path.insert(0, str(ROOT / entry))
 
 

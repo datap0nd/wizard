@@ -16,7 +16,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from .catalog import SourceContract
-from .knowledge import FRONT_MATTER
+from .knowledge import ENTRY, FRONT_MATTER, NOTE_TYPES, front_matter, parse_list, unquote
 
 LIVE_ADAPTERS: set[str] = set()  # systems with an approved, parity-tested live adapter (none yet)
 SECRET_PATTERNS = {
@@ -28,6 +28,12 @@ SECRET_PATTERNS = {
     "password assignment": re.compile(r"(?i)(password|passwd|pwd)\s*[:=]\s*['\"][^'\"\s]{6,}['\"]"),
     "MicroStrategy auth token": re.compile(r"X-MSTR-AuthToken:\s*[0-9a-z]{20,}"),
 }
+FLAT_LINE = re.compile(r"^[a-z_]+:( .*)?$")
+NOTE_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,80}$")
+ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+SOURCE_ID = re.compile(r"^(S-[0-9a-f]{8}|A-[a-z0-9][a-z0-9_-]*)$")
+EMAIL = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
+PHONE = re.compile(r"(?<![\w-])\+?\d{1,3}[ .-]?\(?\d{2,4}\)?[ .-]\d{3,4}[ .-]\d{3,4}(?![\w-])")
 
 
 @dataclass(frozen=True)
@@ -51,8 +57,13 @@ def validate_content(root: Path) -> list[Problem]:
     if not root.is_dir():
         return [Problem("error", str(root), "content folder does not exist")]
     files = sorted(sources.glob("*.json")) if sources.is_dir() else []
-    if not files:
-        problems.append(Problem("error", "contracts/sources", "no report catalogs found (expected <platform>.json files)"))
+    notes = [p for p in (root / "knowledge").rglob("*.md") if p.name != "README.md"] if (root / "knowledge").is_dir() else []
+    if not files and not notes:
+        problems.append(Problem("error", "contracts/sources", "nothing to load: no report catalogs (<platform>.json) and no "
+                                                              "knowledge notes"))
+    elif not files:
+        problems.append(Problem("warning", "contracts/sources", "no report catalogs yet: Wizard answers from the knowledge "
+                                                                "notes and attached files only"))
     seen_reports: dict[str, str] = {}
     for path in files:
         where = path.relative_to(root).as_posix()
@@ -104,31 +115,78 @@ def validate_content(root: Path) -> list[Problem]:
                 problems.append(Problem("warning", label, "missing description: Gemini will struggle to choose this report"))
             if any(c.upper().startswith("UNCERTAIN") for c in report.caveats):
                 problems.append(Problem("warning", label, "has UNCERTAIN choices waiting for owner review"))
-    knowledge = root / "knowledge"
-    for note in sorted(knowledge.rglob("*.md")) if knowledge.is_dir() else []:
-        where = note.relative_to(root).as_posix()
-        if note.name == "README.md":
-            continue
-        text = note.read_text(encoding="utf-8").replace("\r\n", "\n")
-        problems += _secrets(text, where)
-        match = FRONT_MATTER.match(text)
-        if not match:
-            problems.append(Problem("error", where, "missing front matter (id, title, status, owner, tags)"))
-            continue
-        meta: dict[str, str] = {}
-        for line in match.group(1).splitlines():
-            key, _, value = line.partition(":")
-            meta[key.strip()] = value.strip()
-        for key in ("id", "title", "status", "owner", "tags"):
-            if not meta.get(key):
-                problems.append(Problem("error", where, f"front matter needs '{key}'"))
-        if meta.get("status") not in (None, "", "DRAFT_UNSIGNED", "SIGNED"):
-            problems.append(Problem("error", where, "status must be DRAFT_UNSIGNED or SIGNED"))
+    problems += validate_knowledge(root / "knowledge", root)
     for stray in root.rglob("*"):
         if stray.is_file() and stray.suffix.lower() in (".csv", ".xlsx", ".xls", ".docx", ".parquet") \
                 and "register" not in stray.parts and "inbox" not in stray.parts:
             problems.append(Problem("error", stray.relative_to(root).as_posix(),
                                     "data or document files do not belong in content (only register/*.csv)"))
+    return problems
+
+
+def validate_knowledge(knowledge: Path, root: Path) -> list[Problem]:
+    """Knowledge notes follow templates/content/schema/knowledge-standard.md: flat front matter with the required
+    fields, unique kebab-case ids, known types, ISO dates, no credentials or contact details, and notes small enough
+    to be retrieved whole. Size, summary and related-id issues are warnings for the owners."""
+    problems: list[Problem] = []
+    notes: dict[str, tuple[str, dict[str, str], str]] = {}
+    for note in sorted(knowledge.rglob("*.md")) if knowledge.is_dir() else []:
+        where = note.relative_to(root).as_posix()
+        if note.name == "README.md":
+            continue
+        text = note.read_text(encoding="utf-8-sig")
+        problems += _secrets(text, where)
+        parsed = front_matter(text)
+        if parsed is None:
+            problems.append(Problem("error", where, "missing front matter (id, title, status, owner, tags)"))
+            continue
+        meta, body = parsed
+        block = FRONT_MATTER.match(text.lstrip("﻿").replace("\r\n", "\n"))
+        bad_lines = [line for line in (block.group(1).splitlines() if block else []) if line.strip()
+                     and not FLAT_LINE.match(line)]
+        if bad_lines:
+            problems.append(Problem("error", where, f"front matter must be flat 'key: value' lines with lists written "
+                                                    f"as [a, b]; fix: {bad_lines[0].strip()[:60]}"))
+        for key in ("id", "title", "status", "owner", "tags"):
+            if not meta.get(key):
+                problems.append(Problem("error", where, f"front matter needs '{key}'"))
+        if meta.get("status") not in (None, "", "DRAFT_UNSIGNED", "SIGNED"):
+            problems.append(Problem("error", where, "status must be DRAFT_UNSIGNED or SIGNED"))
+        note_id = meta.get("id", "")
+        if note_id and not NOTE_ID.match(note_id):
+            problems.append(Problem("error", where, f"id '{note_id}' must be lowercase kebab-case (a-z, 0-9, -)"))
+        if note_id in notes:
+            problems.append(Problem("error", where, f"duplicate id '{note_id}' (also {notes[note_id][0]})"))
+        notes[note_id] = (where, meta, body)
+        kind = unquote(meta.get("type", ""))
+        if kind and kind not in NOTE_TYPES:
+            problems.append(Problem("error", where, f"type '{kind}' is not one of {', '.join(NOTE_TYPES)}"))
+        for key in ("updated", "reviewed"):
+            value = unquote(meta.get(key, ""))
+            if value and not ISO_DATE.match(value):
+                problems.append(Problem("error", where, f"{key} must be a date written YYYY-MM-DD"))
+        if EMAIL.search(text):
+            problems.append(Problem("error", where, "contains an email address: knowledge notes name people by role "
+                                                    "(and name only as owner or expert), never their contact details"))
+        if PHONE.search(body):
+            problems.append(Problem("warning", where, "looks like a phone number: remove personal contact details"))
+        words = len(body.split())
+        if kind == "glossary":
+            entries = sum(1 for line in body.splitlines() if ENTRY.match(line))
+            if entries > 60:
+                problems.append(Problem("warning", where, f"{entries} glossary entries: split into notes of at most 60"))
+        elif words > 900:
+            problems.append(Problem("warning", where, f"{words} words: split into smaller notes (at most ~600) so "
+                                                      "retrieval returns the relevant part"))
+        if not unquote(meta.get("summary", "")):
+            problems.append(Problem("warning", where, "no summary: the knowledge index shows a one-line summary"))
+        for source in parse_list(meta.get("sources", "")):
+            if not SOURCE_ID.match(source):
+                problems.append(Problem("warning", where, f"source '{source}' is not a source id (S-xxxxxxxx or A-<quiz>)"))
+    for where, meta, _ in notes.values():
+        for related in parse_list(meta.get("related", "")):
+            if related not in notes:
+                problems.append(Problem("warning", where, f"related note '{related}' does not exist"))
     return problems
 
 

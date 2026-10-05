@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en" data-wizard-quiz="1">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wizard expert check</title>
+<!--
+  WIZARD EXPERT QUIZ TEMPLATE (one self-contained page: no internet, no external files).
+
+  To make a quiz: copy this file and replace ONLY the JSON inside <script type="application/json" id="quiz-data">.
+  Do not change anything else. Check the copy with:  wizard_docs.py quiz-check <file> --content content
+
+  quiz-data fields:
+    quiz_version  1
+    id            area__stakeholder, lowercase, e.g. "finance__ana-silva"
+    area          "Finance"
+    title         "Finance: how we plan, close and report"
+    stakeholder   {"name": "Ana Silva", "role": "Finance controller"}   (never an email address)
+    sender        {"name": "Rafael"}
+    intro         2-3 sentences: why we ask and how the answers are used
+    due           "2026-10-20" (optional)
+    questions     10 to 15 of:
+      {"id": "q1", "topic": "<note id>", "topic_title": "Fiscal calendar", "kind": "confirm",
+       "statement": "The fiscal year runs January to December.", "why": "Wizard uses it to read 'last quarter'."}
+      {"id": "q2", "topic": "...", "kind": "choice", "ask": "...", "options": ["A", "B", "C"], "comment": true}
+      {"id": "q3", "topic": "...", "kind": "multi",  "ask": "...", "options": ["A", "B", "C"]}
+      {"id": "q4", "topic": "...", "kind": "text",   "ask": "...", "placeholder": "e.g. ..."}
+    choice and multi always get "Other" and "Don't know"; confirm gets Correct / Partly correct / Wrong / Don't know.
+    "comment": true adds an optional free-text box under a question.
+
+  The stakeholder clicks "Save my answers": the browser saves a copy of this page with the answers inside
+  (<script type="application/json" id="quiz-answers">), which they attach to their reply.
+-->
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f5f4f0; --panel: #ffffff; --surface: #f1f2f5; --ink: #18233b; --ink-2: #4b5871; --ink-3: #65728a;
+    --line: #e0e4eb; --line-2: #cbd3e1; --accent: #315bd6; --accent-soft: #eef2ff; --accent-line: #c7d2fe;
+    --ok: #065f46; --ok-soft: #d1fae5; --warn: #92400e; --warn-soft: #fffbeb; --warn-line: #fde68a;
+    --radius: 16px; --shadow: 0 2px 4px rgb(24 35 59 / 0.025), 0 10px 32px rgb(24 35 59 / 0.05);
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body { margin: 0; font: 15px/1.55 "Segoe UI", Inter, system-ui, -apple-system, Roboto, sans-serif; color: var(--ink);
+         background: var(--page); -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 28px 16px 140px; }
+  .brand { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+  h1 { font-size: 26px; line-height: 1.25; margin: 6px 0 10px; font-weight: 650; letter-spacing: -.01em; }
+  .meta { color: var(--ink-2); font-size: 14px; display: flex; flex-wrap: wrap; gap: 6px 14px; }
+  .meta span { white-space: nowrap; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow);
+          padding: 22px 22px 20px; margin-top: 16px; }
+  .intro p { margin: 0 0 14px; }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 0; padding: 0; list-style: none; }
+  .steps li { background: var(--surface); border-radius: 12px; padding: 10px 12px; font-size: 13.5px; color: var(--ink-2); }
+  .steps b { display: block; color: var(--ink); font-size: 14px; margin-bottom: 2px; }
+  .banner { border-radius: 12px; padding: 12px 14px; margin-top: 16px; font-size: 14px; }
+  .banner.ok { background: var(--ok-soft); color: var(--ok); }
+  .banner.warn { background: var(--warn-soft); color: var(--warn); border: 1px solid var(--warn-line); }
+  .progress { position: sticky; top: 0; z-index: 5; background: rgb(245 244 240 / .92); backdrop-filter: blur(6px);
+              padding: 10px 0 8px; margin: 18px 0 0; }
+  .progress .row { display: flex; justify-content: space-between; font-size: 13px; color: var(--ink-2); margin-bottom: 6px; }
+  .bar { height: 6px; background: var(--line); border-radius: 99px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 99px; transition: width .25s; }
+  h2.topic { font-size: 13px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3);
+             margin: 30px 4px 0; }
+  fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+  .q { scroll-margin-top: 64px; }
+  .q.done { border-color: var(--accent-line); }
+  .qhead { display: flex; gap: 12px; align-items: flex-start; }
+  .num { flex: none; width: 30px; height: 30px; border-radius: 99px; background: var(--surface); color: var(--ink-2);
+         display: grid; place-items: center; font-size: 13px; font-weight: 600; }
+  .q.done .num { background: var(--accent); color: #fff; }
+  .ask { font-size: 16px; font-weight: 600; padding: 3px 0 0; line-height: 1.4; }
+  .statement { margin: 12px 0 0 42px; padding: 12px 14px; border-left: 3px solid var(--accent); background: var(--accent-soft);
+               border-radius: 0 10px 10px 0; font-size: 15px; }
+  .why { margin: 8px 0 0 42px; color: var(--ink-3); font-size: 13px; }
+  .options { margin: 14px 0 0 42px; display: grid; gap: 8px; }
+  .opt { display: flex; align-items: center; gap: 10px; padding: 11px 14px; border: 1px solid var(--line-2); border-radius: 12px;
+         cursor: pointer; background: var(--panel); transition: border-color .15s, background .15s; }
+  .opt:hover { border-color: var(--accent); }
+  .opt input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); flex: none; }
+  .opt.on { border-color: var(--accent); background: var(--accent-soft); }
+  .opt.muted { color: var(--ink-2); }
+  .opt .other { flex: 1; min-width: 0; border: 0; border-bottom: 1px solid var(--line-2); background: transparent; font: inherit;
+                padding: 2px 0; color: var(--ink); }
+  .opt .other:focus { outline: none; border-bottom-color: var(--accent); }
+  textarea { width: 100%; min-height: 76px; resize: vertical; font: inherit; color: var(--ink); border: 1px solid var(--line-2);
+             border-radius: 12px; padding: 10px 12px; background: var(--panel); }
+  textarea:focus, .opt:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .extra { margin: 12px 0 0 42px; }
+  .extra label { display: block; font-size: 13px; color: var(--ink-2); margin-bottom: 6px; }
+  .actions { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; background: rgb(255 255 255 / .96);
+             border-top: 1px solid var(--line); backdrop-filter: blur(6px); padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px)); }
+  .actions .inner { max-width: 760px; margin: 0 auto; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .actions .hint { flex: 1 1 220px; font-size: 13px; color: var(--ink-2); }
+  button { font: inherit; font-weight: 600; border-radius: 12px; padding: 11px 18px; cursor: pointer; border: 1px solid transparent; }
+  button.primary { background: var(--accent); color: #fff; }
+  button.primary:hover { filter: brightness(1.07); }
+  button.secondary { background: var(--panel); color: var(--ink); border-color: var(--line-2); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .done-panel { display: none; }
+  .done-panel.show { display: block; }
+  .copybox { width: 100%; min-height: 120px; font: 12px/1.45 Consolas, "Cascadia Mono", monospace; margin-top: 10px; }
+  .muted-note { font-size: 12.5px; color: var(--ink-3); margin-top: 18px; text-align: center; }
+  @media (max-width: 560px) {
+    .steps { grid-template-columns: 1fr; }
+    .statement, .why, .options, .extra { margin-left: 0; }
+    h1 { font-size: 22px; }
+    .card { padding: 18px 16px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap" id="app" aria-live="polite"></div>
+<div class="actions" role="region" aria-label="Save your answers">
+  <div class="inner">
+    <div class="hint" id="hint">Your answers stay on your computer until you save them.</div>
+    <button type="button" class="secondary" id="copy">Copy my answers</button>
+    <button type="button" class="primary" id="save">Save my answers</button>
+  </div>
+</div>
+
+<script type="application/json" id="quiz-data">
+{
+  "quiz_version": 1,
+  "id": "example__sample-expert",
+  "area": "Example area",
+  "title": "Example: how this quiz looks",
+  "stakeholder": {"name": "Sample Expert", "role": "Planning lead"},
+  "sender": {"name": "Wizard team"},
+  "intro": "We are documenting how the company works so that Wizard, our internal analyst assistant, answers executives correctly. Please check what we wrote about your area. Skip anything you are unsure about: \"Don't know\" is a useful answer.",
+  "due": "2026-10-20",
+  "questions": [
+    {"id": "q1", "topic": "fiscal-calendar", "topic_title": "Fiscal calendar", "kind": "confirm",
+     "statement": "The fiscal year runs from January to December, and Q1 is January to March.",
+     "why": "Wizard uses this to understand 'last quarter'."},
+    {"id": "q2", "topic": "month-close", "topic_title": "Month close", "kind": "choice",
+     "ask": "On which working day are monthly sales figures final?",
+     "options": ["Working day 3", "Working day 5", "Working day 7"], "comment": true},
+    {"id": "q3", "topic": "month-close", "topic_title": "Month close", "kind": "multi",
+     "ask": "Which reports are restated after month close?",
+     "options": ["Sell-in", "Sell-out", "Channel stock", "Marketing spend"]},
+    {"id": "q4", "topic": "glossary-planning", "topic_title": "Planning terms", "kind": "text",
+     "ask": "What does 'S&OP lock' mean in your team?", "placeholder": "A sentence or two is enough"}
+  ]
+}
+</script>
+<script type="application/json" id="quiz-answers"></script>
+
+<script>
+(function () {
+  'use strict';
+  var PRISTINE = document.documentElement.cloneNode(true);
+  var app = document.getElementById('app');
+  var quiz;
+  try {
+    quiz = JSON.parse(document.getElementById('quiz-data').textContent);
+  } catch (error) {
+    app.innerHTML = '<div class="banner warn">This quiz could not be opened (its data is damaged). Please tell the sender.</div>';
+    return;
+  }
+  var saved = null;
+  try { saved = JSON.parse(document.getElementById('quiz-answers').textContent || 'null'); } catch (error) { saved = null; }
+  var storeKey = 'wizard-quiz:' + quiz.id;
+  var state = { answers: {} };
+  if (saved && saved.answers) { state.answers = saved.answers; }
+  else {
+    try { var draft = JSON.parse(localStorage.getItem(storeKey) || 'null'); if (draft && draft.answers) { state.answers = draft.answers; } }
+    catch (error) { /* private window or blocked storage: start empty */ }
+  }
+  var questions = (quiz.questions || []).filter(function (q) { return q && q.id; });
+  var CLOSING = [
+    { id: 'x_who_else', kind: 'text', ask: 'Who else should we ask about these topics?', placeholder: 'Name and role (optional)' },
+    { id: 'x_missing', kind: 'text', ask: 'Is anything important missing or wrong?', placeholder: 'Optional' }
+  ];
+
+  function el(tag, attrs, children) {
+    var node = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (key) {
+      if (key === 'text') { node.textContent = attrs[key]; }
+      else if (key === 'class') { node.className = attrs[key]; }
+      else if (key.indexOf('on') === 0) { node.addEventListener(key.slice(2), attrs[key]); }
+      else if (attrs[key] !== undefined && attrs[key] !== null && attrs[key] !== false) { node.setAttribute(key, attrs[key] === true ? '' : attrs[key]); }
+    });
+    (children || []).forEach(function (child) { if (child) { node.appendChild(child); } });
+    return node;
+  }
+  function longDate(value) {
+    var match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value || '');
+    if (!match) { return value || ''; }
+    var months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    return Number(match[3]) + ' ' + months[Number(match[2]) - 1] + ' ' + match[1];
+  }
+  function answerOf(id) { return state.answers[id] || (state.answers[id] = {}); }
+  function isAnswered(q) {
+    var a = state.answers[q.id];
+    if (!a) { return false; }
+    if (a.unknown) { return true; }
+    if (q.kind === 'confirm') { return !!a.verdict; }
+    if (q.kind === 'text') { return !!(a.text && a.text.trim()); }
+    return (a.choice && a.choice.length > 0) || !!(a.other && a.other.trim());
+  }
+  function persist() {
+    try { localStorage.setItem(storeKey, JSON.stringify({ answers: state.answers })); } catch (error) { /* not essential */ }
+    updateProgress();
+  }
+  function minutes() {
+    return Math.max(3, Math.round(questions.reduce(function (sum, q) { return sum + (q.kind === 'text' ? 1.2 : 0.7); }, 1)));
+  }
+
+  function optionRow(type, name, label, checked, onChange, extra) {
+    var input = el('input', { type: type, name: name });
+    input.checked = !!checked;
+    var row = el('label', { class: 'opt' + (checked ? ' on' : '') + (extra && extra.muted ? ' muted' : '') }, [input]);
+    row.appendChild(el('span', { text: label }));
+    if (extra && extra.other) { row.appendChild(extra.other); }
+    input.addEventListener('change', function () { onChange(input.checked); });
+    return row;
+  }
+  function refreshRows(container) {
+    Array.prototype.forEach.call(container.querySelectorAll('.opt'), function (row) {
+      var input = row.querySelector('input');
+      row.classList.toggle('on', !!(input && input.checked));
+    });
+  }
+  function textBox(label, value, placeholder, onInput, id) {
+    var area = el('textarea', { id: id, placeholder: placeholder || '', rows: 3 });
+    area.value = value || '';
+    area.addEventListener('input', function () { onInput(area.value); });
+    return el('div', { class: 'extra' }, [label ? el('label', { for: id, text: label }) : null, area]);
+  }
+
+  function renderQuestion(q, number) {
+    var a = answerOf(q.id);
+    var card = el('fieldset', { class: 'card q', id: 'card-' + q.id, 'aria-labelledby': 'ask-' + q.id });
+    var head = el('div', { class: 'qhead' }, [el('div', { class: 'num', text: String(number), 'aria-hidden': 'true' }),
+      el('div', { class: 'ask', id: 'ask-' + q.id,
+                  text: q.kind === 'confirm' ? 'Is this correct?' : (q.ask || '') })]);
+    card.appendChild(head);
+    if (q.statement) { card.appendChild(el('div', { class: 'statement', text: q.statement })); }
+    if (q.why) { card.appendChild(el('div', { class: 'why', text: 'Why we ask: ' + q.why })); }
+    var options = el('div', { class: 'options' });
+    var name = 'answer-' + q.id;
+    var follow = el('div');
+    function sync() { refreshRows(options); card.classList.toggle('done', isAnswered(q)); persist(); }
+
+    if (q.kind === 'confirm') {
+      [['correct', 'Correct'], ['partly', 'Partly correct'], ['wrong', 'Wrong']].forEach(function (pair) {
+        options.appendChild(optionRow('radio', name, pair[1], a.verdict === pair[0] && !a.unknown, function (on) {
+          if (on) { a.verdict = pair[0]; delete a.unknown; } renderCorrection(); sync();
+        }));
+      });
+      options.appendChild(optionRow('radio', name, "Don't know / not my area", a.unknown, function (on) {
+        if (on) { a.unknown = true; delete a.verdict; } renderCorrection(); sync();
+      }, { muted: true }));
+      var renderCorrection = function () {
+        follow.innerHTML = '';
+        if (a.verdict === 'partly' || a.verdict === 'wrong') {
+          follow.appendChild(textBox('What is right?', a.correction, 'The correct version, in your words',
+            function (value) { a.correction = value; persist(); }, 'fix-' + q.id));
+        }
+      };
+      renderCorrection();
+    } else if (q.kind === 'choice' || q.kind === 'multi') {
+      var type = q.kind === 'multi' ? 'checkbox' : 'radio';
+      a.choice = a.choice || [];
+      (q.options || []).forEach(function (option) {
+        options.appendChild(optionRow(type, name, option, a.choice.indexOf(option) >= 0 && !a.unknown, function (on) {
+          delete a.unknown;
+          if (type === 'radio') { a.choice = on ? [option] : []; if (on) { delete a.other; otherInput.value = ''; } }
+          else { a.choice = a.choice.filter(function (c) { return c !== option; }); if (on) { a.choice.push(option); } }
+          unknownInput.checked = false;
+          sync();
+        }));
+      });
+      var otherInput = el('input', { class: 'other', type: 'text', placeholder: 'Other: type here', 'aria-label': 'Other answer' });
+      otherInput.value = a.other || '';
+      var otherRow = optionRow(type, name, 'Other:', !!a.other && !a.unknown, function (on) {
+        if (!on) { delete a.other; otherInput.value = ''; }
+        else { delete a.unknown; unknownInput.checked = false; if (type === 'radio') { a.choice = []; } otherInput.focus(); }
+        sync();
+      }, { other: otherInput });
+      otherInput.addEventListener('input', function () {
+        a.other = otherInput.value; delete a.unknown; unknownInput.checked = false;
+        otherRow.querySelector('input').checked = !!otherInput.value;
+        if (type === 'radio' && otherInput.value) { a.choice = []; }
+        sync();
+      });
+      options.appendChild(otherRow);
+      var unknownRow = optionRow(type, name + (type === 'checkbox' ? '-unknown' : ''), "Don't know / not my area", a.unknown, function (on) {
+        if (on) {
+          a.unknown = true; a.choice = []; delete a.other; otherInput.value = '';
+          Array.prototype.forEach.call(options.querySelectorAll('input[type=checkbox],input[type=radio]'), function (input) {
+            if (input !== unknownInput) { input.checked = false; }
+          });
+        } else { delete a.unknown; }
+        sync();
+      }, { muted: true });
+      var unknownInput = unknownRow.querySelector('input');
+      options.appendChild(unknownRow);
+    } else {
+      follow.appendChild(textBox('', a.text, q.placeholder || 'Your answer', function (value) {
+        a.text = value; card.classList.toggle('done', isAnswered(q)); persist();
+      }, 'text-' + q.id));
+    }
+    if (q.kind !== 'text') { card.appendChild(options); }
+    card.appendChild(follow);
+    if (q.comment && q.kind !== 'text') {
+      card.appendChild(textBox('Anything to add? (optional)', a.comment, '', function (value) { a.comment = value; persist(); }, 'note-' + q.id));
+    }
+    card.classList.toggle('done', isAnswered(q));
+    return card;
+  }
+
+  function updateProgress() {
+    var done = questions.filter(isAnswered).length;
+    var label = document.getElementById('progress-label');
+    if (label) {
+      label.textContent = done + ' of ' + questions.length + ' answered';
+      document.getElementById('progress-bar').style.width = (questions.length ? (100 * done / questions.length) : 0) + '%';
+    }
+  }
+
+  function render() {
+    var person = quiz.stakeholder || {};
+    var sender = (quiz.sender || {}).name || 'the sender';
+    app.appendChild(el('div', { class: 'brand', text: 'Wizard · Expert check' + (quiz.area ? ' · ' + quiz.area : '') }));
+    app.appendChild(el('h1', { text: quiz.title || 'Expert check' }));
+    var meta = el('div', { class: 'meta' }, [
+      el('span', { text: 'For ' + (person.name || 'you') + (person.role ? ', ' + person.role : '') }),
+      el('span', { text: 'From ' + sender }),
+      quiz.due ? el('span', { text: 'Please reply by ' + longDate(quiz.due) }) : null,
+      el('span', { text: questions.length + ' questions · about ' + minutes() + ' minutes' })
+    ]);
+    app.appendChild(meta);
+    if (saved && saved.answered_at) {
+      app.appendChild(el('div', { class: 'banner ok', text: 'Answered by ' + ((saved.stakeholder || {}).name || person.name || 'the expert') +
+        ' on ' + longDate(saved.answered_at) + '. You can change an answer and save again.' }));
+    }
+    var intro = el('div', { class: 'card intro' }, [quiz.intro ? el('p', { text: quiz.intro }) : null,
+      el('ol', { class: 'steps' }, [
+        el('li', {}, [el('b', { text: '1. Answer' }), el('span', { text: "Pick what is right. \"Don't know\" is fine." })]),
+        el('li', {}, [el('b', { text: '2. Save' }), el('span', { text: 'Click "Save my answers" at the bottom.' })]),
+        el('li', {}, [el('b', { text: '3. Reply' }), el('span', { text: 'Attach the saved file to your reply to ' + sender + '.' })])
+      ])]);
+    app.appendChild(intro);
+    app.appendChild(el('div', { class: 'progress', 'aria-hidden': 'true' }, [
+      el('div', { class: 'row' }, [el('span', { id: 'progress-label' }), el('span', { text: 'Saved on this computer as you go' })]),
+      el('div', { class: 'bar' }, [el('i', { id: 'progress-bar' })])
+    ]));
+    var topic = null;
+    questions.forEach(function (q, index) {
+      var title = q.topic_title || (q.topic || '').replace(/-/g, ' ');
+      if (title && title !== topic) { topic = title; app.appendChild(el('h2', { class: 'topic', text: title })); }
+      app.appendChild(renderQuestion(q, index + 1));
+    });
+    app.appendChild(el('h2', { class: 'topic', text: 'Last two questions' }));
+    CLOSING.forEach(function (q) {
+      var a = answerOf(q.id);
+      app.appendChild(el('fieldset', { class: 'card q', 'aria-labelledby': 'ask-' + q.id }, [
+        el('div', { class: 'qhead' }, [el('div', { class: 'num', text: '+', 'aria-hidden': 'true' }),
+          el('div', { class: 'ask', id: 'ask-' + q.id, text: q.ask })]),
+        textBox('', a.text, q.placeholder, function (value) { a.text = value; persist(); }, 'text-' + q.id)
+      ]));
+    });
+    var done = el('div', { class: 'card done-panel', id: 'done-panel' });
+    app.appendChild(done);
+    app.appendChild(el('div', { class: 'muted-note', text: 'This page works offline and sends nothing by itself. [quiz ' + quiz.id + ']' }));
+    updateProgress();
+  }
+
+  function payload() {
+    var answers = {};
+    Object.keys(state.answers).forEach(function (id) {
+      var a = state.answers[id];
+      var clean = {};
+      Object.keys(a).forEach(function (key) {
+        var value = a[key];
+        if (typeof value === 'string') { value = value.trim(); if (value) { clean[key] = value; } }
+        else if (Array.isArray(value)) { if (value.length) { clean[key] = value.slice(); } }
+        else if (value) { clean[key] = value; }
+      });
+      if (Object.keys(clean).length) { answers[id] = clean; }
+    });
+    return { format: 'wizard-quiz-answers', version: 1, quiz: quiz.id, stakeholder: quiz.stakeholder || {},
+             answered_at: new Date().toISOString(), answers: answers };
+  }
+  function readable(data) {
+    var lines = ['Answers to "' + (quiz.title || quiz.id) + '" from ' + ((quiz.stakeholder || {}).name || 'the expert')];
+    questions.concat(CLOSING).forEach(function (q, index) {
+      var a = data.answers[q.id];
+      if (!a) { return; }
+      var label = q.id.indexOf('x_') === 0 ? q.ask : 'Q' + (index + 1);
+      var text = a.unknown ? "Don't know" : q.kind === 'confirm' ? ({ correct: 'Correct', partly: 'Partly correct', wrong: 'Wrong' })[a.verdict] || ''
+        : q.kind === 'text' ? (a.text || '') : (a.choice || []).concat(a.other ? ['Other: ' + a.other] : []).join('; ');
+      if (a.correction) { text += ' - correct version: ' + a.correction; }
+      if (a.comment) { text += ' - comment: ' + a.comment; }
+      lines.push(label + ': ' + text);
+    });
+    return lines.join('\n');
+  }
+  function encode(data) {
+    var bytes = new TextEncoder().encode(JSON.stringify(data));
+    var binary = '';
+    for (var i = 0; i < bytes.length; i += 0x8000) { binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); }
+    return (btoa(binary).match(/.{1,76}/g) || []).join('\n');
+  }
+  function showDone(message, copyText) {
+    var panel = document.getElementById('done-panel');
+    panel.innerHTML = '';
+    panel.appendChild(el('div', { class: 'banner ok', text: message }));
+    if (copyText) {
+      var box = el('textarea', { class: 'copybox', readonly: true, 'aria-label': 'Your answers as text' });
+      box.value = copyText;
+      panel.appendChild(box);
+    }
+    panel.classList.add('show');
+    panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  function warnIfIncomplete() {
+    var missing = questions.filter(function (q) { return !isAnswered(q); }).length;
+    document.getElementById('hint').textContent = missing ? missing + ' question' + (missing > 1 ? 's' : '') +
+      ' still open. You can still save: "Don\'t know" is also fine.' : 'All questions answered. Thank you!';
+  }
+
+  document.getElementById('save').addEventListener('click', function () {
+    warnIfIncomplete();
+    var data = payload();
+    var copy = PRISTINE.cloneNode(true);
+    copy.querySelector('#quiz-answers').textContent = JSON.stringify(data).replace(/<\//g, '<\\/');
+    var file = quiz.id + '__answered.html';
+    try {
+      var blob = new Blob(['<!DOCTYPE html>\n' + copy.outerHTML], { type: 'text/html' });
+      var link = el('a', { href: URL.createObjectURL(blob), download: file });
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(function () { URL.revokeObjectURL(link.href); link.remove(); }, 2000);
+      showDone('Saved as "' + file + '" (usually in your Downloads folder). Reply to ' + ((quiz.sender || {}).name || 'the sender') +
+        "'s email and attach that file. If saving did not work, use \"Copy my answers\" and paste them into your reply.");
+    } catch (error) {
+      document.getElementById('copy').click();
+    }
+  });
+  document.getElementById('copy').addEventListener('click', function () {
+    warnIfIncomplete();
+    var data = payload();
+    var text = readable(data) + '\n\n-----BEGIN WIZARD ANSWERS-----\n' + encode(data) + '\n-----END WIZARD ANSWERS-----\n';
+    var done = function () { showDone('Copied. Paste it into your reply to ' + ((quiz.sender || {}).name || 'the sender') + "'s email.", text); };
+    var fallback = function () {
+      showDone('Select all the text below (Ctrl+A), copy it (Ctrl+C) and paste it into your reply.', text);
+      var box = document.querySelector('.copybox'); box.focus(); box.select();
+      try { if (document.execCommand('copy')) { done(); } } catch (error) { /* the text is selected for the user */ }
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text).then(done, fallback); }
+    else { fallback(); }
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

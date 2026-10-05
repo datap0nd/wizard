@@ -4,6 +4,8 @@ import {defineConfig, devices} from '@playwright/test';
 const port = Number(process.env.WIZARD_E2E_PORT ?? 8779);
 // Locally use the installed Edge (no browser download); CI installs Playwright's Chromium.
 const channel = process.env.CI ? undefined : (process.env.WIZARD_E2E_CHANNEL ?? 'msedge');
+// WIZARD_E2E_PYTHON: a Python with Wizard's dependencies, for PCs where Application Control blocks uv.
+const server = process.env.WIZARD_E2E_PYTHON ? `"${process.env.WIZARD_E2E_PYTHON}"` : 'uv run --project ../.. python';
 
 export default defineConfig({
   testDir: 'e2e',
@@ -18,7 +20,7 @@ export default defineConfig({
     {name: 'narrow', use: {...devices['Desktop Chrome'], channel, viewport: {width: 1024, height: 768}}},
   ],
   webServer: {
-    command: `uv run --project ../.. python ../../scripts/e2e_server.py --port ${port}`,
+    command: `${server} ../../scripts/e2e_server.py --port ${port}`,
     url: `http://127.0.0.1:${port}/api/v1/health`,
     reuseExistingServer: false,
     timeout: 120_000,

@@ -20,12 +20,14 @@ from wizard_agent.runtime import AgentFailure, AgentRequest, AgentRuntime, Turn
 from wizard_connectors.entitlements import Identity
 from wizard_connectors.tools import Services, ToolContext, ToolOutcome, ToolRegistry
 
+from .attachments import Attachments
 from .config import Settings
 from .security import run_token
 from .store import Store, new_id, now
 
 log = logging.getLogger("wizard.runs")
-DATA_MODE_RANK = {"SYNTHETIC": 0, "DATED_APPROVED_SNAPSHOT": 1, "LIVE_VERIFIED": 2}
+# The headline data mode of an answer is its weakest source: a user's file ranks above synthetic data, below approved ones.
+DATA_MODE_RANK = {"SYNTHETIC": 0, "USER_PROVIDED": 1, "DATED_APPROVED_SNAPSHOT": 2, "LIVE_VERIFIED": 3}
 CITATION = re.compile(r"\[(E\d{1,4})\]")
 VISUAL = re.compile(r"\[(V\d{1,4})\]")
 
@@ -59,10 +61,20 @@ class ActiveRun:
 
 
 class Recorder:
-    """Conversation-scoped evidence (E1, E2... stay valid across follow-ups) with run attribution."""
+    """Conversation-scoped evidence (E1, E2... stay valid across follow-ups) with run attribution, and the files attached
+    to the conversation (F1, F2...)."""
 
-    def __init__(self, store: Store, run: ActiveRun):
-        self.store, self.run = store, run
+    def __init__(self, store: Store, run: ActiveRun, files: Attachments | None = None):
+        self.store, self.run, self.files = store, run, files
+
+    def attachments(self) -> list[dict[str, Any]]:
+        return [a for a in self.store.conversation_attachments(self.run.conversation_id) if a["user_id"] == self.run.identity.id]
+
+    def attachment(self, label: str) -> tuple[dict[str, Any], str] | None:
+        row = next((a for a in self.attachments() if a["label"] == label), None)
+        if row is None or self.files is None:
+            return None
+        return row, self.files.text(row)
 
     def add_evidence(self, payload: dict[str, Any]) -> str:
         evidence_id = self.store.add_evidence(self.run.conversation_id, self.run.id, self.run.identity.id, payload)
@@ -116,6 +128,9 @@ def tool_label(name: str, args: dict[str, Any], services: Services) -> str:
         return f"{verb} {system} · {title}" + (f" ({filters})" if filters and verb == "Read" else "")
     return {"wizard_list_sources": "Listed the sources you can use",
             "wizard_lookup_definitions": f"Looked up “{args.get('query', '')}”",
+            "wizard_browse_knowledge": f"Browsed the knowledge base{' · ' + str(args['area']) if args.get('area') else ''}",
+            "wizard_read_knowledge": f"Read {', '.join(map(str, args.get('ids', [])))}",
+            "wizard_read_attachment": f"Read attached file {args.get('file', '')}" + (f" · {args['part']}" if args.get("part") else ""),
             "wizard_calculate": f"Calculated {str(args.get('expression', ''))[:80]}",
             "wizard_render_visual": f"Prepared a {args.get('kind', 'visual')}: {args.get('title', '')}",
             "wizard_check_my_data": f"Checked {len(args.get('claims', []))} figure(s) against the evidence"}.get(name, name)
@@ -133,6 +148,12 @@ def tool_summary(name: str, outcome: ToolOutcome) -> str:
         return f"{len(data['results'])} report(s) found"
     if "definitions" in data:
         return ", ".join(d["title"] for d in data["definitions"]) or "no definition found"
+    if "notes" in data:
+        if "areas" in data:
+            return f"{len(data['notes'])} note(s) in {len(data['areas'])} area(s)"
+        return ", ".join(n["title"] for n in data["notes"])
+    if "file" in data and "text" in data:
+        return f"{data.get('name')}: {data.get('chars', 0):,} characters" + (" (more to read)" if data.get("next_offset") else "")
     if "result" in data:
         return f"= {data['result']:,.6g}"
     if "visual_id" in data:
@@ -148,6 +169,8 @@ def tool_summary(name: str, outcome: ToolOutcome) -> str:
 
 def entitled_to(identity: Identity, evidence: dict[str, Any]) -> bool:
     system, report_id = evidence.get("system"), evidence.get("report_id")
+    if system == "attachment":
+        return True  # the user's own file in their own conversation (callers check the conversation owner)
     if not system or not report_id or not identity.can_see_report(system, report_id):
         return False
     allowed = identity.allowed_markets(system)
@@ -163,6 +186,7 @@ class RunManager:
         self.settings, self.store, self.registry, self.services, self.runtime = settings, store, registry, services, runtime
         self.active: dict[str, ActiveRun] = {}
         self._semaphore: asyncio.Semaphore | None = None
+        self.attachments = Attachments(settings, store)
 
     @property
     def semaphore(self) -> asyncio.Semaphore:
@@ -265,7 +289,8 @@ class RunManager:
                                   f"This run reached its limit of {self.settings.max_tool_calls} tool calls. Answer with "
                                   "what you have and say what is missing.")
         else:
-            context = ToolContext(identity=run.identity, run_id=run.id, recorder=Recorder(self.store, run), services=self.services)
+            context = ToolContext(identity=run.identity, run_id=run.id, recorder=Recorder(self.store, run, self.attachments),
+                                  services=self.services)
             outcome = await asyncio.to_thread(self.registry.execute, name, args, context)
         if spec and spec.category == "source":
             self.store.audit(run.identity.id, f"tool:{name}", run_id=run.id, system=name.split("_", 1)[0],
@@ -313,7 +338,9 @@ class RunManager:
                 today = datetime.now(UTC).strftime("%A %d %B %Y")
                 request = AgentRequest(
                     run_id=run.id, user_id=run.identity.id, user_email=run.identity.email, user_home=home,
-                    prompt=compose(run.question, self.history(run), run.kind, today), question=run.question, kind=run.kind,  # type: ignore[arg-type]
+                    prompt=compose(run.question, self.history(run), run.kind, today,
+                                   self.store.conversation_attachments(run.conversation_id)),
+                    question=run.question, kind=run.kind,  # type: ignore[arg-type]
                     history=self.history(run), internal_url=self.settings.internal_url,
                     run_token=run_token(self.settings.session_secret, run.id, run.identity.id, self.settings.run_timeout_s + 120))
                 await asyncio.wait_for(self.runtime.run(request, lambda k, p: self.emit(run, k, p), Bridge(self, run),

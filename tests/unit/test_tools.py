@@ -8,7 +8,7 @@ SPEND_Q3 = {"report_id": "nerp-mkt-spend-quarterly", "filters": [{"field": "fisc
 
 def test_catalog_is_read_only_and_scoped(registry):
     names = [s.name for s in registry.list()]
-    assert len(names) == len(set(names)) == 15
+    assert len(names) == len(set(names)) == 18
     assert registry.scopes() == ["asap", "gscm", "nerp", "wizard"]
     assert all(s.read_only for s in registry.list())
     forbidden = ("write", "update", "delete", "export", "send", "sql", "shell", "url", "fetch", "email")

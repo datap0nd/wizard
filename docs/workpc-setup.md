@@ -64,8 +64,10 @@ Setup does, in order:
    - `WIZARD_AGENT_RUNTIME=gemini-cli`, `WIZARD_GEMINI_MODEL=gemini-3.8-flash`, `WIZARD_DATA_DIR=data`.
    - `WIZARD_LOCAL_USER_EMAIL` from `whoami /upn`.
    - The Gemini CLI and Node paths it found.
-5. Creates `content\` (documentation template), `outbox\` and `data\`, and refreshes `tasks\`, `GEMINI.md`,
-   `.geminiignore` and the `/wizard:tasks` command.
+5. Creates `content\` (documentation template), `documents\quiz-questions\`, `documents\quiz-answers\`, `outbox\` and
+   `data\`, and refreshes `tasks\`, `templates\` (the quiz page), `docs.ps1`, `GEMINI.md`, `.geminiignore`, the
+   `/wizard:tasks` command and the Wizard-owned parts of `content\` (`schema\`, `.gemini\commands\`). Your notes,
+   catalogs, registers and inbox are never touched.
 6. **Checks the new release** with `run.py --check`:
 
    | Check | What it confirms |
@@ -124,7 +126,22 @@ through the numbered tasks in order, and asks you whenever a task needs a decisi
 | 15 | Runs Wizard's content validator until it reports 0 errors | — | `outbox\15-validation.md` |
 | 16 | Closed questions for each data owner | `content\register\open-questions.md` | counts |
 | 17 | Switch Wizard to the real catalog (only after your yes) | `.env` | `outbox\17-switch.md` |
+| 20 | Collect your Outlook mail (folders and dates you choose) and files; convert them to text | `content\inbox\` | `outbox\20-collection.md` |
+| 21 | One digest per source (best with Gemini 3.5 Flash) | `content\inbox\_digests\` | counts |
+| 22 | Topic map and stakeholder list, for you to approve | `content\register\topic-map.md`, `stakeholders.md` | counts |
+| 23 | The company documentation, written to the knowledge standard | `content\knowledge\<area>\*.md` | counts |
+| 24 | Glossaries and the ambiguous terms Wizard should ask about | `content\knowledge\glossary\` | counts |
+| 25 | Coverage: every valuable source cited or explained | `content\register\documentation-coverage.md` | `outbox\25-coverage.md` |
+| 30 | One expert quiz per area and stakeholder (HTML page + email text you send) | `documents\quiz-questions\` | counts |
+| 31 | Apply the answered quizzes to the notes | notes, `content\register\review-log.md` | counts |
 | 90 | Feedback pack for the developer | — | `outbox\FEEDBACK-FOR-CLAUDE.md` |
+
+**Company documentation (tasks 20-31).** Run `/wizard:tasks 20-25`, then `/wizard:tasks 30-31` once you have sent the
+quizzes and the answers are back. Gemini CLI cannot open PowerPoint, Excel, Word or Outlook files itself, so
+`.\docs.ps1` converts them through Office on this PC (pywin32, read-only, macros off; NASCA-protected files open
+because Office opens them as you). `.\docs.ps1 help` lists everything the kit does; it never uses the network or AI.
+Task 21 reads every source and is best run with `gemini -m gemini-3.5-flash`; the writing tasks with the strongest
+model your plan offers. See [documentation-guide.md](documentation-guide.md).
 
 `content\` is internal: it never leaves the PC through Wizard. Make it its own internal Git repository when you are
 ready (see [documentation-guide.md](documentation-guide.md)). Each task states what is shareable; the shareable files
