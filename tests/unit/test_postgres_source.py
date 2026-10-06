@@ -88,6 +88,35 @@ def test_mapped_column_names_and_missing_settings():
         PostgresSource(None).run(report, filters=[], group_by=None, measures=None, sort=None, limit=10, allowed_markets=None)
 
 
+class GoneSession(FakeSession):
+    """The view existed when Wizard read its columns, then was dropped (pg8000 reports SQLSTATE 42P01)."""
+
+    def rows(self, sql: str, **params: Any) -> list[dict[str, Any]]:
+        if "__total" in sql:
+            raise Exception({"S": "ERROR", "C": "42P01", "M": 'relation "bi_reporting.sell_in_amt_mv" does not exist'})
+        return super().rows(sql, **params)
+
+
+def test_a_missing_view_is_unavailable_not_a_query_error():
+    report = Report.model_validate(contract()["reports"][0])
+    args = {"filters": [], "group_by": None, "measures": None, "sort": None, "limit": 10, "allowed_markets": None}
+    empty = FakeSession()
+    empty.rows = lambda sql, **params: [] if "pg_attribute" in sql else FakeSession.rows(empty, sql, **params)  # type: ignore[method-assign]
+    with pytest.raises(SourceError) as error:
+        PostgresSource(SETTINGS, connect=lambda s, d: empty).run(report, **args)
+    assert error.value.code == "source_unavailable" and "does not exist" in error.value.message
+    sessions = iter([FakeSession(), GoneSession(), FakeSession()])
+    live = PostgresSource(SETTINGS, connect=lambda s, d: next(sessions))
+    live.run(report, **args)
+    with pytest.raises(SourceError) as error:
+        live.run(report, **args)
+    assert error.value.code == "source_unavailable" and "42P01" in error.value.message
+    assert live._types == {}, "the stale column list is dropped, so the next query re-reads the view"
+    moved = report.model_copy(update={"relation": report.relation.model_copy(update={"name": "other_mv"})})
+    live.run(moved, **args)
+    assert list(live._types) == ['meto_db:"bi_reporting"."other_mv"'], "column types are cached per database and view"
+
+
 def test_contract_rules_for_live_reports(tmp_path):
     root = tmp_path / "content"
     (root / "contracts" / "sources").mkdir(parents=True)

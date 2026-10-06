@@ -42,7 +42,7 @@ Wizard could not give a GSCM or SIBP number: every real report was navigation-on
   - Evidence stays `USER_PROVIDED`. Wizard now declares 19 tools.
 
 **Tests.** `scripts/verify_all.sh --allow-blocked=live-parity,postgres` on the development PC: spec, secrets,
-contracts, lint, types, python-tests (206 passed), gemini-cli (4 passed; the real CLI accepts all 19 tool schemas),
+contracts, lint, types, python-tests (207 passed), gemini-cli (4 passed; the real CLI accepts all 19 tool schemas),
 evals-schema, web-types, web-unit, web-dist, web-build and e2e (12 passed) PASS. postgres and live-parity are BLOCKED
 (no PostgreSQL or live source here).
 - New unit tests:

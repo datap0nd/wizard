@@ -43,6 +43,16 @@ def plain(value: Any) -> Any:
     return value
 
 
+def missing(relation: str) -> str:
+    return (f"{relation} does not exist on the server or this account cannot see it. Re-run the PostgreSQL export and "
+            "check the report entry.")
+
+
+def sqlstate(error: BaseException) -> str | None:
+    args = getattr(error, "args", ())
+    return args[0].get("C") if args and isinstance(args[0], dict) else None
+
+
 class PostgresSource:
     def __init__(self, settings: PgSettings | None, connect: Callable[[PgSettings, str], Session] = connect_default):
         self.settings = settings
@@ -64,16 +74,15 @@ class PostgresSource:
         found = report.column(key)
         return quote(found.column or key) if found else quote(key)
 
-    def _column_types(self, session: Session, report: Report, relation: str) -> dict[str, str]:
-        if report.id not in self._types:
+    def _column_types(self, session: Session, key: str, relation: str) -> dict[str, str]:
+        if key not in self._types:
             rows = session.rows("SELECT a.attname AS name, pg_catalog.format_type(a.atttypid, a.atttypmod) AS type "
                                 "FROM pg_catalog.pg_attribute a WHERE a.attrelid = pg_catalog.to_regclass(:rel) "
                                 "AND a.attnum > 0 AND NOT a.attisdropped", rel=relation)
             if not rows:
-                raise SourceError("source_unavailable", f"{relation} does not exist on the server or this account cannot "
-                                                        "see it. Re-run the PostgreSQL export and check the report entry.")
-            self._types[report.id] = {r["name"]: r["type"] for r in rows}
-        return self._types[report.id]
+                raise SourceError("source_unavailable", missing(relation))
+            self._types[key] = {r["name"]: r["type"] for r in rows}
+        return self._types[key]
 
     def _number(self, report: Report, key: str, types: dict[str, str]) -> str:
         found = report.column(key)
@@ -85,8 +94,8 @@ class PostgresSource:
             return f"{quote(name)}::numeric"
         return f"CAST(NULLIF(btrim({quote(name)}::text), '') AS numeric)"  # Metronome loads many columns as text
 
-    def _freshness(self, session: Session, relation: str) -> str | None:
-        cached = self._fresh.get(relation)
+    def _freshness(self, session: Session, key: str, relation: str) -> str | None:
+        cached = self._fresh.get(key)
         if cached and time.monotonic() - cached[0] < FRESHNESS_TTL_S:
             return cached[1]
         stamp: str | None = None
@@ -99,7 +108,7 @@ class PostgresSource:
                 stamp = plain(value) if value is not None else None
         except Exception:  # noqa: BLE001 - freshness is best effort; a slow scan must not fail the query
             stamp = None
-        self._fresh[relation] = (time.monotonic(), stamp)
+        self._fresh[key] = (time.monotonic(), stamp)
         return stamp
 
     # -- run ------------------------------------------------------------------------------------------------------------
@@ -134,24 +143,28 @@ class PostgresSource:
                 raise SourceError("invalid_sort", f"Cannot sort by '{spec.field}'; it is not in the result columns.")
         limit = max(1, min(limit, MAX_LIMIT))
         relation = f"{quote(report.relation.namespace)}.{quote(report.relation.name)}"
+        key = f"{report.relation.database}:{relation}"
         try:
             session = self.connect(self.settings, report.relation.database)
         except PgError as error:
             raise SourceError("source_unavailable", f"PostgreSQL is not reachable: {error}") from None
         try:
-            return self._run(session, report, relation, filters, group_by, measure_keys, column_keys, sort, limit,
+            return self._run(session, key, report, relation, filters, group_by, measure_keys, column_keys, sort, limit,
                              allowed_markets)
         except SourceError:
             raise
         except Exception as error:  # noqa: BLE001 - database errors become one readable tool error
+            if sqlstate(error) in ("42P01", "42703"):  # the view or a column went away since Wizard started
+                self._types.pop(key, None)
+                raise SourceError("source_unavailable", f"{missing(relation)} ({error_text(error)})") from None
             raise SourceError("source_error", f"PostgreSQL could not run this query: {error_text(error)}") from None
         finally:
             getattr(session, "close", lambda: None)()
 
-    def _run(self, session: Session, report: Report, relation: str, filters: list[Filter], group_by: list[str] | None,
-             measure_keys: list[str], column_keys: list[str], sort: list[Sort] | None, limit: int,
-             allowed_markets: set[str] | None) -> ResultSet:
-        types = self._column_types(session, report, f"{relation}")
+    def _run(self, session: Session, key: str, report: Report, relation: str, filters: list[Filter],
+             group_by: list[str] | None, measure_keys: list[str], column_keys: list[str], sort: list[Sort] | None,
+             limit: int, allowed_markets: set[str] | None) -> ResultSet:
+        types = self._column_types(session, key, relation)
         where: list[str] = []
         params: dict[str, Any] = {"limit": limit}
         warnings: list[str] = []
@@ -225,7 +238,7 @@ class PostgresSource:
             found = report.column(key)
             meta = found.model_dump(exclude={"column"}) if found else {"key": key, "label": key, "type": "string"}
             columns.append({k: meta.get(k) for k in ("key", "label", "type", "unit", "aggregation") if meta.get(k) is not None})
-        as_of = self._freshness(session, relation)
+        as_of = self._freshness(session, key, relation)
         if as_of is None:
             warnings.append("The server does not record when these rows were last written, so their freshness is unknown.")
         verified = report.parity is not None
