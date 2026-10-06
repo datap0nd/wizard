@@ -30,7 +30,45 @@ MAX_ROWS = 500
 STATEMENT_TIMEOUT = "60s"
 INTEGER_OIDS = {20, 21, 23}
 NUMBER_OIDS = {700, 701, 790, 1700}
-TRAILING = re.compile(r"[\s;]+$")
+DOLLAR_TAG = re.compile(r"\$[A-Za-z_]?[A-Za-z0-9_]*\$")
+
+
+def without_terminator(sql: str) -> str:
+    """Drop a final semicolon when only whitespace and comments follow it ('... DESC;  -- latest week'), scanning
+    string literals, quoted names, dollar quotes and comments so a semicolon inside them is never touched. A semicolon
+    followed by more SQL stays: PostgreSQL then refuses the second statement."""
+    i, n, end = 0, len(sql), None
+    while i < n:
+        c = sql[i]
+        if c in "'\"$":
+            end = None  # a literal, quoted name or parameter is more SQL after any semicolon
+        if c == "'":
+            escapes = i > 0 and sql[i - 1] in "eE"
+            i += 1
+            while i < n and not (sql[i] == "'" and not (i + 1 < n and sql[i + 1] == "'")):
+                i += 2 if (sql[i] == "'" or (escapes and sql[i] == "\\")) else 1
+        elif c == '"':
+            i = sql.find('"', i + 1)
+            i = n if i < 0 else i
+        elif sql.startswith("--", i):
+            i = sql.find("\n", i)
+            i = n if i < 0 else i
+            continue
+        elif sql.startswith("/*", i):
+            depth, i = 1, i + 2
+            while i < n and depth:
+                depth += 1 if sql.startswith("/*", i) else -1 if sql.startswith("*/", i) else 0
+                i += 2 if sql.startswith(("/*", "*/"), i) else 1
+            continue
+        elif c == "$" and (tag := DOLLAR_TAG.match(sql, i)):
+            close = sql.find(tag.group(), tag.end())
+            i = n if close < 0 else close + len(tag.group()) - 1
+        elif c == ";":
+            end = i if end is None else end
+        elif not c.isspace():
+            end = None
+        i += 1
+    return sql[:end] if end is not None else sql
 
 
 class QuerySession(Protocol):
@@ -80,7 +118,7 @@ class PostgresQuery:
         self.connect = connect
 
     def run(self, sql: str, database: str | None = None, max_rows: int = 200) -> QueryResult:
-        text = TRAILING.sub("", sql.strip())
+        text = without_terminator(sql).strip()
         if not text:
             raise SourceError("invalid_sql", "The query is empty.")
         database = database or self.settings.database

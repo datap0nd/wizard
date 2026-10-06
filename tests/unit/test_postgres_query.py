@@ -15,7 +15,7 @@ from wizard_api.config import load_settings
 from wizard_connectors.entitlements import Identity, SystemRights
 from wizard_connectors.fixture_source import SourceError
 from wizard_connectors.pg import PgError, PgSettings
-from wizard_connectors.postgres_query import PostgresQuery
+from wizard_connectors.postgres_query import PostgresQuery, without_terminator
 from wizard_connectors.tools import ToolContext, build_registry, build_services
 
 SETTINGS = PgSettings("db.corp", 5432, "meto_db", "reader", "secret", "prefer", "test")
@@ -55,6 +55,22 @@ def test_the_query_runs_as_written_in_a_read_only_transaction():
     assert [c["key"] for c in result.columns] == ["market", "units", "amount", "amount_2", "week_start"]
     assert [c["type"] for c in result.columns] == ["string", "integer", "number", "number", "string"]
     assert result.rows == [["EG", 12, 1234.5, 7, "2026-09-28"]] and not result.truncated and result.database == "meto_db"
+
+
+@pytest.mark.parametrize(("sql", "sent"), [
+    ("SELECT 1 ORDER BY 1 DESC;  -- latest week\n", "SELECT 1 ORDER BY 1 DESC"),
+    ("SELECT 1;; /* done */ \n -- really\n", "SELECT 1"),
+    ("SELECT ';' AS s; -- x", "SELECT ';' AS s"),
+    ("SELECT 'a'';--' AS s", "SELECT 'a'';--' AS s"),
+    ("SELECT E'it\\'s;' AS s;", "SELECT E'it\\'s;' AS s"),
+    ('SELECT 1 AS ";" ;', 'SELECT 1 AS ";" '),
+    ("SELECT $q$ ; -- $q$ AS s;", "SELECT $q$ ; -- $q$ AS s"),
+    ("SELECT 1 /* a /* nested ; */ b */;", "SELECT 1 /* a /* nested ; */ b */"),
+    ("SELECT 1; SELECT 2", "SELECT 1; SELECT 2"),
+    ("SELECT 1; 'x'", "SELECT 1; 'x'"),
+])
+def test_only_a_final_semicolon_is_dropped(sql, sent):
+    assert without_terminator(sql).strip() == sent.strip(), "a semicolon followed by more SQL is left for PostgreSQL to refuse"
 
 
 def test_rows_are_capped_and_errors_are_explained():

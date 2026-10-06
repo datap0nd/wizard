@@ -38,7 +38,7 @@ review task and a parity sign-off. The owner had already found Gemini 3.8 Flash 
   must know. AGENTS.md allows this one SQL tool as an owner exception. Wizard declares 20 tools.
 
 **Tests.** `scripts/verify_all.sh --allow-blocked=live-parity,postgres` on the development PC: spec, secrets,
-contracts, lint, types, python-tests (204 passed), gemini-cli (4 passed; the real CLI accepts all 20 tool schemas),
+contracts, lint, types, python-tests (214 passed), gemini-cli (4 passed; the real CLI accepts all 20 tool schemas),
 evals-schema, web-types, web-unit (6 passed, including the drawer showing the SQL), web-dist, web-build and e2e (12
 passed) PASS. postgres and live-parity are BLOCKED here.
 - `tests/unit/test_postgres_query.py` covers:
