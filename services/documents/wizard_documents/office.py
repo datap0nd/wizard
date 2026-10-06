@@ -62,8 +62,9 @@ def _portable_paths() -> None:
             folder = base / sub
             if folder.is_dir() and str(folder) not in sys.path:
                 sys.path.append(str(folder))
-        with contextlib.suppress(OSError, AttributeError):
-            os.add_dll_directory(str(system32))
+        if sys.platform == "win32":  # Windows-only API (also keeps mypy on Linux CI satisfied)
+            with contextlib.suppress(OSError):
+                os.add_dll_directory(str(system32))
         os.environ["PATH"] = f"{system32}{os.pathsep}{os.environ.get('PATH', '')}"
         return
 
