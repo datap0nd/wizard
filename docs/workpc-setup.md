@@ -127,7 +127,6 @@ through the numbered tasks in order, and asks you whenever a task needs a decisi
 | 16 | Closed questions for each data owner | `content\register\open-questions.md` | counts |
 | 17 | Switch Wizard to the real catalog (only after your yes) | `.env` | `outbox\17-switch.md` |
 | 18 | Data dictionary of the PostgreSQL materialized views, written from the server's catalog (read-only account) | `content\knowledge\platforms\postgresql.md`, `content\knowledge\datasets\` | counts |
-| 19 | Make chosen views queryable (SIBP first): draft and review their report entries, then sign a parity check per view with the user | `content\contracts\sources\postgresql.json` | counts |
 | 20 | Collect your Outlook mail (folders and dates you choose) and files; convert them to text | `content\inbox\` | `outbox\20-collection.md` |
 | 21 | One digest per source (best with Gemini 3.5 Flash) | `content\inbox\_digests\` | counts |
 | 22 | Topic map and stakeholder list, for you to approve | `content\register\topic-map.md`, `stakeholders.md` | counts |

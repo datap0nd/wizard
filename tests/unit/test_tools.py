@@ -8,11 +8,12 @@ SPEND_Q3 = {"report_id": "nerp-mkt-spend-quarterly", "filters": [{"field": "fisc
 
 def test_catalog_is_read_only_and_scoped(registry):
     names = [s.name for s in registry.list()]
-    assert len(names) == len(set(names)) == 19
+    assert len(names) == len(set(names)) == 20
     assert registry.scopes() == ["asap", "gscm", "nerp", "wizard"]
     assert all(s.read_only for s in registry.list())
     forbidden = ("write", "update", "delete", "export", "send", "sql", "shell", "url", "fetch", "email")
-    assert not [n for n in names if any(word in n for word in forbidden)]
+    exception = {"wizard_query_postgresql"}  # the owner's read-only SQL tool (AGENTS.md, decision 2026-10-06)
+    assert not [n for n in names if n not in exception and any(word in n for word in forbidden)]
 
 
 def test_every_schema_is_closed(registry):

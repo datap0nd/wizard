@@ -1,10 +1,7 @@
 """Typed source contracts: systems, folders, reports, columns and prompts.
 
 The contract is what a source owner approves (Step 04): it limits which fields an adapter can expose. Connector status,
-row access and data mode are separate fields, so browsing a report is never confused with reading verified rows.
-
-A live report names the database object it reads (`relation`); its figures are LIVE_UNVERIFIED until its `parity` is
-signed (one query compared with a number the owner trusts), then LIVE_VERIFIED."""
+row access and data mode are separate fields, so browsing a report is never confused with reading verified rows."""
 from __future__ import annotations
 
 import json
@@ -16,8 +13,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 ColumnType = Literal["string", "text", "integer", "number", "percent", "currency", "month", "quarter"]
 Aggregation = Literal["sum", "sum_same_currency", "last", "none"]
-DataMode = Literal["SYNTHETIC", "DATED_APPROVED_SNAPSHOT", "LIVE_UNVERIFIED", "LIVE_VERIFIED"]
-ConnectorStatus = Literal["SYNTHETIC_FIXTURE", "NAVIGATION_ONLY", "ROWS_UNVERIFIED", "ROWS_VERIFIED", "BLOCKED"]
+DataMode = Literal["SYNTHETIC", "DATED_APPROVED_SNAPSHOT", "LIVE_VERIFIED"]
+ConnectorStatus = Literal["SYNTHETIC_FIXTURE", "NAVIGATION_ONLY", "ROWS_VERIFIED", "BLOCKED"]
 RowAccess = Literal["ROWS", "NAVIGATION_ONLY"]
 
 
@@ -31,7 +28,6 @@ class Dimension(Strict):
     type: ColumnType
     role: Literal["market", "period", "model"] | None = None
     values_hint: list[str] = Field(default_factory=list)
-    column: str | None = None  # the database column, when it differs from the key
 
 
 class Measure(Strict):
@@ -40,29 +36,12 @@ class Measure(Strict):
     type: ColumnType
     unit: str | None = None
     aggregation: Aggregation
-    column: str | None = None
 
 
 class Attribute(Strict):
     key: str
     label: str
     type: ColumnType
-    column: str | None = None
-
-
-class Relation(Strict):
-    """The database object a live report reads, e.g. meto_db / bi_reporting / sell_in_amt_mv."""
-    model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
-    database: str
-    namespace: str = Field(alias="schema")
-    name: str
-
-
-class Parity(Strict):
-    """The owner compared one query with a number they trust and signed it."""
-    checked: str
-    by: str
-    reference: str
 
 
 class Prompt(Strict):
@@ -111,8 +90,6 @@ class Report(Strict):
     prompts: list[Prompt]
     caveats: list[str]
     sensitivity: Literal["internal", "restricted"]
-    relation: Relation | None = None
-    parity: Parity | None = None
 
     def column(self, key: str) -> Dimension | Measure | Attribute | None:
         columns: list[Dimension | Measure | Attribute] = [*self.dimensions, *self.measures, *self.attributes]

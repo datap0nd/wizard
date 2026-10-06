@@ -175,8 +175,10 @@ claim under `## Conflicting information` with both source ids.
 - `type: dataset`; id `<schema>-<object>` in kebab-case (prefix the database when two databases share a name); title
   `<schema>.<object>: <what it holds, in words>`; `aliases` include the exact name (`schema.object`), the bare object
   name and any name used in reports or decks.
-- Lead: what one row is (the grain, from the unique index or the GROUP BY), what it covers (markets, periods), how
-  fresh it is and how it is refreshed.
+- Lead: the database and exact name (`meto_db`, `schema.object`), what one row is (the grain, from the unique index or
+  the GROUP BY), what it covers (markets, periods), how fresh it is and how it is refreshed. Gemini queries the object
+  with SQL from these notes, so `## Pitfalls` says what a correct query must know (rates, currencies, balances,
+  duplicates across rows).
 - Sections: `## What one row is`, `## Columns` (a table: column, meaning, how it is computed from the SQL, type,
   notes; every column, `UNKNOWN` where neither the SQL nor a document says), `## Where the data comes from`,
   `## Refresh and freshness`, `## Who reads it`, `## Pitfalls`, `## Questions this note answers`, `## Open questions`.

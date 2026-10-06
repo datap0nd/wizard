@@ -1,5 +1,5 @@
 """Read-only PostgreSQL sessions shared by the documentation export (wizard_documents.postgres) and the live
-PostgreSQL source (postgres_source.py).
+PostgreSQL query tool (postgres_query.py).
 
 Settings: WIZARD_PG_HOST / _PORT / _DATABASE / _USER / _PASSWORD / _SSLMODE (Wizard's .env), else the standard
 PGHOST / PGPORT / PGDATABASE / PGUSER / PGPASSWORD / PGSSLMODE of a read-only account (data_governance's scanner).
@@ -137,6 +137,12 @@ class Pg8000Session:
         result = self.connection.run(sql, **params) or []
         names = [c["name"] for c in self.connection.columns or []]
         return [dict(zip(names, row, strict=False)) for row in result]
+
+    def query(self, sql: str) -> tuple[list[dict[str, Any]], list[list[Any]]]:
+        """One statement through the extended protocol, which PostgreSQL refuses to run with a second statement in it,
+        sent exactly as written (no :name placeholder parsing). Returns the column descriptions and the rows."""
+        context = self.connection.execute_unnamed(sql)
+        return list(context.columns or []), [list(row) for row in context.rows or []]
 
     def close(self) -> None:
         with contextlib.suppress(Exception):  # closing a broken connection is not an error worth reporting

@@ -64,9 +64,9 @@ class Settings:
     attachment_folders: list[Path] = field(default_factory=list)
     max_attachment_mb: int = 50
     attachment_timeout_s: int = 180
-    attachment_office: str = "auto"
-    # Read-only PostgreSQL account for live reports (WIZARD_PG_* in .env, else the PG* variables); None = not set.
-    postgres: PgSettings | None = None  # "never": read only plain Office Open XML files, without starting Office (tests)
+    attachment_office: str = "auto"  # "never": read only plain Office Open XML files, without starting Office (tests)
+    # Read-only PostgreSQL account for wizard_query_postgresql (WIZARD_PG_* in .env, else the PG* variables); None = not set.
+    postgres: PgSettings | None = None
     max_concurrent_runs: int = 4
     run_timeout_s: int = 600
     max_tool_calls: int = 40

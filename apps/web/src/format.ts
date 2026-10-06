@@ -34,7 +34,7 @@ export const DATA_MODE_TEXT: Record<string, {label: string; hint: string}> = {
   SYNTHETIC: {label: 'Synthetic data', hint: 'Invented test data. Not corporate figures.'},
   DATED_APPROVED_SNAPSHOT: {label: 'Approved snapshot', hint: 'An approved, dated copy of source data.'},
   LIVE_VERIFIED: {label: 'Live · verified retrieval', hint: 'Retrieved live; retrieval parity-checked against the source. Interpretation is reviewed separately.'},
-  LIVE_UNVERIFIED: {label: 'Live · not yet checked', hint: 'Read live from PostgreSQL. These figures have not yet been checked against a report the owner trusts.'},
+  LIVE: {label: 'Live', hint: 'Read live from the company PostgreSQL database with a query Gemini wrote. Open the sources to see the query.'},
   USER_PROVIDED: {label: 'Your file', hint: 'Figures from a file attached to the question. Not checked against a source system.'},
 };
 

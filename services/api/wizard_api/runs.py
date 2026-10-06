@@ -29,7 +29,7 @@ from .store import Store, new_id, now
 
 log = logging.getLogger("wizard.runs")
 # The headline data mode of an answer is its weakest source: a user's file ranks above synthetic data, below approved ones.
-DATA_MODE_RANK = {"SYNTHETIC": 0, "USER_PROVIDED": 1, "LIVE_UNVERIFIED": 2, "DATED_APPROVED_SNAPSHOT": 3, "LIVE_VERIFIED": 4}
+DATA_MODE_RANK = {"SYNTHETIC": 0, "USER_PROVIDED": 1, "LIVE": 2, "DATED_APPROVED_SNAPSHOT": 3, "LIVE_VERIFIED": 4}
 CITATION = re.compile(r"\[(E\d{1,4})\]")
 VISUAL = re.compile(r"\[(V\d{1,4})\]")
 

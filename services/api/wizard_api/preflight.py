@@ -126,11 +126,11 @@ def probe_gemini_cli(settings: Settings) -> tuple[bool, str]:
 
 
 def _check_postgres(settings: Settings) -> None:
-    """Live PostgreSQL reports need the read-only account; the application runs either way."""
+    """Gemini's SQL tool needs the read-only account; the application runs either way."""
     from wizard_connectors.pg import Pg8000Session, PgError
     if settings.postgres is None:
-        _line("WARN", "PostgreSQL reports are in the catalog but no WIZARD_PG_* settings (or PG* variables) are set: "
-                      "Wizard cannot read them")
+        _line("INFO", "PostgreSQL not configured (WIZARD_PG_* in .env, or the PG* variables of a read-only account): "
+                      "Gemini's SQL tool answers that there is no connection")
         return
     try:
         session = Pg8000Session(settings.postgres, application_name="wizard-check")
@@ -181,8 +181,7 @@ def run_checks(settings: Settings) -> int:
         app.state.store.db.close()
         systems = ", ".join(s.id.upper() for s in app.state.manager.services.catalog.systems)
         _line("PASS", f"application starts; platforms: {systems}")
-        if any(s.id == "postgresql" for s in app.state.manager.services.catalog.systems):
-            _check_postgres(settings)
+        _check_postgres(settings)
     except ConfigError as error:
         _line("FAIL", str(error))
         return 2

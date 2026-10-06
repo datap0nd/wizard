@@ -9,4 +9,4 @@ Evidence**. A decision that changes repository rules also updates [AGENTS.md](..
 - [2026-10-02 Development dependency constraints](2026-10-02-dependencies.md)
 - [2026-10-02 Work-PC installation and task kit](2026-10-02-workpc-install.md)
 - [2026-10-05 Company documentation, expert quizzes and attached files](2026-10-05-company-documentation.md)
-- [2026-10-06 Live numbers from PostgreSQL, and totals over attached spreadsheets](2026-10-06-live-postgresql.md)
+- [2026-10-06 Gemini queries PostgreSQL with its own SQL; totals over attached spreadsheets](2026-10-06-live-postgresql.md)

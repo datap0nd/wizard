@@ -23,8 +23,8 @@
           "additionalProperties": false,
           "required": ["status", "data_mode", "transport", "live_interface"],
           "properties": {
-            "status": {"enum": ["SYNTHETIC_FIXTURE", "NAVIGATION_ONLY", "ROWS_UNVERIFIED", "ROWS_VERIFIED", "BLOCKED"]},
-            "data_mode": {"enum": ["SYNTHETIC", "DATED_APPROVED_SNAPSHOT", "LIVE_UNVERIFIED", "LIVE_VERIFIED"]},
+            "status": {"enum": ["SYNTHETIC_FIXTURE", "NAVIGATION_ONLY", "ROWS_VERIFIED", "BLOCKED"]},
+            "data_mode": {"enum": ["SYNTHETIC", "DATED_APPROVED_SNAPSHOT", "LIVE_VERIFIED"]},
             "transport": {"type": "string"},
             "live_interface": {"type": "string"}
           }
@@ -61,14 +61,7 @@
           "prompts": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["key", "label"],
                                                  "properties": {"key": {"type": "string"}, "label": {"type": "string"}, "multi": {"type": "boolean"}}}},
           "caveats": {"type": "array", "items": {"type": "string"}},
-          "sensitivity": {"enum": ["internal", "restricted"]},
-          "relation": {"type": "object", "additionalProperties": false, "required": ["database", "schema", "name"],
-                       "description": "Live reports: the database object they read.",
-                       "properties": {"database": {"type": "string"}, "schema": {"type": "string"}, "name": {"type": "string"}}},
-          "parity": {"type": "object", "additionalProperties": false, "required": ["checked", "by", "reference"],
-                     "description": "Signed comparison of one query with a number the owner trusts (YYYY-MM-DD, who, what).",
-                     "properties": {"checked": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
-                                    "by": {"type": "string", "minLength": 1}, "reference": {"type": "string", "minLength": 1}}}
+          "sensitivity": {"enum": ["internal", "restricted"]}
         }
       }
     }
@@ -77,14 +70,11 @@
     "columnType": {"enum": ["string", "text", "integer", "number", "percent", "currency", "month", "quarter"]},
     "dimension": {"type": "object", "additionalProperties": false, "required": ["key", "label", "type"],
                   "properties": {"key": {"type": "string"}, "label": {"type": "string"}, "type": {"$ref": "#/$defs/columnType"},
-                                 "role": {"enum": ["market", "period", "model"]}, "values_hint": {"type": "array", "items": {"type": "string"}},
-                                 "column": {"type": "string"}}},
+                                 "role": {"enum": ["market", "period", "model"]}, "values_hint": {"type": "array", "items": {"type": "string"}}}},
     "measure": {"type": "object", "additionalProperties": false, "required": ["key", "label", "type", "aggregation"],
                 "properties": {"key": {"type": "string"}, "label": {"type": "string"}, "type": {"$ref": "#/$defs/columnType"},
-                               "unit": {"type": "string"}, "aggregation": {"enum": ["sum", "sum_same_currency", "last", "none"]},
-                               "column": {"type": "string"}}},
+                               "unit": {"type": "string"}, "aggregation": {"enum": ["sum", "sum_same_currency", "last", "none"]}}},
     "attribute": {"type": "object", "additionalProperties": false, "required": ["key", "label", "type"],
-                  "properties": {"key": {"type": "string"}, "label": {"type": "string"}, "type": {"$ref": "#/$defs/columnType"},
-                                 "column": {"type": "string"}}}
+                  "properties": {"key": {"type": "string"}, "label": {"type": "string"}, "type": {"$ref": "#/$defs/columnType"}}}
   }
 }

@@ -1,4 +1,4 @@
-export type DataMode = 'SYNTHETIC' | 'DATED_APPROVED_SNAPSHOT' | 'LIVE_UNVERIFIED' | 'LIVE_VERIFIED' | 'USER_PROVIDED';
+export type DataMode = 'SYNTHETIC' | 'DATED_APPROVED_SNAPSHOT' | 'LIVE' | 'LIVE_VERIFIED' | 'USER_PROVIDED';
 export type CheckStatus = 'CHECKED' | 'NOT_CHECKED' | 'DISCREPANCY';
 export type RunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
 export type RuntimeKind = 'gemini-cli' | 'code-assist' | 'replay';
@@ -95,7 +95,9 @@ export interface Evidence extends EvidenceSummary {
   tool: string;
   folder_path: string[];
   connector_status: string;
-  request: {filters: {field: string; values: string[]}[]; group_by: string[] | null; measures: string[] | null; limit: number};
+  /** Report and file queries: filters and grouping. PostgreSQL: the SQL Gemini wrote and the database it ran on. */
+  request: {filters?: {field: string; values: string[]}[]; group_by?: string[] | null; measures?: string[] | null; limit?: number;
+            sql?: string; database?: string; max_rows?: number};
   columns: Column[];
   rows: (string | number | null)[][];
   retrieved_at: string;

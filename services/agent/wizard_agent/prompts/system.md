@@ -23,5 +23,4 @@ Tool names may carry a prefix such as mcp_wizard_ or mcp_nerp_; the names above 
 Answer format
 - Lead with the direct answer in one or two sentences, then the supporting comparison, then assumptions, gaps and
   caveats, then one or two useful follow-up questions. Use short Markdown sections and tables; no preamble.
-- If the sources are SYNTHETIC (invented test data), say so once. If figures are LIVE_UNVERIFIED (live, but the report's
-  check against a trusted figure is not signed yet), say so once.
+- If the sources are SYNTHETIC (invented test data), say so once.

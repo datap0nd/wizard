@@ -3,7 +3,57 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
+## 2026-10-06 (evening) — Gemini writes its own SQL on PostgreSQL; the report-entry connector is withdrawn
+
+Decision: [2026-10-06 live PostgreSQL](decisions/2026-10-06-live-postgresql.md). The owner withdrew the connector
+below the same day. It constrained Gemini before any failure had been seen: report entries, aggregation rules, a
+review task and a parity sign-off. The owner had already found Gemini 3.8 Flash excellent on this data.
+
+**What changed.**
+- **New tool `wizard_query_postgresql(sql, database?, max_rows?)`** (`wizard_connectors/postgres_query.py`). It reads
+  whatever the read-only account's grants allow, guided by the task 18 dataset notes, and `wizard_list_sources` lists
+  PostgreSQL when it is connected.
+- **Protections:**
+  - one statement through the extended protocol, with pg8000's placeholder parsing bypassed. pg8000's simple protocol
+    would have accepted chained statements;
+  - wrapped as a subquery;
+  - START TRANSACTION READ ONLY, always rolled back;
+  - a fresh connection per call, closed afterwards;
+  - 60 s statement and 2 s lock timeouts;
+  - at most 500 rows.
+- **Labels and evidence.**
+  - Data mode `LIVE` ("Live"), connector status `READ_ONLY_SQL`.
+  - The sources drawer shows the SQL and the database.
+  - Check my data runs the same SQL again and reports UNCHANGED or CHANGED.
+- **Rights.** The tool needs the `postgresql` right for every market. The local Owner has it whenever a connection is
+  set.
+- **Removed:**
+  - `postgres_source.py`, `postgres_contract.py`, task 19, and `.\docs.ps1 postgres-contract` / `postgres-sample`;
+  - `relation`, `parity` and `column` in report entries;
+  - `LIVE_UNVERIFIED`, `ROWS_UNVERIFIED`, and the system-prompt line about unchecked figures.
+  - Catalog, validator and contract schema are back to `7ba5025`.
+- **Kept:** the attachment tables and `wizard_query_attachment`, the shared `pg.py`, the PostgreSQL settings, and the
+  start-up check (now always shown: reachable and read-only, or not configured).
+- **Docs.** The knowledge standard asks dataset notes to name the database and say in `## Pitfalls` what a correct query
+  must know. AGENTS.md allows this one SQL tool as an owner exception. Wizard declares 20 tools.
+
+**Tests.** `scripts/verify_all.sh --allow-blocked=live-parity,postgres` on the development PC: spec, secrets,
+contracts, lint, types, python-tests (204 passed), gemini-cli (4 passed; the real CLI accepts all 20 tool schemas),
+evals-schema, web-types, web-unit (6 passed, including the drawer showing the SQL), web-dist, web-build and e2e (12
+passed) PASS. postgres and live-parity are BLOCKED here.
+- `tests/unit/test_postgres_query.py` covers:
+  - the SQL sent as written, inside a read-only transaction that is rolled back;
+  - caps, types and error hints;
+  - rights, evidence and Check my data;
+  - the local Owner's access.
+- `tests/integration/test_postgres_query_real.py` (CI's PostgreSQL 16, under an account allowed to write):
+  - real analysis with a CTE, a join and window functions;
+  - six write attempts, each refused and leaving the data unchanged;
+  - a setting changed by one query does not outlive it.
+
 ## 2026-10-06 (later) — Live PostgreSQL reports and totals over attached spreadsheets
+
+Withdrawn the same evening (entry above), except the attachment tables.
 
 Decision: [2026-10-06 live PostgreSQL](decisions/2026-10-06-live-postgresql.md). Gemini CLI had told the owner that
 Wizard could not give a GSCM or SIBP number: every real report was navigation-only.

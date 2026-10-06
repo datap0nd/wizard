@@ -28,7 +28,6 @@ from wizard_agent.secret_box import SecretBox
 from wizard_connectors.content import errors, validate_content
 from wizard_connectors.entitlements import Identity, IdentityDirectory, SystemRights
 from wizard_connectors.paths import ROOT
-from wizard_connectors.postgres_source import PostgresSource
 from wizard_connectors.tools import build_registry, build_services
 
 from . import __version__
@@ -158,10 +157,9 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
             raise ConfigError(f"WIZARD_CONTENT_DIR {settings.content_dir} has {len(errors(problems))} error(s); run "
                               "scripts/validate_content.py on it. First: " + str(errors(problems)[0]))
         services = build_services(contracts=settings.content_dir / "contracts" / "sources",
-                                  knowledge=settings.content_dir / "knowledge",
-                                  live={"postgresql": PostgresSource(settings.postgres)})
+                                  knowledge=settings.content_dir / "knowledge", postgres=settings.postgres)
     else:
-        services = build_services()
+        services = build_services(postgres=settings.postgres)
     registry = build_registry(services)
     identities = IdentityDirectory.load(settings.identities_file)
     store = Store(settings.data_dir / "wizard.sqlite3")
@@ -171,7 +169,8 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         linked = store.link(OWNER_ID)
         email = (linked["google_email"] if linked else settings.local_user_email) or ""
         owner = Identity(id=OWNER_ID, email=email.lower(), name=settings.local_user_name or "You", role="Owner (local test)",
-                         entitlements={s.id: SystemRights(reports=["*"], markets=["*"]) for s in services.catalog.systems})
+                         entitlements={system: SystemRights(reports=["*"], markets=["*"]) for system in
+                                       [*(s.id for s in services.catalog.systems), *(["postgresql"] if services.postgres else [])]})
         identities = IdentityDirectory([owner, *[i for i in identities.all() if not owner.email or i.email != owner.email]])
     interrupted = store.mark_interrupted()
     secret_box = SecretBox()
@@ -286,7 +285,8 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         store.touch_user(identity.id, identity.email, identity.name, identity.role)
         readiness = await runtime.readiness(settings.user_home(identity.id), identity.email)
         modes = sorted({s.connector.data_mode for s in services.catalog.systems if identity.can_use_system(s.id)
-                        and s.connector.status in ("SYNTHETIC_FIXTURE", "ROWS_UNVERIFIED", "ROWS_VERIFIED")})
+                        and s.connector.status in ("SYNTHETIC_FIXTURE", "ROWS_VERIFIED")}
+                       | ({"LIVE"} if services.postgres and identity.can_use_system("postgresql") else set()))
         return {**base, "diagnostics": settings.diagnostics,
                 "identity": {"id": identity.id, "name": identity.name, "email": identity.email, "role": identity.role},
                 "runtime": {"kind": runtime.kind, "label": runtime.label(), "model": runtime.model, **readiness},
@@ -570,9 +570,7 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
                              "prompts": [p.model_dump() for p in r.prompts], "measures": [m.label for m in r.measures],
                              "sensitivity": r.sensitivity,
                              "status": "NAVIGATION_ONLY" if r.row_access == "NAVIGATION_ONLY" else
-                             ("ROWS_VERIFIED" if contract.system.connector.status == "ROWS_VERIFIED"
-                              or (contract.system.connector.status == "ROWS_UNVERIFIED" and r.parity) else
-                              contract.system.connector.status)}
+                             ("ROWS_VERIFIED" if contract.system.connector.status == "ROWS_VERIFIED" else contract.system.connector.status)}
                             for r in visible]}
 
     # Dev diagnostics -----------------------------------------------------------------------------------------------------

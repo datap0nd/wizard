@@ -444,7 +444,7 @@
     },
     {
       "name": "wizard_list_sources",
-      "description": "List the source systems you can use, their data families (spend, sell-out, share, switching...), connector status and data mode (SYNTHETIC, DATED_APPROVED_SNAPSHOT or LIVE_VERIFIED).",
+      "description": "List the source systems you can use, their data families (spend, sell-out, share, switching...), connector status and data mode (SYNTHETIC, LIVE, DATED_APPROVED_SNAPSHOT or LIVE_VERIFIED).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {},
@@ -711,6 +711,38 @@
         },
         "required": [
           "file"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "wizard_query_postgresql",
+      "description": "Run one read-only SQL query on the company PostgreSQL server and get the rows back: joins, window functions, CTEs, any aggregation the question needs. The dataset notes describe its materialized views (what a row is, columns, units, refresh): find them with wizard_browse_knowledge (area 'datasets') or wizard_lookup_definitions and read them with wizard_read_knowledge. You can also inspect information_schema and pg_catalog. At most max_rows rows come back (truncated=true when there are more). Each call is live evidence to cite like [E3]; the user can see your SQL.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "sql": {
+            "description": "One PostgreSQL query: SELECT ... or WITH ... SELECT .... Name tables as schema.table. It runs as a subquery, so no other statements (1-20000 characters)",
+            "type": "string"
+          },
+          "database": {
+            "description": "Database on the server; omit for the default one. Set it when a dataset note says the view lives in another database (pattern ^[A-Za-z0-9_.-]{1,63}$)",
+            "type": "string"
+          },
+          "max_rows": {
+            "description": "Rows to return (hard cap 500). Aggregate in SQL rather than fetching detail rows (default 200)",
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sql"
         ],
         "type": "object"
       },

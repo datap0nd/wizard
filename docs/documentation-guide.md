@@ -40,9 +40,8 @@ most, because Wizard's tools enforce it.
   (`inbox/_digests/`) stay in `inbox/` on the work PC and are never committed.
 - Validate with `.\docs.ps1 validate` on the work PC, or `uv run python scripts/validate_content.py <folder>`; Wizard
   applies the same checks at start-up and will not start on errors.
-- Real content mostly *describes* reports: a report is `NAVIGATION_ONLY`, with no data file, unless its platform has a
-  live adapter. The only one so far is PostgreSQL (task 19). Its reports are read live and show "Live · not yet checked"
-  until a parity check is signed for each one.
+- Real content can only *describe* reports: every report is `NAVIGATION_ONLY` with no data file. PostgreSQL is the
+  exception, and not through reports: Gemini queries it directly with SQL, guided by the dataset notes.
 
 ## How the company documentation is produced (Gemini CLI on the work PC)
 
@@ -96,27 +95,20 @@ Gemini reads them with `wizard_read_attachment`, and each read is evidence with 
 presented as a verified source. Spreadsheet sheets and CSV files are also kept as full typed tables, so Gemini can
 filter, group and total every row with `wizard_query_attachment` rather than estimating from a sample.
 
-## PostgreSQL views with live numbers
+## PostgreSQL: documentation, then Gemini's own SQL
 
-Task 18 documents the materialized views. Task 19 makes the ones the user chooses queryable:
-1. `.\docs.ps1 postgres-contract --view schema.view` drafts one report entry per view in
-   `contracts/sources/postgresql.json`. The draft uses the export and the dataset note; every guess is marked
-   `UNCERTAIN:`.
-2. Gemini CLI reviews each entry with the user: description, period, market and model roles, and each measure's
-   aggregation rule and unit.
-3. Wizard then answers from those views with "Live · not yet checked".
-4. To sign a view, the user picks one figure they trust. `.\docs.ps1 postgres-sample --report <id> --filter ...` runs
-   Wizard's own query for it. If the two match, the entry gets
-   `"parity": {"checked": "YYYY-MM-DD", "by": "Name (role)", "reference": "..."}`. After a restart, that view's figures
-   show "Live · verified".
+Task 18's dataset notes are what Gemini reads before it queries a view: what one row is, every column's meaning, units,
+refresh, and pitfalls. Wizard then gives Gemini one tool, `wizard_query_postgresql`, and Gemini writes the SQL the
+question needs. Nothing is pre-declared per view and there is no sign-off step. Better notes, especially
+`## Pitfalls`, are how answers improve. Add a rule only after an answer has gone wrong without it.
 
-Wizard never writes SQL from Gemini's text. The query comes from the entry's columns and aggregation rules, with bound
-values, in a read-only session (`WIZARD_PG_*` in `.env`, else data_governance's `PG*` read-only account).
+Answers from it are labelled "Live", and the sources drawer shows the exact SQL with its rows. The connection uses
+`WIZARD_PG_*` in `.env`, else the `PG*` variables. A dedicated read-only role is best.
 
 ## Review and sign-off
 
 A note is a draft until its owner signs it: `status: SIGNED`, the owner's name in `owner`, recorded in
 `register/review-log.md`. An expert's quiz answers make it *expert-checked* (`reviewed`, `reviewed_by`) but do not sign
 it. Report entries are reviewed per platform by the source owner (description, grain, units, aggregation rule,
-caveats, sensitivity) and stay `NAVIGATION_ONLY` until a live adapter exists
-([source-onboarding.md](source-onboarding.md)). A live report counts as verified only after a signed parity check.
+caveats, sensitivity) and stay `NAVIGATION_ONLY` until a live adapter and a signed parity check exist
+([source-onboarding.md](source-onboarding.md)).

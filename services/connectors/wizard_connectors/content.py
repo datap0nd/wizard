@@ -4,9 +4,8 @@ Layout: <dir>/contracts/sources/<platform>.json (report catalogs) and optionally
 guides and definitions). Used by `scripts/validate_content.py` and by the API at start-up (WIZARD_CONTENT_DIR): any
 error stops the service with a readable message instead of serving a half-valid catalog.
 
-Real content may only describe reports, except on a system with a live adapter (PostgreSQL): there a report may be
-ROWS when it names the database object it reads (`relation`). The system is then ROWS_UNVERIFIED / LIVE_UNVERIFIED and
-each report's figures stay "not yet checked" until its `parity` is signed. Content never points at data files."""
+Real content may only describe reports; it cannot make a report readable. Until a live adapter and a signed parity
+check exist, every report must be NAVIGATION_ONLY with no fixture file, and no system may claim ROWS_VERIFIED."""
 from __future__ import annotations
 
 import json
@@ -19,7 +18,7 @@ from pydantic import ValidationError
 from .catalog import SourceContract
 from .knowledge import ENTRY, FRONT_MATTER, NOTE_TYPES, front_matter, parse_list, unquote
 
-LIVE_ADAPTERS: set[str] = {"postgresql"}  # systems with a live read-only adapter (postgres_source.py)
+LIVE_ADAPTERS: set[str] = set()  # systems with an approved, parity-tested live adapter (none yet)
 SECRET_PATTERNS = {
     "Google API key": re.compile(r"AIza[0-9A-Za-z_\-]{35}"),
     "Google access token": re.compile(r"ya29\.[0-9A-Za-z_\-]{20,}"),
@@ -83,16 +82,10 @@ def validate_content(root: Path) -> list[Problem]:
         system = contract.system
         if path.stem != system.id:
             problems.append(Problem("error", where, f"file name must match system id '{system.id}'"))
-        status = system.connector.status
-        if status in ("ROWS_VERIFIED", "SYNTHETIC_FIXTURE", "ROWS_UNVERIFIED") and system.id not in LIVE_ADAPTERS:
-            problems.append(Problem("error", where, f"connector status {status} is not allowed for real content: no live "
-                                                    "adapter exists for this system yet (use NAVIGATION_ONLY)"))
-        if system.id in LIVE_ADAPTERS and status not in ("NAVIGATION_ONLY", "ROWS_UNVERIFIED"):
-            problems.append(Problem("error", where, f"{system.id} is NAVIGATION_ONLY or ROWS_UNVERIFIED: each report is "
-                                                    "verified on its own (its parity), never the whole system at once"))
-        if status == "ROWS_UNVERIFIED" and system.connector.data_mode != "LIVE_UNVERIFIED":
-            problems.append(Problem("error", where, "a ROWS_UNVERIFIED system has data_mode LIVE_UNVERIFIED"))
-
+        if system.connector.status in ("ROWS_VERIFIED", "SYNTHETIC_FIXTURE") and system.id not in LIVE_ADAPTERS:
+            problems.append(Problem("error", where, f"connector status {system.connector.status} is not allowed for real "
+                                                    "content: no approved live adapter exists for this system yet "
+                                                    "(use NAVIGATION_ONLY)"))
         if system.connector.data_mode == "SYNTHETIC":
             problems.append(Problem("error", where, "data_mode SYNTHETIC belongs in the Wizard repo, not in real content"))
         folders = {f.id for f in contract.folders}
@@ -109,27 +102,8 @@ def validate_content(root: Path) -> list[Problem]:
             if report.folder not in folders:
                 problems.append(Problem("error", label, f"unknown folder '{report.folder}'"))
             if report.row_access == "ROWS" and system.id not in LIVE_ADAPTERS:
-                problems.append(Problem("error", label, "row_access ROWS needs an approved live adapter for this system; "
+                problems.append(Problem("error", label, "row_access ROWS needs an approved live adapter and signed parity; "
                                                         "keep it NAVIGATION_ONLY"))
-            elif report.row_access == "ROWS":
-                if status != "ROWS_UNVERIFIED":
-                    problems.append(Problem("error", label, "row_access ROWS needs the system's connector status "
-                                                            "ROWS_UNVERIFIED"))
-                if report.relation is None:
-                    problems.append(Problem("error", label, "a live report names the object it reads: relation "
-                                                            "{database, schema, name}"))
-                if not report.dimensions and not report.measures:
-                    problems.append(Problem("error", label, "a live report needs dimensions or measures to query"))
-            if report.parity is not None:
-                if not ISO_DATE.match(report.parity.checked) or not report.parity.by.strip() or not report.parity.reference.strip():
-                    problems.append(Problem("error", label, "parity needs checked (YYYY-MM-DD), by (name and role) and "
-                                                            "reference (what was compared)"))
-                if report.row_access != "ROWS":
-                    problems.append(Problem("error", label, "parity is only meaningful on a report Wizard can read (ROWS)"))
-            elif report.row_access == "ROWS":
-                problems.append(Problem("warning", label, "figures show as 'Live, not yet checked' until its parity is signed"))
-            periods = [d for d in report.dimensions if d.role == "period"]
-            currencies = [d for d in report.dimensions if "currency" in d.key]
             if report.file is not None:
                 problems.append(Problem("error", label, "file must be null: real content never points at data files"))
             for measure in report.measures:
@@ -137,12 +111,6 @@ def validate_content(root: Path) -> list[Problem]:
                     problems.append(Problem("error", label, f"measure {measure.key} needs a unit"))
                 if measure.type == "percent" and measure.aggregation != "none":
                     problems.append(Problem("error", label, f"measure {measure.key} is a percentage and must not be summed"))
-                if measure.aggregation == "last" and len(periods) != 1:
-                    problems.append(Problem("error", label, f"measure {measure.key} is a period-end balance (last): the "
-                                                            "report needs exactly one dimension with role period"))
-                if measure.aggregation == "sum_same_currency" and not currencies:
-                    problems.append(Problem("error", label, f"measure {measure.key} adds up within one currency: the "
-                                                            "report needs a currency dimension (key containing 'currency')"))
             if not report.description.strip():
                 problems.append(Problem("warning", label, "missing description: Gemini will struggle to choose this report"))
             if any(c.upper().startswith("UNCERTAIN") for c in report.caveats):
