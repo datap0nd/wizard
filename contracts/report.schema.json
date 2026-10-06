@@ -19,8 +19,8 @@
     "notes": {"type": "array", "items": {"type": "string"}},
     "visuals": {"type": "array", "items": {"type": "object", "required": ["id", "kind", "title", "columns", "rows", "evidence_ids", "derived_by"]}},
     "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}},
-    "data_mode": {"enum": ["SYNTHETIC", "DATED_APPROVED_SNAPSHOT", "LIVE_VERIFIED", "USER_PROVIDED", null]},
-    "data_modes": {"type": "array", "items": {"enum": ["SYNTHETIC", "DATED_APPROVED_SNAPSHOT", "LIVE_VERIFIED", "USER_PROVIDED"]}},
+    "data_mode": {"enum": ["SYNTHETIC", "DATED_APPROVED_SNAPSHOT", "LIVE_UNVERIFIED", "LIVE_VERIFIED", "USER_PROVIDED", null]},
+    "data_modes": {"type": "array", "items": {"enum": ["SYNTHETIC", "DATED_APPROVED_SNAPSHOT", "LIVE_UNVERIFIED", "LIVE_VERIFIED", "USER_PROVIDED"]}},
     "runtime": {"type": "object", "required": ["kind", "label", "model"],
                 "properties": {"kind": {"enum": ["gemini-cli", "code-assist", "replay"]}, "label": {"type": "string"},
                                "model": {"type": "string"}, "session_id": {"type": ["string", "null"]}}},
@@ -36,7 +36,7 @@
                    "rows", "total_rows", "truncated", "as_of", "retrieved_at", "digest", "warnings", "locator"],
       "properties": {
         "id": {"type": "string", "pattern": "^E[0-9]+$"},
-        "data_mode": {"enum": ["SYNTHETIC", "DATED_APPROVED_SNAPSHOT", "LIVE_VERIFIED", "USER_PROVIDED"]},
+        "data_mode": {"enum": ["SYNTHETIC", "DATED_APPROVED_SNAPSHOT", "LIVE_UNVERIFIED", "LIVE_VERIFIED", "USER_PROVIDED"]},
         "connector_status": {"enum": ["SYNTHETIC_FIXTURE", "NAVIGATION_ONLY", "ROWS_VERIFIED", "BLOCKED"]},
         "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "rows": {"type": "array", "maxItems": 500}

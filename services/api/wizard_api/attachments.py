@@ -141,7 +141,7 @@ class Attachments:
         digest = hashlib.sha256(source.read_bytes()).hexdigest()
         command = [sys.executable, str(ROOT / "scripts" / "wizard_docs.py"), "convert", str(source),
                    "--out", str(folder / "converted"), "--json", "--slide-images", "none",
-                   "--office", self.settings.attachment_office]
+                   "--office", self.settings.attachment_office, "--tables"]
         async with self.lock:  # one Office conversion at a time
             try:
                 completed = await asyncio.to_thread(subprocess.run, command, capture_output=True, text=True,

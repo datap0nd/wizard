@@ -4,6 +4,8 @@
 #   .\docs.ps1 outlook-export --folder "Inbox/Projects" --since 2026-01-01 [--match launch GTM] [--max 500]
 #   .\docs.ps1 postgres-check                connect read-only to PostgreSQL (WIZARD_PG_* in .env, else PG* variables)
 #   .\docs.ps1 postgres-catalog [--schema S] export every materialized view: structure, lineage, refresh, light profile
+#   .\docs.ps1 postgres-contract --view schema.view   draft report entries so Wizard can query those views (task 19)
+#   .\docs.ps1 postgres-sample --report <id> [--filter market=EG] [--group-by market]   Wizard's query, for a check
 #   .\docs.ps1 extract                       convert everything in content\inbox to text (only new or changed files)
 #   .\docs.ps1 status | next [--limit 25] | topics | coverage
 #   .\docs.ps1 validate                      check content\ the way Wizard checks it at start-up
@@ -31,7 +33,7 @@ $quizzes = Join-Path $installDir 'documents\quiz-questions'
 $answers = Join-Path $installDir 'documents\quiz-answers'
 switch ($command) {
     'validate' { & $python (Join-Path $release 'scripts\validate_content.py') $content; exit $LASTEXITCODE }
-    { $_ -in @('extract', 'next', 'topics', 'coverage', 'outlook-export', 'postgres-check', 'postgres-catalog') } { $arguments = @($command, $content) + $rest; break }
+    { $_ -in @('extract', 'next', 'topics', 'coverage', 'outlook-export', 'postgres-check', 'postgres-catalog', 'postgres-contract', 'postgres-sample') } { $arguments = @($command, $content) + $rest; break }
     'status' { $arguments = @('status', $content, '--quizzes', $quizzes) + $rest; break }
     'quiz-check' { $arguments = @('quiz-check') + $rest + @('--content', $content); break }
     'quiz-answers' { if ($rest.Count -eq 0) { $rest = @($answers) }; $arguments = @('quiz-answers') + $rest + @('--quizzes', $quizzes); break }

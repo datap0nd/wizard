@@ -9,10 +9,12 @@ import posixpath
 import re
 import zipfile
 from pathlib import Path
+from typing import Any
 from xml.etree import ElementTree as ET
 
 from .common import ConversionError, Converted, chart_block, markdown_table
 from .sheets import Sheet, render
+from .tables import MAX_TABLE_ROWS, build
 
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 P = "{http://schemas.openxmlformats.org/presentationml/2006/main}"
@@ -192,7 +194,7 @@ def column_index(reference: str) -> int:
     return index - 1
 
 
-def read_xlsx(archive: zipfile.ZipFile, max_rows: int = MAX_SHEET_ROWS) -> Converted:
+def read_xlsx(archive: zipfile.ZipFile, max_rows: int = MAX_SHEET_ROWS, tables: bool = False) -> Converted:
     names = set(archive.namelist())
     shared: list[str] = []
     if "xl/sharedStrings.xml" in names:
@@ -200,7 +202,10 @@ def read_xlsx(archive: zipfile.ZipFile, max_rows: int = MAX_SHEET_ROWS) -> Conve
             shared.append("".join(t.text or "" for t in item.iter(f"{S}t")))
     workbook = parse_xml(archive.read("xl/workbook.xml"))
     rels = relationships(archive, "xl/workbook.xml")
-    out, parts = [], []
+    out: list[str] = []
+    parts: list[str] = []
+    built: list[Any] = []
+    keep = MAX_TABLE_ROWS if tables else max_rows  # tables keep every row; the text shows the first max_rows
     for sheet_el in workbook.iter(f"{S}sheet"):
         name = sheet_el.get("name", "Sheet")
         target = rels.get(sheet_el.get(f"{R}id", ""), ("", ""))[1]
@@ -211,7 +216,7 @@ def read_xlsx(archive: zipfile.ZipFile, max_rows: int = MAX_SHEET_ROWS) -> Conve
         total, width = 0, 0
         for row in parse_xml(archive.read(target)).iter(f"{S}row"):
             total += 1
-            if len(values) >= max_rows:
+            if len(values) >= keep:
                 continue
             row_values: list[object] = []
             row_formulas: list[str] = []
@@ -243,12 +248,17 @@ def read_xlsx(archive: zipfile.ZipFile, max_rows: int = MAX_SHEET_ROWS) -> Conve
             formulas.append(row_formulas)
         hidden = sheet_el.get("state", "visible") != "visible"
         parts.append(f"Sheet: {name}")
-        out.append(render(Sheet(name, values, formulas, hidden=hidden, total_rows=total, total_columns=width)))
-    return Converted("\n\n".join(out), "ooxml", parts=parts,
+        out.append(render(Sheet(name, values[:max_rows], formulas[:max_rows], hidden=hidden, total_rows=total,
+                                total_columns=width)))
+        if tables:
+            table = build(name, values, total)
+            if table is not None:
+                built.append(table)
+    return Converted("\n\n".join(out), "ooxml", parts=parts, tables=built,
                      notes=["Read without Office: pivot tables and charts were not described."] if out else [])
 
 
-def read(path: Path, max_rows: int = MAX_SHEET_ROWS) -> Converted:
+def read(path: Path, max_rows: int = MAX_SHEET_ROWS, tables: bool = False) -> Converted:
     try:
         with zipfile.ZipFile(path) as archive:
             suffix = path.suffix.lower()
@@ -256,7 +266,7 @@ def read(path: Path, max_rows: int = MAX_SHEET_ROWS) -> Converted:
                 return read_docx(archive)
             if suffix in (".pptx", ".pptm", ".ppsx", ".potx"):
                 return read_pptx(archive)
-            return read_xlsx(archive, max_rows)
+            return read_xlsx(archive, max_rows, tables)
     except zipfile.BadZipFile:
         raise ConversionError("not a plain Office file (protected, for example by NASCA, or damaged): it needs the "
                               "Office applications") from None

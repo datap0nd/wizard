@@ -41,3 +41,7 @@ adding a catalog file, a platform guide and a live adapter for its API; the MCP 
 
 Reports stay `NAVIGATION_ONLY` until a read path is approved and parity-tested. Gemini can still find them, tell the
 user they exist and suggest opening them, but cannot read their numbers.
+
+The PostgreSQL materialized views are the exception. They have an approved read-only adapter, so after task 19 their
+entries are `ROWS_UNVERIFIED` and Gemini reads their numbers live ("Live · not yet checked"). Each entry becomes
+verified once its `parity` is signed ([documentation-guide.md](documentation-guide.md#postgresql-views-with-live-numbers)).

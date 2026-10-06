@@ -30,6 +30,7 @@ from typing import Any
 from .common import ConversionError, Converted, chart_block, markdown_table, safe_name, tidy, unique
 from .emails import email_header
 from .sheets import Sheet, render, show
+from .tables import MAX_TABLE_ROWS, build
 
 PROGIDS = {"word": "Word.Application", "powerpoint": "PowerPoint.Application", "excel": "Excel.Application",
            "outlook": "Outlook.Application"}
@@ -361,14 +362,25 @@ def _grid(value: Any) -> list[list[Any]]:
     return [[value]]
 
 
-def read_excel(session: OfficeSession, path: Path, max_rows: int = EXCEL_READ_ROWS) -> Converted:
+def _all_rows(worksheet: Any, first_row: int, first_column: int, total_rows: int, columns: int) -> list[list[Any]]:
+    """Every row of the used range (up to MAX_TABLE_ROWS), read in batches like data_governance's NASCA reader."""
+    grid: list[list[Any]] = []
+    last = first_row + min(total_rows, MAX_TABLE_ROWS) - 1
+    for start in range(first_row, last + 1, 5000):
+        end = min(start + 4999, last)
+        window = worksheet.Range(worksheet.Cells(start, first_column), worksheet.Cells(end, first_column + columns - 1))
+        grid += _grid(window.Value)
+    return grid
+
+
+def read_excel(session: OfficeSession, path: Path, max_rows: int = EXCEL_READ_ROWS, tables: bool = False) -> Converted:
     application = session.app("excel")
     try:
         workbook = application.Workbooks.Open(str(path), UpdateLinks=0, ReadOnly=True, IgnoreReadOnlyRecommended=True,
                                               AddToMru=False)
     except session.pywintypes.com_error as error:
         raise session.error(error) from None
-    blocks, parts = [], []
+    blocks, parts, built = [], [], []
     try:
         for worksheet in _items(workbook.Worksheets):
             name = str(worksheet.Name)
@@ -396,6 +408,12 @@ def read_excel(session: OfficeSession, path: Path, max_rows: int = EXCEL_READ_RO
             blocks.append(render(Sheet(name, values, formulas, hidden=int(_get(worksheet, "Visible", -1)) != MSO_TRUE,
                                        total_rows=total_rows, total_columns=total_columns, first_row=first_row,
                                        first_column=first_column, pivots=pivots, charts=charts)))
+            if tables:
+                full = values if total_rows <= take_rows else \
+                    _all_rows(worksheet, first_row, first_column, total_rows, take_columns)
+                table = build(name, full, total_rows)
+                if table is not None:
+                    built.append(table)
         for chart_sheet in _items(_get(workbook, "Charts")):
             parts.append(f"Chart sheet: {_get(chart_sheet, 'Name', '')}")
             blocks.append(f"## Chart sheet: {_get(chart_sheet, 'Name', '')}\n\n{_chart(chart_sheet)}")
@@ -411,7 +429,7 @@ def read_excel(session: OfficeSession, path: Path, max_rows: int = EXCEL_READ_RO
     finally:
         with contextlib.suppress(Exception):
             workbook.Close(False)
-    return Converted("\n\n".join(blocks), "office", parts=parts)
+    return Converted("\n\n".join(blocks), "office", parts=parts, tables=built)
 
 
 # --- Word ------------------------------------------------------------------------------------------------------------

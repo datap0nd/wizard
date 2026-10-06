@@ -10,9 +10,9 @@ export function DataModeBadge({mode, className}: {mode: DataMode | null | undefi
   if (!mode) return <span className={cn(base, 'border-line bg-surface text-ink-3', className)}>No source data</span>;
   const text = DATA_MODE_TEXT[mode];
   const tone = mode === 'SYNTHETIC' ? 'border-warn-line bg-warn-soft text-warn' : mode === 'LIVE_VERIFIED' ? 'border-ok-line bg-ok-soft text-ok'
-    : mode === 'USER_PROVIDED' ? 'border-line-2 bg-surface text-ink-2' : 'border-accent-line bg-accent-soft text-accent';
+    : mode === 'USER_PROVIDED' || mode === 'LIVE_UNVERIFIED' ? 'border-line-2 bg-surface text-ink-2' : 'border-accent-line bg-accent-soft text-accent';
   return <Hint text={text.hint}><span tabIndex={0} className={cn(base, tone, className)} data-testid="data-mode" data-mode={mode}>
-    {mode === 'SYNTHETIC' ? <FlaskConical /> : mode === 'LIVE_VERIFIED' ? <Radio /> : mode === 'USER_PROVIDED' ? <Paperclip /> : <BadgeCheck />}{mode === 'SYNTHETIC' ? 'SYNTHETIC' : text.label}
+    {mode === 'SYNTHETIC' ? <FlaskConical /> : mode === 'LIVE_VERIFIED' || mode === 'LIVE_UNVERIFIED' ? <Radio /> : mode === 'USER_PROVIDED' ? <Paperclip /> : <BadgeCheck />}{mode === 'SYNTHETIC' ? 'SYNTHETIC' : text.label}
   </span></Hint>;
 }
 

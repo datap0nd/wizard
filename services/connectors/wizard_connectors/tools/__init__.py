@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from ..catalog import Catalog
 from ..fixture_source import FixtureSource
@@ -15,10 +16,14 @@ __all__ = ["Recorder", "Services", "ToolContext", "ToolError", "ToolOutcome", "T
            "build_registry", "build_services", "flatten_schema"]
 
 
-def build_services(contracts: Path = SOURCE_CONTRACTS, fixtures: Path = SYNTHETIC, knowledge: Path = KNOWLEDGE) -> Services:
+def build_services(contracts: Path = SOURCE_CONTRACTS, fixtures: Path = SYNTHETIC, knowledge: Path = KNOWLEDGE,
+                   live: dict[str, Any] | None = None) -> Services:
+    """`live` maps a system id to its live source (e.g. postgresql -> PostgresSource); others read fixtures."""
     catalog = Catalog.load(contracts)
     source = FixtureSource(catalog, fixtures)
-    return Services(catalog=catalog, sources={s.id: source for s in catalog.systems}, knowledge=KnowledgeBase.load(knowledge))
+    live = live or {}
+    return Services(catalog=catalog, sources={s.id: live.get(s.id, source) for s in catalog.systems},
+                    knowledge=KnowledgeBase.load(knowledge))
 
 
 def build_registry(services: Services) -> ToolRegistry:

@@ -17,7 +17,7 @@ from pydantic import BaseModel, ValidationError
 
 from ..catalog import Catalog
 from ..entitlements import Identity
-from ..fixture_source import FixtureSource, SourceError
+from ..fixture_source import SourceError
 from ..knowledge import KnowledgeBase
 
 MAX_RESULT_BYTES = 400_000
@@ -47,7 +47,7 @@ class Recorder(Protocol):
 @dataclass
 class Services:
     catalog: Catalog
-    sources: dict[str, FixtureSource]
+    sources: dict[str, Any]  # FixtureSource, or a live source with the same run/dimensions contract
     knowledge: KnowledgeBase
     now: Callable[[], datetime] = field(default=lambda: datetime.now(UTC))
 

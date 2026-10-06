@@ -13,10 +13,12 @@ import re
 import traceback
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from wizard_agent.prompting import compose
 from wizard_agent.runtime import AgentFailure, AgentRequest, AgentRuntime, Turn
+from wizard_connectors.attachment_tables import index as table_index
 from wizard_connectors.entitlements import Identity
 from wizard_connectors.tools import Services, ToolContext, ToolOutcome, ToolRegistry
 
@@ -27,7 +29,7 @@ from .store import Store, new_id, now
 
 log = logging.getLogger("wizard.runs")
 # The headline data mode of an answer is its weakest source: a user's file ranks above synthetic data, below approved ones.
-DATA_MODE_RANK = {"SYNTHETIC": 0, "USER_PROVIDED": 1, "DATED_APPROVED_SNAPSHOT": 2, "LIVE_VERIFIED": 3}
+DATA_MODE_RANK = {"SYNTHETIC": 0, "USER_PROVIDED": 1, "LIVE_UNVERIFIED": 2, "DATED_APPROVED_SNAPSHOT": 3, "LIVE_VERIFIED": 4}
 CITATION = re.compile(r"\[(E\d{1,4})\]")
 VISUAL = re.compile(r"\[(V\d{1,4})\]")
 
@@ -339,7 +341,8 @@ class RunManager:
                 request = AgentRequest(
                     run_id=run.id, user_id=run.identity.id, user_email=run.identity.email, user_home=home,
                     prompt=compose(run.question, self.history(run), run.kind, today,
-                                   self.store.conversation_attachments(run.conversation_id)),
+                                   [{**a, "tables": table_index(Path(a["folder"]))}
+                                    for a in self.store.conversation_attachments(run.conversation_id)]),
                     question=run.question, kind=run.kind,  # type: ignore[arg-type]
                     history=self.history(run), internal_url=self.settings.internal_url,
                     run_token=run_token(self.settings.session_secret, run.id, run.identity.id, self.settings.run_timeout_s + 120))

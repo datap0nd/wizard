@@ -12,15 +12,16 @@ from . import ooxml
 from .common import OOXML, ConversionError, Converted, kind_of, tidy
 from .emails import html_text, read_eml
 from .office import OfficeSession, OfficeUnavailable, read_excel, read_msg, read_powerpoint, read_word
+from .tables import from_csv
 
 
 class Converter:
     """Converts many files with one Office session (applications start once, on first need)."""
 
-    def __init__(self, office: str = "auto", slide_images: str = "auto", max_rows: int = 1000):
+    def __init__(self, office: str = "auto", slide_images: str = "auto", max_rows: int = 1000, tables: bool = False):
         if office not in ("auto", "always", "never"):
             raise ValueError("office must be auto, always or never")
-        self.office, self.slide_images, self.max_rows = office, slide_images, max_rows
+        self.office, self.slide_images, self.max_rows, self.tables = office, slide_images, max_rows, tables
         self._session: OfficeSession | None = None
         self._unavailable: str | None = None
 
@@ -59,6 +60,9 @@ class Converter:
                 lines = raw.splitlines()
                 limit = self.max_rows + 1
                 raw = "\n".join(lines[:limit]) + (f"\n(first {self.max_rows} of {len(lines) - 1} rows)" if len(lines) > limit else "")
+                if self.tables:
+                    table = from_csv(path, "\t" if suffix == ".tsv" else ",")
+                    return Converted(tidy(raw), "text", tables=[table] if table else [])
             return Converted(tidy(raw), "text")
         if suffix == ".eml":
             return read_eml(path, attachments)
@@ -72,7 +76,7 @@ class Converter:
                 if kind == "slides":
                     return read_powerpoint(session, path, assets, self.slide_images)
                 if kind == "spreadsheet":
-                    return read_excel(session, path, self.max_rows)
+                    return read_excel(session, path, self.max_rows, self.tables)
                 return read_word(session, path)
             except OfficeUnavailable:
                 raise
@@ -81,13 +85,13 @@ class Converter:
                     raise
                 office_error = str(error)
                 try:
-                    converted = ooxml.read(path, self.max_rows)
+                    converted = ooxml.read(path, self.max_rows, self.tables)
                 except ConversionError:
                     raise ConversionError(f"Office could not open it: {office_error}") from None
                 converted.notes.append(f"Office could not open it ({office_error}); read without Office instead.")
                 return converted
         if suffix in OOXML:
-            converted = ooxml.read(path, self.max_rows)
+            converted = ooxml.read(path, self.max_rows, self.tables)
             if self._unavailable:
                 converted.notes.append(f"Read without Office ({self._unavailable}).")
             return converted

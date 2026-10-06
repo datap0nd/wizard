@@ -47,6 +47,8 @@ class ResultSet:
     digest: str
     warnings: list[str] = field(default_factory=list)
     access_note: str | None = None
+    data_mode: str | None = None      # live sources set it per report (LIVE_UNVERIFIED until its parity is signed)
+    verification: str | None = None   # how the figures were checked, in words
 
 
 def month_to_quarter(month: str) -> str:

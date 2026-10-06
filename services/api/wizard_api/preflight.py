@@ -125,6 +125,23 @@ def probe_gemini_cli(settings: Settings) -> tuple[bool, str]:
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+def _check_postgres(settings: Settings) -> None:
+    """Live PostgreSQL reports need the read-only account; the application runs either way."""
+    from wizard_connectors.pg import Pg8000Session, PgError
+    if settings.postgres is None:
+        _line("WARN", "PostgreSQL reports are in the catalog but no WIZARD_PG_* settings (or PG* variables) are set: "
+                      "Wizard cannot read them")
+        return
+    try:
+        session = Pg8000Session(settings.postgres, application_name="wizard-check")
+        read_only = session.rows("SELECT current_setting('transaction_read_only') AS ro")[0]["ro"]
+        session.close()
+        _line("PASS" if read_only == "on" else "WARN", f"PostgreSQL reachable as {settings.postgres.describe()}; "
+                                                       f"session read-only: {read_only}")
+    except PgError as error:
+        _line("WARN", f"PostgreSQL: {error}")
+
+
 def run_checks(settings: Settings) -> int:
     """0 = ready; 1 = the application works but Gemini CLI is not usable yet; 2 = the application cannot start."""
     ok = True
@@ -164,6 +181,8 @@ def run_checks(settings: Settings) -> int:
         app.state.store.db.close()
         systems = ", ".join(s.id.upper() for s in app.state.manager.services.catalog.systems)
         _line("PASS", f"application starts; platforms: {systems}")
+        if any(s.id == "postgresql" for s in app.state.manager.services.catalog.systems):
+            _check_postgres(settings)
     except ConfigError as error:
         _line("FAIL", str(error))
         return 2

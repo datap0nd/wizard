@@ -11,6 +11,7 @@ import type {CatalogReport, SourceCatalog, SourceSummary} from '@/types';
 function StatusChip({status}: {status: string}) {
   if (status === 'NAVIGATION_ONLY') return <StatusPill tone="muted"><Lock />Navigation only</StatusPill>;
   if (status === 'ROWS_VERIFIED') return <StatusPill tone="ok">Rows verified</StatusPill>;
+  if (status === 'ROWS_UNVERIFIED') return <StatusPill tone="muted">Live · not yet checked</StatusPill>;
   return <StatusPill tone="warn">Rows · synthetic</StatusPill>;
 }
 

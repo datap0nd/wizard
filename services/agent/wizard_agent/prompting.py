@@ -35,6 +35,10 @@ def attachments_block(files: list[dict[str, Any]]) -> str:
         sections = item.get("parts") or []
         if item.get("status") == "ok":
             shape = f", {len(sections)} parts ({sections[0]} ...)" if sections else ""
+            tables = item.get("tables") or []
+            if tables:
+                shape += "; query all rows with wizard_query_attachment: " + ", ".join(
+                    f"sheet {t['sheet']} ({t['rows']:,} rows)" for t in tables[:8])
             lines.append(f"- {item['label']}: {item['filename']} ({KIND_WORDS.get(item.get('kind', ''), 'file')}{shape})")
         else:
             lines.append(f"- {item['label']}: {item['filename']} could not be read: {item.get('note') or 'unknown reason'}")

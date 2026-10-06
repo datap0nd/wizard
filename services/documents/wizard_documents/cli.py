@@ -12,6 +12,10 @@
   postgres-check <content>                  connect read-only with the .env / PG* settings and report what is visible
   postgres-catalog <content> [--database D] [--schema S] [--structure-only]
                                             materialized views -> inbox/postgres/<database>/ (+ inbox/_postgres/*.json)
+  postgres-contract <content> --view schema.view [--view ...] [--replace]
+                                            draft queryable report entries -> contracts/sources/postgresql.json
+  postgres-sample <content> --report <id> [--filter market=EG,SA] [--group-by market] [--measure m] [--limit 20]
+                                            run a report's query exactly as Wizard would, for a parity check
   quiz-check <page.html> [--content <content>]
   quiz-answers <answered page or folder> [--quizzes <folder>]
 """
@@ -31,6 +35,9 @@ from .office import PROGIDS, OfficeSession, OfficeUnavailable, export_mail, mail
 from .postgres import check as postgres_check
 from .postgres import export as postgres_export
 from .postgres import settings_from
+from .postgres_contract import draft as draft_contract
+from .postgres_contract import sample as sample_report
+from .tables import write as write_tables
 
 
 def office_status() -> list[str]:
@@ -52,14 +59,16 @@ def cmd_convert(args: argparse.Namespace) -> int:
     out.mkdir(parents=True, exist_ok=True)
     result: dict[str, object]
     try:
-        with Converter(args.office, args.slide_images, args.max_rows) as converter:
+        with Converter(args.office, args.slide_images, args.max_rows, tables=args.command == "convert" and args.tables) as converter:
             converted = converter.convert(args.file, out / "assets", out / "attachments")
+        tables = write_tables(converted.tables, out) if converted.tables else []
         text = converted.text if args.keep_contacts else mask_contacts(converted.text)
         (out / "text.md").write_text(text + "\n", encoding="utf-8")
         result = {"status": "ok" if text.strip() or converted.images else "empty", "method": converted.method,
                   "chars": len(text), "images": [p.name for p in converted.images],
                   "attachments": [p.name for p in converted.attachments], "notes": converted.notes,
-                  "parts": converted.parts[:200]}
+                  "parts": converted.parts[:200],
+                  "tables": [{"sheet": t["sheet"], "rows": t["rows"], "columns": len(t["columns"])} for t in tables]}
     except (ConversionError, OSError) as error:
         result = {"status": "failed", "note": str(error)[:400]}
     if args.json:
@@ -110,7 +119,13 @@ def cmd_outlook_export(args: argparse.Namespace) -> int:
 
 def cmd_postgres(args: argparse.Namespace) -> int:
     content = args.content.resolve()
+    if args.command == "postgres-contract":
+        print("\n".join(draft_contract(content, args.view, args.replace)))
+        return 0
     settings = settings_from(args.env_file or content.parent / ".env")
+    if args.command == "postgres-sample":
+        print(sample_report(content, settings, args.report, args.filter or [], args.group_by, args.measure, args.limit))
+        return 0
     if args.command == "postgres-check":
         print("\n".join(postgres_check(settings)))
         return 0
@@ -136,6 +151,8 @@ def main(argv: list[str] | None = None) -> int:
             sub.add_argument("file", type=Path)
             sub.add_argument("--out", type=Path, required=True)
             sub.add_argument("--json", action="store_true")
+            sub.add_argument("--tables", action="store_true", help="also save spreadsheets and CSV as full tables "
+                                                                   "(tables.json, tables/*.csv) for querying")
         else:
             sub.add_argument("content", type=Path)
             sub.add_argument("--force", action="store_true", help="convert everything again")
@@ -161,7 +178,7 @@ def main(argv: list[str] | None = None) -> int:
             sub.add_argument("--quizzes", type=Path)
         if name == "next":
             sub.add_argument("--limit", type=int, default=20)
-    for name in ("postgres-check", "postgres-catalog"):
+    for name in ("postgres-check", "postgres-catalog", "postgres-contract", "postgres-sample"):
         sub = commands.add_parser(name)
         sub.add_argument("content", type=Path)
         sub.add_argument("--env-file", type=Path, help="Wizard's .env with WIZARD_PG_* (default: next to the content folder)")
@@ -170,6 +187,15 @@ def main(argv: list[str] | None = None) -> int:
                                                                  "the account can connect to)")
             sub.add_argument("--schema", action="append", help="only this schema (repeatable)")
             sub.add_argument("--structure-only", action="store_true", help="catalog only: no row counts or profiles")
+        if name == "postgres-contract":
+            sub.add_argument("--view", action="append", required=True, help="schema.view or database:schema.view (repeatable)")
+            sub.add_argument("--replace", action="store_true", help="regenerate entries that already exist")
+        if name == "postgres-sample":
+            sub.add_argument("--report", required=True)
+            sub.add_argument("--filter", action="append", help="dimension=value1,value2 (repeatable)")
+            sub.add_argument("--group-by", action="append", help="dimension to group by (repeatable)")
+            sub.add_argument("--measure", action="append", help="measure to show (repeatable; default all)")
+            sub.add_argument("--limit", type=int, default=20)
     quiz = commands.add_parser("quiz-check")
     quiz.add_argument("page", type=Path)
     quiz.add_argument("--content", type=Path)
@@ -189,7 +215,7 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_outlook_folders(args)
         if args.command == "outlook-export":
             return cmd_outlook_export(args)
-        if args.command in ("postgres-check", "postgres-catalog"):
+        if args.command.startswith("postgres-"):
             return cmd_postgres(args)
         if args.command == "status":
             print(status(args.content.resolve(), args.quizzes))

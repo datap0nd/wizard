@@ -66,6 +66,7 @@ ignore = ["S101", "S603", "S607", "E501"]
 "scripts/**" = ["S311"]
 # Catalog-only SQL built from quoted catalog names (see the module docstring), never from model or user text.
 "services/documents/wizard_documents/postgres.py" = ["S608"]
+"services/connectors/wizard_connectors/postgres_source.py" = ["S608"]
 
 [tool.mypy]
 python_version = "3.11"

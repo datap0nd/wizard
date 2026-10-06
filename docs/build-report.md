@@ -3,6 +3,58 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
+## 2026-10-06 (later) — Live PostgreSQL reports and totals over attached spreadsheets
+
+Decision: [2026-10-06 live PostgreSQL](decisions/2026-10-06-live-postgresql.md). Gemini CLI had told the owner that
+Wizard could not give a GSCM or SIBP number: every real report was navigation-only.
+
+**What was added.**
+- **Live connector.**
+  - `wizard_connectors/postgres_source.py` runs a catalogued PostgreSQL report through the same contract as the
+    fixtures (`filters`, `group_by`, `measures`, `sort`, `limit`). The SQL is built from the entry's columns, with
+    quoted identifiers, bound values, LIMIT 500 and market rights in the WHERE clause.
+  - Aggregation rules run in SQL: `sum`; `sum_same_currency` (a total only within one currency); `last` (latest
+    period per group); `none` (a value only for one row). Text columns holding numbers are cast safely.
+  - Freshness comes from commit timestamps when the server tracks them.
+  - Connection code shared with the export moved to `wizard_connectors/pg.py`.
+- **Labels.**
+  - New data mode `LIVE_UNVERIFIED` ("Live · not yet checked") and connector status `ROWS_UNVERIFIED`.
+  - A report's signed `parity` (date, who, reference) makes its rows `LIVE_VERIFIED`.
+  - The run result tells Gemini the figures are not yet checked, and the system prompt asks it to say so once.
+  - The web badge, source explorer and API catalog show both states.
+- **Contract.** `relation` (database, schema, view), `parity`, and `column` on dimensions, measures and attributes.
+  The validator allows row reports only for PostgreSQL and checks:
+  - the `last` and currency rules;
+  - the parity date;
+  - that parity is set only on live reports.
+- **Kit.**
+  - `.\docs.ps1 postgres-contract --view schema.view` drafts entries from the export and dataset notes, marking every
+    guess `UNCERTAIN:`.
+  - `.\docs.ps1 postgres-sample --report <id>` runs Wizard's own query for a parity check.
+  - Task 19 walks Gemini CLI and the owner through choosing (SIBP first), reviewing and signing.
+- **Start-up.** `run.py --check` reports whether PostgreSQL is reachable and the session read-only, whenever the catalog
+  has PostgreSQL reports.
+- **Attached spreadsheets.**
+  - Each sheet or CSV is also saved as a full typed table (`converted/tables.json` plus CSV, up to 300,000 rows and 60
+    columns).
+  - The new tool `wizard_query_attachment` filters, groups and totals every row (sum, avg, min, max, count). It warns
+    about rate columns and non-numeric cells.
+  - Evidence stays `USER_PROVIDED`. Wizard now declares 19 tools.
+
+**Tests.** `scripts/verify_all.sh --allow-blocked=live-parity,postgres` on the development PC: spec, secrets,
+contracts, lint, types, python-tests (206 passed), gemini-cli (4 passed; the real CLI accepts all 19 tool schemas),
+evals-schema, web-types, web-unit, web-dist, web-build and e2e (12 passed) PASS. postgres and live-parity are BLOCKED
+(no PostgreSQL or live source here).
+- New unit tests:
+  - the generated SQL: quoted, bound, with rights applied;
+  - each validator rule;
+  - LIVE_UNVERIFIED before parity and LIVE_VERIFIED after it;
+  - the draft and sample commands;
+  - the attachment query engine and its evidence.
+- `tests/integration/test_postgres_source_real.py` compares every aggregation rule with independently computed values on
+  CI's PostgreSQL 16.
+- The corporate views are first read on the work PC, in task 19.
+
 ## 2026-10-06 — PostgreSQL materialized views documented from the server's catalog
 
 The owner chose to document the PostgreSQL server first, and only its materialized views, with the server as the

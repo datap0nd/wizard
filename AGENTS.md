@@ -15,9 +15,12 @@ around a precomputed result is withdrawn. Its credential, entitlement, DLP and h
   does not choose the analysis.
 - Capture evidence for every source read (request, rows within approved retention, as-of, digest, data mode) so a
   numeric claim can be reviewed. Show what Gemini actually did; never invent steps or expose private chain of thought.
-- Keep data mode (SYNTHETIC / USER_PROVIDED / DATED_APPROVED_SNAPSHOT / LIVE_VERIFIED), connector status
-  (SYNTHETIC_FIXTURE / NAVIGATION_ONLY / ROWS_VERIFIED / BLOCKED) and check status (CHECKED / NOT_CHECKED /
-  DISCREPANCY) as separate fields. USER_PROVIDED marks a file a user attached: never present it as a verified source.
+- Keep data mode (SYNTHETIC / USER_PROVIDED / LIVE_UNVERIFIED / DATED_APPROVED_SNAPSHOT / LIVE_VERIFIED), connector
+  status (SYNTHETIC_FIXTURE / NAVIGATION_ONLY / ROWS_UNVERIFIED / ROWS_VERIFIED / BLOCKED) and check status (CHECKED /
+  NOT_CHECKED / DISCREPANCY) as separate fields. USER_PROVIDED marks a file a user attached: never present it as a
+  verified source. LIVE_UNVERIFIED marks rows read live from an approved read-only source (PostgreSQL) whose report has
+  no signed parity yet; it is shown as "Live · not yet checked". Only a `parity` sign-off on that report (date, person,
+  the trusted figure it matched) makes its rows LIVE_VERIFIED; never infer it.
 - Run each Gemini request under the requesting user's own enterprise identity, with isolated per-user state
   (`GEMINI_CLI_HOME` + `GEMINI_FORCE_FILE_STORAGE=true`, or the per-user Code Assist token).
 - Work one numbered plan step or small ticket at a time ([docs/issue-board.md](docs/issue-board.md)). Name the files
@@ -31,6 +34,8 @@ around a precomputed result is withdrawn. Its credential, entitlement, DLP and h
 - Run executives under the developer's cached CLI session or any shared Gemini login. Never fall back to another
   user's credentials when a user's own sign-in is missing: fail with a clear "link your account" state.
 - Add write, export, email, shell, arbitrary SQL, arbitrary URL or browser-automation tools for corporate systems.
+  Live PostgreSQL reads go only through catalogued report entries: Wizard builds the SQL from the entry's columns and
+  aggregation rules, with bound parameters, in a read-only session, under a read-only account.
 - Commit corporate exports, live rows, credentials, tokens, cookies, `.env`, the DLP-blocked DOCX, raw model/source
   logs, or owner reference answers. Live references live in the approved private location; CI sees safe IDs only.
 - Use copied browser cookies, TLS bypass, `/mstr` event URLs or a debugging browser as a production connector.

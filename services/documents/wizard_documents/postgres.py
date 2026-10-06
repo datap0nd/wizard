@@ -24,7 +24,11 @@ import re
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
+
+from wizard_connectors.pg import MISSING, PgError, PgSettings, Session, error_text, literal, quote, read_env
+from wizard_connectors.pg import Pg8000Session as SharedSession
+from wizard_connectors.pg import settings_from as pg_settings
 
 from .common import ConversionError, cell, mask_contacts
 
@@ -44,24 +48,6 @@ DATE_NAMES = re.compile(r"(^|_)(date|day|dt|week|wk|month|mon|period|year|yr|qua
 PERSONAL = re.compile(r"(^|_)(email|e_mail|mail|phone|mobile|tel|user|username|login|employee|emp|person|owner|contact|"
                       r"address|customer|cust|first_name|last_name|full_name|firstname|lastname|rep|representative|"
                       r"salesperson|salesman|manager|mgr|approver|requester|requestor|assignee|author|by)(_|$)")
-
-
-class Session(Protocol):
-    def rows(self, sql: str) -> list[dict[str, Any]]: ...
-
-
-@dataclass
-class PgSettings:
-    host: str
-    port: int
-    database: str
-    user: str
-    password: str
-    sslmode: str
-    source: str  # which settings were used: ".env (WIZARD_PG_*)" or "environment (PG*)"
-
-    def describe(self) -> str:
-        return f"{self.user}@{self.host}:{self.port}/{self.database} (sslmode {self.sslmode}, from {self.source})"
 
 
 @dataclass
@@ -111,109 +97,26 @@ class MatView:
 # --- Settings and connection ----------------------------------------------------------------------------------------
 
 
-def read_env(path: Path | None) -> dict[str, str]:
-    values: dict[str, str] = {}
-    if path is None or not path.is_file():
-        return values
-    for raw in path.read_text(encoding="utf-8-sig").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
-            value = value[1:-1]
-        values[key.strip()] = value
-    return values
-
-
 def settings_from(env_file: Path | None, environ: dict[str, str] | None = None) -> PgSettings:
-    env = read_env(env_file)
-    environ = dict(os.environ) if environ is None else environ
-    if env.get("WIZARD_PG_HOST") or environ.get("WIZARD_PG_HOST"):
-        def get(key: str, default: str = "") -> str:
-            return env.get(f"WIZARD_PG_{key}") or environ.get(f"WIZARD_PG_{key}") or default
-        source = ".env (WIZARD_PG_*)"
-    else:
-        def get(key: str, default: str = "") -> str:
-            return environ.get(f"PG{key}", "") or default  # PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD, PGSSLMODE
-        source = "environment (PG*)"
-    host, user = get("HOST"), get("USER")
-    if not host or not user:
-        raise ConversionError("no PostgreSQL connection settings: add WIZARD_PG_HOST, WIZARD_PG_PORT, WIZARD_PG_DATABASE, "
-                              "WIZARD_PG_USER and WIZARD_PG_PASSWORD (a read-only account) to Wizard's .env, or set the "
-                              "PGHOST/PGUSER/PGPASSWORD variables of the read-only scanner account")
+    """WIZARD_PG_* from Wizard's .env (or the environment), else the PG* variables; ConversionError when missing."""
     try:
-        port = int(get("PORT", "5432"))
-    except ValueError:
-        raise ConversionError("the PostgreSQL port must be a number") from None
-    sslmode = get("SSLMODE", "prefer").lower()
-    if sslmode not in ("disable", "prefer", "require", "verify-ca", "verify-full"):
-        raise ConversionError("the PostgreSQL sslmode must be disable, prefer, require, verify-ca or verify-full")
-    return PgSettings(host, port, get("DATABASE", "postgres"), user, get("PASSWORD"), sslmode, source)
+        found = pg_settings(read_env(env_file), dict(os.environ) if environ is None else environ)
+    except PgError as error:
+        raise ConversionError(str(error)) from None
+    if found is None:
+        raise ConversionError(MISSING)
+    return found
 
 
-class Pg8000Session:
-    """A read-only pg8000 session (rows come back as dicts)."""
+class Pg8000Session(SharedSession):
+    """The shared read-only session, named for the documentation export and failing as a ConversionError."""
 
     def __init__(self, settings: PgSettings, database: str | None = None):
         try:
-            import pg8000.native
-        except ImportError as error:
-            raise ConversionError(f"the PostgreSQL driver pg8000 is not installed ({error}); run setup.ps1 again") from None
-        ssl_context: Any
-        if settings.sslmode == "disable":
-            ssl_context = False
-        elif settings.sslmode == "prefer":
-            ssl_context = None  # pg8000: TLS when the server offers it, plain otherwise
-        elif settings.sslmode == "require":
-            ssl_context = True
-        else:
-            import ssl
-            try:
-                import truststore
-                ssl_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)  # Windows certificate store
-            except ImportError:
-                ssl_context = ssl.create_default_context()
-            ssl_context.check_hostname = settings.sslmode == "verify-full"
-        try:
-            self.connection = pg8000.native.Connection(
-                settings.user, host=settings.host, port=settings.port, database=database or settings.database,
-                password=settings.password or None, ssl_context=ssl_context, timeout=30, application_name="wizard-docs")
-        except Exception as error:  # noqa: BLE001 - driver errors become one readable line
-            raise ConversionError(f"could not connect to {settings.host}:{settings.port}/{database or settings.database} "
-                                  f"as {settings.user}: {error_text(error)}") from None
-        for statement in ("SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY",
-                          f"SET statement_timeout = '{STATEMENT_TIMEOUT}'", f"SET lock_timeout = '{LOCK_TIMEOUT}'"):
-            self.connection.run(statement)
+            super().__init__(settings, database, STATEMENT_TIMEOUT, LOCK_TIMEOUT, "wizard-docs")
+        except PgError as error:
+            raise ConversionError(str(error)) from None
 
-    def rows(self, sql: str) -> list[dict[str, Any]]:
-        result = self.connection.run(sql) or []
-        names = [c["name"] for c in self.connection.columns or []]
-        return [dict(zip(names, row, strict=False)) for row in result]
-
-    def close(self) -> None:
-        with contextlib.suppress(Exception):  # closing a broken connection is not an error worth reporting
-            self.connection.close()
-
-
-def error_text(error: BaseException) -> str:
-    args = getattr(error, "args", ())
-    if args and isinstance(args[0], dict):  # pg8000 DatabaseError: {'S': 'ERROR', 'C': '57014', 'M': 'canceling ...'}
-        detail = args[0]
-        return f"{detail.get('M', 'database error')} (SQLSTATE {detail.get('C', '?')})"
-    return " ".join(str(error).split())[:300] or type(error).__name__
-
-
-def quote(name: str) -> str:
-    return '"' + name.replace('"', '""') + '"'
-
-
-def literal(text: str) -> str:
-    return "'" + text.replace("'", "''") + "'"
-
-
-# --- Catalog --------------------------------------------------------------------------------------------------------
 
 
 def server_facts(session: Session) -> dict[str, Any]:

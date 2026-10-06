@@ -1,4 +1,4 @@
-export type DataMode = 'SYNTHETIC' | 'DATED_APPROVED_SNAPSHOT' | 'LIVE_VERIFIED' | 'USER_PROVIDED';
+export type DataMode = 'SYNTHETIC' | 'DATED_APPROVED_SNAPSHOT' | 'LIVE_UNVERIFIED' | 'LIVE_VERIFIED' | 'USER_PROVIDED';
 export type CheckStatus = 'CHECKED' | 'NOT_CHECKED' | 'DISCREPANCY';
 export type RunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
 export type RuntimeKind = 'gemini-cli' | 'code-assist' | 'replay';

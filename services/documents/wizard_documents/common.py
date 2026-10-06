@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 KINDS = {
     "document": {".docx", ".docm", ".dotx", ".doc", ".rtf", ".odt"},
@@ -34,6 +35,7 @@ class Converted:
     attachments: list[Path] = field(default_factory=list)  # files saved from an email, to convert in turn
     notes: list[str] = field(default_factory=list)
     parts: list[str] = field(default_factory=list)          # "Slide 3: Pricing", "Sheet: Markets" ... for navigation
+    tables: list[Any] = field(default_factory=list)         # tables.Table per sheet, when asked for (attachments)
 
 
 def kind_of(path: Path) -> str:

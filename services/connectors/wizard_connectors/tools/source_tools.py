@@ -140,7 +140,8 @@ def make_source_tools(system_id: str, system_name: str) -> list[ToolSpec]:
             "tool": f"{system_id}_run_report", "system": system_id, "system_name": system_name,
             "report_id": report.id, "report_name": report.name,
             "folder_path": ctx.services.catalog.folder_path(system_id, report.folder),
-            "data_mode": contract.system.connector.data_mode, "connector_status": contract.system.connector.status,
+            "data_mode": result.data_mode or contract.system.connector.data_mode,
+            "connector_status": contract.system.connector.status, "verification": result.verification,
             "request": request, "columns": result.columns, "rows": result.rows, "total_rows": result.total_rows,
             "truncated": result.truncated, "as_of": result.as_of, "retrieved_at": ctx.services.now().isoformat(),
             "digest": result.digest, "warnings": result.warnings, "access_note": result.access_note,
@@ -151,11 +152,14 @@ def make_source_tools(system_id: str, system_name: str) -> list[ToolSpec]:
         return {
             "evidence_id": evidence_id, "cite_as": f"[{evidence_id}]",
             "source": {"system": system_id, "report_id": report.id, "report_name": report.name,
-                       "data_mode": evidence["data_mode"]},
+                       "data_mode": evidence["data_mode"], **({"verification": result.verification}
+                                                              if result.verification else {})},
             "as_of": result.as_of, "request": request, "columns": result.columns, "rows": result.rows,
             "row_count": len(result.rows), "total_rows": result.total_rows, "truncated": result.truncated,
             "warnings": result.warnings, "access_note": result.access_note, "caveats": report.caveats,
             "source_text_policy": UNTRUSTED_NOTICE,
+            **({"note": "These figures are live but not yet checked against a report the owner trusts: say so when "
+                        "you use them."} if evidence["data_mode"] == "LIVE_UNVERIFIED" else {}),
         }
 
     return [

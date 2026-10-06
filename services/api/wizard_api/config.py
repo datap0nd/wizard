@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from wizard_connectors.paths import FIXTURES, ROOT
+from wizard_connectors.pg import PgError, PgSettings
+from wizard_connectors.pg import settings_from as pg_settings
 
 RUNTIMES = ("gemini-cli", "code-assist", "replay")
 AUTH_MODES = ("fixture", "trusted-header")
@@ -62,7 +64,9 @@ class Settings:
     attachment_folders: list[Path] = field(default_factory=list)
     max_attachment_mb: int = 50
     attachment_timeout_s: int = 180
-    attachment_office: str = "auto"  # "never": read only plain Office Open XML files, without starting Office (tests)
+    attachment_office: str = "auto"
+    # Read-only PostgreSQL account for live reports (WIZARD_PG_* in .env, else the PG* variables); None = not set.
+    postgres: PgSettings | None = None  # "never": read only plain Office Open XML files, without starting Office (tests)
     max_concurrent_runs: int = 4
     run_timeout_s: int = 600
     max_tool_calls: int = 40
@@ -190,6 +194,12 @@ def load_settings(env: dict[str, str] | None = None, env_file: Path | None = Non
     settings.max_attachment_mb = _int(get("WIZARD_MAX_ATTACHMENT_MB", "50") or "50", "WIZARD_MAX_ATTACHMENT_MB", 1, 500)
     settings.attachment_timeout_s = _int(get("WIZARD_ATTACHMENT_TIMEOUT_S", "180") or "180", "WIZARD_ATTACHMENT_TIMEOUT_S",
                                          10, 3600)
+    try:
+        source_env = env if env is not None else os.environ
+        settings.postgres = pg_settings({k: v for k, v in merged.items() if k.startswith("WIZARD_PG_")},
+                                        {k: v for k, v in source_env.items() if k.startswith("PG")})
+    except PgError as error:
+        raise ConfigError(f"PostgreSQL settings: {error}") from None
     settings.max_concurrent_runs = _int(get("WIZARD_MAX_CONCURRENT_RUNS", "4") or "4", "WIZARD_MAX_CONCURRENT_RUNS", 1, 64)
     settings.run_timeout_s = _int(get("WIZARD_RUN_TIMEOUT_S", "600") or "600", "WIZARD_RUN_TIMEOUT_S", 10, 3600)
     settings.max_tool_calls = _int(get("WIZARD_MAX_TOOL_CALLS", "40") or "40", "WIZARD_MAX_TOOL_CALLS", 1, 200)
