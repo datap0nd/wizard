@@ -9,6 +9,9 @@
   next <content> [--limit 20]               the next sources that need a digest
   topics <content>                          topics found in the digests -> inbox/_digests/_topics.md
   coverage <content>                        sources no note cites yet -> register/documentation-coverage.md
+  postgres-check <content>                  connect read-only with the .env / PG* settings and report what is visible
+  postgres-catalog <content> [--database D] [--schema S] [--structure-only]
+                                            materialized views -> inbox/postgres/<database>/ (+ inbox/_postgres/*.json)
   quiz-check <page.html> [--content <content>]
   quiz-answers <answered page or folder> [--quizzes <folder>]
 """
@@ -25,6 +28,9 @@ from .convert import Converter
 from .inbox import Inbox
 from .kit import KitError, check_quiz, coverage, knowledge_ids, next_sources, read_answers, status, topics
 from .office import PROGIDS, OfficeSession, OfficeUnavailable, export_mail, mail_folders, pywin32_status
+from .postgres import check as postgres_check
+from .postgres import export as postgres_export
+from .postgres import settings_from
 
 
 def office_status() -> list[str]:
@@ -102,6 +108,23 @@ def cmd_outlook_export(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_postgres(args: argparse.Namespace) -> int:
+    content = args.content.resolve()
+    settings = settings_from(args.env_file or content.parent / ".env")
+    if args.command == "postgres-check":
+        print("\n".join(postgres_check(settings)))
+        return 0
+    summary = postgres_export(content, settings, args.database or None, args.schema or None, not args.structure_only)
+    for name, counts in summary["databases"].items():
+        print(f"{name}: {counts['materialized_views']} materialized view(s), {counts['profiled']} profiled, "
+              f"{counts['notes']} note(s) about skipped steps")
+    for name, reason in summary["skipped"].items():
+        print(f"{name}: skipped ({reason})")
+    print("Written to inbox/postgres/<database>/ (one file per materialized view, plus 00-overview.md). "
+          "Next: run extract so each file gets a source id.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="wizard_docs", description="Wizard documentation kit",
                                      formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__)
@@ -138,6 +161,15 @@ def main(argv: list[str] | None = None) -> int:
             sub.add_argument("--quizzes", type=Path)
         if name == "next":
             sub.add_argument("--limit", type=int, default=20)
+    for name in ("postgres-check", "postgres-catalog"):
+        sub = commands.add_parser(name)
+        sub.add_argument("content", type=Path)
+        sub.add_argument("--env-file", type=Path, help="Wizard's .env with WIZARD_PG_* (default: next to the content folder)")
+        if name == "postgres-catalog":
+            sub.add_argument("--database", action="append", help="only this database (repeatable; default: every one "
+                                                                 "the account can connect to)")
+            sub.add_argument("--schema", action="append", help="only this schema (repeatable)")
+            sub.add_argument("--structure-only", action="store_true", help="catalog only: no row counts or profiles")
     quiz = commands.add_parser("quiz-check")
     quiz.add_argument("page", type=Path)
     quiz.add_argument("--content", type=Path)
@@ -157,6 +189,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_outlook_folders(args)
         if args.command == "outlook-export":
             return cmd_outlook_export(args)
+        if args.command in ("postgres-check", "postgres-catalog"):
+            return cmd_postgres(args)
         if args.command == "status":
             print(status(args.content.resolve(), args.quizzes))
         elif args.command == "next":

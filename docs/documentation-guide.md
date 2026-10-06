@@ -68,6 +68,21 @@ visual slides; Excel gives a column profile with formulas, pivot tables, charts 
 and tables; Outlook gives display names, the body and attachments. Without Office, plain .docx/.pptx/.xlsx are read with
 the standard library. Email addresses and phone numbers are masked.
 
+**The PostgreSQL server (task 18)** is documented from its own catalog, which is the source of truth for structure.
+`.\docs.ps1 postgres-catalog` connects with a read-only account (`WIZARD_PG_*` in `.env`, else the scanner's `PG*`
+variables) through pg8000, which is pure Python, so Application Control has no DLL to block. Its session is read-only,
+with a 60-second statement timeout and a 2-second lock timeout. For every materialized view it exports:
+
+- columns, types and comments;
+- the SQL definition, which shows how every column is computed;
+- indexes, lineage in both directions, and the pg_cron refresh job;
+- statistics and freshness (from commit timestamps when tracked);
+- a light profile: row count, null rates, distinct counts, date and period ranges, and the values of small code
+  columns. Columns that name people are never listed, and no sums are taken.
+
+Gemini CLI writes `knowledge/platforms/postgresql.md` and one `datasets/` note per view (`type: dataset`, knowledge
+standard section 10). Documents explain meaning; where they contradict the export, the export wins.
+
 **Platform material** (tasks 10-17) uses two Gemini CLI commands shipped in the content template:
 `/wizard:platform-guide <platform> inbox/<platform>/` and `/wizard:report-catalog <platform> inbox/<platform>/`. For
 ASAP, run `scripts/import_asap_catalog.py` first: it reads ASAP's own metadata and its draft becomes the input.

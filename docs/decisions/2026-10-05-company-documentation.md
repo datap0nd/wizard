@@ -47,3 +47,14 @@ ranked notes by raw word counts.
 - The quiz page was tested in a browser: it answers, copies, reopens with saved answers, and works at phone width.
 - Office automation could not be exercised from the development session (`CO_E_SERVER_EXEC_FAILURE`). Its first real
   run is task 20 on the work PC, which reports every file it could not read.
+
+## Addendum, 2026-10-06: PostgreSQL first
+
+**Decision (owner).** Document the corporate PostgreSQL server first: its materialized views only, with a light
+profile of the data.
+
+- **Source of truth:** the server's catalog. The owner's decks explain meaning; where they disagree with the catalog,
+  the catalog wins and the note records the conflict.
+- **Account:** read-only, such as Metronome's scanner account, never the uploader.
+- **Driver:** pg8000, pure Python, so Application Control has no DLL to block.
+- **Workflow:** export with `.\docs.ps1 postgres-catalog`, then Gemini CLI task 18 writes the notes.

@@ -175,7 +175,7 @@ def validate_knowledge(knowledge: Path, root: Path) -> list[Problem]:
             entries = sum(1 for line in body.splitlines() if ENTRY.match(line))
             if entries > 60:
                 problems.append(Problem("warning", where, f"{entries} glossary entries: split into notes of at most 60"))
-        elif words > 900:
+        elif words > (3000 if kind == "dataset" else 900):  # a dataset's column table makes it longer
             problems.append(Problem("warning", where, f"{words} words: split into smaller notes (at most ~600) so "
                                                       "retrieval returns the relevant part"))
         if not unquote(meta.get("summary", "")):

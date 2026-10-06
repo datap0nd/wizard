@@ -14,8 +14,24 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # A throwaway PostgreSQL for the materialized-view export test (tests/integration/test_postgres_real.py).
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: wizard-ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     env:
       CI: "true"
+      WIZARD_TEST_PG_HOST: 127.0.0.1
+      WIZARD_TEST_PG_USER: postgres
+      WIZARD_TEST_PG_PASSWORD: wizard-ci
     steps:
       - uses: actions/checkout@v4
 

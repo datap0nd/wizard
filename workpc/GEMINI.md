@@ -13,6 +13,7 @@ Wizard starts its own isolated Gemini sessions under `data\` and never reads thi
 | `content\` | The real platform documentation Wizard will load (internal; becomes its own internal Git repo) | write, following `content\GEMINI.md` |
 | `content\inbox\` | Raw documents: `<platform>\` platform material, `files\` company documents, `outlook\` exported mail | read only |
 | `content\inbox\_text\` | The same documents converted to text by `.\docs.ps1 extract` (`manifest.csv` lists them) | read only |
+| `content\inbox\postgres\` | The PostgreSQL materialized-view export (`.\docs.ps1 postgres-catalog`): the source of truth for the data dictionary | read only |
 | `content\inbox\_digests\` | One digest per source (task 21) | write |
 | `content\knowledge\` | Company documentation Wizard's analyst reads; rules in `content\schema\knowledge-standard.md` | write |
 | `content\register\` | Topic map, stakeholders, quiz and review logs, coverage | write |

@@ -13,6 +13,9 @@ dependencies = [
   # Office automation (PowerPoint, Excel, Word, Outlook) for documents and chat attachments; opens NASCA-protected files
   # through Office for the signed-in user, as the data-governance app does.
   "pywin32>=306; sys_platform == 'win32'",
+  # Read-only PostgreSQL catalog export for the documentation kit. Pure Python: Application Control has no driver DLL to
+  # block (psycopg2's was blocked on a development PC).
+  "pg8000>=1.31",
 ]
 
 [dependency-groups]
@@ -45,6 +48,7 @@ pythonpath = ["services/api", "services/agent", "services/connectors", "services
 markers = [
   "gemini_cli: runs the real Gemini CLI with fake model responses (needs WIZARD_GEMINI_CLI_JS or .tools)",
   "live: needs live corporate sources or a signed-in Gemini account; reported as BLOCKED when not configured",
+  "postgres: needs a PostgreSQL test server (WIZARD_TEST_PG_*; CI runs one); reported as BLOCKED when not configured",
 ]
 addopts = "-q -p no:cacheprovider -p no:tmpdir"
 
@@ -60,6 +64,8 @@ ignore = ["S101", "S603", "S607", "E501"]
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S105", "S106", "S107", "S108", "B011"]
 "scripts/**" = ["S311"]
+# Catalog-only SQL built from quoted catalog names (see the module docstring), never from model or user text.
+"services/documents/wizard_documents/postgres.py" = ["S608"]
 
 [tool.mypy]
 python_version = "3.11"

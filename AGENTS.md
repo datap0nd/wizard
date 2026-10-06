@@ -43,7 +43,8 @@ around a precomputed result is withdrawn. Its credential, entitlement, DLP and h
 
 ```bash
 uv run python scripts/verify_spec.py
-scripts/verify_all.sh --allow-blocked=live-parity
+scripts/verify_all.sh --allow-blocked=live-parity            # CI: it runs a PostgreSQL service for the postgres layer
+scripts/verify_all.sh --allow-blocked=live-parity,postgres   # locally, without a PostgreSQL test server
 ```
 
 If you change a tool or the API, run `uv run python scripts/export_contracts.py` and review the contract diff. If you

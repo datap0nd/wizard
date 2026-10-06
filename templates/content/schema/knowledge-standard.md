@@ -21,7 +21,8 @@ safe to quote on its own, and honest about how sure we are. Wizard tells executi
 | `products/` | product lines and families, naming conventions, life cycle, launch logic | entity, concept |
 | `markets/` | regions, markets, channels, partners and key accounts (described, not their figures) | entity |
 | `processes/` | how work happens: planning cycle, budgeting, month close, launches, approvals, reporting rhythm | process |
-| `platforms/` | data platforms (ASAP, GSCM, NERP...): what they hold, how to navigate them | platform |
+| `platforms/` | data platforms (ASAP, GSCM, NERP, PostgreSQL...): what they hold, how to navigate them | platform |
+| `datasets/` | data dictionary: one note per database object (materialized view, table): grain, columns, how each is computed, lineage, refresh | dataset |
 | `metrics/` | how each measure is defined and computed, what must not be summed | metric |
 | `glossary/` | acronyms, jargon and **ambiguous terms**, grouped by domain | glossary |
 | `faq/` | recurring executive questions and where their answer lives | faq |
@@ -63,7 +64,7 @@ reviewed_by:
 | Field | Required | Rule |
 |---|---|---|
 | `id`, `title`, `status`, `owner`, `tags` | yes | `status` is `DRAFT_UNSIGNED` or `SIGNED`; only the owner signs |
-| `type` | recommended | overview, entity, concept, process, metric, platform, glossary, faq, decision |
+| `type` | recommended | overview, entity, concept, process, metric, platform, glossary, faq, decision, dataset |
 | `summary` | recommended | one sentence, at most 200 characters, says exactly what the note covers |
 | `aliases` | recommended | every other name: acronyms, spellings, old names, names in other languages |
 | `tags` | yes | 8 to 15 lowercase words people would search with |
@@ -161,3 +162,24 @@ the files stay on this PC.
 - [ ] No contact details, credentials, performance figures or restricted topics.
 - [ ] At most about 600 words; summary at most 200 characters; 8 to 15 tags.
 - [ ] The validator passes (`.\docs.ps1 validate`).
+
+## 10. Dataset notes (written from a database catalog)
+
+A dataset note documents one database object, such as a PostgreSQL materialized view, from the export
+`.\docs.ps1 postgres-catalog` writes to `inbox/postgres/<database>/`. **The export is the source of truth for
+structure**: columns, types, the SQL definition, row counts, ranges, value lists, lineage and refresh schedules come
+only from it, cited with its source id. Documents and experts explain *meaning*. When a document contradicts the
+export (a column that does not exist, another schedule, an old name), write the export's fact and put the document's
+claim under `## Conflicting information` with both source ids.
+
+- `type: dataset`; id `<schema>-<object>` in kebab-case (prefix the database when two databases share a name); title
+  `<schema>.<object>: <what it holds, in words>`; `aliases` include the exact name (`schema.object`), the bare object
+  name and any name used in reports or decks.
+- Lead: what one row is (the grain, from the unique index or the GROUP BY), what it covers (markets, periods), how
+  fresh it is and how it is refreshed.
+- Sections: `## What one row is`, `## Columns` (a table: column, meaning, how it is computed from the SQL, type,
+  notes; every column, `UNKNOWN` where neither the SQL nor a document says), `## Where the data comes from`,
+  `## Refresh and freshness`, `## Who reads it`, `## Pitfalls`, `## Questions this note answers`, `## Open questions`.
+- A dataset note may be longer than 600 words because of its column table; keep every other section short.
+- Value lists and date ranges from the export may be quoted (they describe coverage). Sums, totals and other business
+  figures may not. The owner role is a lead for the stakeholder list, not something to write in the note.

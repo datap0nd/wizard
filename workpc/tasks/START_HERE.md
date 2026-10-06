@@ -3,8 +3,9 @@
 You are preparing a Wizard installation on a work PC. Work through the task files in this folder in numeric order.
 
 Two tracks:
-- **00-17 and 90: installation and data platforms** (environment, platform guides, report catalogs, switching Wizard to
-  the real catalog).
+- **00-18 and 90: installation and data platforms** (environment, platform guides, report catalogs, switching Wizard to
+  the real catalog, and 18: a data dictionary of the PostgreSQL materialized views, written from the server's catalog).
+  Run 18 on its own with `/wizard:tasks 18`.
 - **20-25 and 30-31: company documentation.** Collect the user's Outlook mail and files (20), digest every source with
   Gemini 3.5 Flash (21), plan the notes (22), write them (23), build the glossary and ambiguous terms (24), check
   coverage (25), then send expert quizzes (30) and apply the answers (31). The user can run one track with, for
@@ -41,6 +42,7 @@ If `outbox\STATUS.md` exists but lacks a row of the table below, add the row (ta
 | 15 Validate content | todo | | |
 | 16 Open questions for owners | todo | | |
 | 17 Switch Wizard to the real catalog | todo | | |
+| 18 Document the PostgreSQL materialized views | todo | | |
 | 20 Collect emails and files | todo | | |
 | 21 Digest every source | todo | | |
 | 22 Topic map | todo | | |

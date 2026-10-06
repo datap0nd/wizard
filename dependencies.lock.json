@@ -25,6 +25,13 @@
       "sha256": "6152fdbbf9a77fdec97731721bebf7c4c44f7c29b424b0065826173efc7ed101"
     },
     {
+      "name": "asn1crypto",
+      "version": "1.5.1",
+      "filename": "asn1crypto-1.5.1-py2.py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/c9/7f/09065fd9e27da0eda08b4d6897f1c13535066174cc023af248fc2a8d5e5a/asn1crypto-1.5.1-py2.py3-none-any.whl",
+      "sha256": "db4e40728b728508912cbb3d44f19ce188f218e9eba635821bb4b68564f8fd67"
+    },
+    {
       "name": "certifi",
       "version": "2026.7.22",
       "filename": "certifi-2026.7.22-py3-none-any.whl",
@@ -81,6 +88,13 @@
       "sha256": "80e068aba7cd56c8b58512d6a36f8d25cb1dfaa0c0a4cc1c938ccf9f362d9cb3"
     },
     {
+      "name": "pg8000",
+      "version": "1.31.5",
+      "filename": "pg8000-1.31.5-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/45/07/5fd183858dff4d24840f07fc845f213cd371a19958558607ba22035dadd7/pg8000-1.31.5-py3-none-any.whl",
+      "sha256": "0af2c1926b153307639868d2ee5cef6cd3a7d07448e12736989b10e1d491e201"
+    },
+    {
       "name": "pydantic",
       "version": "2.13.5",
       "filename": "pydantic-2.13.5-py3-none-any.whl",
@@ -95,11 +109,32 @@
       "sha256": "15f4a94963c95accac15b7b657bb177d3ad82bb90b0d0526d9a9b85079925db5"
     },
     {
+      "name": "python-dateutil",
+      "version": "2.9.0.post0",
+      "filename": "python_dateutil-2.9.0.post0-py2.py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/ec/57/56b9bcc3c9c6a792fcbaf139543cee77261f3651ca9da0c93f5c1221264b/python_dateutil-2.9.0.post0-py2.py3-none-any.whl",
+      "sha256": "a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427"
+    },
+    {
       "name": "pywin32",
       "version": "312",
       "filename": "pywin32-312-cp313-cp313-win_amd64.whl",
       "url": "https://files.pythonhosted.org/packages/ba/db/36a78e3403099d31d9746d13fdcde5accc43c1155f375a34d15983a479a7/pywin32-312-cp313-cp313-win_amd64.whl",
       "sha256": "c53e878d15a1c44788082bfe712a905433473aa38f86375b7cf8b45e3acbaaf9"
+    },
+    {
+      "name": "scramp",
+      "version": "1.4.17",
+      "filename": "scramp-1.4.17-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/7f/99/0e372781210cd36b2f2727e5be3ea93066edad7edd6fa2dfdec3b3e28845/scramp-1.4.17-py3-none-any.whl",
+      "sha256": "a4e3fd2e8169461a28a13777a166d3da94274454f0714a7d3023fee124474ac8"
+    },
+    {
+      "name": "six",
+      "version": "1.17.0",
+      "filename": "six-1.17.0-py2.py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl",
+      "sha256": "4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274"
     },
     {
       "name": "starlette",

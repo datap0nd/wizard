@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 FRONT_MATTER = re.compile(r"\A---\n(.*?)\n---\n(.*)\Z", re.DOTALL)
-NOTE_TYPES = ("overview", "entity", "concept", "process", "metric", "platform", "glossary", "faq", "decision")
+NOTE_TYPES = ("overview", "entity", "concept", "process", "metric", "platform", "glossary", "faq", "decision", "dataset")
 STOPWORDS = frozenset("""a about after all also an and any are as at be been before but by can could did do does each
 for from had has have how i if in into is it its me more most my no not of on or our out over should so some such than
 that the their them then there these they this those to under up us was we were what when where which while who why

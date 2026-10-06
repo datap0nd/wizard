@@ -3,6 +3,37 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
+## 2026-10-06 — PostgreSQL materialized views documented from the server's catalog
+
+The owner chose to document the PostgreSQL server first, and only its materialized views, with the server as the
+source of truth and a light profile of the data.
+
+**What was added.**
+- `wizard_documents/postgres.py` exports, over a read-only session (60 s statement timeout, 2 s lock timeout, SELECT
+  only):
+  - every visible materialized view: columns, types, comments, owner role, indexes, the SQL definition;
+  - lineage both ways (through `pg_rewrite`/`pg_depend`);
+  - the pg_cron job that refreshes it, statistics, and freshness from commit timestamps when tracked;
+  - a light profile: exact row count, null rates and distinct counts (TABLESAMPLE above 200,000 rows), date and
+    period ranges, and the values of code columns with at most 25 values.
+  - No sums or numeric ranges are read, and columns that name people are never listed.
+- `.\docs.ps1 postgres-check` and `postgres-catalog`.
+- Settings: `WIZARD_PG_*` in `.env`, else the scanner account's `PG*` variables. The password is never printed or
+  written.
+- pg8000 (pure Python; psycopg2's DLL was blocked by Application Control on a development PC) is in the portable
+  runtime: release `portable-cp313-win_amd64-ebab720ef8aa0947cf47`. It was verified to import and connect from the x64
+  embeddable Python with `site` off.
+- Task 18 writes `platforms/postgresql.md` and one `datasets/` note per view. The knowledge standard gains the
+  `dataset` type and section 10: the export wins over documents.
+
+**Tests.**
+- Unit tests against a fake catalog assert that only SELECTs are sent, plus sampling, ranges, value lists, person
+  columns, lock timeouts and output files.
+- `tests/integration/test_postgres_real.py` runs on a PostgreSQL 16 service in CI. It builds a staging table, a
+  materialized view, a view on top and a SELECT-only role, checks the export, and proves the session refuses a write.
+  It is BLOCKED locally (no PostgreSQL here).
+- The corporate server is first read on the work PC.
+
 ## 2026-10-05 (late) — Company documentation kit, expert quizzes and attached files
 
 Decision: [2026-10-05 company documentation](decisions/2026-10-05-company-documentation.md).
