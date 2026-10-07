@@ -33,6 +33,7 @@ from wizard_connectors.tools import build_registry, build_services
 from . import __version__
 from .attachments import AttachmentError, public
 from .config import ConfigError, Settings, load_settings
+from .outlook import DraftError, open_outlook_draft
 from .runs import Busy, RunManager, entitled_to
 from .security import REQUEST_HEADER, SECURITY_HEADERS, SESSION_COOKIE, session_token, verify
 from .store import Store
@@ -108,6 +109,11 @@ class FeedbackBody(Body):
     category: Literal["wrong_source", "mismatched_period", "wrong_arithmetic", "omitted_contrary_signal",
                       "unsupported_certainty", "poor_chart", "access_problem", "helpful", "other"]
     note: str = Field(default="", max_length=2000)
+
+
+class EmailDraftBody(Body):
+    subject: str = Field(min_length=1, max_length=300)
+    html: str = Field(min_length=1, max_length=3_000_000)
 
 
 class LinkCompleteBody(Body):
@@ -464,6 +470,23 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         if not store.run(identity.id, run_id):
             raise HTTPException(404, "Run not found.")
         store.add_feedback(run_id, identity.id, body.category, body.note)
+        return {"ok": True}
+
+    @app.post("/api/v1/runs/{run_id}/email")
+    async def email_draft(request: Request, run_id: str, body: EmailDraftBody) -> dict[str, Any]:
+        """Open the answer as an unsent Outlook message. Only where the browser and Wizard share a PC: behind a proxy,
+        Outlook would open on the server, so the page downloads the message as a file instead."""
+        identity = me(request)
+        run = store.run(identity.id, run_id)
+        if not run or run["status"] != "succeeded":
+            raise HTTPException(404, "Only a finished answer can be emailed.")
+        if settings.auth_mode != "fixture" or not _is_loopback(request.client.host if request.client else None):
+            raise HTTPException(409, {"error": "Outlook opens only when Wizard runs on your own PC.", "code": "outlook_not_local"})
+        try:
+            await open_outlook_draft(settings.data_dir / "drafts", body.subject, body.html)
+        except DraftError as error:
+            raise HTTPException(503, {"error": str(error), "code": "outlook_unavailable"}) from None
+        store.audit(identity.id, "email:draft", run_id=run_id)
         return {"ok": True}
 
     @app.get("/api/v1/runs/{run_id}/events")

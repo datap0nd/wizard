@@ -205,6 +205,12 @@ class OfficeSession:
         self.apps[name] = (application, owned, saved)
         return application
 
+    def keep_running(self, name: str) -> None:
+        """Leave this application running after the session even if the session started it (a draft on screen)."""
+        if name in self.apps:
+            application, _, saved = self.apps[name]
+            self.apps[name] = (application, False, saved)
+
     def close(self) -> None:
         for name, (application, owned, saved) in self.apps.items():
             for attribute, value in saved.items():
@@ -641,3 +647,27 @@ def export_mail(session: OfficeSession, folder_paths: list[str], out: Path, sinc
                 target.write_text(f"Folder: {label}\n" + message_text(item, names) + "\n", encoding="utf-8")
                 result.exported += 1
     return result
+
+
+BODY_TAG = re.compile(r"<body[^>]*>", re.IGNORECASE)
+
+
+def open_draft(session: OfficeSession, subject: str, html: str) -> None:
+    """Open a new Outlook message for the user to address, edit and send themselves. Never sends.
+
+    Display() comes first so Outlook adds the user's default signature; the content goes in front of it. The draft must
+    outlive this session, so Outlook is never quit here, even when this session started it."""
+    outlook = session.app("outlook")
+    session.keep_running("outlook")
+    try:
+        mail = outlook.CreateItem(0)  # olMailItem
+        mail.Subject = subject
+        mail.Display(False)
+        try:
+            current = str(mail.HTMLBody or "")
+        except Exception:  # noqa: BLE001 - a guarded or empty body just means no signature to keep
+            current = ""
+        found = BODY_TAG.search(current)
+        mail.HTMLBody = current[:found.end()] + html + current[found.end():] if found else html
+    except session.pywintypes.com_error as error:
+        raise OfficeUnavailable(f"Outlook could not open a draft: {com_message(error)}") from None

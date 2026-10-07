@@ -46,6 +46,7 @@ export const api = {
   check: (runId: string) => request<{run_id: string; conversation_id: string}>(`/api/v1/runs/${encodeURIComponent(runId)}/check`, {body: {}}),
   run: (runId: string) => request<RunRecord>(`/api/v1/runs/${encodeURIComponent(runId)}`),
   cancel: (runId: string) => request<{cancelled: boolean}>(`/api/v1/runs/${encodeURIComponent(runId)}/cancel`, {body: {}}),
+  emailDraft: (runId: string, subject: string, html: string) => request<{ok: true}>(`/api/v1/runs/${encodeURIComponent(runId)}/email`, {body: {subject, html}}),
   feedback: (runId: string, category: string, note = '') => request<{ok: true}>(`/api/v1/runs/${encodeURIComponent(runId)}/feedback`, {body: {category, note}}),
   evidence: (conversationId: string, evidenceId: string) => request<{evidence: Evidence}>(`/api/v1/conversations/${encodeURIComponent(conversationId)}/evidence/${encodeURIComponent(evidenceId)}`),
   report: (id: string) => request<{report: Report}>(`/api/v1/reports/${encodeURIComponent(id)}`),

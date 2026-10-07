@@ -110,3 +110,30 @@ test('a file attached to a question is read first, then shown under the question
   await expect(page.getByTestId('pending-file')).toHaveCount(0);
   await expect(page.getByTestId('run-card').first()).toHaveAttribute('data-status', 'succeeded', {timeout: 30_000});
 });
+
+test('Email opens an Outlook draft with the question, the answer, the time taken and the sources it cites', async ({page}) => {
+  await signIn(page, 'u-ceo');
+  await page.getByTestId('suggestion').filter({hasText: CEO}).click();
+  const card = page.getByTestId('run-card').first();
+  await expect(card).toHaveAttribute('data-status', 'succeeded', {timeout: 30_000});
+  const sent: {subject: string; html: string}[] = [];
+  await page.route('**/api/v1/runs/*/email', async route => {  // never a real Outlook in tests
+    sent.push(route.request().postDataJSON());
+    await route.fulfill({json: {ok: true}});
+  });
+  await card.getByTestId('email-answer').click();
+  await expect(page.getByRole('status').filter({hasText: 'open in Outlook as a draft'})).toBeVisible();
+  expect(sent).toHaveLength(1);
+  expect(sent[0].subject).toMatch(/^Wizard: Which market gave us the best return/);
+  expect(sent[0].html).toContain('Answered by Wizard in');
+  expect(sent[0].html).toContain('not proven ROI');
+  expect(sent[0].html).toMatch(/<b>NERP<\/b> [^<]+ <span[^>]*>\(E\d/);
+  expect(sent[0].html).toContain('Synthetic data');
+
+  await page.unroute('**/api/v1/runs/*/email');
+  await page.route('**/api/v1/runs/*/email', route => route.fulfill({status: 503, json: {error: 'Outlook could not open a draft.', code: 'outlook_unavailable'}}));
+  const download = page.waitForEvent('download');
+  await card.getByTestId('email-answer').click();
+  expect((await download).suggestedFilename()).toMatch(/^Wizard - Which market gave us the best return.*\.eml$/);
+  await expect(page.getByRole('status').filter({hasText: 'downloaded instead'})).toBeVisible();
+});

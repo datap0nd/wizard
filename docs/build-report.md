@@ -3,6 +3,48 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
+## 2026-10-07 — Email an answer; a calendar in every request
+
+Prompted by the first live SIBP run on the work PC ("Sell in by market for last week": 41 steps, 26 evidence items, 283 s).
+Gemini spent a knowledge lookup and a query establishing which week was "last week" before it could start.
+
+**What changed.**
+- **Email button** on a finished answer (`apps/web/src/email.tsx`, `wizard_api/outlook.py`). It opens an unsent Outlook
+  draft. The draft holds:
+  - the question;
+  - the answer, with tables kept and charts as their data tables;
+  - how long the answer took, its data mode and check status;
+  - the sources the answer cites or charts, one line per table or report. Table names are read from the SQL; CTEs and
+    set-returning functions are left out.
+  - The page builds the message. `POST /api/v1/runs/{id}/email` hands it to Outlook through the new
+    `wizard_docs.py outlook-draft` command, in a subprocess with a 60 s limit.
+  - `Display()` runs first, so the user's signature is kept, and Outlook is never quit.
+  - Only when the browser and Wizard share the PC (fixture sign-in, loopback client). Behind an SSO proxy, or when
+    Outlook cannot open, the page downloads the same message as an `.eml` file (`X-Unsent: 1`).
+  - Wizard never sends mail. This is a button for the user, not a Gemini tool; AGENTS.md's no-email-tool rule is
+    unchanged.
+- **Calendar block** at the top of every request (`prompting.calendar_block`):
+  - today's date, local to the server: the previous UTC date was a day ahead on Mexico evenings;
+  - this and last ISO week with week numbers and dates, the last 4 complete weeks;
+  - this and last month and quarter, year to date.
+  - A dataset's own week or fiscal calendar wins where its notes define one. Context, not a rule.
+
+**Tests.** `scripts/verify_all.sh --allow-blocked=live-parity,postgres` on a second development PC (x64, Windows 11):
+- PASS: spec, secrets, contracts, lint, types, python-tests (217 passed), gemini-cli, evals-schema, web-types,
+  web-unit (11), web-dist, web-build and e2e (14, Chrome channel).
+- BLOCKED as allowed: postgres (no test server here; CI runs PostgreSQL 16) and live-parity.
+- New tests:
+  - the calendar, including ISO week 53;
+  - the Outlook draft, against fake Outlook objects: shown, never sent, signature kept, Outlook left running;
+  - the email endpoint: opens, 404, Outlook unavailable (503), behind a proxy (409);
+  - table names from SQL and the final-sources list;
+  - the e2e Email flow with the request intercepted, and the `.eml` fallback.
+- Not verified: real Outlook. It first runs on the work PC.
+- Environment notes for this PC:
+  - uv is installed as a Python module, not on PATH, so verify_all ran with `.venv\Scripts` on PATH.
+  - Edge's `msedge.exe` is missing, so e2e ran with `WIZARD_E2E_CHANNEL=chrome`.
+  - `uv sync` rewrote `uv.lock`: the committed lock lacks pg8000's dependencies. That change is not included here.
+
 ## 2026-10-06 (evening) — Gemini writes its own SQL on PostgreSQL; the report-entry connector is withdrawn
 
 Decision: [2026-10-06 live PostgreSQL](decisions/2026-10-06-live-postgresql.md). The owner withdrew the connector

@@ -283,3 +283,36 @@ def test_pywin32_status_is_reported_honestly():
     assert isinstance(ok, bool) and detail
     if sys.platform != "win32":
         assert not ok and "Windows" in detail
+
+
+class FakeMail:
+    def __init__(self, signature: str):
+        self.Subject = ""
+        self.HTMLBody = ""
+        self.signature = signature
+        self.calls: list[str] = []
+
+    def Display(self, modal: bool) -> None:  # noqa: N802 - Outlook object model names
+        self.calls.append(f"Display({modal})")
+        self.HTMLBody = self.signature
+
+    def Send(self) -> None:  # noqa: N802
+        self.calls.append("Send")
+
+
+def outlook_session(mail: FakeMail, kept: list[str]) -> Any:
+    session = FakeSession({"outlook": Bag(CreateItem=lambda kind: mail)})
+    session.keep_running = kept.append  # type: ignore[attr-defined]
+    return session
+
+
+def test_outlook_draft_opens_unsent_with_the_signature_kept():
+    mail = FakeMail('<html><body lang="EN-US"><p>Best, Ana</p></body></html>')
+    kept: list[str] = []
+    office.open_draft(outlook_session(mail, kept), "Wizard: Sell in by market", "<p>Answer</p>")
+    assert mail.Subject == "Wizard: Sell in by market" and mail.calls == ["Display(False)"], "shown, never sent"
+    assert mail.HTMLBody == '<html><body lang="EN-US"><p>Answer</p><p>Best, Ana</p></body></html>'
+    assert kept == ["outlook"], "a draft on screen must outlive the session"
+    plain = FakeMail("")
+    office.open_draft(outlook_session(plain, []), "Wizard: no signature", "<p>Answer</p>")
+    assert plain.HTMLBody == "<p>Answer</p>"

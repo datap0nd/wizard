@@ -1,5 +1,6 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {api, ApiError, eventsUrl} from './api';
+import {buildEmail, emlFile, emlName} from './email';
 import {applyEvent, emptyRun, fromRecord, TERMINAL} from './runState';
 import {AccountDialog} from './components/AccountDialog';
 import {LocalFilesDialog, type PendingFile} from './components/Attachments';
@@ -127,6 +128,28 @@ export function App() {
     } catch (e) { setNotice(e instanceof Error ? e.message : 'The check could not start.'); }
   }, [follow]);
 
+  const email = useCallback(async (run: RunView) => {
+    setNotice('Preparing the email…');
+    try {
+      const report = run.reportId ? await api.report(run.reportId).then(r => r.report, () => null) : null;
+      const draft = await buildEmail({question: run.question, answer: run.answer ?? '', visuals: run.visuals,
+        evidence: report?.evidence ?? run.evidence, createdAt: run.createdAt, finishedAt: run.finishedAt,
+        dataMode: run.dataMode, checkStatus: run.checkStatus, model: report?.runtime.model ?? run.model});
+      try {
+        await api.emailDraft(run.id, draft.subject, draft.html);
+        setNotice('The answer is open in Outlook as a draft. Add the recipient, review it and send it.');
+      } catch (e) {
+        if (!(e instanceof ApiError) || ![409, 503].includes(e.status)) throw e;
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(emlFile(draft));
+        link.download = emlName(run.question);
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(link.href), 60_000);
+        setNotice(`${e.message} The email was downloaded instead: open the .eml file to edit and send it in Outlook.`);
+      }
+    } catch (e) { setNotice(e instanceof Error ? e.message : 'The email could not be prepared.'); }
+  }, []);
+
   const allEvidence = useMemo(() => {
     const seen = new Map<string, EvidenceSummary>();
     runs.forEach(r => r.evidence.forEach(e => seen.set(e.id, e)));
@@ -161,7 +184,8 @@ export function App() {
           empty={<EmptyState suggestions={boot.suggestions} synthetic={synthetic} onPick={q => { if (!blocked) void ask(q); else setDraft(q); }} />}
           onEvidence={(run, id) => setDrawer({items: id ? allEvidence : run.evidence, focus: id})}
           onCheck={run => void check(run)} onCancel={run => void api.cancel(run.id)} onRetry={run => void ask(run.question)}
-          onFeedback={(run, category) => void api.feedback(run.id, category).then(() => setNotice('Thanks — recorded in the evaluation log.'))} />
+          onFeedback={(run, category) => void api.feedback(run.id, category).then(() => setNotice('Thanks — recorded in the evaluation log.'))}
+          onEmail={run => void email(run)} />
         <div className="border-t border-line bg-canvas px-4 pb-3 pt-3 md:px-6">
           {notice && <p className="mx-auto mb-2 max-w-[820px] rounded-lg bg-surface px-3 py-2 text-[13px] text-ink-2" role="status">{notice}</p>}
           <Composer busy={busy} draft={draft} onDraftChange={setDraft} onSubmit={ask} disabledReason={blocked}

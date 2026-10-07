@@ -1,5 +1,5 @@
 import {memo} from 'react';
-import {AlertTriangle, ExternalLink, Flag, Link2, ListTree, RotateCcw, ShieldCheck, Square} from 'lucide-react';
+import {AlertTriangle, ExternalLink, Flag, Link2, ListTree, Mail, RotateCcw, ShieldCheck, Square} from 'lucide-react';
 import {placedVisuals} from '@/citations';
 import {duration} from '@/format';
 import {Button} from './ui/button';
@@ -24,6 +24,7 @@ interface Props {
   onCancel: (run: RunView) => void;
   onRetry: (run: RunView) => void;
   onFeedback: (run: RunView, category: string) => void;
+  onEmail: (run: RunView) => void;
   busy: boolean;
 }
 
@@ -44,7 +45,7 @@ function CheckPanel({run}: {run: RunView}) {
   );
 }
 
-export const RunCard = memo(function RunCard({run, onEvidence, onCheck, onCancel, onRetry, onFeedback, busy}: Props) {
+export const RunCard = memo(function RunCard({run, onEvidence, onCheck, onCancel, onRetry, onFeedback, onEmail, busy}: Props) {
   const running = run.status === 'running' || run.status === 'queued';
   const text = run.answer ?? run.streamText;
   const placed = placedVisuals(text);
@@ -94,6 +95,11 @@ export const RunCard = memo(function RunCard({run, onEvidence, onCheck, onCancel
             <Button variant="ghost" size="sm" aria-label="Copy report link" onClick={() => void navigator.clipboard?.writeText(`${location.origin}/r/${run.reportId}`)}><Link2 /></Button>
           </Hint>
         </>}
+        {run.status === 'succeeded' && run.kind === 'ask' && run.answer && (
+          <Hint text="Open an Outlook draft with the question, this answer, how long it took and the sources it used. You add the recipient and send it.">
+            <Button variant="ghost" size="sm" onClick={() => onEmail(run)} data-testid="email-answer"><Mail />Email</Button>
+          </Hint>
+        )}
         {run.status === 'succeeded' && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild><Button variant="ghost" size="sm" className="ml-auto" aria-label="Flag a problem with this answer"><Flag />Feedback</Button></DropdownMenuTrigger>

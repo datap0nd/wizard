@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from tests.helpers import CEO_QUESTION, CONQUEST_QUESTION, HEADERS, PLANNER_QUESTION, ask, login, sse_events, wait_run
 
+from wizard_api.outlook import DraftError
+
 
 def test_three_stories_run_end_to_end_with_honest_labels(client):
     login(client, "u-ceo")
@@ -97,3 +99,30 @@ def test_feedback_and_conversation_management(client):
     assert client.get("/api/v1/conversations").json()["conversations"][0]["title"] == "ROI"
     assert client.delete(f"/api/v1/conversations/{run['conversation_id']}", headers=HEADERS).json()["ok"]
     assert client.get(f"/api/v1/runs/{run['id']}").status_code == 404
+
+
+def test_email_opens_an_outlook_draft_only_where_wizard_runs_on_this_pc(client, monkeypatch):
+    login(client, "u-ceo")
+    run = ask(client, CEO_QUESTION)
+    opened: list[tuple[str, str]] = []
+
+    async def outlook(folder, subject, html, timeout_s=60):
+        opened.append((subject, html))
+
+    monkeypatch.setattr("wizard_api.app.open_outlook_draft", outlook)
+    body = {"subject": "Wizard: best return on marketing", "html": "<p>Answer</p>"}
+    assert client.post(f"/api/v1/runs/{run['id']}/email", json=body, headers=HEADERS).json() == {"ok": True}
+    assert opened == [("Wizard: best return on marketing", "<p>Answer</p>")]
+    assert client.post("/api/v1/runs/run_unknown/email", json=body, headers=HEADERS).status_code == 404
+
+    async def no_outlook(*_args, **_kwargs):
+        raise DraftError("Outlook could not open a draft: Outlook.Application is not registered")
+
+    monkeypatch.setattr("wizard_api.app.open_outlook_draft", no_outlook)
+    failed = client.post(f"/api/v1/runs/{run['id']}/email", json=body, headers=HEADERS)
+    assert failed.status_code == 503 and failed.json()["code"] == "outlook_unavailable"
+    settings = client.app.state.settings  # behind an SSO proxy Outlook would open on the server, not the user's PC
+    settings.auth_mode, settings.trusted_proxies = "trusted-header", {"testclient"}
+    remote = client.post(f"/api/v1/runs/{run['id']}/email", json=body,
+                         headers={**HEADERS, settings.identity_header: "ceo@wizard.test"})
+    assert remote.status_code == 409 and remote.json()["code"] == "outlook_not_local" and len(opened) == 1

@@ -15,6 +15,8 @@ dated web reports. Every number links to the rows it came from, and every answer
 | Area | State |
 |---|---|
 | Web app (B2B design system): chat, live "What Wizard did" timeline, answers with evidence chips, charts/tables, evidence drawer, source explorer, dated report pages, Check my data | Working, browser-tested |
+| Email an answer | The Email button on a finished answer opens an unsent Outlook draft: the question, the answer (tables kept, charts as their data), how long it took, data mode and check status, and the tables and reports the answer cites (table names read from the SQL). Without classic Outlook, or behind an SSO proxy, it downloads the same message as an `.eml` file. Wizard never sends mail and Gemini has no email tool | Tested with fake Outlook objects; real Outlook first runs on the work PC |
+| Relative dates | Every request starts with a calendar: today's local date, this and last ISO week with dates, the last 4 weeks, this and last month and quarter, year to date. A dataset's own calendar wins where its notes define one | Unit-tested |
 | Agent runtime **gemini-cli**: Gemini CLI 0.62 headless `stream-json`, one isolated `GEMINI_CLI_HOME` per user, Wizard tools over MCP | Working end-to-end with the real CLI and offline fake model replies; needs a real sign-in to answer live |
 | Agent runtime **code-assist**: the Code Assist API Gemini CLI uses, per-user Google sign-in (ported from Scribble `41ab532`) | Implemented; tested against a scripted Google fake; needs a real account |
 | Agent runtime **replay**: recorded transcripts over synthetic data for CI and demos | Working; labelled REPLAY everywhere |

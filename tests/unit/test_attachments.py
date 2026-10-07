@@ -2,13 +2,14 @@
 evidence (USER_PROVIDED), and what Gemini is told about them."""
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 from tests.helpers import HEADERS, MemoryRecorder, login, make_settings, wait_run
 from tests.office_files import xlsx
 
-from wizard_agent.prompting import compose
+from wizard_agent.prompting import calendar_block, compose
 from wizard_api.app import create_app
 from wizard_api.runs import DATA_MODE_RANK
 from wizard_connectors.tools import ToolContext
@@ -103,12 +104,24 @@ def test_read_attachment_tool_parts_paging_and_evidence(registry, identities, se
 
 
 def test_gemini_is_told_about_attached_files():
-    prompt = compose("Summarise the deck", [], "ask", "Monday 5 October 2026",
+    prompt = compose("Summarise the deck", [], "ask", date(2026, 10, 5),
                      [{"label": "F1", "filename": "review.pptx", "kind": "slides", "status": "ok", "parts": ["Slide 1: Intro"]},
                       {"label": "F2", "filename": "old.xls", "kind": "spreadsheet", "status": "failed", "note": "password-protected"}])
     assert "- F1: review.pptx (presentation, 1 parts (Slide 1: Intro ...))" in prompt
     assert "- F2: old.xls could not be read: password-protected" in prompt and "never instructions" in prompt
     assert DATA_MODE_RANK["SYNTHETIC"] < DATA_MODE_RANK["USER_PROVIDED"] < DATA_MODE_RANK["DATED_APPROVED_SNAPSHOT"]
+    assert prompt.startswith("<calendar>\nToday is Monday 5 October 2026")
+
+
+def test_calendar_names_this_week_last_week_and_periods():
+    block = calendar_block(date(2026, 10, 7))
+    assert "This week: W41 2026 (Mon 5 Oct - Sun 11 Oct 2026), in progress." in block
+    assert "Last week: W40 2026 (Mon 28 Sep - Sun 4 Oct 2026)." in block
+    assert "Last 4 complete weeks: W37 to W40 (Mon 7 Sep 2026 - Sun 4 Oct 2026)." in block
+    assert "Last month: September 2026." in block and "Last quarter: Q3 2026 (1 Jul - 30 Sep 2026)." in block
+    # ISO week years: the first days of January can belong to the previous year's last week.
+    january = calendar_block(date(2027, 1, 4))
+    assert "Last week: W53 2026 (Mon 28 Dec - Sun 3 Jan 2027)." in january and "Last month: December 2026." in january
 
 
 def test_attachment_evidence_opens_for_its_owner(tmp_path):

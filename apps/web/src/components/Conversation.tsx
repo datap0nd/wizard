@@ -14,6 +14,7 @@ interface Props {
   onCancel: (run: RunView) => void;
   onRetry: (run: RunView) => void;
   onFeedback: (run: RunView, category: string) => void;
+  onEmail: (run: RunView) => void;
 }
 
 /** Questions and answers. New output scrolls into view only while the reader follows the latest turn (B2B behaviour). */

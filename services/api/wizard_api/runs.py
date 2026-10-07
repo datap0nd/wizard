@@ -12,7 +12,7 @@ import logging
 import re
 import traceback
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -337,7 +337,7 @@ class RunManager:
                 if not ready.get("ready"):
                     raise AgentFailure("gemini_signin_required" if "Link" in str(ready.get("reason")) else "runtime_unavailable",
                                        str(ready.get("reason")))
-                today = datetime.now(UTC).strftime("%A %d %B %Y")
+                today = datetime.now().astimezone().date()  # the server's local date: UTC is a day ahead on Mexico evenings
                 request = AgentRequest(
                     run_id=run.id, user_id=run.identity.id, user_email=run.identity.email, user_home=home,
                     prompt=compose(run.question, self.history(run), run.kind, today,

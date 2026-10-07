@@ -5,6 +5,7 @@
   extract <content>                         every document in <content>/inbox -> inbox/_text/ + manifest.csv
   outlook-folders                           list Outlook mail folders with item counts
   outlook-export <content> --folder Inbox/Projects --since 2026-01-01 [--match word ...] [--max 500]
+  outlook-draft <draft.json>                open an unsent Outlook message ({"subject", "html"}) for the user to send
   status <content> [--quizzes <folder>]     sources, digests, notes and quizzes so far
   next <content> [--limit 20]               the next sources that need a digest
   topics <content>                          topics found in the digests -> inbox/_digests/_topics.md
@@ -27,7 +28,7 @@ from .common import ConversionError, mask_contacts
 from .convert import Converter
 from .inbox import Inbox
 from .kit import KitError, check_quiz, coverage, knowledge_ids, next_sources, read_answers, status, topics
-from .office import PROGIDS, OfficeSession, OfficeUnavailable, export_mail, mail_folders, pywin32_status
+from .office import PROGIDS, OfficeSession, OfficeUnavailable, export_mail, mail_folders, open_draft, pywin32_status
 from .postgres import check as postgres_check
 from .postgres import export as postgres_export
 from .postgres import settings_from
@@ -95,6 +96,19 @@ def cmd_outlook_folders(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_outlook_draft(args: argparse.Namespace) -> int:
+    """Wizard's Email button: one JSON line, status ok or failed with a note a person can act on."""
+    try:
+        draft = json.loads(args.draft.read_text(encoding="utf-8"))
+        with OfficeSession() as session:
+            open_draft(session, str(draft["subject"]), str(draft["html"]))
+        print(json.dumps({"status": "ok"}))
+    except (OfficeUnavailable, OSError, ValueError, KeyError) as error:
+        print(json.dumps({"status": "failed", "note": str(error)[:500]}))
+        return 1
+    return 0
+
+
 def cmd_outlook_export(args: argparse.Namespace) -> int:
     since = dt.datetime.fromisoformat(args.since)
     until = dt.datetime.fromisoformat(args.until) + dt.timedelta(days=1) if args.until else dt.datetime.now()
@@ -150,6 +164,8 @@ def main(argv: list[str] | None = None) -> int:
         sub.add_argument("--keep-contacts", action="store_true", help="do not mask email addresses and phone numbers")
     folders = commands.add_parser("outlook-folders")
     folders.add_argument("--depth", type=int, default=3)
+    draft = commands.add_parser("outlook-draft")
+    draft.add_argument("draft", type=Path)
     export = commands.add_parser("outlook-export")
     export.add_argument("content", type=Path)
     export.add_argument("--folder", action="append", required=True, help="e.g. Inbox, Sent Items, Inbox/Projects")
@@ -192,6 +208,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_extract(args)
         if args.command == "outlook-folders":
             return cmd_outlook_folders(args)
+        if args.command == "outlook-draft":
+            return cmd_outlook_draft(args)
         if args.command == "outlook-export":
             return cmd_outlook_export(args)
         if args.command.startswith("postgres-"):
