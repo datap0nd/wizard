@@ -67,9 +67,11 @@ class Settings:
     attachment_office: str = "auto"  # "never": read only plain Office Open XML files, without starting Office (tests)
     # Read-only PostgreSQL account for wizard_query_postgresql (WIZARD_PG_* in .env, else the PG* variables); None = not set.
     postgres: PgSettings | None = None
-    max_concurrent_runs: int = 4
-    run_timeout_s: int = 600
-    max_tool_calls: int = 40
+    # Backstops against a runaway run, not a budget for a normal answer: Gemini may take its time and many calls. A run
+    # is steered to answer by the loop and time checks in runs.py long before it is cut off.
+    max_concurrent_runs: int = 8
+    run_timeout_s: int = 1800
+    max_tool_calls: int = 150
     require_google_email_match: bool = True
     report_retention_days: int = 30
     secure_cookies: bool = False
@@ -200,9 +202,9 @@ def load_settings(env: dict[str, str] | None = None, env_file: Path | None = Non
                                         {k: v for k, v in source_env.items() if k.startswith("PG")})
     except PgError as error:
         raise ConfigError(f"PostgreSQL settings: {error}") from None
-    settings.max_concurrent_runs = _int(get("WIZARD_MAX_CONCURRENT_RUNS", "4") or "4", "WIZARD_MAX_CONCURRENT_RUNS", 1, 64)
-    settings.run_timeout_s = _int(get("WIZARD_RUN_TIMEOUT_S", "600") or "600", "WIZARD_RUN_TIMEOUT_S", 10, 3600)
-    settings.max_tool_calls = _int(get("WIZARD_MAX_TOOL_CALLS", "40") or "40", "WIZARD_MAX_TOOL_CALLS", 1, 200)
+    settings.max_concurrent_runs = _int(get("WIZARD_MAX_CONCURRENT_RUNS", "8") or "8", "WIZARD_MAX_CONCURRENT_RUNS", 1, 64)
+    settings.run_timeout_s = _int(get("WIZARD_RUN_TIMEOUT_S", "1800") or "1800", "WIZARD_RUN_TIMEOUT_S", 10, 3600)
+    settings.max_tool_calls = _int(get("WIZARD_MAX_TOOL_CALLS", "150") or "150", "WIZARD_MAX_TOOL_CALLS", 1, 500)
     settings.require_google_email_match = _bool(get("WIZARD_REQUIRE_GOOGLE_EMAIL_MATCH", "true") or "true",
                                                 "WIZARD_REQUIRE_GOOGLE_EMAIL_MATCH")
     settings.report_retention_days = _int(get("WIZARD_REPORT_RETENTION_DAYS", "30") or "30", "WIZARD_REPORT_RETENTION_DAYS", 1, 3650)

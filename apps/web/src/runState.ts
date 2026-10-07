@@ -6,7 +6,7 @@ export function emptyRun(id: string, conversationId: string, question: string, k
   return {id, conversationId, kind, question, status: 'queued', runtime: 'replay', runtimeLabel: '', model: '', timeline: [],
     streamText: '', answer: null, visuals: [], evidence: [], check: null, checkStatus: 'NOT_CHECKED', checkSummary: null,
     dataMode: null, reportId: null, error: null, warnings: [], lastSeq: 0, attachments: [], createdAt: new Date().toISOString(),
-    finishedAt: null, parentRunId: null, diagnostics: []};
+    startedAt: null, finishedAt: null, parentRunId: null, diagnostics: []};
 }
 
 /** Apply one observed run event. Pure: the same reducer rebuilds a stored run and follows a live one. */
@@ -16,7 +16,7 @@ export function applyEvent(run: RunView, event: RunEvent): RunView {
   const next: RunView = {...run, lastSeq: event.seq};
   switch (event.type) {
     case 'run_started':
-      return {...next, status: 'running', runtime: p.runtime, runtimeLabel: p.runtime_label, model: p.model};
+      return {...next, status: 'running', runtime: p.runtime, runtimeLabel: p.runtime_label, model: p.model, startedAt: event.ts};
     case 'agent_session':
       return {...next, model: p.model ?? next.model};
     case 'status':
@@ -26,7 +26,8 @@ export function applyEvent(run: RunView, event: RunEvent): RunView {
     case 'note':
       return {...next, streamText: '', timeline: [...next.timeline, {key: `n${event.seq}`, kind: 'note', label: String(p.text)}]};
     case 'tool_started': {
-      const item: TimelineItem = {key: String(p.call_id), kind: 'tool', label: String(p.label), state: 'running', name: p.name, category: p.category};
+      const item: TimelineItem = {key: String(p.call_id), kind: 'tool', label: String(p.label), state: 'running', name: p.name,
+        category: p.category, at: event.ts};
       return {...next, timeline: [...next.timeline, item]};
     }
     case 'tool_finished':

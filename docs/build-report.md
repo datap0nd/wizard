@@ -3,6 +3,35 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
+## 2026-10-07 — Long runs end with an answer: higher limits, a loop check, a wrap-up window
+
+Prompted by a live run on the work PC ("tell me market share by market in august 2026": 27 steps, 20 sources, killed
+at 600 s with an empty result). Before this change, the time limit was a hard kill: everything Gemini had gathered was
+thrown away. The owner's direction: Gemini 3.8 Flash may take 15-20 minutes when it needs to; stop loops, not thoroughness.
+
+**What changed.**
+- **Backstops, not budgets** (`config.py`, `.env.example`): run time limit 600 s → 1,800 s, tool calls 40 → 150 (allowed up
+  to 500), concurrent runs 4 → 8. The code-assist runtime's hidden 24-turn cap is now 200 (`code_assist.MAX_STEPS`).
+- **Loop check** (`RunManager._bound`): tools are read-only, so an identical call (same tool and arguments; whitespace
+  inside strings ignored) returns what it did before.
+  - The second try runs, since a view being refreshed can time out once. The third is refused (`repeated_call`) and
+    logged on the server, naming the tool, because a loop usually means a tool's answer was unclear.
+  - After three refusals, the data and knowledge tools refuse further calls (`loop_stopped`): answer with what you have.
+- **Wrap-up window**: in the last fifth of the time limit (at most 4 minutes), the data and knowledge tools refuse
+  calls (`time_nearly_up`) and Gemini writes its answer with what it has. Calculate, visual and Check my data stay open,
+  so the answer can still have its chart.
+- None of this picks a route: every refusal is a tool error Gemini reads, and the run goes on.
+- **Where the time went**: each step in "What Wizard did" shows when it started in the run and how long its tool took
+  (`2:35 · 58.1 s`). The gap between steps is Gemini deciding. A running answer shows a live timer. Durations of a minute
+  or more read "10 min 6 s".
+
+**Tests.**
+- New: `tests/unit/test_run_bounds.py` (6), `RunCard.test.tsx` (live timer and step timing), and run-state and format cases.
+- Python suite: 238 tests, 227 passed, 11 skipped (postgres, live and gemini_cli layers need their servers or sign-in).
+- Also passed: ruff, mypy, web typecheck, web unit (14), `verify_spec.py`, contracts (unchanged), web dist rebuilt and verified.
+- Checked in the browser with the replay runtime: step timings render beside each step.
+- Not verified: a real 20-minute run. The work PC is the first place a long live run happens.
+
 ## 2026-10-07 — Email an answer; a calendar in every request
 
 Prompted by the first live SIBP run on the work PC ("Sell in by market for last week": 41 steps, 26 evidence items, 283 s).
@@ -24,7 +53,8 @@ Gemini spent a knowledge lookup and a query establishing which week was "last we
   - Wizard never sends mail. This is a button for the user, not a Gemini tool; AGENTS.md's no-email-tool rule is
     unchanged.
 - **Calendar block** at the top of every request (`prompting.calendar_block`):
-  - today's date, local to the server: the previous UTC date was a day ahead on Mexico evenings;
+  - today's date, local to the server: on the work PC (Gulf time, UTC+4) the previous UTC date was still yesterday
+    until 04:00, so "this week" was wrong early on Mondays;
   - this and last ISO week with week numbers and dates, the last 4 complete weeks;
   - this and last month and quarter, year to date.
   - A dataset's own week or fiscal calendar wins where its notes define one. Context, not a rule.

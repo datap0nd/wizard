@@ -22,7 +22,9 @@ from .runtime import AgentFailure, AgentRequest, Emit, RuntimeKind, ToolBridge
 from .secret_box import SecretBox
 
 API_BASE = "https://cloudcode-pa.googleapis.com/v1internal"
-MAX_STEPS = 24
+# Model turns per run: a runaway backstop only. The run's time limit and Wizard's tool checks (runs.py) end a long run
+# with an answer; this guards against a model that keeps calling tools after they refuse.
+MAX_STEPS = 200
 MAX_RETRIES = 6
 KEEP_SCHEMA_KEYS = ("description", "enum", "required", "minItems", "maxItems", "minimum", "maximum")
 

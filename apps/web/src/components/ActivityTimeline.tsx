@@ -1,5 +1,6 @@
 import {useState} from 'react';
 import {AlertTriangle, BookOpen, Calculator, ChartColumn, CheckCircle2, ChevronDown, Database, Loader2, MessageSquareText, Search, ShieldCheck, XCircle} from 'lucide-react';
+import {clock, spoken} from '@/format';
 import {cn} from '@/lib/utils';
 import type {RunView, TimelineItem} from '@/types';
 
@@ -22,6 +23,21 @@ function stateIcon(item: TimelineItem) {
   if (item.state === 'running') return <Loader2 className="size-3.5 animate-spin text-accent" aria-label="running" />;
   if (item.state === 'error') return <XCircle className="size-3.5 text-danger" aria-label="failed" />;
   return <CheckCircle2 className="size-3.5 text-ok" aria-label="done" />;
+}
+
+/** When the step started in the run, and how long the tool itself took. The gap between one step's end and the next
+ *  step's start is Gemini deciding, so a slow run shows whether the time went to the data or to the model. */
+function Timing({item, startedAt}: {item: TimelineItem; startedAt: string | null}) {
+  if (item.kind !== 'tool' || !item.at || !startedAt) return null;
+  const offset = new Date(item.at).getTime() - new Date(startedAt).getTime();
+  if (!Number.isFinite(offset)) return null;
+  const took = item.durationMs !== undefined ? spoken(item.durationMs) : null;
+  return (
+    <span className="mt-0.5 shrink-0 text-[11px] tabular-nums text-ink-3" data-testid="step-timing"
+      title={`Started ${clock(offset)} into the run${took ? `; the tool took ${took}` : ''}`}>
+      {clock(offset)}{took && ` · ${took}`}
+    </span>
+  );
 }
 
 /** Observed actions only: tool calls Wizard executed (with their evidence), Gemini's interim notes, warnings.
@@ -57,6 +73,7 @@ export function ActivityTimeline({run, onEvidence}: {run: RunView; onEvidence: (
                 {item.evidence?.access_note && <p className="text-xs text-warn">{item.evidence.access_note}</p>}
                 {item.evidence?.warnings?.map(w => <p key={w} className="text-xs text-warn">{w}</p>)}
               </div>
+              <Timing item={item} startedAt={run.startedAt} />
             </li>
           ))}
           {running && <li className="flex items-center gap-2 text-[13px] text-ink-3"><span className="inline-flex gap-1" aria-hidden="true"><i className="size-1.5 animate-pulse rounded-full bg-ink-3" /><i className="size-1.5 animate-pulse rounded-full bg-ink-3 [animation-delay:150ms]" /><i className="size-1.5 animate-pulse rounded-full bg-ink-3 [animation-delay:300ms]" /></span>Gemini is deciding the next step</li>}

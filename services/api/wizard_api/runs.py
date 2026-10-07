@@ -10,6 +10,7 @@ import contextlib
 import json
 import logging
 import re
+import time
 import traceback
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -32,6 +33,29 @@ log = logging.getLogger("wizard.runs")
 DATA_MODE_RANK = {"SYNTHETIC": 0, "USER_PROVIDED": 1, "LIVE": 2, "DATED_APPROVED_SNAPSHOT": 3, "LIVE_VERIFIED": 4}
 CITATION = re.compile(r"\[(E\d{1,4})\]")
 VISUAL = re.compile(r"\[(V\d{1,4})\]")
+# Loop check. Tools are read-only, so an identical call returns what it returned before: a second try is allowed (a view
+# being refreshed can time out once), a third is refused, and after LOOP_STOP refusals the run stops researching.
+REPEAT_LIMIT = 2
+LOOP_STOP = 3
+RESEARCH = ("source", "knowledge")  # tool categories that gather more; calculating and presenting stay open to the end
+
+
+def wrap_up_s(timeout_s: int) -> int:
+    """Time kept back at the end of a run for Gemini to write its answer instead of being cut off mid-research."""
+    return min(240, timeout_s // 5)
+
+
+def call_signature(name: str, args: dict[str, Any]) -> str:
+    """Same tool, same arguments; whitespace inside strings (a reformatted SQL statement) does not make a call new."""
+    def squeeze(value: Any) -> Any:
+        if isinstance(value, str):
+            return " ".join(value.split())
+        if isinstance(value, dict):
+            return {k: squeeze(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [squeeze(v) for v in value]
+        return value
+    return name + json.dumps(squeeze(args), sort_keys=True, default=str)
 
 
 class Busy(Exception):
@@ -51,6 +75,9 @@ class ActiveRun:
     subscribers: list[asyncio.Queue[dict[str, Any]]] = field(default_factory=list)
     cancelled: bool = False
     tool_calls: int = 0
+    started: float = 0.0  # time.monotonic() when the agent started; 0 until then
+    calls_seen: dict[str, int] = field(default_factory=dict)
+    repeats_refused: int = 0
     segment: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     evidence_ids: list[str] = field(default_factory=list)
@@ -286,11 +313,8 @@ class RunManager:
         shown = json.loads(encoded) if len(encoded) <= 4000 else {"truncated": True}
         await self.emit(run, "tool_started", {"call_id": call_id, "name": name, "label": tool_label(name, args, self.services),
                                               "category": spec.category if spec else "unknown", "arguments": shown})
-        if run.tool_calls > self.settings.max_tool_calls:
-            outcome = ToolOutcome(False, {}, 0, "tool_budget_exhausted",
-                                  f"This run reached its limit of {self.settings.max_tool_calls} tool calls. Answer with "
-                                  "what you have and say what is missing.")
-        else:
+        outcome = self._bound(run, name, args, spec.category if spec else None)
+        if outcome is None:
             context = ToolContext(identity=run.identity, run_id=run.id, recorder=Recorder(self.store, run, self.attachments),
                                   services=self.services)
             outcome = await asyncio.to_thread(self.registry.execute, name, args, context)
@@ -318,6 +342,35 @@ class RunManager:
                                                   "claims": outcome.data["claims"], "replays": outcome.data["replays"]})
         return outcome
 
+    def _bound(self, run: ActiveRun, name: str, args: dict[str, Any], category: str | None) -> ToolOutcome | None:
+        """Stop a run from spinning without choosing its route: refuse an identical repeat, and once the run keeps
+        repeating or nears its time limit, refuse further research so Gemini answers with what it has. A refusal is a
+        tool error Gemini reads; the run goes on. None means the call may run."""
+        if run.tool_calls > self.settings.max_tool_calls:
+            return ToolOutcome(False, {}, 0, "tool_budget_exhausted",
+                               f"This run reached its limit of {self.settings.max_tool_calls} tool calls. Answer with what "
+                               "you have and say what is missing.")
+        signature = call_signature(name, args)
+        run.calls_seen[signature] = seen = run.calls_seen.get(signature, 0) + 1
+        if seen > REPEAT_LIMIT:
+            run.repeats_refused += 1
+            log.warning("run %s: Gemini repeated an identical %s call (%d times); refused", run.id, name, seen)
+            return ToolOutcome(False, {}, 0, "repeated_call",
+                               f"You already made this exact call {REPEAT_LIMIT} times in this run; the tools are read-only, "
+                               "so it returns the same result. Use that result, change the call, or answer with what you have.")
+        if category is not None and category not in RESEARCH:
+            return None
+        if run.repeats_refused >= LOOP_STOP:
+            return ToolOutcome(False, {}, 0, "loop_stopped",
+                               "This run keeps repeating calls. Stop gathering data and write your answer now with what you "
+                               "have; say what is missing.")
+        left = self.settings.run_timeout_s - (time.monotonic() - run.started)
+        if run.started and left < wrap_up_s(self.settings.run_timeout_s):
+            return ToolOutcome(False, {}, 0, "time_nearly_up",
+                               f"About {max(1, round(left / 60))} minute(s) remain before this run's time limit. Stop "
+                               "gathering data and write your answer now with what you have; say what is missing.")
+        return None
+
     # Execution ---------------------------------------------------------------------------------------------------------
     def history(self, run: ActiveRun) -> list[Turn]:
         turns = []
@@ -337,7 +390,7 @@ class RunManager:
                 if not ready.get("ready"):
                     raise AgentFailure("gemini_signin_required" if "Link" in str(ready.get("reason")) else "runtime_unavailable",
                                        str(ready.get("reason")))
-                today = datetime.now().astimezone().date()  # the server's local date: UTC is a day ahead on Mexico evenings
+                today = datetime.now().astimezone().date()  # the server's local date: on Gulf time UTC is still yesterday until 04:00
                 request = AgentRequest(
                     run_id=run.id, user_id=run.identity.id, user_email=run.identity.email, user_home=home,
                     prompt=compose(run.question, self.history(run), run.kind, today,
@@ -346,6 +399,7 @@ class RunManager:
                     question=run.question, kind=run.kind,  # type: ignore[arg-type]
                     history=self.history(run), internal_url=self.settings.internal_url,
                     run_token=run_token(self.settings.session_secret, run.id, run.identity.id, self.settings.run_timeout_s + 120))
+                run.started = time.monotonic()
                 await asyncio.wait_for(self.runtime.run(request, lambda k, p: self.emit(run, k, p), Bridge(self, run),
                                                         lambda: run.cancelled),
                                        timeout=self.settings.run_timeout_s + 30)

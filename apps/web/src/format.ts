@@ -26,8 +26,23 @@ export function formatDate(iso: string | null | undefined, withTime = false): st
 export function duration(start: string, end: string | null): string | null {
   if (!end) return null;
   const ms = new Date(end).getTime() - new Date(start).getTime();
-  if (!Number.isFinite(ms) || ms < 0) return null;
-  return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
+  return Number.isFinite(ms) && ms >= 0 ? spoken(ms) : null;
+}
+
+/** 850 ms · 12.4 s · 4 min 12 s */
+export function spoken(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)} s`;
+  const seconds = Math.round(ms / 1000);
+  return `${Math.floor(seconds / 60)} min ${seconds % 60} s`;
+}
+
+/** Elapsed time as a clock: 0:07, 4:12, 1:02:09. */
+export function clock(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const [h, m, s] = [Math.floor(total / 3600), Math.floor(total / 60) % 60, total % 60];
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return h ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
 }
 
 export const DATA_MODE_TEXT: Record<string, {label: string; hint: string}> = {

@@ -1,7 +1,7 @@
-import {memo} from 'react';
+import {memo, useEffect, useState} from 'react';
 import {AlertTriangle, ExternalLink, Flag, Link2, ListTree, Mail, RotateCcw, ShieldCheck, Square} from 'lucide-react';
 import {placedVisuals} from '@/citations';
-import {duration} from '@/format';
+import {clock, duration} from '@/format';
 import {Button} from './ui/button';
 import {DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger, Hint} from './ui/menu';
 import {ActivityTimeline} from './ActivityTimeline';
@@ -26,6 +26,18 @@ interface Props {
   onFeedback: (run: RunView, category: string) => void;
   onEmail: (run: RunView) => void;
   busy: boolean;
+}
+
+/** A running answer's time so far, so a long run reads as working rather than stuck (Stop is in the footer). */
+function Elapsed({since}: {since: string}) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  return <span className="ml-auto text-xs tabular-nums text-ink-3" role="timer" aria-label="Time so far" data-testid="elapsed">
+    {clock(now - new Date(since).getTime())}
+  </span>;
 }
 
 function CheckPanel({run}: {run: RunView}) {
@@ -59,7 +71,7 @@ export const RunCard = memo(function RunCard({run, onEvidence, onCheck, onCancel
         {run.runtime === 'replay' && <RuntimeBadge kind={run.runtime} label={run.runtimeLabel} />}
         {(run.dataMode || run.status === 'succeeded') && <DataModeBadge mode={run.dataMode} />}
         {run.status === 'succeeded' && run.kind === 'ask' && <CheckBadge status={run.checkStatus} />}
-        {took && <span className="ml-auto text-xs text-ink-3">{took}</span>}
+        {running ? <Elapsed since={run.createdAt} /> : took && <span className="ml-auto text-xs text-ink-3">{took}</span>}
       </header>
       <div className="space-y-4 px-5 py-4 sm:px-6">
         <ActivityTimeline run={run} onEvidence={id => onEvidence(run, id)} />

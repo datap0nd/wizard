@@ -1,7 +1,7 @@
 import {describe, expect, it} from 'vitest';
 import {applyEvent, emptyRun, sourcesConsulted} from './runState';
 import {citedEvidence, placedVisuals, prepareAnswer} from './citations';
-import {formatValue} from './format';
+import {clock, duration, formatValue, spoken} from './format';
 import type {RunEvent} from './types';
 
 let seq = 0;
@@ -41,6 +41,18 @@ describe('run reducer', () => {
     expect(run.error?.code).toBe('model_unreachable');
     expect(run.timeline[0].state).toBe('error');
   });
+
+  it('times each step from the moment the agent started, on the server clock', () => {
+    seq = 0;
+    const at = (type: string, ts: string, payload: Record<string, unknown>): RunEvent => ({seq: ++seq, type, ts, payload});
+    let run = emptyRun('run_t', 'cnv', 'q');
+    run = applyEvent(run, at('run_started', '2026-10-07T07:25:00.000Z', {runtime: 'gemini-cli', runtime_label: 'x', model: 'm'}));
+    run = applyEvent(run, at('tool_started', '2026-10-07T07:27:35.000Z', {call_id: 'c1', name: 'wizard_query_postgresql', label: 'Q', category: 'source'}));
+    run = applyEvent(run, at('tool_finished', '2026-10-07T07:28:33.100Z', {call_id: 'c1', name: 'wizard_query_postgresql', ok: true, duration_ms: 58100, summary: '12 rows'}));
+    expect(run.startedAt).toBe('2026-10-07T07:25:00.000Z');
+    expect(run.timeline[0].at).toBe('2026-10-07T07:27:35.000Z');
+    expect(run.timeline[0].durationMs).toBe(58100);
+  });
 });
 
 describe('diagnostics', () => {
@@ -75,5 +87,15 @@ describe('format', () => {
     expect(formatValue(-0.3, 'percent', 'pp')).toBe('-0.3 pp');
     expect(formatValue(null)).toBe('—');
     expect(formatValue(14666.67, 'number', 'units/USD 1M')).toContain('units/USD 1M');
+  });
+
+  it('says how long things took in words a reader expects', () => {
+    expect(spoken(850)).toBe('850 ms');
+    expect(spoken(58100)).toBe('58.1 s');
+    expect(spoken(605700)).toBe('10 min 6 s');
+    expect(duration('2026-10-07T07:25:00Z', '2026-10-07T07:45:12Z')).toBe('20 min 12 s');
+    expect(clock(7000)).toBe('0:07');
+    expect(clock(155000)).toBe('2:35');
+    expect(clock(3729000)).toBe('1:02:09');
   });
 });

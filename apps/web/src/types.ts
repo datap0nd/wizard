@@ -164,6 +164,8 @@ export interface TimelineItem {
   summary?: string;
   evidence?: EvidenceSummary;
   durationMs?: number;
+  /** Server time the step started; with RunView.startedAt it shows where a run's time went. */
+  at?: string;
 }
 
 export interface RunView {
@@ -193,6 +195,8 @@ export interface RunView {
   /** Files sent with this question (F1, F2...). */
   attachments: Attachment[];
   createdAt: string;
+  /** Server time the agent started (run_started), the zero point for each step's start time. */
+  startedAt: string | null;
   finishedAt: string | null;
   parentRunId: string | null;
 }
