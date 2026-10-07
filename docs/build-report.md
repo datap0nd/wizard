@@ -3,6 +3,40 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
+## 2026-10-07 (later) — Metric notes say where the data is
+
+A structure review of the work PC's knowledge folder after the first live sell-in run:
+- The 39 dataset notes from task 18 follow the standard well.
+- The layer above them was missing. `metrics/sell-in-sell-out.md` defines sell-in but names no object, filter or week
+  column. The dataset notes carry the business word only in tags, and their example questions are about plans.
+- So Gemini found by trial which rows are weekly actual sell-in. Tasks 20-25, which write metric and glossary notes
+  from documents, have not run there yet, and as written they never read the dataset notes either.
+
+**What changed (documentation only).**
+- **Knowledge standard, section 11 (new):** every metric note ends with `## Where to get it`, one block per object:
+  - dataset note id and exact name;
+  - measure column and unit;
+  - filters with exact values;
+  - period and market columns;
+  - one example query, every name and value checked against the dataset notes.
+  - The dataset notes point back: the metric's id goes in `related`, and its name and aliases in `aliases` or `tags`
+    and in "Questions this note answers".
+  - Guidance Gemini may follow or adapt, not a rule for building answers.
+- **Section 10:**
+  - dataset notes gain `## Example query`, using exactly quoted column names and the filters from Pitfalls;
+  - `aliases` gain the business words;
+  - "Questions this note answers" uses executives' words.
+- **Tasks:**
+  - 22 always plans a priority 1 metric note for each measure a dataset holds;
+  - 23 reads the dataset notes when writing a metric note, then updates their links and aliases;
+  - 24 points ambiguous measures at their metric notes;
+  - 18 adds the new sections on its next pass.
+- Not done: the catalog export covers materialized views only, so mapping tables such as a country map or date
+  dimension cannot be documented from the export yet.
+
+**Tests.** Documentation only. Run in a clean worktree, all passing: spec, secrets, contracts, lint and python-tests
+(223 passed, on top of the long-runs change). The web layers were not re-run because nothing in `apps/web` changed.
+
 ## 2026-10-07 — Long runs end with an answer: higher limits, a loop check, a wrap-up window
 
 Prompted by a live run on the work PC ("tell me market share by market in august 2026": 27 steps, 20 sources, killed

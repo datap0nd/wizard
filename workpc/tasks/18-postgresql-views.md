@@ -41,7 +41,8 @@ computed, where the data comes from, and how fresh it is.
      not in the note.
    - Five views per round, then `.\docs.ps1 validate` and fix every error. Give the user one line per round.
 6. **Re-runs.** When the server changes, repeat steps 2-5: update the existing notes (same ids), add new views, and for
-   a view that no longer appears add "(removed from the server as of <date>)" to its title and tell the user.
+   a view that no longer appears add "(removed from the server as of <date>)" to its title and tell the user. Notes
+   written before section 10 asked for `## Example query` and business words in `aliases` get them on the next pass.
 7. Suggest quizzing the database owner on the open questions (task 30).
 
 **Done when:** every materialized view in the export has a dataset note, the platform guide exists, and

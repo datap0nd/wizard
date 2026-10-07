@@ -11,8 +11,10 @@
    `content\knowledge\`.
 2. Clean the topics: merge synonyms (`launch-gates` into `launch-process`), split topics that are really two notes,
    drop topics with a score of 1 unless they define something executives ask about. Always include:
-   `glossary/ambiguous-terms`, one `glossary-<domain>` note per domain with many terms, `calendar`, and one overview
-   note per area.
+   `glossary/ambiguous-terms`, one `glossary-<domain>` note per domain with many terms, `calendar`, one overview
+   note per area, and one `metrics/<measure>` note (priority 1) for each measure executives ask about that a dataset
+   note in `content\knowledge\datasets\` holds (sell-in, sell-out, channel stock, weeks of supply, revenue, share...),
+   even when few documents discuss it. Existing metric notes keep their ids.
 3. Write `content\register\topic-map.md`:
 
 ```

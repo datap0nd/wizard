@@ -16,6 +16,8 @@
 3. Write `content\knowledge\glossary\ambiguous-terms.md` (`type: glossary`). One entry per term that sources use in
    different ways ("sales", "share", "quarter", "market", "active", "stock", "launch"...): each meaning and where it is
    used, the question Wizard should ask, and the usual meaning if the sources show one (else `UNKNOWN`), with source ids.
+   For a measure ("sales": sell-in, sell-out or revenue; units or currency; actual or plan), name the metric note that
+   says where each meaning is read (`See sell-in-sell-out`).
 4. Link: add the glossary notes to `related` of the notes that use their terms, where helpful.
 5. Run `.\docs.ps1 validate` and fix every error.
 

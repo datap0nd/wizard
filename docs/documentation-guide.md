@@ -7,7 +7,7 @@
 | Company documentation (organisation, products, markets, processes, glossary, FAQ, decisions) | Markdown with front matter, one topic per note | `knowledge/<area>/<note>.md` | `wizard_lookup_definitions` (search), `wizard_browse_knowledge` (index), `wizard_read_knowledge` (by id) |
 | Platform guide (one per platform) | Markdown with front matter, ≤600 words | `knowledge/platforms/<platform>.md` | `wizard_list_sources` names it; the knowledge tools return it |
 | Report catalog (one per platform, one entry per report) | JSON validated by `contracts/source-contract.schema.json` | `contracts/sources/<platform>.json` | `<platform>_search_reports`, `<platform>_get_report_schema`, `wizard_search_catalog` |
-| Business definitions (cross-platform) | Markdown with front matter | `knowledge/metrics/<topic>.md`, `knowledge/calendar.md`, … | the knowledge tools |
+| Business definitions (cross-platform): what a measure means and where the data holds it (dataset, filters, example query) | Markdown with front matter | `knowledge/metrics/<topic>.md`, `knowledge/calendar.md`, … | the knowledge tools |
 | Inventory register, topic map, quiz and review logs (people only) | CSV / Markdown | `register/` | not read by Gemini |
 
 Every note follows [the knowledge standard](../templates/content/schema/knowledge-standard.md): flat front matter (`id`,

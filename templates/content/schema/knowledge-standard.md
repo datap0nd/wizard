@@ -23,7 +23,7 @@ safe to quote on its own, and honest about how sure we are. Wizard tells executi
 | `processes/` | how work happens: planning cycle, budgeting, month close, launches, approvals, reporting rhythm | process |
 | `platforms/` | data platforms (ASAP, GSCM, NERP, PostgreSQL...): what they hold, how to navigate them | platform |
 | `datasets/` | data dictionary: one note per database object (materialized view, table): grain, columns, how each is computed, lineage, refresh | dataset |
-| `metrics/` | how each measure is defined and computed, what must not be summed | metric |
+| `metrics/` | how each measure is defined and computed, what must not be summed, and where the data holds it (section 11) | metric |
 | `glossary/` | acronyms, jargon and **ambiguous terms**, grouped by domain | glossary |
 | `faq/` | recurring executive questions and where their answer lives | faq |
 | `decisions/` | standing decisions that change how data is read ("share comes from panel X since 2026") | decision |
@@ -157,6 +157,7 @@ the files stay on this PC.
 - [ ] The lead answers what it is, why it matters and what not to get wrong, in at most four sentences.
 - [ ] Every section starts by naming its subject.
 - [ ] Every fact has a source id, or is marked `(inferred)` or `UNKNOWN`.
+- [ ] A metric note ends with `## Where to get it`, every name and value checked against the dataset notes.
 - [ ] Acronyms are spelled out once and listed in `aliases`.
 - [ ] Changeable facts are dated.
 - [ ] No contact details, credentials, performance figures or restricted topics.
@@ -174,14 +175,44 @@ claim under `## Conflicting information` with both source ids.
 
 - `type: dataset`; id `<schema>-<object>` in kebab-case (prefix the database when two databases share a name); title
   `<schema>.<object>: <what it holds, in words>`; `aliases` include the exact name (`schema.object`), the bare object
-  name and any name used in reports or decks.
+  name, any name used in reports or decks, and the business words for what it holds ("sell-in", "channel stock"), so a
+  search for the business word finds the data.
 - Lead: the database and exact name (`meto_db`, `schema.object`), what one row is (the grain, from the unique index or
   the GROUP BY), what it covers (markets, periods), how fresh it is and how it is refreshed. Gemini queries the object
   with SQL from these notes, so `## Pitfalls` says what a correct query must know (rates, currencies, balances,
   duplicates across rows).
 - Sections: `## What one row is`, `## Columns` (a table: column, meaning, how it is computed from the SQL, type,
   notes; every column, `UNKNOWN` where neither the SQL nor a document says), `## Where the data comes from`,
-  `## Refresh and freshness`, `## Who reads it`, `## Pitfalls`, `## Questions this note answers`, `## Open questions`.
+  `## Refresh and freshness`, `## Who reads it`, `## Pitfalls`, `## Example query`, `## Questions this note answers`,
+  `## Open questions`.
+- `## Example query`: one or two short SELECTs for the questions the object answers most often, using the column names
+  exactly as the export spells them (double-quoted when they have capitals, spaces or symbols) and the filters from
+  `## Pitfalls`. Check every name and filter value against the export; the query is not run here. "Questions this note
+  answers" uses the words executives use ("sell-in by market last week"), not only the object's own terms.
 - A dataset note may be longer than 600 words because of its column table; keep every other section short.
 - Value lists and date ranges from the export may be quoted (they describe coverage). Sums, totals and other business
   figures may not. The owner role is a lead for the stakeholder list, not something to write in the note.
+
+## 11. Metric notes: where to get it
+
+A metric note (`type: metric`) says what a measure means **and where Wizard reads it**. Without the second part Wizard
+knows what "sell-in" is but finds out by trial which object holds it, which rows are actuals and which column is the
+week; on the first live question that was most of a 41-step run. So every metric note ends with `## Where to get it`,
+written from the dataset notes in `datasets/` (and their export), never from memory:
+
+- One short block per object that holds the measure, the most direct first: the dataset note id and exact name
+  (`meto_db`, `schema.object`); the measure column and its unit; the filters that select the right rows, with their
+  exact values (actual or plan, units or currency, current plan version); the period column and its format; the market
+  or subsidiary column.
+- Column names exactly as the database spells them, double-quoted when they have capitals, spaces or symbols
+  (`"Order Week"`, `"Unit/Value"`).
+- One example query per block: a SELECT with those filters, grouped by period and market. Check every column name and
+  filter value against the dataset note and the export's value lists. A value you cannot find there is `UNKNOWN`, not
+  a guess.
+- When more than one object holds the measure, which one answers which variant of the question (weekly or monthly,
+  units or revenue, actual or plan).
+
+Cite the dataset notes' sources. Then point the data back at the metric: add the metric note's id to each dataset
+note's `related`, and the measure's name and aliases to the dataset note's `aliases` or `tags` and to its "Questions
+this note answers". This section says what the data can answer and how to reach it; Wizard may follow it or adapt it.
+It is not a rule for how an answer must be built.
