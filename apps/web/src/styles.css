@@ -59,6 +59,9 @@
   .answer td { padding: 0.5rem 0.75rem; border-top: 1px solid var(--color-line); vertical-align: top; }
   .caret { display: inline-block; width: 0.5em; height: 1.1em; margin-left: 1px; vertical-align: text-bottom; background: var(--color-accent); animation: blink 1s steps(2) infinite; }
   @keyframes blink { 50% { opacity: 0; } }
+  /* The wizard sprite (components/WizardSprite.tsx): pixel art scaled by whole numbers, stepped frame by frame. */
+  .wizard-sprite { display: inline-block; flex: none; background-repeat: no-repeat; image-rendering: pixelated; }
+  @keyframes wizard-frames { from { background-position-x: 0; } to { background-position-x: var(--wizard-end); } }
 }
 
 @media print {

@@ -30,6 +30,7 @@ dated web reports. Every number links to the rows it came from, and every answer
 | ASAP MicroStrategy Library REST client | Groundwork only, not validated against the tenant; ASAP stays NAVIGATION_ONLY for live use |
 | Real platform documentation | `WIZARD_CONTENT_DIR` loads an internal wizard-content repo (template in `templates/content/`, Gemini CLI authoring commands, validator); real reports are navigation-only (PostgreSQL is queried directly, above) | Working; no real content yet |
 | Corporate SSO | Trusted-header mode implemented for an SSO reverse proxy; not connected to a real IdP |
+| Logo and character | A pixel-art wizard in Samsung colours, with a logo, favicon and app icon. He waves on the start screen. On a running answer he acts out the step in progress: thinking, searching, reading, calculating, drawing a chart, checking, writing. He hops when the answer lands and fizzles on a failure. Driven by observed run events only. Sprite sheet and atlas ready for gamification: [brand/README.md](brand/README.md) | Unit-tested; browser-checked in replay mode |
 
 ## Work PC (install, test, update)
 

@@ -1,6 +1,8 @@
 import {useEffect, useState} from 'react';
 import {ArrowRight} from 'lucide-react';
 import {api} from '@/api';
+import logo from '@/assets/wizard-logo.svg';
+import {WizardSprite} from './WizardSprite';
 
 /** Development sign-in with SYNTHETIC test identities. Pilot and production use corporate SSO in front of Wizard. */
 export function LoginScreen({mode, onLogin}: {mode: 'fixture' | 'trusted-header'; onLogin: () => void}) {
@@ -10,8 +12,13 @@ export function LoginScreen({mode, onLogin}: {mode: 'fixture' | 'trusted-header'
   return (
     <div className="grid min-h-dvh place-items-center bg-page p-6">
       <div className="w-[min(520px,100%)] rounded-card border border-line bg-canvas p-8 shadow-card" data-testid="login">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">Wizard</p>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight">Sign in</h1>
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <img src={logo} alt="Wizard" className="h-6" />
+            <h1 className="mt-4 text-2xl font-semibold tracking-tight">Sign in</h1>
+          </div>
+          <WizardSprite animation="idle" scale={2} className="-my-2" />
+        </div>
         {mode === 'trusted-header' ? <p className="mt-3 text-sm text-ink-2">Sign in through your company's single sign-on, then reload this page.</p> : <>
           <p className="mt-3 text-sm text-ink-2">{identities[0]?.id === 'local-owner'
             ? 'Choose yourself (Owner) to ask questions with your own Gemini account. The SYNTHETIC test identities only show how source rights change answers; no real Google account can be linked to them.'

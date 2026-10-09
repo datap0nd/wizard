@@ -31,3 +31,30 @@ describe('run card timing', () => {
     expect(screen.getByTestId('step-timing').textContent).toBe('2:35 · 58.1 s');
   });
 });
+
+describe('wizard stage', () => {
+  it('acts out the running step, hops when the answer lands live, then leaves', () => {
+    vi.useFakeTimers();
+    let seq = 0;
+    const ev = (type: string, payload: Record<string, unknown>): RunEvent => ({seq: ++seq, type, ts: '2026-10-09T08:00:00Z', payload});
+    let run = applyEvent(emptyRun('run_2', 'cnv_1', 'q'), ev('run_started', {runtime: 'replay', runtime_label: 'x', model: 'm'}));
+    run = applyEvent(run, ev('tool_started', {call_id: 'c1', name: 'wizard_render_visual', label: 'Prepared a bar: Spend', category: 'present'}));
+    const view = render(card(run));
+    expect(screen.getByTestId('wizard-sprite').dataset.animation).toBe('chart');
+    expect(screen.getByTestId('wizard-verb').textContent).toBe('Drawing a chart');
+    run = applyEvent(run, ev('run_finished', {status: 'succeeded', report_id: 'r', answer: 'Done.', data_mode: 'SYNTHETIC', check_status: 'NOT_CHECKED', warnings: []}));
+    view.rerender(card(run));
+    expect(screen.getByTestId('wizard-sprite').dataset.animation).toBe('success');
+    act(() => { vi.advanceTimersByTime(2_000); });
+    expect(screen.queryByTestId('wizard-stage')).toBeNull();
+  });
+
+  it('is not shown for a run loaded already finished', () => {
+    let seq = 0;
+    const ev = (type: string, payload: Record<string, unknown>): RunEvent => ({seq: ++seq, type, ts: '2026-10-09T08:00:00Z', payload});
+    let run = applyEvent(emptyRun('run_3', 'cnv_1', 'q'), ev('run_started', {runtime: 'replay', runtime_label: 'x', model: 'm'}));
+    run = applyEvent(run, ev('run_finished', {status: 'succeeded', report_id: 'r', answer: 'Done.', data_mode: 'SYNTHETIC', check_status: 'NOT_CHECKED', warnings: []}));
+    render(card(run));
+    expect(screen.queryByTestId('wizard-stage')).toBeNull();
+  });
+});

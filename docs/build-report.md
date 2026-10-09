@@ -3,6 +3,39 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
+## 2026-10-09 — Wizard's logo and character
+
+The owner's ask: Wizard is being productised and gamified. It needs a sprite, a logo, and the wizard as a character that
+animates while the work is done, in Samsung colours (Samsung Blue `#1428A0`, white, black; colours only, no Samsung logo).
+
+**What changed.**
+- **`scripts/wizard_art.py`** (standard library only) draws the wizard and the logo from text grids. It writes:
+  - `brand/`: logo, mark, app icon (SVG and PNG), the sprite sheet (48 x 48 frames, 11 animations), its JSON atlas
+    and animated previews;
+  - the web app's copies, and the favicon in `apps/web/index.html`.
+  - `--check` fails on a stale file. `tests/unit/test_wizard_art.py` runs it, so CI catches art that was not redrawn.
+  - Full guide: [brand/README.md](../brand/README.md).
+- **Web app.**
+  - The sidebar, the answer cards and the favicon carry the hat mark. Sign-in shows the logo and the resting wizard.
+  - The start screen's wizard waves, then rests.
+  - A running answer has a sticky stage: the wizard acts out the step in progress, with what it is and the step's own
+    label. Search tools search, read tools read, `wizard_calculate` casts, `wizard_render_visual` draws a chart, Check
+    my data checks. Streaming text writes; otherwise he thinks.
+  - When the answer lands live he hops, or fizzles on a failure. A reopened run has no stage.
+  - The animation comes from observed run events only (`apps/web/src/wizard.ts`). Nothing is acted out that Wizard did
+    not do.
+  - Reduced motion holds the first frame.
+
+**Tests.** All passing:
+- spec, secrets, contracts, lint, types;
+- python-tests (with the 3 new art tests);
+- web-types, web-unit (19, with the new mapping and stage tests), web-dist;
+- e2e: 14 passed, desktop and narrow. Run against this container's Chromium build, since Playwright 1.63's own build
+  could not be downloaded here.
+
+Replay mode runs its tools instantly, so there the stage mostly shows thinking, writing and the hop at the end. With
+live Gemini, each tool step lasts seconds and gets its own animation.
+
 ## 2026-10-07 (later) — Metric notes say where the data is
 
 A structure review of the work PC's knowledge folder after the first live sell-in run:

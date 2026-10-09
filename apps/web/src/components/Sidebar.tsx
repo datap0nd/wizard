@@ -4,6 +4,7 @@ import {cn} from '@/lib/utils';
 import {Button} from './ui/button';
 import {DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, Hint} from './ui/menu';
 import {QuotaRing} from './QuotaRing';
+import mark from '@/assets/wizard-mark.svg';
 import {SourceExplorer} from './SourceExplorer';
 import type {Bootstrap, ConversationSummary} from '@/types';
 
@@ -47,7 +48,7 @@ export function Sidebar({boot, conversations, currentId, onNew, onSelect, onRena
   return (
     <aside aria-label="Navigation" className="flex h-full w-[272px] shrink-0 flex-col border-r border-line bg-surface">
       <div className="flex items-center gap-2 px-3 py-3">
-        <span className="flex items-center gap-2 pl-1 text-[15px] font-semibold tracking-tight"><span className="grid size-6 place-items-center rounded-md bg-accent text-[12px] font-bold text-white">W</span>Wizard</span>
+        <span className="flex items-center gap-2 pl-1 text-[15px] font-semibold tracking-tight"><img src={mark} alt="" className="size-6" />Wizard</span>
         <Hint text="New analysis"><Button variant="ghost" size="icon-sm" className="ml-auto" onClick={onNew} aria-label="New analysis" data-testid="new-chat"><Plus /></Button></Hint>
       </div>
       <div role="tablist" aria-label="Sidebar" className="mx-3 mb-2 grid grid-cols-2 rounded-lg bg-surface-2 p-1">
