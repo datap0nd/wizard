@@ -10,6 +10,7 @@ import {CheckBadge, DataModeBadge, RuntimeBadge} from './Badges';
 import {Diagnostics} from './Diagnostics';
 import {SystemsStage} from './SystemsStage';
 import {VisualBlock} from './VisualBlock';
+import mark from '@/assets/wizard-mark.svg';
 import type {RunView} from '@/types';
 
 const FEEDBACK = [
@@ -68,7 +69,7 @@ export const RunCard = memo(function RunCard({run, onEvidence, onCheck, onCancel
     <section className="rounded-card border border-line border-t-[3px] border-t-accent bg-canvas shadow-card" aria-label={run.kind === 'check' ? 'Check my data result' : 'Wizard answer'}
       data-testid="run-card" data-status={run.status} data-run-id={run.id}>
       <header className="flex flex-wrap items-center gap-2 px-5 pt-4 sm:px-6">
-        <span className="text-[13px] font-semibold text-accent">{run.kind === 'check' ? 'Check my data' : 'Wizard'}</span>
+        <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-accent"><img src={mark} alt="" className="size-4" />{run.kind === 'check' ? 'Check my data' : 'Wizard'}</span>
         {run.runtime === 'replay' && <RuntimeBadge kind={run.runtime} label={run.runtimeLabel} />}
         {(run.dataMode || run.status === 'succeeded') && <DataModeBadge mode={run.dataMode} />}
         {run.status === 'succeeded' && run.kind === 'ask' && <CheckBadge status={run.checkStatus} />}

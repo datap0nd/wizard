@@ -17,6 +17,7 @@ import {SettingsDialog} from './components/SettingsDialog';
 import {SystemsContext} from './components/SystemsStage';
 import {Sidebar} from './components/Sidebar';
 import {onHost, toHost} from './host';
+import {WizardSprite} from './components/WizardSprite';
 import type {Attachment, Bootstrap, ConversationSummary, EvidenceSummary, LocalFile, RunEvent, RunView} from './types';
 
 const LAST = 'wizard-conversation';
@@ -186,7 +187,7 @@ export function App({compact = false}: {compact?: boolean}) {
   const newChat = useCallback(() => { streams.current.forEach(s => s.close()); streams.current.clear(); setCurrentId(null); setRuns([]); setDraft(''); localStorage.removeItem(LAST); }, []);
 
   if (fatal) return <div className="grid min-h-dvh place-items-center p-6 text-sm text-danger" role="alert">{fatal}</div>;
-  if (!boot) return <div className="grid min-h-dvh place-items-center text-sm text-ink-3">Loading Wizard…</div>;
+  if (!boot) return <div className="grid min-h-dvh place-content-center justify-items-center gap-2 text-sm text-ink-3"><WizardSprite animation="idle" scale={2} />Loading Wizard…</div>;
   if (boot.auth.login_required || !boot.identity) return <LoginScreen mode={boot.auth.mode} onLogin={() => void loadBoot()} />;
 
   const runtime = boot.runtime!;
