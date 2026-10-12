@@ -4,13 +4,14 @@
 #   .\docs.ps1 outlook-export --folder "Inbox/Projects" --since 2026-01-01 [--match launch GTM] [--max 500]
 #   .\docs.ps1 postgres-check                connect read-only to PostgreSQL (WIZARD_PG_* in .env, else PG* variables)
 #   .\docs.ps1 postgres-catalog [--schema S] export every materialized view: structure, lineage, refresh, light profile
+#   .\docs.ps1 bdp-check --url <address>     anonymous checks of the Big Data Portal's Superset (no sign-in, no SQL)
 #   .\docs.ps1 extract                       convert everything in content\inbox to text (only new or changed files)
 #   .\docs.ps1 status | next [--limit 25] | topics | coverage
 #   .\docs.ps1 validate                      check content\ the way Wizard checks it at start-up
 #   .\docs.ps1 quiz-check <page.html>        check a quiz page before emailing it
 #   .\docs.ps1 quiz-answers [<file or folder>]   read answered quizzes (default: documents\quiz-answers)
-# Everything runs on this PC: no network, no AI. Gemini CLI does the reading and writing; this does the converting,
-# counting and checking.
+# Everything runs on this PC, without AI; only postgres-* and bdp-check reach a server, and only to read. Gemini CLI
+# does the reading and writing; this does the converting, counting and checking.
 $ErrorActionPreference = 'Stop'
 $command = if ($args.Count) { [string]$args[0] } else { 'help' }
 $rest = @($args | Select-Object -Skip 1 | ForEach-Object { [string]$_ })
@@ -31,7 +32,7 @@ $quizzes = Join-Path $installDir 'documents\quiz-questions'
 $answers = Join-Path $installDir 'documents\quiz-answers'
 switch ($command) {
     'validate' { & $python (Join-Path $release 'scripts\validate_content.py') $content; exit $LASTEXITCODE }
-    { $_ -in @('extract', 'next', 'topics', 'coverage', 'outlook-export', 'postgres-check', 'postgres-catalog') } { $arguments = @($command, $content) + $rest; break }
+    { $_ -in @('extract', 'next', 'topics', 'coverage', 'outlook-export', 'postgres-check', 'postgres-catalog', 'bdp-check') } { $arguments = @($command, $content) + $rest; break }
     'status' { $arguments = @('status', $content, '--quizzes', $quizzes) + $rest; break }
     'quiz-check' { $arguments = @('quiz-check') + $rest + @('--content', $content); break }
     'quiz-answers' { if ($rest.Count -eq 0) { $rest = @($answers) }; $arguments = @('quiz-answers') + $rest + @('--quizzes', $quizzes); break }

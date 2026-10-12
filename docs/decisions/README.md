@@ -10,3 +10,4 @@ Evidence**. A decision that changes repository rules also updates [AGENTS.md](..
 - [2026-10-02 Work-PC installation and task kit](2026-10-02-workpc-install.md)
 - [2026-10-05 Company documentation, expert quizzes and attached files](2026-10-05-company-documentation.md)
 - [2026-10-06 Gemini queries PostgreSQL with its own SQL; totals over attached spreadsheets](2026-10-06-live-postgresql.md)
+- [2026-10-12 The Big Data Portal: per-user access through Superset, discovery first](2026-10-12-bdp-superset.md)

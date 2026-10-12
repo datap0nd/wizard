@@ -45,3 +45,8 @@ user they exist and suggest opening them, but cannot read their numbers.
 PostgreSQL is different: it has no report entries. Gemini reads the dataset notes and queries the server directly
 with `wizard_query_postgresql`
 ([documentation-guide.md](documentation-guide.md#postgresql-documentation-then-geminis-own-sql)).
+
+The Big Data Portal (BDP) follows the PostgreSQL route, not the report-catalog one: people request access to tables
+and query them with SQL in Superset. Wizard will query it through Superset under each person's own sign-in. Work-PC
+task 40 (`.\docs.ps1 bdp-check`) first finds out what that connection needs
+([decision](decisions/2026-10-12-bdp-superset.md)).

@@ -3,6 +3,43 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
+## 2026-10-12 — Big Data Portal: discovery task and `bdp-check`
+
+The owner wants the Big Data Portal (BDP) as another platform. BDP is not a report platform: people request access to
+tables and query them with SQL in Superset. The owner decided Wizard will query it through Superset under each
+person's own company sign-in (the same SSO as ASAP and GSCM), never a shared account or browser cookies
+([decision](decisions/2026-10-12-bdp-superset.md)). Nobody knows yet which engines sit behind Superset or how its API
+signs people in, so this change is discovery only. Wizard has no BDP tool yet.
+
+**What was added.**
+- `wizard_documents/bdp.py` and `.\docs.ps1 bdp-check --url <address>`, anonymous GET requests only:
+  - Superset's health check and version;
+  - the sign-in route read from the login page's redirects and bootstrap data: protocol, identity provider, a gateway
+    in front of Superset, Windows integrated sign-in;
+  - what the REST API and its description answer.
+  - Redirects that leave Superset's host are recorded, not followed. Only parameter names are kept, never values.
+  - The result goes to `content\inbox\bdp\superset-check.md`. A database list the user saved from their signed-in
+    browser (`superset-databases.json`) is summarised: engine, DML allowed, background queries, SQL Lab.
+- Work-PC task 40 (`/wizard:tasks 40`, meant for Gemini 3.8 Flash):
+  - search the documents for BDP;
+  - run the check;
+  - guide the user through two saved pages and two questions;
+  - write `outbox\40-bdp-discovery.md` (internal, with the questions for the BDP team) and
+    `outbox\40-bdp-shareable.md`.
+- The docs kit launcher adds `services/agent` to its path, so `bdp-check` uses Wizard's own proxy resolution and
+  certificate store (`wizard_agent.outbound`).
+
+**Tests.** `scripts/verify_all.sh --allow-blocked=live-parity,postgres` in a Linux sandbox:
+- PASS: spec, secrets, contracts, lint, types, python-tests (231 passed), evals-schema, web-types, web-unit, web-dist
+  and web-build.
+- BLOCKED: gemini-cli (the CLI is not installed in the sandbox), postgres and live-parity.
+- FAIL: e2e. Playwright 1.63 could not launch: the sandbox has Chromium build 1194, not the 1243 it needs. This change
+  touches no web code.
+- New: `tests/unit/test_bdp_check.py` (13 tests) runs against simulated Superset servers (OAuth through Entra ID, a
+  SAML gateway, a password page with Windows sign-in, an unreachable host). It checks that only anonymous GETs to
+  Superset's own host are sent and that no parameter value is written.
+- The real Superset is first checked on the work PC.
+
 ## 2026-10-07 (later) — Metric notes say where the data is
 
 A structure review of the work PC's knowledge folder after the first live sell-in run:

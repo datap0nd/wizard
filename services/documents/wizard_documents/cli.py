@@ -13,6 +13,8 @@
   postgres-check <content>                  connect read-only with the .env / PG* settings and report what is visible
   postgres-catalog <content> [--database D] [--schema S] [--structure-only]
                                             materialized views -> inbox/postgres/<database>/ (+ inbox/_postgres/*.json)
+  bdp-check <content> [--url <Superset address>]
+                                            anonymous checks of the Big Data Portal's Superset -> inbox/bdp/superset-check.md
   quiz-check <page.html> [--content <content>]
   quiz-answers <answered page or folder> [--quizzes <folder>]
 """
@@ -24,6 +26,9 @@ import json
 import sys
 from pathlib import Path
 
+from wizard_connectors.pg import read_env
+
+from . import bdp
 from .common import ConversionError, mask_contacts
 from .convert import Converter
 from .inbox import Inbox
@@ -142,6 +147,26 @@ def cmd_postgres(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_bdp_check(args: argparse.Namespace) -> int:
+    content = args.content.resolve()
+    env = read_env(args.env_file or content.parent / ".env")
+    address = args.url or env.get("WIZARD_BDP_URL")
+    if not address:
+        print("Give the Superset address: bdp-check --url <the address of the browser tab where SQL Lab is open>")
+        return 2
+    result = bdp.check(address, proxy=env.get("WIZARD_PROXY"))
+    saved = content / "inbox" / "bdp" / "superset-databases.json"
+    if saved.is_file():
+        try:
+            result.lines += [f"INFO  {line}" for line in bdp.describe_databases(saved)]
+        except ValueError as error:
+            result.lines.append(f"WARN  {error}. Save the page again from the browser while signed in (task 40)")
+    path = bdp.write(content, result)
+    print("\n".join(result.lines))
+    print(f"Written to {path.relative_to(content).as_posix()}. Next: run extract so it gets a source id.")
+    return 1 if any(line.startswith("FAIL") for line in result.lines) else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="wizard_docs", description="Wizard documentation kit",
                                      formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__)
@@ -191,6 +216,10 @@ def main(argv: list[str] | None = None) -> int:
                                                                  "the account can connect to)")
             sub.add_argument("--schema", action="append", help="only this schema (repeatable)")
             sub.add_argument("--structure-only", action="store_true", help="catalog only: no row counts or profiles")
+    check_bdp = commands.add_parser("bdp-check")
+    check_bdp.add_argument("content", type=Path)
+    check_bdp.add_argument("--url", help="Superset's address, e.g. copied from the SQL Lab tab (default: WIZARD_BDP_URL in .env)")
+    check_bdp.add_argument("--env-file", type=Path, help="Wizard's .env (default: next to the content folder)")
     quiz = commands.add_parser("quiz-check")
     quiz.add_argument("page", type=Path)
     quiz.add_argument("--content", type=Path)
@@ -214,6 +243,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_outlook_export(args)
         if args.command.startswith("postgres-"):
             return cmd_postgres(args)
+        if args.command == "bdp-check":
+            return cmd_bdp_check(args)
         if args.command == "status":
             print(status(args.content.resolve(), args.quizzes))
         elif args.command == "next":

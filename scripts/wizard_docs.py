@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-for entry in ("services/connectors", "services/documents", "vendor"):
+for entry in ("services/agent", "services/connectors", "services/documents", "vendor"):
     sys.path.insert(0, str(ROOT / entry))
 
 from wizard_documents.cli import main  # noqa: E402
