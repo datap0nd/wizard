@@ -3,7 +3,29 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-20 (latest) — "No capacity" no longer stops every answer: Wizard waits it out
+## 2026-10-20 (latest) — Flash falls back to Gemini 3.1 Pro preview, as in Gemini CLI
+
+The owner asked for "the exact same experience as Gemini CLI": when Flash has no capacity, fall back to Pro, Gemini 3.1
+Pro preview. Read in Gemini CLI 0.62.0:
+- `retry.ts`: two quick tries (1 s, 3 s), then the fallback handler.
+- `policyHelpers.ts`: Gemini 3 chains wrap around, so Flash falls back to Pro.
+- `useQuotaAndFallback.ts`: with the default `errorVerbosity: low`, it switches without a dialog or an error.
+
+**What changed:**
+- `WIZARD_GEMINI_FALLBACK_MODEL` defaults to `gemini-3.1-pro-preview` (was the model itself, `gemini-3.8-flash`). So a
+  capacity refusal on Flash gets two quick tries, then the rest of the answer comes from Pro. For ten minutes new
+  questions start on Pro. A used-up Flash quota also goes straight to Pro.
+- The switch is a status line on the stage, not a warning in the answer, as the CLI shows no error. The answer's report
+  still names the model that answered.
+- Unchanged from the entry below: if Pro has no capacity either, Wizard waits on it (10 tries, about 4 minutes) before
+  failing. Here Wizard is more patient than the CLI, which goes back to Flash once and then stops.
+- `desktop.md`, `operations.md`, the decision record and the README name the fallback.
+
+**Tests.** The hand-over test now uses the default settings: Flash to `gemini-3.1-pro-preview` after 1 s and 3 s, a
+status line and no warning, thinking HIGH on Pro, and the next question starting on Pro. The settings test expects the
+new default. Both fail on the previous code.
+
+## 2026-10-20 (earlier) — "No capacity" no longer stops every answer: Wizard waits it out
 
 The owner reported that Wizard "just stops with the Gemini capacity error constantly". Cause: the change below left
 the fallback model equal to the model (both `gemini-3.8-flash`), so there was nowhere to go. A capacity refusal got the

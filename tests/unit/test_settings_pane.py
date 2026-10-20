@@ -111,11 +111,12 @@ def test_an_invalid_change_is_rolled_back(tmp_path):
 
 
 def test_everyone_is_on_the_default_model_and_a_picked_one_no_longer_applies(tmp_path):
-    """The in-app model picker was removed (owner, 20 Oct 2026): Gemini 3.8 Flash. A model saved with it is ignored."""
+    """The in-app model picker was removed (owner, 20 Oct 2026): Gemini 3.8 Flash, falling back to 3.1 Pro preview as
+    in Gemini CLI. A model saved with the picker is ignored."""
     provisioning.update_local(tmp_path / "data", {"WIZARD_GEMINI_MODEL": "gemini-3.1-pro",
                                                   "WIZARD_GEMINI_FALLBACK_MODEL": "none"})
     settings = install(tmp_path)
-    assert (settings.model, settings.fallback_model) == ("gemini-3.8-flash", "gemini-3.8-flash")
+    assert (settings.model, settings.fallback_model) == ("gemini-3.8-flash", "gemini-3.1-pro-preview")
     with TestClient(create_app(settings)) as client:
         owner(client)
         keys = {f["key"] for f in client.get("/api/v1/settings").json()["fields"]}

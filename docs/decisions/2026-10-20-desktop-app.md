@@ -86,6 +86,12 @@ chip and the model fields in Settings are gone, `/api/v1/models` with them, and 
 ignored. The company file, `.env` or the environment can still set `WIZARD_GEMINI_MODEL` and
 `WIZARD_GEMINI_FALLBACK_MODEL`.
 
+**Addendum (same day): Pro as the fallback, as in Gemini CLI.** With the fallback equal to the model, answers stopped
+whenever Google had no capacity for Flash. The owner asked for "the exact same experience as Gemini CLI": fall back to
+Pro, Gemini 3.1 Pro preview. `WIZARD_GEMINI_FALLBACK_MODEL` now defaults to `gemini-3.1-pro-preview`. After two quick
+tries the rest of the answer comes from Pro, and the switch is a status line, not a warning (Gemini CLI's default
+`errorVerbosity: low` shows no error either).
+
 **Addendum (same day): files dropped on the button.** The owner asked that a file dropped on the Ask Wizard button be
 attached to the conversation.
 - **From this PC** reads only files in Downloads, Desktop and Documents. That limit keeps a page, or any local process

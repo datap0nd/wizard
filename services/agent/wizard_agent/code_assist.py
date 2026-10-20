@@ -8,10 +8,10 @@ them through the same registry, rights checks and evidence capture as the MCP pa
 
 Limits are read the way Gemini CLI reads them (packages/core/src/utils/googleQuotaErrors.ts): Google's error details
 tell apart a model with no capacity on Google's side, a used-up (daily) quota, and a per-minute rate limit. A used-up
-quota is not waited for. When the chosen model cannot answer, the rest of the run continues on the fallback model, and
-the run says so. Gemini CLI answers "no capacity" by switching model (within Gemini 3, Flash and Pro stand in for each
-other). With no other model to go to, Wizard instead waits for the model like a busy one, as it did before the
-fallback: Google's capacity usually comes back within a minute or two."""
+quota is not waited for. When the chosen model cannot answer, the rest of the run continues on the fallback model, as
+Gemini CLI does (within Gemini 3, Flash and Pro stand in for each other). Like the CLI's default (errorVerbosity low),
+the switch is not an error: the stage notes it, and the run records the model that answered. With no other model to go
+to, Wizard waits for the model like a busy one: Google's capacity usually comes back within a minute or two."""
 from __future__ import annotations
 
 import asyncio
@@ -416,7 +416,7 @@ class CodeAssistRuntime:
             model, rested = self._start_model()
             await emit("agent_session", {"session_id": request.run_id, "model": model, "project": project})
             if rested:
-                await emit("warning", {"message": limit_message(rested, chosen, model).replace(" continues ", " answers ")})
+                await emit("status", {"message": limit_message(rested, chosen, model).replace(" continues ", " answers ")})
             declarations = [{"name": t["name"], "description": t["description"], "parameters": gemini_schema(t["inputSchema"])}
                             for t in tools.describe()]
             generation = self._generation(model)
@@ -441,7 +441,7 @@ class CodeAssistRuntime:
                     if model == chosen:
                         rest = (unavailable.limit.delay or 3600) if unavailable.limit.kind == "quota" else CAPACITY_REST_S
                         self._resting[chosen] = (time.monotonic() + min(rest, 6 * 3600), unavailable.limit)
-                    await emit("warning", {"message": limit_message(unavailable.limit, model, fallback)})
+                    await emit("status", {"message": limit_message(unavailable.limit, model, fallback)})
                     model = fallback
                     generation = self._generation(model)
                     _skip_signatures(contents)
