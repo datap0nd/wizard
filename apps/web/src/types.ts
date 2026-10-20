@@ -183,6 +183,9 @@ export interface RunEvent { seq: number; type: string; ts: string; payload: Reco
 
 export type RunKind = 'ask' | 'check' | 'recurring';
 
+/** The Make recurring menu's choices; null: Gemini asks how often. */
+export type Cadence = 'daily' | 'weekly' | 'monthly';
+
 /** A recurring extraction Gemini proposed (R1, R2...). Only the person's click creates it in Metronome, where the Flow
  *  belongs to Metronome's Wizard user. */
 export interface Schedule {
@@ -198,7 +201,7 @@ export interface Schedule {
   time: string;
   days: string[];
   day_of_month: number | null;
-  file_format: 'xlsx' | 'csv';
+  file_format: 'xlsx';
   subject: string | null;
   schedule_text: string;
   evidence_id: string;

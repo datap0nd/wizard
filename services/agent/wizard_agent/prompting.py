@@ -20,13 +20,27 @@ CHECK_REQUEST = (
     "updated answer: what matched, what you corrected, and what you could not verify."
 )
 RECURRING_REQUEST = (
-    "The user pressed Make this recurring under your previous answer: they want that table emailed to them on a schedule "
-    "by Metronome. Ask in one short message for what you do not know yet: who receives it, how often (every day, which "
-    "weekdays, or which day of the month) and at what time (Dubai time), and Excel or CSV (Excel unless they say). Then "
-    "call wizard_schedule_extraction with the query behind that table, its fixed dates rewritten relative to "
-    "CURRENT_DATE. If the answer has no database query to repeat, say so."
+    "The user pressed Make this recurring under your previous answer: Metronome should email them that table as an Excel "
+    "file on a schedule. It goes to their own address at 08:00 Dubai time unless they said otherwise, so never ask about "
+    "the format, the recipients or the time. Call wizard_schedule_extraction with the query behind that table, its fixed "
+    "dates rewritten relative to CURRENT_DATE. If the answer has no database query to repeat, say so instead."
 )
-REQUESTS = {"check": CHECK_REQUEST, "recurring": RECURRING_REQUEST}
+RECURRING_CHOSEN = " They chose {choice}: call the tool now, without asking anything."
+RECURRING_UNCHOSEN = (" They did not say how often: ask only that, in one short line (every day, every week on which "
+                      "day, or every month on which day).")
+# The Make recurring menu: the usual choices, so most schedules need no question at all.
+RECURRING_CHOICES = {"daily": "every day", "weekly": "every Monday", "monthly": "on the 1st of every month"}
+
+
+def recurring_question(cadence: str | None) -> str:
+    return "Make this recurring" + (f": {RECURRING_CHOICES[cadence]}" if cadence else "")
+
+
+def recurring_request(question: str) -> str:
+    choice = question.partition(":")[2].strip()
+    return RECURRING_REQUEST + (RECURRING_CHOSEN.format(choice=choice) if choice else RECURRING_UNCHOSEN)
+
+
 
 
 def system_prompt() -> str:
@@ -102,6 +116,6 @@ def compose(question: str, history: list[Turn], kind: str, today: date, files: l
         lines.append("</conversation_so_far>")
         lines.append("Evidence ids from earlier turns (E1, E2, ...) remain valid in this conversation.")
         parts.append("\n\n".join(lines))
-    request = REQUESTS.get(kind, question)
+    request = recurring_request(question) if kind == "recurring" else CHECK_REQUEST if kind == "check" else question
     parts.append(f"<request>\n{request}\n</request>")
     return "\n\n".join(parts)

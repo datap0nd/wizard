@@ -58,8 +58,9 @@ def call_signature(name: str, args: dict[str, Any]) -> str:
     return name + json.dumps(squeeze(args), sort_keys=True, default=str)
 
 
-# What a run that is not a typed question stands for in the conversation, the report and the next prompt.
-KIND_TITLES = {"check": "Check my data", "recurring": "Make this recurring"}
+# What a run that is not a typed question stands for in the conversation, the report and the next prompt. A Make
+# recurring run's question already says it ("Make this recurring: every Monday").
+KIND_TITLES = {"check": "Check my data"}
 
 
 def run_title(kind: str, question: str) -> str:

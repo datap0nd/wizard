@@ -613,7 +613,7 @@
     "/api/v1/runs/{run_id}/recurring": {
       "post": {
         "summary": "Make Recurring",
-        "description": "Make recurring under an answer: a follow-up in which Gemini asks who receives the table and when.",
+        "description": "Make recurring under an answer: a follow-up in which Gemini proposes the schedule, asking how often only when\nthe person did not pick it from the menu.",
         "operationId": "make_recurring_api_v1_runs__run_id__recurring_post",
         "parameters": [
           {
@@ -626,6 +626,16 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecurringBody"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -1755,6 +1765,29 @@
           "user_id"
         ],
         "title": "LoginBody"
+      },
+      "RecurringBody": {
+        "properties": {
+          "cadence": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "daily",
+                  "weekly",
+                  "monthly"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cadence"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "RecurringBody"
       },
       "RunBody": {
         "properties": {

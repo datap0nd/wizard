@@ -23,6 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from wizard_agent import google_oauth, outbound
 from wizard_agent.code_assist import CodeAssistRuntime, summarize_quota
 from wizard_agent.gemini_cli import GeminiCliConfig, GeminiCliRuntime, inherited_project, resolve_cli_js
+from wizard_agent.prompting import recurring_question
 from wizard_agent.replay import ReplayRuntime
 from wizard_agent.runtime import AgentFailure, AgentRuntime
 from wizard_agent.secret_box import SecretBox
@@ -123,6 +124,11 @@ class FeedbackBody(Body):
 class EmailDraftBody(Body):
     subject: str = Field(min_length=1, max_length=300)
     html: str = Field(min_length=1, max_length=3_000_000)
+
+
+class RecurringBody(Body):
+    # The Make recurring menu's choice; None: Gemini asks how often.
+    cadence: Literal["daily", "weekly", "monthly"] | None = None
 
 
 class SettingsBody(Body):
@@ -547,8 +553,9 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         return {"run_id": run["id"], "conversation_id": parent["conversation_id"]}
 
     @app.post("/api/v1/runs/{run_id}/recurring")
-    async def make_recurring(request: Request, run_id: str) -> dict[str, Any]:
-        """Make recurring under an answer: a follow-up in which Gemini asks who receives the table and when."""
+    async def make_recurring(request: Request, run_id: str, body: RecurringBody) -> dict[str, Any]:
+        """Make recurring under an answer: a follow-up in which Gemini proposes the schedule, asking how often only when
+        the person did not pick it from the menu."""
         identity = me(request)
         parent = store.run(identity.id, run_id)
         if not parent or parent["status"] != "succeeded":
@@ -557,11 +564,11 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
             raise HTTPException(409, "Recurring extractions are not available: Wizard is not connected to Metronome, or "
                                      "you cannot query the company database.")
         try:
-            run = manager.start(identity, parent["conversation_id"], "Make this recurring", kind="recurring",
+            run = manager.start(identity, parent["conversation_id"], recurring_question(body.cadence), kind="recurring",
                                 parent_run_id=run_id)
         except Busy as busy:
             raise HTTPException(429, str(busy)) from None
-        return {"run_id": run["id"], "conversation_id": parent["conversation_id"]}
+        return {"run_id": run["id"], "conversation_id": parent["conversation_id"], "question": run["question"]}
 
     @app.post("/api/v1/schedules/{schedule_id}/create")
     async def create_schedule(request: Request, schedule_id: str) -> dict[str, Any]:

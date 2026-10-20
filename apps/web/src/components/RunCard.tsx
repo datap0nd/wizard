@@ -12,7 +12,7 @@ import {RecurringCard} from './RecurringCard';
 import {SystemsStage} from './SystemsStage';
 import {VisualBlock} from './VisualBlock';
 import mark from '@/assets/wizard-mark.svg';
-import type {RunView, Schedule} from '@/types';
+import type {Cadence, RunView, Schedule} from '@/types';
 
 const FEEDBACK = [
   ['wrong_source', 'Wrong source'], ['mismatched_period', 'Mismatched period'], ['wrong_arithmetic', 'Wrong arithmetic'],
@@ -28,14 +28,17 @@ interface Props {
   onRetry: (run: RunView) => void;
   onFeedback: (run: RunView, category: string) => void;
   onEmail: (run: RunView) => void;
-  /** Make recurring: a follow-up in which Gemini asks who receives this table and when. */
-  onRecurring?: (run: RunView) => void;
+  /** Make recurring: a follow-up in which Gemini proposes the schedule (asking how often only without a cadence). */
+  onRecurring?: (run: RunView, cadence: Cadence | null) => void;
   /** The person's answer on a recurring-extraction card. */
   onSchedule?: (run: RunView, schedule: Schedule, action: 'create' | 'dismiss') => void;
   /** Metronome is connected and this person may schedule queries. */
   canRecur?: boolean;
   busy: boolean;
 }
+
+const CADENCES: [Cadence | null, string][] = [['daily', 'Every day'], ['weekly', 'Every Monday'], ['monthly', 'On the 1st of every month'],
+  [null, 'Something else…']];
 
 const KIND_LABEL: Record<RunView['kind'], string> = {ask: 'Wizard', check: 'Check my data', recurring: 'Make recurring'};
 
@@ -128,9 +131,17 @@ export const RunCard = memo(function RunCard({run, onEvidence, onCheck, onCancel
           </Hint>
         )}
         {run.status === 'succeeded' && run.kind === 'ask' && canRecur && queried && !run.schedules.length && onRecurring && (
-          <Hint text="Have Metronome email this table on a schedule. Wizard asks who receives it and when, then shows you the schedule to confirm.">
-            <Button variant="ghost" size="sm" onClick={() => onRecurring(run)} disabled={busy} data-testid="make-recurring"><CalendarClock />Make recurring</Button>
-          </Hint>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" disabled={busy} data-testid="make-recurring"><CalendarClock />Make recurring</Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuLabel>Emailed to you as Excel at 08:00 (Dubai)</DropdownMenuLabel>
+              {CADENCES.map(([cadence, label]) => (
+                <DropdownMenuItem key={label} onSelect={() => onRecurring(run, cadence)} data-testid={`recurring-${cadence ?? 'other'}`}>{label}</DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
         {run.status === 'succeeded' && (
           <DropdownMenu>

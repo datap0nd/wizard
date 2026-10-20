@@ -20,7 +20,7 @@ import {WizardSprite} from './components/WizardSprite';
 import {dropToHost, onHost, toHost, type DroppedFile} from './host';
 import {cn} from './lib/utils';
 import {wizardAnimation} from './wizard';
-import type {Attachment, Bootstrap, ConversationSummary, EvidenceSummary, LocalFile, RunEvent, RunView, Schedule} from './types';
+import type {Attachment, Bootstrap, Cadence, ConversationSummary, EvidenceSummary, LocalFile, RunEvent, RunView, Schedule} from './types';
 
 const LAST = 'wizard-conversation';
 
@@ -179,10 +179,10 @@ export function App({compact = false}: {compact?: boolean}) {
     } catch (e) { setNotice(e instanceof Error ? e.message : 'The check could not start.'); }
   }, [follow]);
 
-  const recurring = useCallback(async (run: RunView) => {
+  const recurring = useCallback(async (run: RunView, cadence: Cadence | null) => {
     try {
-      const started = await api.recurring(run.id);
-      setRuns(prev => [...prev, {...emptyRun(started.run_id, started.conversation_id, 'Make this recurring', 'recurring'), parentRunId: run.id}]);
+      const started = await api.recurring(run.id, cadence);
+      setRuns(prev => [...prev, {...emptyRun(started.run_id, started.conversation_id, started.question, 'recurring'), parentRunId: run.id}]);
       follow(started.run_id, 0, run.id);
     } catch (e) { setNotice(e instanceof Error ? e.message : 'Could not start making this recurring.'); }
   }, [follow]);
@@ -244,7 +244,7 @@ export function App({compact = false}: {compact?: boolean}) {
         onEvidence={(run, id) => setDrawer({items: id ? allEvidence : run.evidence, focus: id})}
         onCheck={run => void check(run)} onCancel={run => void api.cancel(run.id)} onRetry={run => void ask(run.question)}
         onFeedback={(run, category) => void api.feedback(run.id, category).then(() => setNotice('Thanks — recorded in the evaluation log.'))}
-        onEmail={run => void email(run)} onRecurring={run => void recurring(run)}
+        onEmail={run => void email(run)} onRecurring={(run, cadence) => void recurring(run, cadence)}
         onSchedule={(run, schedule, action) => void decide(run, schedule, action)} canRecur={!!boot.metronome?.enabled} />
     </SystemsContext.Provider>
   );

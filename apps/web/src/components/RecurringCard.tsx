@@ -39,7 +39,7 @@ interface Props {
  *  the Flow then belongs to Metronome's Wizard user and Metronome emails the file on the schedule. */
 export function RecurringCard({schedule, onCreate, onDismiss}: Props) {
   const status = STATUS[schedule.status] ?? STATUS.proposed;
-  const file = `${schedule.title} <date>.${schedule.file_format}`;
+  const file = `${schedule.title} <date>.xlsx`;
   const next = when(schedule.flow?.next_run_at);
   const open = schedule.status === 'proposed' || schedule.status === 'failed';
   return (
@@ -57,7 +57,7 @@ export function RecurringCard({schedule, onCreate, onDismiss}: Props) {
         <Row icon={CalendarClock} label="When">{schedule.schedule_text}</Row>
         <Row icon={Mail} label="To">{schedule.recipients.join(', ')}</Row>
         <Row icon={FileSpreadsheet} label="File">
-          {file} ({schedule.file_format === 'xlsx' ? 'Excel' : 'CSV'}){schedule.subject ? <>, subject “{schedule.subject}”</> : null}
+          {file} (Excel){schedule.subject ? <>, subject “{schedule.subject}”</> : null}
         </Row>
         <Row icon={UserRound} label="Owner">Metronome user {schedule.metronome_user}, which sends it and receives failure alerts</Row>
         <details className="pt-1 text-[13px]">

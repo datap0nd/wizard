@@ -56,7 +56,22 @@ def test_a_proposal_is_test_run_recorded_and_left_for_the_person(setup):
     assert proposal["sql"] == ARGS["sql"].rstrip(";") and proposal["days"] == ["monday", "thursday"]
     assert proposal["requested_by"] == {"id": "o", "name": "O", "email": "o@corp.test"}
     assert proposal["metronome_user"] == "Wizard" and proposal["evidence_id"] == "E1" and len(proposal["ref"]) == 8
-    assert proposal["file_format"] == "xlsx" and proposal["day_of_month"] is None
+    assert proposal["file_format"] == "xlsx" and proposal["day_of_month"] is None and proposal["time"] == "08:00"
+
+
+def test_by_default_it_goes_to_the_users_own_mailbox_at_eight(setup):
+    _, _, call = setup
+    recorder = MemoryRecorder()
+    person = owner().model_copy(update={"email": "rafael@ax.corp.test"})
+    outcome = call({"title": "Weekly sell-out", "sql": ARGS["sql"], "frequency": "weekly", "days": ["monday"]}, person, recorder)
+    assert outcome.ok, outcome.error_message
+    assert outcome.data["recipients"] == ["rafael@corp.test"], "the sign-in's ax. is not part of the mailbox"
+    assert outcome.data["sends"] == "Every Monday at 08:00 (Dubai time)" and outcome.data["file"].endswith(".xlsx")
+    named = call({**ARGS, "recipients": ["cfo@ax.corp.test", "cfo@corp.test"]}, person)
+    assert named.ok and named.data["recipients"] == ["cfo@corp.test"], "a named sign-in address becomes its mailbox"
+    nobody = owner().model_copy(update={"email": ""})
+    unknown = call({"title": "x", "sql": ARGS["sql"], "frequency": "daily"}, nobody)
+    assert unknown.error_code == "invalid_schedule" and "ask who should receive it" in unknown.error_message
 
 
 @pytest.mark.parametrize(("change", "code", "message"), [
@@ -76,10 +91,10 @@ def test_what_cannot_be_scheduled_is_refused_before_any_query(setup, change, cod
 
 def test_company_domains_decide_who_may_receive_it(setup):
     services, _, call = setup
-    services.mail_domains = ["company.example"]
+    services.mail_domains = ["ax.company.example"]
     try:
         assert call(ARGS).error_code == "invalid_schedule", "WIZARD_GOOGLE_DOMAINS replaces the requester's own domain"
-        assert call({**ARGS, "recipients": ["cfo@company.example"]}).ok
+        assert call({**ARGS, "recipients": ["cfo@company.example"]}).ok, "a sign-in domain also allows its mailboxes"
     finally:
         services.mail_domains = []
 

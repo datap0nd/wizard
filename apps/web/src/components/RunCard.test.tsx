@@ -163,9 +163,15 @@ function withHandlers(run: RunView, props: Partial<Parameters<typeof RunCard>[0]
 describe('recurring emails', () => {
   it('offers Make recurring under a database answer only when Metronome is connected', () => {
     const onRecurring = vi.fn();
-    const {rerender} = render(withHandlers(answered(), {onRecurring, canRecur: true}));
-    fireEvent.click(screen.getByTestId('make-recurring'));
-    expect(onRecurring).toHaveBeenCalledOnce();
+    const run = answered();
+    const {rerender} = render(withHandlers(run, {onRecurring, canRecur: true}));
+    fireEvent.keyDown(screen.getByTestId('make-recurring'), {key: 'Enter'});
+    expect(screen.getByRole('menu').textContent).toContain('Emailed to you as Excel at 08:00 (Dubai)');
+    fireEvent.click(screen.getByTestId('recurring-weekly'));
+    expect(onRecurring).toHaveBeenCalledWith(run, 'weekly');
+    fireEvent.keyDown(screen.getByTestId('make-recurring'), {key: 'Enter'});
+    fireEvent.click(screen.getByTestId('recurring-other'));
+    expect(onRecurring).toHaveBeenLastCalledWith(run, null);
     rerender(withHandlers(answered(), {onRecurring, canRecur: false}));
     expect(screen.queryByTestId('make-recurring')).toBeNull();
     rerender(withHandlers(answered({evidence: []}), {onRecurring, canRecur: true}));

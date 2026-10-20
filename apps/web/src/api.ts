@@ -1,4 +1,4 @@
-import type {Attachment, Bootstrap, ConversationSummary, Evidence, GeminiAccount, GeminiQuota, LocalFile, Report, RunRecord, Schedule, SettingsSaved, SettingsView, SourceCatalog, SourceSummary, UpdateInfo} from './types';
+import type {Attachment, Bootstrap, Cadence, ConversationSummary, Evidence, GeminiAccount, GeminiQuota, LocalFile, Report, RunRecord, Schedule, SettingsSaved, SettingsView, SourceCatalog, SourceSummary, UpdateInfo} from './types';
 
 export class ApiError extends Error {
   constructor(message: string, public status: number, public code?: string, public loginRequired = false) { super(message); }
@@ -45,7 +45,7 @@ export const api = {
   removeAttachment: (id: string) => request<{ok: true}>(`/api/v1/attachments/${encodeURIComponent(id)}`, {method: 'DELETE'}),
   check: (runId: string) => request<{run_id: string; conversation_id: string}>(`/api/v1/runs/${encodeURIComponent(runId)}/check`, {body: {}}),
   run: (runId: string) => request<RunRecord>(`/api/v1/runs/${encodeURIComponent(runId)}`),
-  recurring: (runId: string) => request<{run_id: string; conversation_id: string}>(`/api/v1/runs/${encodeURIComponent(runId)}/recurring`, {body: {}}),
+  recurring: (runId: string, cadence: Cadence | null) => request<{run_id: string; conversation_id: string; question: string}>(`/api/v1/runs/${encodeURIComponent(runId)}/recurring`, {body: {cadence}}),
   createSchedule: (id: string) => request<{schedule: Schedule}>(`/api/v1/schedules/${encodeURIComponent(id)}/create`, {body: {}}),
   dismissSchedule: (id: string) => request<{schedule: Schedule}>(`/api/v1/schedules/${encodeURIComponent(id)}/dismiss`, {body: {}}),
   cancel: (runId: string) => request<{cancelled: boolean}>(`/api/v1/runs/${encodeURIComponent(runId)}/cancel`, {body: {}}),

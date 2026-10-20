@@ -12,7 +12,7 @@ from tests.helpers import HEADERS, WIZARD_KEY, FakeMetronome, ask, login, wait_r
 from tests.unit.test_postgres_query import SETTINGS, FakeSession
 from tests.unit.test_schedule_tool import ARGS
 
-from wizard_agent.prompting import RECURRING_REQUEST
+from wizard_agent.prompting import RECURRING_REQUEST, RECURRING_UNCHOSEN
 from wizard_agent.replay import ReplayRuntime
 from wizard_api.app import create_app
 from wizard_api.config import load_settings
@@ -114,16 +114,23 @@ def test_other_people_cannot_see_or_create_it(app):
     assert not fake.calls
 
 
-def test_make_recurring_starts_a_follow_up_that_asks(app):
+def test_make_recurring_asks_nothing_when_the_menu_says_how_often(app):
     client, _ = app
     first = ask(client, "Weekly sell-out by market")
-    started = client.post(f"/api/v1/runs/{first['id']}/recurring", headers=HEADERS).json()
+    started = client.post(f"/api/v1/runs/{first['id']}/recurring", json={"cadence": "weekly"}, headers=HEADERS).json()
+    assert started["question"] == "Make this recurring: every Monday"
     run = wait_run(client, started["run_id"])
-    assert run["kind"] == "recurring" and run["question"] == "Make this recurring" and run["status"] == "succeeded"
-    assert RECURRING_REQUEST in Scripted.prompts[-1]
-    assert "User: Weekly sell-out by market" in Scripted.prompts[-1]
-    later = ask(client, "To me, Mondays at 8", started["conversation_id"])
-    assert "User: Make this recurring" in Scripted.prompts[-1] and later["status"] == "succeeded"
+    assert run["kind"] == "recurring" and run["status"] == "succeeded"
+    prompt = Scripted.prompts[-1]
+    assert RECURRING_REQUEST in prompt and "They chose every Monday: call the tool now, without asking anything." in prompt
+    assert "User: Weekly sell-out by market" in prompt
+    other = client.post(f"/api/v1/runs/{first['id']}/recurring", json={}, headers=HEADERS).json()
+    assert other["question"] == "Make this recurring"
+    wait_run(client, other["run_id"])
+    assert RECURRING_UNCHOSEN in Scripted.prompts[-1], "without a choice, Gemini asks only how often"
+    later = ask(client, "Every Monday", started["conversation_id"])
+    assert "User: Make this recurring: every Monday" in Scripted.prompts[-1] and later["status"] == "succeeded"
+    assert client.post(f"/api/v1/runs/{first['id']}/recurring", json={"cadence": "hourly"}, headers=HEADERS).status_code == 400
 
 
 def test_settings_test_the_metronome_connection(tmp_path):

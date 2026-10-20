@@ -17,15 +17,21 @@ Only Wizard changes; Metronome is used as it is.
    The Flow is created only when the person presses **Create in Metronome**.
 
 **Decision.** Option 3.
-- **How it starts.** The person says it in a question ("send me this every Monday"), or presses **Make recurring**
-  under an answer. Gemini asks only for what is missing: recipients, how often (daily, weekly on which days, monthly on
-  which day), the time (Dubai, Metronome's clock) and Excel or CSV. It rewrites fixed dates as dates relative to
-  `CURRENT_DATE`, so each email covers the latest period. Then it calls `wizard_schedule_extraction`.
+- **How it starts.** The person says it in a question ("send me this every Monday"), or picks a choice from **Make
+  recurring** under an answer: every day, every Monday, the 1st of every month, or something else.
+- **Few questions** (owner, 20 October 2026):
+  - the file is always Excel;
+  - it goes to the person's own address: the email they signed in with, without the `ax.` after the @
+    (`name@ax.company.com` sends to `name@company.com`), unless they name other people;
+  - it is sent at 08:00 Dubai time (Metronome's clock), unless they give a time.
+
+  So Gemini asks only how often, and only when the person has not said or picked it. It rewrites fixed dates as dates
+  relative to `CURRENT_DATE`, so each email covers the latest period. Then it calls `wizard_schedule_extraction`.
 - **The tool** (`category: present`, like a chart: nothing outside Wizard changes):
   - checks the person's PostgreSQL right, the same right as `wizard_query_postgresql`;
   - checks the query is one statement;
-  - checks the recipients: at most 20 (Metronome's limit), all in the company's domains (`WIZARD_GOOGLE_DOMAINS`, else
-    the requester's own domain);
+  - checks the recipients: at most 20 (Metronome's limit), all in the company's domains (`WIZARD_GOOGLE_DOMAINS`,
+    each also without its `ax.`, else the requester's own mailbox domain);
   - checks the schedule;
   - test-runs the query through Wizard's own read-only path, recorded as `LIVE` evidence;
   - stores a proposal (`R1`, `R2`, …) shown as a card.
@@ -33,7 +39,7 @@ Only Wizard changes; Metronome is used as it is.
   1. `GET /api/me` with Wizard's client key must name the configured user (`WIZARD_METRONOME_USER`, default `Wizard`).
      A key signed in as anyone else, or as nobody, fails closed.
   2. `POST /api/flows/transform-script?target=python` uploads the extraction script Wizard generated.
-  3. `POST /api/flows` creates an active Python-script Flow: "Produce a file" mode, Excel or CSV, the email step with
+  3. `POST /api/flows` creates an active Python-script Flow: "Produce a file" mode, an Excel file, the email step with
      the recipients, the schedule, and `owner_person_id` set to the Wizard user.
   Metronome has no SQL-query source, so a Python Flow carries the query. The proposal moves from `proposed` to
   `creating` before anything is sent. If Metronome may have received the request but did not confirm it, the proposal
@@ -71,7 +77,7 @@ Only Wizard changes; Metronome is used as it is.
   - the client: the identity check, upload, create, and failure and uncertain outcomes;
   - the statement check;
   - the schedule rules;
-  - the generated script, run with a fake database driver (CSV and Excel, the read-only session, the row cap, a changed
+  - the generated script, run with a fake database driver (the Excel file, the read-only session, the row cap, a changed
     query refused);
   - `scripts/metronome_link.py`.
 - `tests/unit/test_schedule_tool.py`: the tool's rights, recipients, test run, evidence and proposal.

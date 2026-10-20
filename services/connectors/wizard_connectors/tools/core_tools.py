@@ -101,16 +101,16 @@ class ScheduleArgs(Args):
     database: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_.-]{1,63}$",
                                  description="Database on the server; omit for the default one.")
     recipients: list[Annotated[str, Field(min_length=3, max_length=254)]] = Field(
-        min_length=1, max_length=metronome.MAX_RECIPIENTS, description="Email addresses that receive the file. Company "
-        "addresses only.")
+        default_factory=list, max_length=metronome.MAX_RECIPIENTS, description="Only when the user names other people: "
+        "their company email addresses. Omit to send it to the user's own address.")
     frequency: Literal["daily", "weekly", "monthly"] = Field(description="daily; weekly on the given days; monthly on "
                                                                       "day_of_month.")
     days: list[Literal["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]] = Field(
         default_factory=list, max_length=7, description="Weekly: the weekdays it is sent, e.g. ['monday'].")
     day_of_month: int | None = Field(default=None, ge=1, le=31, description="Monthly: the day of the month it is sent.")
-    time: str = Field(pattern=r"^([01][0-9]|2[0-3]):[0-5][0-9]$", description="Time of day on Metronome's clock, which is "
-                      "Dubai time, 24-hour, e.g. '08:00'.")
-    file_format: Literal["xlsx", "csv"] = Field(default="xlsx", description="xlsx (Excel) or csv.")
+    time: str = Field(default=metronome.DEFAULT_TIME, pattern=r"^([01][0-9]|2[0-3]):[0-5][0-9]$",
+                      description="Only when the user gives a time: time of day on Metronome's clock, which is Dubai "
+                                  "time, 24-hour, e.g. '07:30'.")
     subject: str | None = Field(default=None, max_length=200, description="Email subject; omit to use the title.")
 
 
@@ -435,10 +435,13 @@ def schedule_extraction(ctx: ToolContext, args: ScheduleArgs) -> dict[str, Any]:
         raise ToolError("not_entitled", "Your Wizard access does not include the PostgreSQL database for every market, so "
                                         "you cannot schedule a query on it.")
     sql = one_statement(args.sql)
-    recipients = list(dict.fromkeys(r.strip().lower() for r in args.recipients))
-    own = [metronome.domain(ctx.identity.email)] if "@" in (ctx.identity.email or "") else []
+    own = metronome.mail_address(ctx.identity.email or "")
+    recipients = list(dict.fromkeys(metronome.mail_address(r) or r.strip() for r in args.recipients)) or ([own] if own else [])
+    if not recipients:
+        raise ToolError("invalid_schedule", "Wizard does not know the user's email address: ask who should receive it.")
+    domains = metronome.mail_domains(ctx.services.mail_domains or ([metronome.domain(own)] if own else []))
     problems = metronome.schedule_problems(args.frequency, args.time, list(args.days), args.day_of_month) + \
-        metronome.recipient_problems(recipients, ctx.services.mail_domains or own)
+        metronome.recipient_problems(recipients, domains)
     if problems:
         raise ToolError("invalid_schedule", " ".join(problems))
     result = ctx.services.postgres.run(sql, args.database, SCHEDULE_PREVIEW_ROWS)
@@ -456,7 +459,7 @@ def schedule_extraction(ctx: ToolContext, args: ScheduleArgs) -> dict[str, Any]:
         "ref": secrets.token_hex(4), "title": args.title.strip(), "sql": sql, "database": args.database,
         "recipients": recipients, "frequency": args.frequency, "time": args.time,
         "days": [d for d in metronome.WEEKDAYS if d in args.days] if args.frequency == "weekly" else [],
-        "day_of_month": args.day_of_month if args.frequency == "monthly" else None, "file_format": args.file_format,
+        "day_of_month": args.day_of_month if args.frequency == "monthly" else None, "file_format": "xlsx",
         "subject": " ".join((args.subject or "").split()) or None, "evidence_id": evidence_id, "metronome_user": link.user,
         "requested_by": {"id": ctx.identity.id, "name": ctx.identity.name, "email": ctx.identity.email},
         "created_at": retrieved,
@@ -467,7 +470,7 @@ def schedule_extraction(ctx: ToolContext, args: ScheduleArgs) -> dict[str, Any]:
     label = ctx.recorder.add_schedule(schedule)
     return {"schedule": label, "status": "awaiting_confirmation", "evidence_id": evidence_id, "cite_as": f"[{evidence_id}]",
             "sends": schedule["schedule_text"], "recipients": recipients,
-            "file": f"{metronome.safe_title(args.title)} <date>.{args.file_format}",
+            "file": f"{metronome.safe_title(args.title)} <date>.xlsx",
             "test_run": {"columns": schedule["preview"]["columns"], "rows": result.rows[:5],
                          "rows_returned": len(result.rows), "more_rows": result.truncated},
             "owner": f"Metronome user {link.user}",
@@ -613,11 +616,11 @@ CORE_TOOLS = [
              "evidence ids they come from; returns an id such as V1 to place in the answer.", VisualArgs, render_visual,
              "wizard", "present"),
     ToolSpec("wizard_schedule_extraction", "Propose a recurring extraction: Metronome runs a query on a schedule (daily, "
-             "weekly or monthly, Dubai time) and emails the result as Excel or CSV. Use it when the user wants a table "
-             "sent to them regularly, once you know the recipients and when to send. It checks the schedule and the "
-             "recipients, runs the query once as a test (live evidence to cite like [E3]) and shows the user a card. "
-             "Nothing is scheduled until the user presses Create in Metronome; the Flow then belongs to Metronome's "
-             "Wizard user.", ScheduleArgs, schedule_extraction, "wizard", "present"),
+             "weekly or monthly) and emails the result as an Excel file, by default to the user's own address at 08:00 "
+             "Dubai time. Use it when the user wants a table sent regularly, as soon as you know how often. It checks "
+             "the schedule and the recipients, runs the query once as a test (live evidence to cite like [E3]) and shows "
+             "the user a card. Nothing is scheduled until the user presses Create in Metronome; the Flow then belongs to "
+             "Metronome's Wizard user.", ScheduleArgs, schedule_extraction, "wizard", "present"),
     ToolSpec("wizard_check_my_data", "Optional verification. Recompute figures you state from the cited evidence rows, "
              "check that each figure covers the period you claim, and optionally re-run cited requests to detect changed "
              "source data. Reports MATCH, DISCREPANCY, PERIOD_MISMATCH or NOT_VERIFIABLE per figure; it never edits your "

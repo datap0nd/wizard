@@ -105,7 +105,9 @@ who has the file can use it, also outside Wizard.
 ### 4. Metronome, for recurring extractions (optional)
 
 People can have a table Wizard found emailed to them on a schedule: they press **Make recurring** under an answer, or ask
-for it, answer Gemini's questions (who, how often, what time) and press **Create in Metronome** on the card Wizard shows.
+for it, and press **Create in Metronome** on the card Wizard shows. It is always Excel, sent to their own address
+(their sign-in email without the `ax.` after the @) at 08:00 Dubai time unless they say otherwise; Gemini asks at most how
+often.
 Metronome then runs the query and emails the file. Every Flow belongs to Metronome's **Wizard** user, never to the person
 who asked ([decision](decisions/2026-10-20-metronome-recurring-extractions.md)).
 

@@ -917,7 +917,7 @@
     },
     {
       "name": "wizard_schedule_extraction",
-      "description": "Propose a recurring extraction: Metronome runs a query on a schedule (daily, weekly or monthly, Dubai time) and emails the result as Excel or CSV. Use it when the user wants a table sent to them regularly, once you know the recipients and when to send. It checks the schedule and the recipients, runs the query once as a test (live evidence to cite like [E3]) and shows the user a card. Nothing is scheduled until the user presses Create in Metronome; the Flow then belongs to Metronome's Wizard user.",
+      "description": "Propose a recurring extraction: Metronome runs a query on a schedule (daily, weekly or monthly) and emails the result as an Excel file, by default to the user's own address at 08:00 Dubai time. Use it when the user wants a table sent regularly, as soon as you know how often. It checks the schedule and the recipients, runs the query once as a test (live evidence to cite like [E3]) and shows the user a card. Nothing is scheduled until the user presses Create in Metronome; the Flow then belongs to Metronome's Wizard user.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -934,13 +934,12 @@
             "type": "string"
           },
           "recipients": {
-            "description": "Email addresses that receive the file. Company addresses only.",
+            "description": "Only when the user names other people: their company email addresses. Omit to send it to the user's own address.",
             "items": {
               "type": "string",
               "description": "(3-254 characters)"
             },
             "maxItems": 20,
-            "minItems": 1,
             "type": "array"
           },
           "frequency": {
@@ -976,15 +975,7 @@
             "type": "integer"
           },
           "time": {
-            "description": "Time of day on Metronome's clock, which is Dubai time, 24-hour, e.g. '08:00' (pattern ^([01][0-9]|2[0-3]):[0-5][0-9]$)",
-            "type": "string"
-          },
-          "file_format": {
-            "description": "xlsx (Excel) or csv (default \"xlsx\")",
-            "enum": [
-              "xlsx",
-              "csv"
-            ],
+            "description": "Only when the user gives a time: time of day on Metronome's clock, which is Dubai time, 24-hour, e.g. '07:30' (pattern ^([01][0-9]|2[0-3]):[0-5][0-9]$; default \"08:00\")",
             "type": "string"
           },
           "subject": {
@@ -995,9 +986,7 @@
         "required": [
           "title",
           "sql",
-          "recipients",
-          "frequency",
-          "time"
+          "frequency"
         ],
         "type": "object"
       },

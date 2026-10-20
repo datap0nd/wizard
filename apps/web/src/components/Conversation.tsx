@@ -3,7 +3,7 @@ import {ArrowDown} from 'lucide-react';
 import {Button} from './ui/button';
 import {SentFiles} from './Attachments';
 import {RunCard} from './RunCard';
-import type {RunView, Schedule} from '@/types';
+import type {Cadence, RunView, Schedule} from '@/types';
 
 interface Props {
   runs: RunView[];
@@ -15,7 +15,7 @@ interface Props {
   onRetry: (run: RunView) => void;
   onFeedback: (run: RunView, category: string) => void;
   onEmail: (run: RunView) => void;
-  onRecurring?: (run: RunView) => void;
+  onRecurring?: (run: RunView, cadence: Cadence | null) => void;
   onSchedule?: (run: RunView, schedule: Schedule, action: 'create' | 'dismiss') => void;
   canRecur?: boolean;
 }

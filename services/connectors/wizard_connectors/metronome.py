@@ -7,7 +7,10 @@ Create in Metronome reaches Metronome (wizard_api/metronome_client.py).
 This module holds what both sides need and never talks to the network: the connection settings, the schedule and
 recipient rules, the Flow definition Metronome's POST /api/flows accepts, and the extraction script. Metronome has no
 SQL-query source, so a Flow is a Python-script Flow ("Produce a file" mode) whose script Wizard generates: the query, its
-SHA-256 and a read-only runner. Metronome runs it with its own Python (psycopg2, openpyxl) and emails the file."""
+SHA-256 and a read-only runner. Metronome runs it with its own Python (psycopg2, openpyxl) and emails the Excel file.
+
+Few questions (owner, 20 October 2026): the file is always Excel, it goes to the person's own address unless they name
+others, and it is sent at 08:00 unless they give a time. Only how often is asked, and only when they have not said."""
 from __future__ import annotations
 
 import hashlib
@@ -18,7 +21,9 @@ from urllib.parse import urlsplit
 
 WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
 FREQUENCIES = ("daily", "weekly", "monthly")
-FORMATS = ("xlsx", "csv")
+DEFAULT_TIME = "08:00"
+# People sign in to Wizard as name@ax.company.com; their mailbox is name@company.com (owner, 20 October 2026).
+SIGN_IN_PREFIX = "ax."
 TIMEZONE = "Dubai time"  # Metronome keeps every schedule on Dubai's clock
 MAX_RECIPIENTS = 20  # Metronome's own limit on an email step
 MAX_EXTRACT_ROWS = 100_000
@@ -74,6 +79,17 @@ def settings_from(url: str | None, client_key: str | None, user: str | None) -> 
 # Recipients ------------------------------------------------------------------------------------------------------------
 def domain(address: str) -> str:
     return address.rsplit("@", 1)[-1].lower()
+
+
+def mail_address(address: str) -> str:
+    """The mailbox for an address: lower case, without the sign-in "ax." after the @. Empty when it is no address."""
+    local, _, host = address.strip().lower().rpartition("@")
+    return f"{local}@{host.removeprefix(SIGN_IN_PREFIX)}" if local and host else ""
+
+
+def mail_domains(domains: list[str]) -> list[str]:
+    """Company domains as mailboxes use them: each as given and without its sign-in "ax." prefix."""
+    return sorted({d for given in domains for d in (given.lower(), given.lower().removeprefix(SIGN_IN_PREFIX))})
 
 
 def recipient_problems(recipients: list[str], allowed_domains: list[str]) -> list[str]:
@@ -147,16 +163,15 @@ def script_filename(schedule: dict[str, Any]) -> str:
 
 
 def flow_definition(schedule: dict[str, Any], script_path: str, owner_person_id: int) -> dict[str, Any]:
-    """The body of Metronome's POST /api/flows: an active Python-script Flow that writes the file and emails it."""
-    fmt = schedule["file_format"]
+    """The body of Metronome's POST /api/flows: an active Python-script Flow that writes the Excel file and emails it."""
     return {
         "name": flow_name(schedule),
         "source_type": "python",
         "python_scripts": [script_path],
         "python_run_mode": "outputs",
         "python_timeout_minutes": 30,
-        "file_format": fmt,
-        "filename_template": f"{safe_title(schedule['title'])} {{date}}.{fmt}",
+        "file_format": "xlsx",
+        "filename_template": f"{safe_title(schedule['title'])} {{date}}.xlsx",
         "output_mode": "run_folders",
         "enabled": True,
         "schedule_type": schedule["frequency"],
@@ -174,7 +189,7 @@ def flow_definition(schedule: dict[str, Any], script_path: str, owner_person_id:
 SCRIPT = '''"""Wizard recurring extraction: {title}
 
 Set up by Wizard for {requester} on {created}, as Metronome Flow "{flow}" owned by Metronome's Wizard user.
-Metronome runs this script on the Flow's schedule and emails the file it writes to --output.
+Metronome runs this script on the Flow's schedule and emails the Excel file it writes to --output.
 
 It runs one query and changes nothing: the query runs as a subquery in a READ ONLY session and transaction that is
 rolled back, with statement and lock timeouts, and at most {max_rows:,} rows are written. It connects with the
@@ -183,7 +198,6 @@ them, otherwise with Metronome's PG* scanner account; never with DG_UPLOAD_PG*, 
 query below no longer matches the SHA-256 Wizard recorded. To change the query, ask Wizard for a new schedule.
 """
 import argparse
-import csv
 import datetime
 import decimal
 import hashlib
@@ -245,20 +259,14 @@ def main():
         print("Only the first %d rows were written; the query returns more." % MAX_ROWS, file=sys.stderr, flush=True)
         rows = rows[:MAX_ROWS]
     print("::stage::Writing %d rows" % len(rows), flush=True)
-    if output.lower().endswith(".xlsx"):
-        from openpyxl import Workbook
+    from openpyxl import Workbook
 
-        book = Workbook(write_only=True)
-        sheet = book.create_sheet(TITLE)
-        sheet.append(columns)
-        for row in rows:
-            sheet.append([cell(value) for value in row])
-        book.save(output)
-    else:
-        with open(output, "w", newline="", encoding="utf-8-sig") as handle:
-            writer = csv.writer(handle)
-            writer.writerow(columns)
-            writer.writerows([[cell(value) for value in row] for row in rows])
+    book = Workbook(write_only=True)
+    sheet = book.create_sheet(TITLE)
+    sheet.append(columns)
+    for row in rows:
+        sheet.append([cell(value) for value in row])
+    book.save(output)
     print("Wrote %d rows." % len(rows), flush=True)
 
 

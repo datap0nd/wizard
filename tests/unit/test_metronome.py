@@ -50,6 +50,14 @@ def test_settings_are_validated():
             settings_from(url, key, None)
 
 
+def test_mailboxes_drop_the_sign_in_prefix():
+    assert metronome.mail_address(" Rafael.C@AX.Samsung.com ") == "rafael.c@samsung.com"
+    assert metronome.mail_address("cfo@samsung.com") == "cfo@samsung.com"
+    assert metronome.mail_address("max@axis.com") == "max@axis.com", "only an 'ax.' label is the sign-in prefix"
+    assert metronome.mail_address("not an address") == ""
+    assert metronome.mail_domains(["ax.samsung.com"]) == ["ax.samsung.com", "samsung.com"]
+
+
 def test_recipients_stay_in_the_company():
     assert metronome.recipient_problems(["a@corp.test"], ["corp.test"]) == []
     assert "outside" in metronome.recipient_problems(["a@corp.test", "x@gmail.com"], ["corp.test"])[0]
@@ -199,10 +207,10 @@ def run_script(tmp_path: Path, text: str, output: str, **env: str) -> tuple[subp
     return done, events
 
 
-def test_the_script_runs_one_read_only_query_and_writes_csv(tmp_path):
-    text = metronome.extraction_script(schedule(database="analytics", file_format="csv"))
+def test_the_script_runs_one_read_only_query_and_writes_excel(tmp_path):
+    text = metronome.extraction_script(schedule(database="analytics"))
     compile(text, "wizard_extract.py", "exec")
-    done, events = run_script(tmp_path, text, "out.csv", PGHOST="db.corp", PGUSER="scanner", PGPASSWORD="pw",
+    done, events = run_script(tmp_path, text, "out.xlsx", PGHOST="db.corp", PGUSER="scanner", PGPASSWORD="pw",
                               DG_UPLOAD_PGUSER="uploader", WIZARD_EXTRACT_PGUSER="wizard_ro")
     assert done.returncode == 0, done.stderr
     connect = events[0]
@@ -213,11 +221,14 @@ def test_the_script_runs_one_read_only_query_and_writes_csv(tmp_path):
     wrapped = f"SELECT * FROM (\n{schedule()['sql']}\n) AS wizard_extract LIMIT 100001"  # noqa: S608 - the expected text
     assert events[2]["sql"] == wrapped
     assert [e["event"] for e in events[3:]] == ["rollback", "close"]
-    lines = (tmp_path / "out.csv").read_text(encoding="utf-8-sig").splitlines()
-    assert lines == ["market,units,week,at", "EG,12.5,2026-10-12,2026-10-12 08:00:00", "EG,12.5,2026-10-12,2026-10-12 08:00:00"]
+    book = json.loads((tmp_path / "out.xlsx").read_text(encoding="utf-8"))
+    assert book["title"] == "Weekly sell-out by market" and len(book["rows"]) == 3
+    assert book["rows"][0] == ["'market'", "'units'", "'week'", "'at'"]
+    assert book["rows"][1] == ["'EG'", "Decimal('12.5')", "datetime.date(2026, 10, 12)",
+                               "datetime.datetime(2026, 10, 12, 8, 0)"], "Excel gets plain values, without a time zone"
 
 
-def test_the_script_writes_excel_and_caps_rows(tmp_path):
+def test_the_script_caps_rows(tmp_path):
     text = metronome.extraction_script(schedule(title='Sell-out """ injected'))
     assert text.startswith('"""Wizard recurring extraction: Sell-out injected\n'), "a title cannot close the docstring"
     done, _ = run_script(tmp_path, text, "out.xlsx", PGHOST="db.corp", PGUSER="scanner", FAKE_PG_ROWS="100001")
@@ -225,9 +236,6 @@ def test_the_script_writes_excel_and_caps_rows(tmp_path):
     assert "Only the first 100000 rows" in done.stderr
     book = json.loads((tmp_path / "out.xlsx").read_text(encoding="utf-8"))
     assert book["title"] == "Sell-out injected" and len(book["rows"]) == 100_001
-    assert book["rows"][0] == ["'market'", "'units'", "'week'", "'at'"]
-    assert book["rows"][1] == ["'EG'", "Decimal('12.5')", "datetime.date(2026, 10, 12)",
-                               "datetime.datetime(2026, 10, 12, 8, 0)"], "Excel gets plain values, without a time zone"
 
 
 def test_the_script_refuses_a_changed_query_and_a_missing_account(tmp_path):
