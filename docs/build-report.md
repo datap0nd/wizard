@@ -57,18 +57,27 @@ Scribble's installer as the model. See the [decision](decisions/2026-10-20-deskt
   - `.gitignore` excludes `*.provision` and `company.env`.
 
 **Tests.** `scripts/verify_all.sh --allow-blocked=live-parity,postgres,gemini-cli` in a Linux sandbox:
-- PASS: spec, secrets, contracts, lint, types, python-tests (257 passed), evals-schema, web-types, web-unit (14),
+- PASS: spec, secrets, contracts, lint, types, python-tests (258 passed), evals-schema, web-types, web-unit (14),
   web-dist and web-build.
 - BLOCKED: gemini-cli and postgres (not installed in the sandbox), and live-parity.
 - e2e: the layer FAILs in the sandbox because Playwright 1.63 wants Chromium 1243 and the sandbox has 1194. Run with
   the sandbox's Chromium (`launchOptions.executablePath`), all 16 browser tests pass, including the new compact-view
   test on both viewports.
-- New: `tests/unit/test_desktop.py` (26 tests) covers provisioning, the sync against a fake GitHub, desktop start-up, a
+- New: `tests/unit/test_desktop.py` (27 tests) covers provisioning, the sync against a fake GitHub, desktop start-up, a
   real `run.py --desktop` process stopped through the control API, the domain rule, and the C#, installer, CI and
   Python pieces naming the same files and codes.
 - WizardBar compiles with warnings as errors (`dotnet build`, .NET SDK 8 on Linux against the .NET Framework 4.8
-  reference assemblies). Its windows have not run yet: the first run is on a work PC. The Windows workflow runs on the
-  next push.
+  reference assemblies).
+- The `desktop` workflow on `windows-latest` passed every functional step on its first run:
+  - built WizardBar (version 1.0.1.0);
+  - assembled the payload from the locked archives;
+  - started the packaged service from the embeddable Python, served `/quick`, answered the control API and stopped
+    when asked;
+  - built `WizardSetup.exe`, installed it silently, passed `run.py --check` on the installed copy, and uninstalled it.
+  - The last step failed on a version-text comparison: Inno writes "1.0.1", the numeric version is 1.0.1.0. It now
+    compares numbers, as the updater does. The next run (2) passed every step and produced a 21 MB `WizardSetup.exe`.
+- WizardBar's windows (the tab, the panel, the hotkey, the tray, the update) have not run on a desktop yet. The first
+  run is on a work PC.
 
 ## 2026-10-12 — Big Data Portal: discovery task and `bdp-check`
 

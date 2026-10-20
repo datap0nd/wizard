@@ -393,3 +393,22 @@ def test_the_desktop_pieces_agree_with_each_other():
     files = set(source_files())
     assert {"run.py", "apps/web/dist/index.html", "fixtures/identities.json", "services/api/wizard_api/app.py"} <= files
     assert not any(f.startswith(("tests/", "apps/desktop/", "apps/web/src/", ".github/")) for f in files)
+
+
+
+def test_page_polling_does_not_count_as_someone_using_wizard(tmp_path):
+    import time
+
+    app = desktop_app(tmp_path)
+    asked: list[str] = []
+    with TestClient(app) as client:
+        client.post("/api/v1/session/login", json={"user_id": "local-owner"}, headers=HEADERS)
+        github = FakeGitHub("a" * 40, {"knowledge/company/overview.md": NOTE})
+        knowledge_sync.sync(kb(), app.state.settings.data_dir, transport=httpx.MockTransport(github))
+        app.state.request_restart = lambda: asked.append("restart")
+        client.get("/api/v1/bootstrap")
+        assert app.state.restart_if_idle(5) is False and asked == [], "someone just used Wizard"
+        time.sleep(0.3)
+        client.get("/api/v1/account/gemini/quota")
+        client.get("/api/v1/health")
+        assert app.state.restart_if_idle(0.2) is True and asked == ["restart"], "the quota ring and probes are not use"

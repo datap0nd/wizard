@@ -41,6 +41,8 @@ from .store import Store
 
 OWNER_ID = "local-owner"
 KB_IDLE_RESTART_S = 600  # restart for a new knowledge base only after 10 minutes without a request from the user
+# Requests a page or a probe makes on its own (the quota ring polls every 5 minutes): not a sign someone is using Wizard.
+BACKGROUND_PATHS = {"/api/v1/health", "/api/v1/ready", "/api/v1/account/gemini/quota"}
 log = logging.getLogger("wizard.api")
 
 
@@ -240,6 +242,7 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
     app = FastAPI(title="Wizard", version=__version__, lifespan=lifespan, docs_url=None, redoc_url=None,
                   openapi_url="/api/v1/openapi.json")
     app.state.settings, app.state.store, app.state.manager, app.state.registry = settings, store, manager, registry
+    app.state.restart_if_idle = restart_if_idle
 
     def identity_of(request: Request) -> Identity | None:
         if settings.auth_mode == "trusted-header":
@@ -273,7 +276,7 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
             if request.headers.get(REQUEST_HEADER) != "1" or (origin and not same_origin(origin, request)):
                 return _secure(JSONResponse({"error": "Request blocked: missing Wizard request header or foreign origin."},
                                             status_code=403))
-        if path.startswith("/api/") and path not in ("/api/v1/health", "/api/v1/ready"):
+        if path.startswith("/api/") and path not in BACKGROUND_PATHS:
             activity["last"] = time.monotonic()
         request.state.identity = identity_of(request) if path.startswith("/api/") else None
         if path.startswith("/api/") and path not in PUBLIC_PATHS and request.state.identity is None:
