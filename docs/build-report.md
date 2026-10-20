@@ -70,10 +70,32 @@ The owner asked for:
 - The button's eight looks, drawn by GDI+ on the Windows runner and read back from the CI log at 100 %: rest, hover
   (glow, second line), click (cast), a file over it (dashed outline), starting, working (glint), answered, stopped, on
   light and dark title bars. That check moved the "answer waiting" dot from the staff's orb to after the caption.
-- Not yet seen on a real desktop: the button's animation over time, the slide, and drops from Explorer and Outlook. Outlook's virtual files use the standard FileGroupDescriptorW/FileContents formats
-  (stream, memory, or a structured storage saved as `.msg`) and are untested until a work PC.
+- Not yet seen on a real desktop: the button's animation over time, the slide, and drops from Explorer and Outlook.
+  Outlook's virtual files use the standard FileGroupDescriptorW/FileContents formats (stream, memory, or a structured
+  storage saved as `.msg`) and are untested until a work PC.
 
-## 2026-10-20 (later still) — The systems stage: a visual view of what Wizard pulls from each system
+## 2026-10-20 (late) — The knowledge base on the company's GitHub Enterprise Server
+
+The owner reported that Wizard could not reach the knowledge base. It called public GitHub (`api.github.com`), but the
+repository is on the company's GitHub Enterprise Server, `https://github.sec.samsung.net`.
+
+**What changed (owner decision, 20 October 2026: built in, not changeable).**
+- **One fixed server.** `wizard_connectors/github.py` holds `https://github.sec.samsung.net/api/v3`. No setting,
+  provisioning file or `.env` value changes it.
+- **Everything that talks to the repository uses it:** the desktop sync, Settings → Knowledge base → Test connection,
+  `docs.ps1 kb-publish` and `docs.ps1 kb-check`. The publish's commit link points to the same server.
+- **Visible:** the sync status reports the server, and `run.py --check` names it in the knowledge-base line.
+- **No mix-ups:** a snapshot synced before the server was fixed (its state has no server recorded) is not used; the
+  first sync from the company's server replaces it.
+- **Unchanged:** the app's own updates still come from the public release on github.com.
+
+**Tests.** Python suite 296 passed, including a new test that every sync request goes to the company's server
+whatever the environment says, and that an older snapshot is not used. The publish and Settings tests now also check the
+server. Web unit tests and the 16 browser tests pass. The spec, contracts, secrets, lint and types checks pass. The
+Gemini CLI layer is BLOCKED in this sandbox (the CLI is not installed); PostgreSQL and live parity are BLOCKED as usual.
+Not yet tried against the real server: the first sync on a work PC confirms it.
+
+## 2026-10-20 (afternoon) — The systems stage: a visual view of what Wizard pulls from each system
 
 The owner asked for a more visual, interactive and gamified view of a run. Each system should have its own logo and
 light up while Wizard checks data there, showing what it is searching. The PostgreSQL database should appear as

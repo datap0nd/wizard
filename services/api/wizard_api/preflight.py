@@ -15,6 +15,9 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
+
+from wizard_connectors.github import API as GITHUB_API
 
 from .config import ConfigError, Settings
 
@@ -161,7 +164,7 @@ def run_checks(settings: Settings) -> int:
         kb = kb_status(settings.data_dir, kb_source(settings), settings.content_dir)
         commit = str(kb.get("commit") or "")[:12] or "not synced"
         _line("PASS" if kb.get("commit") and not kb.get("last_error") else "WARN",
-              f"knowledge base {settings.kb_repo}@{settings.kb_ref}: {commit}"
+              f"knowledge base {settings.kb_repo}@{settings.kb_ref} on {urlsplit(GITHUB_API).netloc}: {commit}"
               + (f" ({kb['last_error']})" if kb.get("last_error") else "")
               + ("" if settings.kb_token else " - no WIZARD_KB_TOKEN"))
     if settings.html_reports_dir:

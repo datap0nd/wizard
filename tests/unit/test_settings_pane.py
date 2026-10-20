@@ -149,6 +149,7 @@ def test_a_value_set_in_the_environment_cannot_be_changed_here(tmp_path, monkeyp
 def test_connection_tests_use_the_proposed_values(tmp_path, monkeypatch):
     def github(request: httpx.Request) -> httpx.Response:
         assert request.headers["authorization"] == f"Bearer {TOKEN}"
+        assert str(request.url).startswith("https://github.sec.samsung.net/api/v3/repos/")
         return httpx.Response(200, text="c" * 40) if "acme/kb" in str(request.url) else httpx.Response(404)
 
     original = knowledge_sync.check

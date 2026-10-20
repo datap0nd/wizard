@@ -4,11 +4,12 @@ Only what Wizard reads is published: content/knowledge/**/*.md and content/contr
 first time. The inbox (raw documents), digests, registers, quiz logs and stakeholder lists stay on this PC, because
 every file in the repository reaches every PC that syncs it.
 
-Work PCs have no git, so this writes one commit through GitHub's API: unchanged files are not uploaded again (their
-git blob ids match), notes deleted here are deleted there, and anything else in the repository is left alone. Before
-writing it checks that the repository is private, that the token can push, and that the content passes Wizard's own
-validation. The publishing token (WIZARD_KB_PUBLISH_TOKEN: Contents read and write) stays in this PC's .env; it is
-never the read-only token handed to users."""
+Work PCs have no git, so this writes one commit through the API of the company's GitHub Enterprise Server (fixed:
+wizard_connectors.github): unchanged files are not uploaded again (their git blob ids match), notes deleted here
+are deleted there, and anything else in the repository is left alone. Before writing it checks that the repository is
+private, that the token can push, and that the content passes Wizard's own validation. The publishing token
+(WIZARD_KB_PUBLISH_TOKEN: Contents read and write) stays in this PC's .env; it is never the read-only token handed to
+users."""
 from __future__ import annotations
 
 import base64
@@ -23,8 +24,8 @@ import httpx
 
 from wizard_agent import outbound
 from wizard_connectors.content import errors, validate_content
+from wizard_connectors.github import API, WEB
 
-API = "https://api.github.com"
 MANAGED = ("knowledge/", "contracts/sources/")
 MAX_FILE_BYTES = 2 * 1024 * 1024
 README = """# Wizard knowledge base
@@ -186,7 +187,7 @@ def publish(content: Path, repo: str, token: str, *, branch: str | None = None, 
                                                    "tree": new_tree["sha"], "parents": [parent]})
         gh.call("PATCH", f"/git/refs/heads/{branch}", {"sha": commit["sha"], "force": False})
         outcome.commit = commit["sha"]
-        outcome.lines.append(f"PASS  published {summary}: https://github.com/{repo}/commit/{commit['sha']}")
+        outcome.lines.append(f"PASS  published {summary}: {WEB}/{repo}/commit/{commit['sha']}")
     return outcome
 
 

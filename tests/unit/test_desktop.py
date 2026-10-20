@@ -17,7 +17,7 @@ from tests.helpers import HEADERS
 
 from wizard_api import desktop, knowledge_sync, provisioning
 from wizard_api.app import create_app
-from wizard_api.config import ConfigError, load_settings
+from wizard_api.config import ConfigError, kb_source, load_settings
 
 ROOT = Path(__file__).resolve().parents[2]
 TOKEN = "github_pat_" + "x" * 40
@@ -157,12 +157,29 @@ def test_sync_downloads_validates_and_then_only_checks(tmp_path):
     assert (active / "knowledge" / "company" / "overview.md").read_text(encoding="utf-8") == NOTE
     codeload = [c for c in github.calls if "codeload" in c[1]]
     assert codeload and codeload[0][2] is None, "the token is not sent to the redirect target"
-    assert all(c[2] == f"Bearer {TOKEN}" for c in github.calls if "api.github.com" in c[1])
+    api = [c for c in github.calls if "codeload" not in c[1]]
+    assert [c[1] for c in api] == ["https://github.sec.samsung.net/api/v3/repos/acme/wizard-content/commits/main",
+                                   f"https://github.sec.samsung.net/api/v3/repos/acme/wizard-content/zipball/{'a' * 40}"]
+    assert all(c[2] == f"Bearer {TOKEN}" for c in api)
     before = len(github.calls)
     assert sync().outcome == "current"
     assert len(github.calls) == before + 1, "an unchanged repository costs one conditional request"
     state = knowledge_sync.read_state(tmp_path)
     assert TOKEN not in json.dumps(state)
+
+
+def test_the_github_server_is_fixed_and_older_snapshots_are_not_used(tmp_path):
+    env = {"WIZARD_AGENT_RUNTIME": "code-assist", "WIZARD_KB_REPO": "acme/wizard-content", "WIZARD_KB_TOKEN": TOKEN,
+           "WIZARD_KB_API": "https://api.github.com", "WIZARD_GITHUB_API": "https://api.github.com"}
+    github = FakeGitHub("a" * 40, {"knowledge/company/overview.md": NOTE})
+    source = kb_source(load_settings(env=env, home=tmp_path))
+    assert knowledge_sync.sync(source, tmp_path / "data", transport=httpx.MockTransport(github)).outcome == "updated"
+    assert all(c[1].startswith(("https://github.sec.samsung.net/api/v3/", "https://codeload.")) for c in github.calls)
+    assert knowledge_sync.status(tmp_path / "data", source, None)["api"] == "https://github.sec.samsung.net/api/v3"
+    state = knowledge_sync.read_state(tmp_path / "data")
+    del state["api"]  # a snapshot synced before the server was fixed came from github.com
+    (tmp_path / "data" / "knowledge" / "state.json").write_text(json.dumps(state), encoding="utf-8")
+    assert knowledge_sync.active_content(tmp_path / "data", source) is None
 
 
 def test_an_invalid_commit_keeps_the_previous_version(tmp_path):

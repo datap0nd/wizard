@@ -1,8 +1,9 @@
 """The knowledge base, synced from a private GitHub repository the owner maintains.
 
 Users never get the repository: each PC holds a read-only token (from the provisioning file) that lets Wizard download
-the content. A sync asks GitHub for the commit at WIZARD_KB_REF (a conditional request, so an unchanged repository costs
-no rate limit), downloads that commit's archive only when it changed, unpacks the WIZARD_KB_PATH folder into
+the content. The repository is on the company's GitHub Enterprise Server (fixed: wizard_connectors.github). A sync
+asks GitHub for the commit at WIZARD_KB_REF (a conditional request, so an unchanged repository costs no rate limit),
+downloads that commit's archive only when it changed, unpacks the WIZARD_KB_PATH folder into
 data/knowledge/snapshots/<commit>, and validates it with the same checks as WIZARD_CONTENT_DIR. Only a valid snapshot
 becomes active; the previous one is kept. With no network the last good snapshot stays in use.
 
@@ -26,8 +27,8 @@ import httpx
 
 from wizard_agent import outbound
 from wizard_connectors.content import errors, validate_content
+from wizard_connectors.github import API
 
-API = "https://api.github.com"
 MAX_ARCHIVE_BYTES = 200 * 1024 * 1024
 MAX_UNPACKED_BYTES = 500 * 1024 * 1024
 MAX_FILES = 20_000
@@ -82,10 +83,17 @@ def _snapshot(data_dir: Path, name: object) -> Path | None:
     return path if path.is_dir() else None
 
 
+def _same(state: dict[str, Any], source: Source, ref: bool = True) -> bool:
+    """The state describes this repository on the company's server, this folder and, with `ref`, this branch. A state
+    without "api" predates the fixed server: whatever it synced came from another GitHub."""
+    return (state.get("api") == API and state.get("repo") == source.repo and state.get("path", "") == source.path
+            and (not ref or state.get("ref") == source.ref))
+
+
 def active_content(data_dir: Path, source: Source | None = None) -> Path | None:
     """The validated snapshot to load, or None. With `source`, a snapshot of another repository or folder is ignored."""
     state = read_state(data_dir)
-    if source and (state.get("repo") != source.repo or state.get("path", "") != source.path):
+    if source and not _same(state, source, ref=False):
         return None
     return _snapshot(data_dir, state.get("active"))
 
@@ -96,7 +104,7 @@ def status(data_dir: Path, source: Source | None, loaded: Path | None) -> dict[s
         return {"configured": False}
     state = read_state(data_dir)
     active = active_content(data_dir, source)
-    return {"configured": True, "repo": source.repo, "ref": source.ref, "path": source.path or None,
+    return {"configured": True, "api": API, "repo": source.repo, "ref": source.ref, "path": source.path or None,
             "token": bool(source.token), "commit": state.get("commit") if active else None,
             "synced_at": state.get("synced_at"), "checked_at": state.get("checked_at"), "last_error": state.get("last_error"),
             "loaded": bool(loaded),
@@ -105,10 +113,10 @@ def status(data_dir: Path, source: Source | None, loaded: Path | None) -> dict[s
 
 def _record(data_dir: Path, source: Source, **changes: Any) -> None:
     state = read_state(data_dir)
-    if state.get("repo") != source.repo or state.get("ref") != source.ref or state.get("path", "") != source.path:
+    if not _same(state, source):
         state = {key: state[key] for key in ("active", "previous", "commit", "synced_at") if key in state}
         state["etag"] = None
-    state.update({"repo": source.repo, "ref": source.ref, "path": source.path, **changes})
+    state.update({"api": API, "repo": source.repo, "ref": source.ref, "path": source.path, **changes})
     _write_state(data_dir, state)
 
 
@@ -210,7 +218,7 @@ def _sync(source: Source, data_dir: Path, proxy: str | None, timeout: float,
           transport: httpx.BaseTransport | None) -> Result:
     now = datetime.now(UTC).isoformat(timespec="seconds")
     state = read_state(data_dir)
-    same_source = state.get("repo") == source.repo and state.get("ref") == source.ref and state.get("path", "") == source.path
+    same_source = _same(state, source)
     current = active_content(data_dir, source)
     headers = {"Authorization": f"Bearer {source.token}", "Accept": "application/vnd.github.sha",
                "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "Wizard-Knowledge-Sync"}

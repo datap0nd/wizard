@@ -40,6 +40,7 @@ class FakeGitHub:
         self.head: str | None = None
         self.writes: list[str] = []
         self.calls: list[str] = []
+        self.hosts: set[str] = set()
         if not empty:
             self._commit({"README.md": self._blob(b"# hand-written readme\n"), ".github/CODEOWNERS": self._blob(b"* @owner\n")},
                          "start", None)
@@ -62,7 +63,8 @@ class FakeGitHub:
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         assert request.headers["authorization"] == f"Bearer {TOKEN}"
-        path = request.url.path.removeprefix("/repos/acme/kb")
+        self.hosts.add(request.url.host)
+        path = request.url.path.removeprefix("/api/v3/repos/acme/kb")
         body = json.loads(request.content) if request.content else None
         self.calls.append(f"{request.method} {path}")
         if request.method != "GET":
@@ -127,6 +129,8 @@ def test_first_publish_of_an_empty_repository_sends_only_what_wizard_reads(tmp_p
     assert set(files) == {"README.md", "knowledge/company/overview.md"}, "no inbox, digests or registers"
     assert files["knowledge/company/overview.md"].decode() == NOTE
     assert any("published 1 added" in line for line in outcome.lines)
+    assert github.hosts == {"github.sec.samsung.net"}, "only the company's GitHub Enterprise Server"
+    assert outcome.lines[-1].endswith(f"https://github.sec.samsung.net/acme/kb/commit/{outcome.commit}")
 
 
 def test_unchanged_files_are_not_uploaded_and_deletions_follow(tmp_path):
