@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.Linq;
 using System.Windows.Forms;
 using System.Web.Script.Serialization;
 using Microsoft.Web.WebView2.Core;
@@ -31,7 +32,16 @@ namespace WizardBar
         public event Action RetryRequested;
         /// <summary>The page's Update button: install the newest release.</summary>
         public event Action UpdateRequested;
+        /// <summary>Files dropped on the page, with their place on disk (WebView2 gives it to the host only).</summary>
+        public event Action<List<string>> FilesDropped;
+        /// <summary>What the wizard on the page acts out while a question runs, for the button to act out too.</summary>
+        public event Action<string> ActivityChanged;
         private bool settingsPending;
+        private readonly List<string> waiting = new List<string>();
+        private readonly Timer slide = new Timer { Interval = 15 };
+        private readonly Stopwatch slideClock = new Stopwatch();
+        private int slideFrom, slideTo;
+        private const double SlideMs = 230;
 
         public PanelForm(Paths paths, BarSettings settings)
         {
@@ -52,6 +62,7 @@ namespace WizardBar
             // The notice covers the page until it loads; WebView2 stays visible underneath so it can initialise early.
             Controls.Add(notice);
             Controls.Add(web);
+            slide.Tick += (s, e) => Slide();
             retry.LinkClicked += (s, e) => RetryRequested?.Invoke();
             logs.LinkClicked += (s, e) => OpenFolder(paths.Logs);
             ShowNotice("Starting Wizard…", false);
@@ -98,6 +109,7 @@ namespace WizardBar
                     loaded = e.IsSuccess;
                     if (e.IsSuccess) notice.Visible = false;
                     if (e.IsSuccess && settingsPending) { settingsPending = false; Post("{\"type\":\"open-settings\"}"); }
+                    if (e.IsSuccess) { foreach (var message in waiting) Post(message); waiting.Clear(); }
                 };
                 core.WebMessageReceived += OnMessage;
                 webReady = true;
@@ -144,6 +156,12 @@ namespace WizardBar
                 if (type == "hide") HidePanel();
                 else if (type == "update") UpdateRequested?.Invoke();
                 else if (type == "busy") BusyChanged?.Invoke(message.TryGetValue("busy", out var b) && b is bool busy && busy);
+                else if (type == "activity") ActivityChanged?.Invoke(message.TryGetValue("animation", out var a) ? a as string : null);
+                else if (type == "drop")
+                {
+                    var files = e.AdditionalObjects.OfType<CoreWebView2File>().Select(f => f.Path).Where(p => !string.IsNullOrEmpty(p)).Take(Dropped.Limit).ToList();
+                    if (files.Count > 0) FilesDropped?.Invoke(files);
+                }
                 else if (type == "finished")
                     Finished?.Invoke(message.TryGetValue("question", out var q) ? q as string ?? "" : "",
                                      message.TryGetValue("ok", out var ok) && ok is bool done && done);
@@ -180,8 +198,11 @@ namespace WizardBar
             var left = Math.Max(area.Left, Math.Min(area.Right - width, center - width / 2));
             var top = buttonVisible ? Math.Max(area.Top, button.Bottom + (int)(4 * scale)) : area.Top + (int)(24 * scale);
             top = Math.Min(top, area.Bottom - height);
-            Bounds = new Rectangle(left, top, width, height);
+            // Opening: the panel drops out from under the button (the page unrolls at the same time, App.tsx).
+            var opening = !Visible || WindowState == FormWindowState.Minimized;
+            Bounds = new Rectangle(left, opening ? top - (int)(36 * scale) : top, width, height);
             if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
+            if (opening) { slideFrom = Top; slideTo = top; slideClock.Restart(); slide.Start(); }
             Show();
             Activate();
             Native.SetForegroundWindow(Handle);
@@ -190,6 +211,22 @@ namespace WizardBar
                 web.Focus();
                 Post("{\"type\":\"focus\"}");
             }
+        }
+
+        private void Slide()
+        {
+            var t = Math.Min(1, slideClock.Elapsed.TotalMilliseconds / SlideMs);
+            var eased = 1 - Math.Pow(1 - t, 3);
+            Top = slideFrom + (int)Math.Round((slideTo - slideFrom) * eased);
+            if (t >= 1) slide.Stop();
+        }
+
+        /// <summary>Files WizardBar allowed Wizard to read (dropped on the button): the page attaches them to the question
+        /// being written. Waits for the page if it is still loading.</summary>
+        public void Attach(object files)
+        {
+            var json = new JavaScriptSerializer().Serialize(new Dictionary<string, object> { { "type", "attach" }, { "files", files } });
+            if (webReady && loaded) Post(json); else waiting.Add(json);
         }
 
         private void Post(string json)
@@ -206,6 +243,7 @@ namespace WizardBar
         public void HidePanel()
         {
             if (!Visible) return;
+            slide.Stop();
             Hide();
         }
 
@@ -213,6 +251,12 @@ namespace WizardBar
         {
             if (e.KeyCode == Keys.Escape && notice.Visible) { HidePanel(); e.Handled = true; }
             base.OnKeyDown(e);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) slide.Dispose();
+            base.Dispose(disposing);
         }
 
         protected override void OnResizeEnd(EventArgs e)

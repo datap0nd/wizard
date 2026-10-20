@@ -1,8 +1,8 @@
 # The desktop app (WizardBar)
 
-Wizard as an always-on assistant: a small **Ask Wizard** tab at the top of the screen. A click, or Ctrl+Alt+W from any
-app, opens a prompt panel; Esc hides it. A question keeps running while the panel is hidden, and a notification says
-when the answer is ready. The decision behind it is
+Wizard as an always-on assistant: a small **Ask Wizard** tab at the top of the screen, with the pixel wizard in it. A
+click, or Ctrl+Alt+W from any app, opens a prompt panel; Esc hides it. A file dropped on the tab is attached to the
+question. A question keeps running while the panel is hidden, and a notification says when the answer is ready. The decision behind it is
 [2026-10-20-desktop-app.md](decisions/2026-10-20-desktop-app.md).
 
 ```
@@ -26,7 +26,7 @@ when the answer is ready. The decision behind it is
 | `%LOCALAPPDATA%\Programs\Wizard\bar` | WizardBar.exe, WebView2 libraries | replaced | removed |
 | `%LOCALAPPDATA%\Programs\Wizard\app` | Wizard's code, built web app, libraries | replaced | removed |
 | `%LOCALAPPDATA%\Programs\Wizard\runtime\python` | Embeddable Python 3.13 | replaced | removed |
-| `%LOCALAPPDATA%\Wizard` | `.env`, `data\` (conversations, Gemini sign-in, company file in `provision\`, Settings in `settings\`, knowledge base), `logs\`, WebView2 profile, `bar.json` | kept | kept |
+| `%LOCALAPPDATA%\Wizard` | `.env`, `data\` (conversations, Gemini sign-in, company file in `provision\`, Settings in `settings\`, knowledge base), `logs\`, WebView2 profile, `bar.json`, `dropped\` (Outlook items dropped on the tab, kept a day) | kept | kept |
 
 No admin rights are needed. Setup adds a Start-menu entry and, by default, a "start when I sign in" entry
 (`HKCU\...\Run`). The tray menu can turn that off.
@@ -94,6 +94,37 @@ publishing set-up. Names ending in `_PASSWORD`, `_TOKEN`, `_SECRET` or `_KEY` ar
 
 The PostgreSQL account must be **read-only by its grants** (SELECT on the views Wizard may use, nothing else). Everyone
 who has the file can use it, also outside Wizard.
+
+## The button and the panel
+
+The tab hangs from the top edge of the main screen. Drag it sideways to move it; right-click it for the menu. It steps
+aside for full-screen apps and slide shows.
+
+| What you see | What it means |
+|---|---|
+| The wizard at rest, twinkling his staff now and then | Ready: click, or press Ctrl+Alt+W |
+| The tab drops down and he waves; a second line appears | The pointer is on it ("Click, Ctrl+Alt+W, or drop a file") |
+| He casts | You clicked: the panel slides down from under the tab and the page unrolls |
+| "Wizard is working…", a glint running along the bottom, the wizard reading, searching, writing… | A question is running. He acts out the same step as the wizard on the page |
+| "Wizard answered", he hops, a green dot by his hat | The answer is ready (a notification says so too) |
+| "Starting Wizard…" (thinking) / "Wizard stopped" (fizzling) | The service is starting / stopped: click for the reason |
+| "Drop to attach", a dashed outline, the wizard with his book open | A file is being dragged over the tab |
+
+**Attaching a file by dropping it.**
+- Drop up to five files on the tab, or on the open panel. The panel opens with them attached to the question being
+  written; each shows "Reading…" and then what Wizard read (slides, sheets, parts).
+- Accepted: PowerPoint, Excel, Word, email (`.msg`, `.eml`), CSV and text. Anything else, or a folder, shows the reason
+  on the file.
+- A file from Explorer is read where it is, from any folder, as **From this PC** does. Protected files open only from
+  their original place, so this works for them too.
+- An Outlook attachment or a whole message has no place on disk. WizardBar saves it under `dropped\` in the home folder
+  first, and removes it a day later.
+- How it is allowed: WizardBar tells the service, over the control API, which files were dropped. Each one may then be
+  attached once, within ten minutes. The page cannot reach other files outside Downloads, Desktop and Documents.
+
+The panel's answers show the systems stage: the pixel wizard in a magic circle with the systems around him. A system
+lights up and streams pixels into the circle while Gemini reads from it, and he acts out the step. When the answer lands
+he hops. While a long answer streams, a slim bar pinned to the top of the panel keeps him in view.
 
 ## Settings, model and updates in the app
 
@@ -182,6 +213,7 @@ Someone who already has Wizard can import a new file from the tray menu: **Impor
 | No tab, but the tray icon is there | The tab hides during full-screen apps and slide shows, or was turned off in the menu |
 | Ctrl+Alt+W does nothing | Another program owns it (`bar.log` says "taken by another program"); use the tab or the tray icon |
 | The panel is blank and mentions WebView2 | The Edge WebView2 runtime is missing; it ships with Windows 10/11 and Edge |
+| A dropped file shows "Could not read" | Point at the file in the panel for the reason (type, size, a protected file Office would not open). `bar.log` has drop errors |
 
 ## Building it yourself
 
@@ -192,4 +224,6 @@ ISCC installer\Wizard.iss                                                       
 ```
 
 For development without the installer, run WizardBar with `--install <folder with app\ and runtime\python\>` and
-`--home <folder>`.
+`--home <folder>`. `WizardBar.exe --snapshot <folder>` draws every look of the button to PNG files (CI does this on
+Windows and prints them into its log). The icon and the button's sprite come from `scripts/wizard_art.py`
+([brand/README.md](../brand/README.md)).

@@ -25,6 +25,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 BRAND = ROOT / "brand"
 WEB = ROOT / "apps" / "web"
+DESKTOP = ROOT / "apps" / "desktop"
 
 RGBA = tuple[int, int, int, int]
 Part = tuple[str, ...]
@@ -789,6 +790,16 @@ def app_icon() -> Canvas:
     return cv
 
 
+def portrait() -> Canvas:
+    """The wizard from hat to beard, with his staff (32 x 32): the desktop app's icon at 32 pixels and up."""
+    rest = anim_idle()[0]
+    cv = Canvas(32, 32)
+    for y in range(32):
+        for x in range(32):
+            cv.px[y][x] = rest.px[8 + y][8 + x]
+    return cv
+
+
 def logo(*, white: bool = False) -> Canvas:
     word = wordmark("WIZARD", "W" if white else "K")
     cv = Canvas(16 + 5 + word.w, 16)
@@ -816,6 +827,37 @@ def png(cv: Canvas, scale: int = 1) -> bytes:
     head = struct.pack(">IIBBBBB", cv.w * scale, cv.h * scale, 8, 6, 0, 0, 0)
     return (b"\x89PNG\r\n\x1a\n" + _chunk(b"IHDR", head) + _chunk(b"IDAT", zlib.compress(_raw(cv, scale), 9))
             + _chunk(b"IEND", b""))
+
+
+def ico(images: list[Canvas]) -> bytes:
+    """A Windows icon with one PNG image per size (Windows Vista and later, Inno Setup, .NET's Icon)."""
+    pngs = [png(cv) for cv in images]
+    out = bytearray(struct.pack("<HHH", 0, 1, len(pngs)))
+    offset = 6 + 16 * len(pngs)
+    for cv, data in zip(images, pngs, strict=True):
+        out += struct.pack("<BBBBHHII", cv.w % 256, cv.h % 256, 0, 0, 1, 32, len(data), offset)
+        offset += len(data)
+    for data in pngs:
+        out += data
+    return bytes(out)
+
+
+def scaled(cv: Canvas, scale: int, size: int) -> Canvas:
+    """The canvas at a whole-number scale, centred on a transparent square."""
+    out = Canvas(size, size)
+    pad_x, pad_y = (size - cv.w * scale) // 2, (size - cv.h * scale) // 2
+    for y in range(cv.h * scale):
+        for x in range(cv.w * scale):
+            out.px[pad_y + y][pad_x + x] = cv.px[y // scale][x // scale]
+    return out
+
+
+def desktop_icon() -> bytes:
+    """WizardBar's icon (tray, taskbar, Start menu, setup): the hat where 16 pixels allow only that, his portrait at
+    32 and 64, the whole wizard from 48 up."""
+    rest = anim_idle()[0]
+    return ico([mark(), portrait(), scaled(rest, 1, 48), scaled(portrait(), 2, 64), scaled(rest, 2, 96),
+                scaled(portrait(), 4, 128), scaled(rest, 5, 256)])
 
 
 def sheet(frames_by_row: list[Frames], cols: int) -> Canvas:
@@ -950,6 +992,28 @@ def outputs() -> dict[Path, bytes]:
         "",
     ]).encode()
 
+    files[DESKTOP / "assets" / "wizard.ico"] = desktop_icon()
+    files[DESKTOP / "assets" / "wizard-sprite.png"] = png(full)
+    entries = [f"            {{ \"{name}\", new Animation({r}, {len(frames)}, {fps}, {str(loops).lower()}) }},"
+               for r, ((name, _, fps, loops), frames) in enumerate(zip(ANIMATIONS, rows, strict=True))]
+    files[DESKTOP / "WizardBar" / "SpriteSheet.g.cs"] = "\n".join([
+        "// Drawn by scripts/wizard_art.py, which writes this file with the sprite sheet: do not edit by hand.",
+        "using System.Collections.Generic;",
+        "",
+        "namespace WizardBar",
+        "{",
+        "    internal static partial class SpriteSheet",
+        "    {",
+        f"        public const int Frame = {FRAME};",
+        "        public static readonly Dictionary<string, Animation> Animations = new Dictionary<string, Animation>",
+        "        {",
+        *entries,
+        "        };",
+        "    }",
+        "}",
+        "",
+    ]).encode()
+
     index = WEB / "index.html"
     html = index.read_text(encoding="utf-8")
     files[index] = re.sub(r'<link rel="icon" href="[^"]*" />', lambda _: favicon_link(mark()), html, count=1).encode()
@@ -979,6 +1043,12 @@ def _pixels(data: bytes) -> list[bytes]:
     return parts
 
 
+def _ico_images(data: bytes) -> list[bytes]:
+    count = struct.unpack("<H", data[4:6])[0]
+    entries = [struct.unpack("<BBBBHHII", data[6 + 16 * i:22 + 16 * i]) for i in range(count)]
+    return [data[offset:offset + size] for *_, size, offset in entries]
+
+
 def stale() -> list[str]:
     """Files whose committed content differs from what this script draws."""
     out = []
@@ -987,7 +1057,12 @@ def stale() -> list[str]:
             out.append(f"{path.relative_to(ROOT)} (missing)")
             continue
         have = path.read_bytes()
-        same = _pixels(have) == _pixels(data) if path.suffix == ".png" else have.replace(b"\r\n", b"\n") == data
+        if path.suffix == ".png":
+            same = _pixels(have) == _pixels(data)
+        elif path.suffix == ".ico":
+            same = [_pixels(p) for p in _ico_images(have)] == [_pixels(p) for p in _ico_images(data)]
+        else:
+            same = have.replace(b"\r\n", b"\n") == data
         if not same:
             out.append(str(path.relative_to(ROOT)))
     return out

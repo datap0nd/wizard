@@ -8,7 +8,10 @@ Two ways in:
 - Upload: the browser sends the bytes. Fine for ordinary files; a NASCA-protected file may not open from the uploaded
   copy, because NASCA binds access to the original path.
 - From this PC (local installs): the person picks a file in their own Downloads, Desktop or Documents (or the folders
-  in WIZARD_ATTACHMENT_FOLDERS) and Wizard reads the original where it is, which is how protected files open."""
+  in WIZARD_ATTACHMENT_FOLDERS) and Wizard reads the original where it is, which is how protected files open.
+- Dropped on the desktop app (WizardBar): a file dragged onto the button at the top of the screen or onto its panel,
+  from any folder. WizardBar, which holds the control token, allows Wizard to read that one file for a few minutes
+  (grant); the page then attaches it as From this PC does."""
 from __future__ import annotations
 
 import asyncio
@@ -17,6 +20,7 @@ import json
 import shutil
 import subprocess
 import sys
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -33,6 +37,7 @@ KINDS = {"slides": (".pptx", ".pptm", ".ppsx", ".ppt"), "spreadsheet": (".xlsx",
          "document": (".docx", ".docm", ".doc", ".rtf"), "email": (".eml", ".msg")}
 LOCAL_DAYS = 180
 LOCAL_LIMIT = 200
+GRANT_S = 600
 
 
 class AttachmentError(Exception):
@@ -59,6 +64,7 @@ class Attachments:
         self.settings, self.store = settings, store
         self.root = settings.data_dir / "attachments"
         self._lock: asyncio.Lock | None = None
+        self.granted: dict[str, float] = {}
 
     @property
     def lock(self) -> asyncio.Lock:
@@ -118,15 +124,35 @@ class Attachments:
         found.sort(key=lambda f: str(f["modified"]), reverse=True)
         return found[:LOCAL_LIMIT]
 
+    def grant(self, path_text: str) -> dict[str, Any]:
+        """A file the person dropped on WizardBar: checked now, then readable once by attach_local for GRANT_S seconds."""
+        name = Path(path_text.replace("\\", "/")).name or path_text
+        try:
+            path = Path(path_text).resolve(strict=True)
+            if not path.is_file():
+                raise AttachmentError(400, "Only files can be attached, not folders.")
+            name = self.check_name(path.name, path.stat().st_size)
+        except AttachmentError as error:
+            return {"path": path_text, "name": name, "error": error.message}
+        except (OSError, RuntimeError):
+            return {"path": path_text, "name": name, "error": "That file could not be opened."}
+        clock = time.monotonic()
+        self.granted = {p: until for p, until in self.granted.items() if until > clock}
+        self.granted[str(path)] = clock + GRANT_S
+        return {"path": str(path), "name": name}
+
     async def attach_local(self, identity: Identity, path_text: str) -> dict[str, Any]:
-        if not self.local_enabled():
-            raise AttachmentError(403, "Attaching files from this PC is switched off here; upload the file instead.")
         try:
             path = Path(path_text).resolve(strict=True)
         except (OSError, RuntimeError):
-            raise AttachmentError(404, "That file no longer exists.") from None
+            path = None
+        dropped = path is not None and self.granted.pop(str(path), 0.0) > time.monotonic()
+        if not dropped and not self.local_enabled():
+            raise AttachmentError(403, "Attaching files from this PC is switched off here; upload the file instead.")
+        if path is None:
+            raise AttachmentError(404, "That file no longer exists.")
         allowed = [base.resolve() for base in self.settings.attachment_folders]
-        if not path.is_file() or not any(path.is_relative_to(base) for base in allowed):
+        if not path.is_file() or not (dropped or any(path.is_relative_to(base) for base in allowed)):
             raise AttachmentError(403, "Only files in your Downloads, Desktop or Documents folders can be attached this way.")
         name = self.check_name(path.name, path.stat().st_size)
         attachment_id = new_id("att")

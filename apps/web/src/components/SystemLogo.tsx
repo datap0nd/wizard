@@ -1,12 +1,13 @@
-import {BookOpen, ChartColumn, Coins, Database, Paperclip, Truck, Waves, WandSparkles} from 'lucide-react';
+import {BookOpen, ChartColumn, Coins, Database, Paperclip, Truck, Waves} from 'lucide-react';
 import type {LucideIcon} from 'lucide-react';
+import hat from '@/assets/wizard-mark.svg';
 import {cn} from '@/lib/utils';
 
-export interface Brand { color: string; deep: string; icon: LucideIcon | null; mark: string }
+export interface Brand { color: string; deep: string; icon: LucideIcon | null; mark: string; image?: string }
 
 /** Each system's mark and colours. A system not listed here (a new platform) gets a monogram in a stable colour. */
 const BRANDS: Record<string, Brand> = {
-  wizard: {color: '#315bd6', deep: '#1e3a8a', icon: WandSparkles, mark: 'W'},
+  wizard: {color: '#1428a0', deep: '#0b1869', icon: null, mark: 'W', image: hat},
   postgresql: {color: '#7c3aed', deep: '#4c1d95', icon: Database, mark: 'AI'},
   knowledge: {color: '#059669', deep: '#065f46', icon: BookOpen, mark: 'KB'},
   asap: {color: '#2563eb', deep: '#1e40af', icon: ChartColumn, mark: 'AS'},
@@ -29,6 +30,14 @@ export function brand(id: string, name?: string): Brand {
 export function SystemLogo({id, name, size = 44, className}: {id: string; name?: string; size?: number; className?: string}) {
   const b = brand(id, name);
   const Icon = b.icon;
+  if (b.image) {
+    return (
+      <span aria-hidden="true" className={cn('relative grid shrink-0 place-items-center rounded-[28%] bg-gradient-to-br from-white to-accent-soft shadow-sm ring-1 ring-inset ring-accent-line', className)}
+        style={{width: size, height: size}}>
+        <img src={b.image} alt="" className="[image-rendering:pixelated]" style={{width: size * 0.68, height: size * 0.68}} />
+      </span>
+    );
+  }
   return (
     <span aria-hidden="true" className={cn('relative grid shrink-0 place-items-center rounded-[28%] text-white shadow-sm', className)}
       style={{width: size, height: size, background: `linear-gradient(135deg, ${b.color}, ${b.deep})`}}>

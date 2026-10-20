@@ -21,6 +21,8 @@ namespace WizardBar
         public string EnvFile => Path.Combine(Home, ".env");
         public string Provision => Path.Combine(Home, "wizard.provision");
         public string Settings => Path.Combine(Home, "bar.json");
+        /// <summary>Outlook attachments and messages dropped on the button, saved so Wizard can read them (kept a day).</summary>
+        public string Dropped => Path.Combine(Home, "dropped");
 
         public Paths(string install, string home)
         {

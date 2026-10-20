@@ -154,6 +154,7 @@ test('the compact desktop view answers and tells its Windows host what happened'
       __sent: sent,
       __fromHost: (data: unknown) => listeners.forEach(listener => listener({data})),
       chrome: {webview: {postMessage: (message: unknown) => sent.push(message),
+        postMessageWithAdditionalObjects: (message: object, files: ArrayLike<File>) => sent.push({...message, files: Array.from(files, f => f.name)}),
         addEventListener: (_: string, listener: (event: {data: unknown}) => void) => listeners.push(listener), removeEventListener: () => undefined}},
     });
   });
@@ -167,6 +168,25 @@ test('the compact desktop view answers and tells its Windows host what happened'
   const sent = await page.evaluate(() => (window as unknown as {__sent: unknown[]}).__sent);
   expect(sent).toContainEqual({type: 'busy', busy: true});
   expect(sent).toContainEqual(expect.objectContaining({type: 'finished', ok: true, question: expect.stringMatching(CEO)}));
+  expect(sent).toContainEqual({type: 'activity', animation: 'read'});
+  // A file dropped on the page goes to WizardBar with its place on disk; one dropped on the button comes back as attach.
+  await page.evaluate(() => {
+    const files = new DataTransfer();
+    files.items.add(new File(['Market,Units\nEG,1\n'], 'sell-in.csv', {type: 'text/csv'}));
+    window.dispatchEvent(new DragEvent('dragenter', {dataTransfer: files}));
+  });
+  await expect(page.getByTestId('drop-zone')).toContainText('Drop to attach');
+  await page.evaluate(() => {
+    const files = new DataTransfer();
+    files.items.add(new File(['Market,Units\nEG,1\n'], 'sell-in.csv', {type: 'text/csv'}));
+    window.dispatchEvent(new DragEvent('drop', {dataTransfer: files, cancelable: true}));
+  });
+  await expect(page.getByTestId('drop-zone')).toHaveCount(0);
+  expect(await page.evaluate(() => (window as unknown as {__sent: unknown[]}).__sent.at(-1))).toEqual({type: 'drop', files: ['sell-in.csv']});
+  await page.evaluate(() => (window as unknown as {__fromHost: (d: unknown) => void}).__fromHost(
+    {type: 'attach', files: [{path: 'C:\\Users\\x\\scan.pdf', name: 'scan.pdf', error: 'PDF is not supported yet.'}]}));
+  await expect(page.getByTestId('pending-file')).toHaveAttribute('data-state', 'failed');
+  await expect(page.getByTestId('pending-file')).toContainText('scan.pdf');
   await page.keyboard.press('Escape');
   await expect.poll(() => page.evaluate(() => (window as unknown as {__sent: unknown[]}).__sent.at(-1))).toEqual({type: 'hide'});
   const full = await page.getByTestId('open-full').getAttribute('href');

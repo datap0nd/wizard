@@ -288,6 +288,27 @@ def test_control_api_needs_the_launch_token(tmp_path):
         load_settings(env={"WIZARD_CONTROL_TOKEN": "short"}, home=tmp_path)
 
 
+def test_a_file_dropped_on_wizardbar_can_be_attached_once_from_where_it_is(tmp_path):
+    elsewhere = tmp_path / "Shared drive" / "Q3"
+    elsewhere.mkdir(parents=True)
+    (elsewhere / "sell-in.csv").write_bytes(b"Market,Units\nEG,1200\n")
+    (elsewhere / "scan.pdf").write_bytes(b"%PDF")
+    headers = {**HEADERS, "X-Wizard-Control": CONTROL}
+    with TestClient(desktop_app(tmp_path / "home", WIZARD_ATTACHMENT_FOLDERS="none")) as client:
+        client.post("/api/v1/session/login", json={"user_id": "local-owner"}, headers=HEADERS)
+        path = str(elsewhere / "sell-in.csv")
+        assert client.post("/api/v1/attachments/local", json={"path": path}, headers=HEADERS).status_code == 403, "not dropped"
+        body = {"paths": [path, str(elsewhere / "scan.pdf"), str(elsewhere / "gone.xlsx")]}
+        assert client.post("/internal/v1/desktop/drop", json=body, headers=HEADERS).status_code == 401, "only WizardBar grants"
+        files = client.post("/internal/v1/desktop/drop", json=body, headers=headers).json()["files"]
+        assert files[0] == {"path": str((elsewhere / "sell-in.csv").resolve()), "name": "sell-in.csv"}
+        assert "PDF" in files[1]["error"] and files[2]["error"] == "That file could not be opened."
+        added = client.post("/api/v1/attachments/local", json={"path": files[0]["path"]}, headers=HEADERS).json()["attachment"]
+        assert added["origin"] == "local" and added["status"] == "ok" and added["filename"] == "sell-in.csv"
+        again = client.post("/api/v1/attachments/local", json={"path": files[0]["path"]}, headers=HEADERS)
+        assert again.status_code == 403, "a drop allows one attach"
+
+
 def test_sync_now_restarts_the_service_on_a_new_version(tmp_path, monkeypatch):
     github = FakeGitHub("a" * 40, {"knowledge/company/overview.md": NOTE})
     monkeypatch.setattr(knowledge_sync, "sync", functools.partial(knowledge_sync.sync, transport=httpx.MockTransport(github)))

@@ -7,10 +7,11 @@ namespace WizardBar
     internal static class Program
     {
         /// <summary>WizardBar [--install folder] [--home folder]. One instance per Windows session: a second start asks the
-        /// running one to open its panel and exits.</summary>
+        /// running one to open its panel and exits. WizardBar --snapshot FOLDER draws the button's looks to PNG files.</summary>
         [STAThread]
         private static int Main(string[] args)
         {
+            if (args.Length == 2 && args[0] == "--snapshot") return TopButton.Snapshot(args[1]) ? 0 : 3;
             using (var single = new Mutex(true, @"Local\WizardBar", out var first))
             using (var open = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\WizardBar.Open"))
             {

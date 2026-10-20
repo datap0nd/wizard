@@ -69,12 +69,34 @@ The previews are animated PNGs at 4x. They loop, and a one-shot animation pauses
 ## In the web app
 
 - `apps/web/src/components/WizardSprite.tsx`: `WizardSprite` plays one animation with CSS `steps()`. With reduced motion
-  it holds the first frame. `WizardStage` is the strip at the top of a running answer: the wizard, what he is doing and
-  the step he is on. It stays in view while the answer streams. It hops (`success`) or fizzles (`fail`) for a moment
-  when a run ends live, then goes. A run reopened from history has no stage.
+  it holds the first frame.
+- `apps/web/src/components/SystemsStage.tsx`: the wizard stands in a magic circle at the centre of a running answer,
+  with the systems around him. He acts out the step in progress, and keeps acting out a fast step while its system
+  stays lit. When the answer lands live he hops (`success`) with pixel confetti in the colours of the systems used, or
+  fizzles (`fail`). Then the stage folds. While the view follows a long answer down, a slim bar pinned to the top keeps
+  him in view. A run reopened from history has no finale.
 - `apps/web/src/wizard.ts` picks the animation from the run's observed events only: the running tool, streaming text, or
   the end state. The wizard never acts out a step Wizard did not take (AGENTS.md: show what Gemini actually did).
 - `apps/web/src/wizardSheet.ts` (frame size and animation table), `apps/web/src/assets/wizard-sprite.png`,
   `wizard-mark.svg`, `wizard-logo.svg` and the favicon in `apps/web/index.html` are written by the script.
-- Where he appears: the start screen (waves, then rests), sign-in (logo and the wizard at rest), the loading screen,
-  the sidebar and each answer card (the mark), and the stage on a running answer.
+- Where he appears:
+  - the start screen and the desktop panel's start (he waves, then rests);
+  - sign-in (logo and the wizard at rest) and the loading screen;
+  - the sidebar, the panel's header, each answer card and Wizard's own module on the stage (the mark);
+  - the stage on a running answer;
+  - the drop target when a file is dragged over the page (he reads).
+
+## In the desktop app (WizardBar)
+
+- `apps/desktop/assets/wizard.ico`: the tray, taskbar, Start-menu and setup icon. It holds the hat at 16 pixels, his
+  portrait (hat to beard, with the staff) at 32 and 64, and the whole wizard at 48, 96 and 256.
+- `apps/desktop/assets/wizard-sprite.png` (embedded) and `apps/desktop/WizardBar/SpriteSheet.g.cs` (the animation table):
+  the same sheet as the web app.
+- The **Ask Wizard** button at the top of the screen draws him at 1x, or at 2x from 175 % display scaling:
+  - At rest he twinkles his staff every few seconds.
+  - On hover the tab drops down and he waves. A click makes him cast.
+  - While a question runs he acts out what the page shows (the page sends its animation).
+  - He hops when an answer is ready and fizzles when the service stopped.
+  - With a file dragged over the tab he opens his book ("Drop to attach").
+- `WizardBar.exe --snapshot FOLDER` draws every look of the button to PNG; the Windows CI job runs it.
+- The script writes the icon, the copy of the sheet and `SpriteSheet.g.cs`, and `--check` covers them.

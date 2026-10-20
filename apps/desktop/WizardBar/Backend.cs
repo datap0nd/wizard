@@ -262,13 +262,14 @@ namespace WizardBar
             if (!current.WaitForExit(8000)) TryKill(current);
         }
 
-        public async Task<Dictionary<string, object>> Control(string action, HttpMethod method)
+        public async Task<Dictionary<string, object>> Control(string action, HttpMethod method, object body = null)
         {
             using (var request = new HttpRequestMessage(method, BaseUrl + "/internal/v1/desktop/" + action))
             {
                 request.Headers.Add("X-Wizard-Control", token ?? "");
                 request.Headers.Add("X-Wizard-Request", "1");
-                if (method == HttpMethod.Post) request.Content = new StringContent("{}", Encoding.UTF8, "application/json");
+                if (method == HttpMethod.Post)
+                    request.Content = new StringContent(body == null ? "{}" : new JavaScriptSerializer().Serialize(body), Encoding.UTF8, "application/json");
                 using (var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(method == HttpMethod.Post && action == "sync" ? 300 : 10)))
                 using (var response = await http.SendAsync(request, cancel.Token).ConfigureAwait(false))
                 {

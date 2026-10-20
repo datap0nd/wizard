@@ -1,4 +1,6 @@
 using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Net.Http;
@@ -41,6 +43,9 @@ namespace WizardBar
             tray = new NotifyIcon { Icon = Icons.Tray(), Text = "Wizard", ContextMenuStrip = menu, Visible = true };
             hotkey = new Hotkey();
             button.Clicked += Toggle;
+            button.FilesDropped += DroppedOnButton;
+            panel.FilesDropped += files => _ = Attach(files);
+            panel.ActivityChanged += animation => button.Activity = animation;
             hotkey.Pressed += Toggle;
             tray.MouseClick += (s, e) => { if (e.Button == MouseButtons.Left) Toggle(); };
             tray.BalloonTipClicked += (s, e) => { if (balloonForUpdate) InstallUpdate(); else ShowPanel(); };
@@ -109,6 +114,46 @@ namespace WizardBar
             panel.ShowUnder(button.Bounds, button.Visible);
             answered = false;
             Refresh();
+        }
+
+        /// <summary>Files dragged onto the button: open the panel and attach them to the question being written.</summary>
+        private void DroppedOnButton(IDataObject data)
+        {
+            List<string> files;
+            try { files = Dropped.Paths(data, paths.Dropped); }
+            catch (Exception error)
+            {
+                Log.Error("drop", error);
+                files = new List<string>();
+            }
+            if (files.Count == 0)
+            {
+                Balloon("Nothing to attach", "Drop a file on the button: PowerPoint, Excel, Word, an email, CSV or text.");
+                return;
+            }
+            _ = Attach(files);
+        }
+
+        /// <summary>Lets Wizard read these files where they are (once each, for a few minutes), then hands them to the page.</summary>
+        private async Task Attach(List<string> files)
+        {
+            if (!panel.Visible) ShowPanel();
+            if (backend.State != ServiceState.Ready)
+            {
+                Balloon("Wizard is starting", "Drop the file again when the button says Ask Wizard.");
+                return;
+            }
+            try
+            {
+                var result = await backend.Control("drop", HttpMethod.Post, new Dictionary<string, object> { { "paths", files } });
+                if (result.TryGetValue("files", out var granted) && granted is IEnumerable list) panel.Attach(list);
+                else Balloon("Not attached", Backend.Text(result, "error") ?? "Wizard did not take the files.");
+            }
+            catch (Exception error)
+            {
+                Log.Error("attach", error);
+                Balloon("Not attached", "Wizard could not take the files: " + error.Message);
+            }
         }
 
         private void Finished(string question, bool ok)

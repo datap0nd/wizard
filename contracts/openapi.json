@@ -1424,6 +1424,47 @@
         }
       }
     },
+    "/internal/v1/desktop/drop": {
+      "post": {
+        "summary": "Desktop Drop",
+        "description": "Files the person dropped on the button or the panel: the page may attach each once, from where it is.",
+        "operationId": "desktop_drop_internal_v1_desktop_drop_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DropBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Desktop Drop Internal V1 Desktop Drop Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/internal/v1/desktop/stop": {
       "post": {
         "summary": "Desktop Stop",
@@ -1447,6 +1488,25 @@
   },
   "components": {
     "schemas": {
+      "DropBody": {
+        "properties": {
+          "paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "Paths"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "paths"
+        ],
+        "title": "DropBody"
+      },
       "EmailDraftBody": {
         "properties": {
           "subject": {

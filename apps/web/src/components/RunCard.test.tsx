@@ -1,7 +1,7 @@
 import {afterEach, describe, expect, it, vi} from 'vitest';
 import {act, cleanup, fireEvent, render, screen} from '@testing-library/react';
 import {RunCard} from './RunCard';
-import {SystemsContext} from './SystemsStage';
+import {beam, layout, SystemsContext} from './SystemsStage';
 import {TooltipProvider} from './ui/menu';
 import {applyEvent, emptyRun} from '@/runState';
 import type {RunEvent} from '@/types';
@@ -54,5 +54,65 @@ describe('systems stage', () => {
     expect(screen.getByTestId('stage-now').textContent).toContain('SELECT market, sum(units) FROM bi_reporting.sell_in_amt_mv');
     fireEvent.click(nodes[1]);
     expect(screen.getByTestId('stage-calls').textContent).toContain('Read sell-in');
+  });
+});
+
+describe('the wizard on the stage', () => {
+  it('acts out the running step, hops when the answer lands live, then the stage folds', () => {
+    vi.useFakeTimers();
+    let seq = 0;
+    const ev = (type: string, payload: Record<string, unknown>): RunEvent => ({seq: ++seq, type, ts: '2026-10-20T08:00:00Z', payload});
+    let run = applyEvent(emptyRun('run_2', 'cnv_1', 'q'), ev('run_started', {runtime: 'replay', runtime_label: 'x', model: 'm'}));
+    run = applyEvent(run, ev('tool_started', {call_id: 'c1', name: 'nerp_run_report', label: 'Read NERP · Spend', category: 'source'}));
+    const view = render(<SystemsContext.Provider value={[{id: 'nerp', name: 'NERP', kind: 'reports'}]}>{card(run)}</SystemsContext.Provider>);
+    expect(screen.getByTestId('wizard-sprite').dataset.animation).toBe('read');
+    expect(screen.getByTestId('wizard-verb').textContent).toContain('Reading');
+    run = applyEvent(run, ev('tool_finished', {call_id: 'c1', name: 'nerp_run_report', ok: true, duration_ms: 3, summary: '3 rows'}));
+    run = applyEvent(run, ev('tool_started', {call_id: 'c2', name: 'wizard_render_visual', label: 'Prepared a bar: Spend', category: 'present'}));
+    view.rerender(<SystemsContext.Provider value={[{id: 'nerp', name: 'NERP', kind: 'reports'}]}>{card(run)}</SystemsContext.Provider>);
+    expect(screen.getByTestId('wizard-sprite').dataset.animation).toBe('chart');
+    run = applyEvent(run, ev('tool_finished', {call_id: 'c2', name: 'wizard_render_visual', ok: true, duration_ms: 3, summary: 'bar'}));
+    run = applyEvent(run, ev('text_delta', {text: 'NERP shows'}));
+    view.rerender(<SystemsContext.Provider value={[{id: 'nerp', name: 'NERP', kind: 'reports'}]}>{card(run)}</SystemsContext.Provider>);
+    act(() => { vi.advanceTimersByTime(2_500); });
+    expect(screen.getByTestId('wizard-sprite').dataset.animation).toBe('write');
+    run = applyEvent(run, ev('run_finished', {status: 'succeeded', report_id: 'r', answer: 'Done.', data_mode: 'SYNTHETIC', check_status: 'NOT_CHECKED', warnings: []}));
+    view.rerender(<SystemsContext.Provider value={[{id: 'nerp', name: 'NERP', kind: 'reports'}]}>{card(run)}</SystemsContext.Provider>);
+    expect(screen.getByTestId('wizard-sprite').dataset.animation).toBe('success');
+    expect(screen.getByTestId('stage-orb').dataset.state).toBe('success');
+    expect(screen.getByTestId('wizard-verb').textContent).toBe('Answer ready');
+    act(() => { vi.advanceTimersByTime(2_500); });
+    expect(screen.queryByTestId('stage')).toBeNull();
+    expect(screen.getByTestId('journey')).toBeTruthy();
+  });
+
+  it('has no finale for a run loaded already finished', () => {
+    let seq = 0;
+    const ev = (type: string, payload: Record<string, unknown>): RunEvent => ({seq: ++seq, type, ts: '2026-10-20T08:00:00Z', payload});
+    let run = applyEvent(emptyRun('run_3', 'cnv_1', 'q'), ev('run_started', {runtime: 'replay', runtime_label: 'x', model: 'm'}));
+    run = applyEvent(run, ev('tool_started', {call_id: 'c1', name: 'nerp_run_report', label: 'Read NERP', category: 'source'}));
+    run = applyEvent(run, ev('tool_finished', {call_id: 'c1', name: 'nerp_run_report', ok: true, duration_ms: 3, summary: '3 rows'}));
+    run = applyEvent(run, ev('run_finished', {status: 'succeeded', report_id: 'r', answer: 'Done.', data_mode: 'SYNTHETIC', check_status: 'NOT_CHECKED', warnings: []}));
+    render(card(run));
+    expect(screen.queryByTestId('stage')).toBeNull();
+    fireEvent.click(screen.getByTestId('show-journey'));
+    expect(screen.getByTestId('wizard-sprite').dataset.animation).toBe('idle');
+  });
+
+  it('puts the modules in two arcs around the wizard, clear of his circle', () => {
+    for (const count of [1, 2, 5, 6, 8]) {
+      const l = layout(720, count);
+      expect(l.mode).toBe('orbit');
+      expect(l.nodes).toHaveLength(count);
+      for (const node of l.nodes) {
+        expect(Math.hypot(node.x - l.orb.x, node.y - l.orb.y)).toBeGreaterThan(l.radius + 58);
+        expect(node.y).toBeGreaterThan(30);
+        expect(node.y).toBeLessThan(l.height - 30);
+        expect(beam(l, node)).toMatch(/^M [\d.]+ [\d.]+ Q [\d.]+ [\d.]+ [\d.]+ [\d.]+$/);
+      }
+      for (let i = 0; i < count; i++) for (let j = i + 1; j < count; j++)
+        expect(Math.hypot(l.nodes[i].x - l.nodes[j].x, l.nodes[i].y - l.nodes[j].y)).toBeGreaterThan(100);
+    }
+    expect(layout(420, 6).mode).toBe('row');
   });
 });

@@ -3,7 +3,73 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-20 (latest) — The systems stage: a visual view of what Wizard pulls from each system
+## 2026-10-20 (latest) — The pixel wizard everywhere, a bigger stage, an animated button, files dropped on it
+
+The owner asked for:
+- a bigger, more animated stage;
+- a file dropped on the **Ask Wizard** button attached to the conversation;
+- a button animated on hover and on a click, and a panel that opens with more animation;
+- "the wizard pixel character we had recently" as the logo everywhere.
+
+**What changed.**
+- **The character** is commit `8eb22fc` (branch `claude/fervent-maxwell-wwwa07`), brought in whole: `scripts/wizard_art.py`,
+  `brand/`, the sprite and the logos.
+  - The web app: the hat mark in the sidebar, the panel header, the answer cards, Wizard's own module and the favicon.
+    The logo and the resting wizard on sign-in. The waving wizard on the start screens, the panel's included, where he
+    waves each time the panel opens.
+  - Its own sticky strip on a running answer was dropped: the wizard now stands in the stage.
+- **The desktop icon** (tray, taskbar, Start menu, setup) is drawn by the same script into `apps/desktop/assets/wizard.ico`:
+  the hat at 16 px, his portrait at 32 and 64, the whole wizard from 48 up. The script also writes the bar's copy of the
+  sheet and `SpriteSheet.g.cs`, and `--check` (a unit test) covers them.
+- **The stage** (`SystemsStage.tsx`) is bigger:
+  - The pixel wizard (3x on a wide card, 2x in the panel) stands in a magic circle with turning rune rings and a glowing
+    floor. The systems sit around him in two arcs, an orbit, on 58 px tiles.
+  - He acts out the step in progress, and keeps acting out a fast step while its system stays lit.
+  - Beams bend like a vortex and carry pixel "data bits". A finished call floats its result up from the wizard
+    ("+ 4 rows · as of 2026-10-01"). An active tile hops, glows and pings. Pixel stars twinkle while he works.
+  - When the answer lands live he hops with pixel confetti in the colours of the systems used (fizzles on failure).
+    The stage folds into the journey strip 2.4 s later.
+  - While the view follows a long answer down, a slim bar pinned to the top shows him writing, the systems used, and
+    the landing hop. It appears only while the stage is out of view and takes no room.
+  - Reduced motion still stops all of it.
+- **The button** (`TopButton.cs`) is a light tab with the wizard in it, drawn from the embedded sprite sheet at a whole
+  scale (1x, 2x from 175 %):
+  - At rest he twinkles his staff every 9 s.
+  - On hover the tab eases down, glows blue, shows "Click, Ctrl+Alt+W, or drop a file", and he waves. A click makes him
+    cast.
+  - While a question runs he acts out what the page shows (the page sends `activity`), and a glint runs along the
+    bottom edge.
+  - He hops and a green dot pulses when an answer is ready; he fizzles when the service stopped.
+  - It redraws only when the picture changes, at 16–250 ms depending on what moves.
+- **The panel** slides down from under the tab (230 ms, ease-out). The page unrolls downwards on the host's `focus`
+  message, with a glint along the header.
+- **Dropping files:**
+  - Up to five files on the tab, from Explorer, or Outlook attachments and messages (saved under `dropped\`, kept a day).
+  - Or on the panel's page: WebView2 hands the host the paths. In a plain browser the page uploads them instead.
+  - WizardBar grants exactly those paths through `POST /internal/v1/desktop/drop` (control token, loopback). The page
+    then attaches each one once, within ten minutes, through From this PC, so protected files still open from their
+    place.
+  - A full-window "Drop to attach" target with the wizard reading shows while a file is dragged over the page.
+  - See the [decision addendum](decisions/2026-10-20-desktop-app.md).
+- **CI** draws every look of the button on Windows (`WizardBar.exe --snapshot`), fails if the sprite is missing,
+  uploads the PNGs and prints them into the log.
+
+**Tests.**
+- Python: 299 passed, 5 skipped. A new desktop test drops a CSV from a folder outside the attachment folders, a PDF
+  and a missing file: only WizardBar can grant, errors come back per file, and a grant allows one attach.
+- Web unit tests: 26 passed. New: the wizard in the stage reads, draws a chart, writes, hops and folds; a stored run has
+  no finale; the orbit keeps every module clear of the circle and of each other.
+- Browser tests: 16 passed with the sandbox's Chromium. The compact test now also checks the `activity` message, a drop
+  on the page going to the host with the file, and a refused file from the host showing on the composer.
+- Also passing: the spec, contracts (`openapi.json` regenerated for the drop endpoint), secrets, lint and types.
+  `wizard_art --check` passes and WizardBar builds with warnings as errors.
+- Screenshots of a slowed replay show the orbit, the beams and data bits, the floating result, the pinned bar while
+  writing, the landing confetti, the panel's waving start and the drop target.
+- Not yet seen on a real desktop: the button's animation, the slide, and drops from Explorer and Outlook. CI draws the
+  button's looks on Windows. Outlook's virtual files use the standard FileGroupDescriptorW/FileContents formats
+  (stream, memory, or a structured storage saved as `.msg`) and are untested until a work PC.
+
+## 2026-10-20 (later still) — The systems stage: a visual view of what Wizard pulls from each system
 
 The owner asked for a more visual, interactive and gamified view of a run. Each system should have its own logo and
 light up while Wizard checks data there, showing what it is searching. The PostgreSQL database should appear as

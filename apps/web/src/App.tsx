@@ -8,6 +8,7 @@ import {LogDialog} from './components/LogDialog';
 import {RuntimeBadge} from './components/Badges';
 import {Composer} from './components/Composer';
 import {Conversation} from './components/Conversation';
+import {DropZone} from './components/DropZone';
 import {EmptyState} from './components/EmptyState';
 import {EvidenceDrawer} from './components/EvidenceDrawer';
 import {LoginScreen} from './components/LoginScreen';
@@ -16,8 +17,10 @@ import {QuickEmpty, QuickHeader} from './components/QuickPanel';
 import {SettingsDialog} from './components/SettingsDialog';
 import {SystemsContext} from './components/SystemsStage';
 import {Sidebar} from './components/Sidebar';
-import {onHost, toHost} from './host';
 import {WizardSprite} from './components/WizardSprite';
+import {dropToHost, onHost, toHost, type DroppedFile} from './host';
+import {cn} from './lib/utils';
+import {wizardAnimation} from './wizard';
 import type {Attachment, Bootstrap, ConversationSummary, EvidenceSummary, LocalFile, RunEvent, RunView} from './types';
 
 const LAST = 'wizard-conversation';
@@ -39,6 +42,7 @@ export function App({compact = false}: {compact?: boolean}) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const streams = useRef(new Map<string, EventSource>());
   const [focusTick, setFocusTick] = useState(0);
+  const [entering, setEntering] = useState(false);
   const questions = useRef(new Map<string, string>());
 
   const settle = useCallback((key: string, attempt: Promise<{attachment: Attachment}>) => {
@@ -54,11 +58,21 @@ export function App({compact = false}: {compact?: boolean}) {
       settle(key, api.upload(file));
     }
   }, [settle]);
-  const addLocal = useCallback((file: LocalFile) => {
-    const key = `${file.path}-${Date.now()}`;
-    setFiles(prev => [...prev, {key, filename: file.name, state: 'reading'}]);
-    settle(key, api.attachLocal(file.path));
+  const attachPath = useCallback((path: string, filename: string) => {
+    const key = `${path}-${Date.now()}`;
+    setFiles(prev => [...prev, {key, filename, state: 'reading'}]);
+    settle(key, api.attachLocal(path));
   }, [settle]);
+  const addLocal = useCallback((file: LocalFile) => attachPath(file.path, file.name), [attachPath]);
+  /** Files dropped on the button at the top of the screen (or on this page in its panel): WizardBar has allowed Wizard
+   *  to read each where it is. */
+  const addDropped = useCallback((dropped: DroppedFile[]) => {
+    for (const file of dropped) {
+      if (file.error) setFiles(prev => [...prev, {key: `${file.path}-${Date.now()}`, filename: file.name, state: 'failed', note: file.error}]);
+      else attachPath(file.path, file.name);
+    }
+  }, [attachPath]);
+  const drop = useCallback((dropped: File[]) => { if (!dropToHost(dropped)) addFiles(dropped); }, [addFiles]);
   const removeFile = useCallback((key: string) => {
     setFiles(prev => {
       const found = prev.find(f => f.key === key);
@@ -119,10 +133,20 @@ export function App({compact = false}: {compact?: boolean}) {
   const busy = runs.some(r => r.status === 'running' || r.status === 'queued');
   const dialogOpen = !!drawer || accountOpen || logOpen || localOpen || settingsOpen;
   useEffect(() => { toHost({type: 'busy', busy}); }, [busy]);
+  // The button at the top of the screen acts out what the wizard on the page acts out.
+  const working = [...runs].reverse().find(r => r.status === 'running' || r.status === 'queued');
+  const activity = working ? wizardAnimation(working) : null;
+  useEffect(() => { if (activity) toHost({type: 'activity', animation: activity}); }, [activity]);
   useEffect(() => onHost(message => {
-    if (message.type === 'focus') setFocusTick(t => t + 1);
+    if (message.type === 'focus') { setFocusTick(t => t + 1); setEntering(true); }
     if (message.type === 'open-settings') setSettingsOpen(true);
-  }), []);
+    if (message.type === 'attach') addDropped(message.files);
+  }), [addDropped]);
+  useEffect(() => {
+    if (!entering) return;
+    const timer = setTimeout(() => setEntering(false), 700);
+    return () => clearTimeout(timer);
+  }, [entering, focusTick]);
   useEffect(() => {
     if (!compact) return;
     const keydown = (e: KeyboardEvent) => { if (e.key === 'Escape' && !dialogOpen && !e.defaultPrevented) toHost({type: 'hide'}); };
@@ -215,6 +239,7 @@ export function App({compact = false}: {compact?: boolean}) {
     <EvidenceDrawer conversationId={currentId} open={!!drawer} focus={drawer?.focus ?? null} items={drawer?.items ?? []} onClose={() => setDrawer(null)} />
     <LogDialog open={logOpen} onClose={() => setLogOpen(false)} />
     <LocalFilesDialog open={localOpen} onClose={() => setLocalOpen(false)} onPick={addLocal} />
+    <DropZone onDrop={drop} disabled={!!blocked || files.length >= 5} />
     <AccountDialog open={accountOpen} boot={boot} onClose={() => setAccountOpen(false)}
       onChanged={account => { setBoot(b => (b ? {...b, gemini_account: account} : b)); void loadBoot(); }} />
     {boot.settings_editable && <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} onSaved={() => void loadBoot()} />}
@@ -223,10 +248,10 @@ export function App({compact = false}: {compact?: boolean}) {
     ? <ModelPicker model={runtime.model} onChanged={() => void loadBoot()} onMore={() => setSettingsOpen(true)} /> : null;
 
   if (compact) return (
-    <div className="flex h-dvh w-screen flex-col overflow-hidden bg-page" data-testid="quick">
+    <div className={cn('flex h-dvh w-screen flex-col overflow-hidden bg-page', entering && 'panel-enter')} data-testid="quick">
       <QuickHeader boot={boot} title={title} conversationId={currentId} synthetic={synthetic} onNew={newChat} onAccount={() => setAccountOpen(true)}
         modelPicker={modelPicker} onSettings={boot.settings_editable ? () => setSettingsOpen(true) : undefined} />
-      {conversation(<QuickEmpty boot={boot} onAccount={() => setAccountOpen(true)} onPick={q => { if (!blocked) void ask(q); else setDraft(q); }} />)}
+      {conversation(<QuickEmpty boot={boot} greeting={focusTick} onAccount={() => setAccountOpen(true)} onPick={q => { if (!blocked) void ask(q); else setDraft(q); }} />)}
       {composer}
       {overlays}
     </div>

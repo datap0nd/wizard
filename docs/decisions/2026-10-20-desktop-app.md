@@ -81,6 +81,19 @@ service.
   - Its settings (`WIZARD_KB_PUBLISH_*`, `WIZARD_KB_READ_TOKEN`) are names the app never reads. They cannot switch the
     work PC's own Wizard away from its `content\` folder, and they can never travel in a company file.
 
+**Addendum (same day): files dropped on the button.** The owner asked that a file dropped on the Ask Wizard button be
+attached to the conversation.
+- **From this PC** reads only files in Downloads, Desktop and Documents. That limit keeps a page, or any local process
+  that can reach the loopback port, from having Wizard read arbitrary files.
+- A dropped file can come from anywhere: a shared drive, or an Outlook item with no file at all.
+  - WizardBar holds the control token, so it grants exactly the dropped paths through the control API
+    (`POST /internal/v1/desktop/drop`). The service checks each file's type and size at once.
+  - The page then attaches each one through the usual From-this-PC call: once, within ten minutes.
+  - The page itself cannot add grants. A file dropped on the page in the panel goes to WizardBar first, with the path
+    that WebView2 gives the host only.
+- Outlook attachments and messages are saved under the home folder's `dropped\`, which is removed after a day.
+- Files are still read where they are, so protected files work.
+
 **Consequences and residual risk.**
 - Anyone who uses a provisioned PC can recover the knowledge-base token, the synced notes and the PostgreSQL password:
   the app must read them, so they are on that PC. The owner accepted this.

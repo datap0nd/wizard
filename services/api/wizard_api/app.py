@@ -105,6 +105,10 @@ class LocalFileBody(Body):
     path: str = Field(min_length=3, max_length=1000)
 
 
+class DropBody(Body):
+    paths: list[str] = Field(min_length=1, max_length=5)
+
+
 class TitleBody(Body):
     title: str = Field(min_length=1, max_length=120)
 
@@ -919,6 +923,12 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         restarting = result.ok and bool(knowledge_status().get("restart_pending")) and restart_if_idle(0)
         return {"outcome": result.outcome, "message": result.message, "commit": result.commit, "restarting": restarting,
                 "knowledge_base": knowledge_status()}
+
+    @app.post("/internal/v1/desktop/drop")
+    def desktop_drop(request: Request, body: DropBody) -> dict[str, Any]:
+        """Files the person dropped on the button or the panel: the page may attach each once, from where it is."""
+        desktop_control(request)
+        return {"files": [manager.attachments.grant(path[:1000]) for path in body.paths]}
 
     @app.post("/internal/v1/desktop/stop")
     def desktop_stop(request: Request) -> dict[str, Any]:

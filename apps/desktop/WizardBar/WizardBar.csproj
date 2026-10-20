@@ -33,5 +33,6 @@
     <Reference Include="System.Net.Http" />
     <Reference Include="System.Web.Extensions" />
     <EmbeddedResource Include="..\assets\wizard.ico" LogicalName="WizardBar.wizard.ico" />
+    <EmbeddedResource Include="..\assets\wizard-sprite.png" LogicalName="WizardBar.wizard-sprite.png" />
   </ItemGroup>
 </Project>
