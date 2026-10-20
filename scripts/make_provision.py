@@ -2,8 +2,8 @@
 
   uv run python scripts/make_provision.py company.env --name "ACME pilot" --out wizard.provision
 
-`company.env` holds KEY=value lines, kept outside every Git repository (it has the knowledge-base token and the read-only
-PostgreSQL password), for example:
+`company.env` holds KEY=value lines, kept outside every Git repository (it has the knowledge-base token, the read-only
+PostgreSQL password and Metronome's Wizard key), for example:
 
   WIZARD_KB_REPO=acme/wizard-content          the private knowledge-base repository
   WIZARD_KB_TOKEN=github_pat_...              fine-grained token: that repository only, Contents: read-only
@@ -11,6 +11,8 @@ PostgreSQL password), for example:
   WIZARD_PG_HOST=... WIZARD_PG_PORT=5432 WIZARD_PG_DATABASE=... WIZARD_PG_USER=wizard_ro WIZARD_PG_PASSWORD=...
   GOOGLE_CLOUD_PROJECT=...                    the organisation's Gemini project
   WIZARD_GOOGLE_DOMAINS=company.com           only company Google accounts may link for Gemini
+  WIZARD_METRONOME_URL=http://10.0.0.5:8000   Metronome, for recurring extractions emailed as Flows of its Wizard user
+  WIZARD_METRONOME_CLIENT_KEY=wizard-...      printed by scripts/metronome_link.py on the Metronome host PC
 
 Put the output next to WizardSetup.exe: setup imports it, and Wizard deletes the plaintext copy after importing. Anyone
 with the file has these credentials, so share it only inside the company."""

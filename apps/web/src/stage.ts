@@ -7,6 +7,7 @@ export const WIZARD = 'wizard';
 export function moduleOf(name: string | undefined): string {
   const tool = name ?? '';
   if (tool === 'wizard_query_postgresql') return 'postgresql';
+  if (tool === 'wizard_schedule_extraction') return 'metronome';
   if (/^wizard_(lookup_definitions|browse_knowledge|read_knowledge)$/.test(tool)) return 'knowledge';
   if (/^wizard_(read|query)_attachment$/.test(tool)) return 'attachment';
   const system = tool.match(/^([a-z0-9]+)_(search_reports|get_report_schema|run_report)$/);
@@ -72,7 +73,8 @@ function stats(id: string, calls: TimelineItem[]): ModuleStats {
   return {id, calls, running, errors, rows, notes, state};
 }
 
-const NAMES: Record<string, string> = {postgresql: 'AI Team Database', knowledge: 'Knowledge base', attachment: 'Attached files'};
+const NAMES: Record<string, string> = {postgresql: 'AI Team Database', knowledge: 'Knowledge base', attachment: 'Attached files',
+  metronome: 'Metronome'};
 
 /** Everything the stage shows, derived only from what the run actually did. */
 export function stageModel(run: RunView, systems: SystemInfo[]): StageModel {
@@ -85,11 +87,12 @@ export function stageModel(run: RunView, systems: SystemInfo[]): StageModel {
   const listed = systems.filter(s => s.kind !== 'files' || byModule.has(s.id));
   const extra = Array.from(byModule.keys()).filter(id => id !== WIZARD && !listed.some(s => s.id === id))
     .map(id => {
-      const named = byModule.get(id)!.find(c => c.evidence?.system_name)?.evidence?.system_name;
+      const calls = byModule.get(id)!;
+      const named = id === 'metronome' ? undefined : calls.find(c => c.evidence?.system_name)?.evidence?.system_name;
       return {id, name: named ?? NAMES[id] ?? id.toUpperCase(), kind: id === 'postgresql' ? 'database' : id === 'knowledge'
-        ? 'knowledge' : id === 'attachment' ? 'files' : 'reports'} as SystemInfo;
+        ? 'knowledge' : id === 'attachment' ? 'files' : id === 'metronome' ? 'schedules' : 'reports'} as SystemInfo;
     });
-  const order = (s: SystemInfo) => ({database: 0, reports: 1, knowledge: 2, files: 3})[s.kind] ?? 4;
+  const order = (s: SystemInfo) => ({database: 0, reports: 1, knowledge: 2, files: 3, schedules: 4})[s.kind] ?? 5;
   const modules = [...listed, ...extra].sort((a, b) => order(a) - order(b))
     .map(s => ({...s, stats: stats(s.id, byModule.get(s.id) ?? [])}));
   const active = [...tools].reverse().find(t => t.state === 'running') ?? null;

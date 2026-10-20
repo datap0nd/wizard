@@ -3,7 +3,81 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-20 (latest) — No model picker: Gemini 3.8 Flash for everyone
+## 2026-10-20 (latest) — Recurring extractions in Metronome, owned by its Wizard user; Metronome and Orchestra logos
+
+The owner asked for Metronome as a module: at the end of an answer, or in the question, a person can make an extraction
+recurring. Gemini asks who receives it and when, and a Metronome Flow emails the table on that schedule. Every Flow
+belongs to a Metronome user named **Wizard**, which the owner creates. Only Wizard changes.
+[Decision](decisions/2026-10-20-metronome-recurring-extractions.md); AGENTS.md lists it as the second owner exception.
+
+**How it works.**
+- **Starting it.** **Make recurring** appears under a finished answer that queried the database, when Metronome is
+  connected. It starts a follow-up run (`kind: recurring`) whose request tells Gemini what the person wants. Saying it
+  in a question works the same way.
+- **The tool.** `wizard_schedule_extraction` (`category: present`; Wizard declares 21 tools) checks:
+  - the PostgreSQL right;
+  - one statement (`postgres_query.one_statement`, sharing the scanner of `without_terminator`);
+  - the recipients: at most 20, in `WIZARD_GOOGLE_DOMAINS`, else the requester's own domain;
+  - the schedule: daily, weekly on given days, or monthly on a day, at a time on Metronome's Dubai clock.
+
+  It then test-runs the query read-only (`LIVE` evidence) and stores a proposal `R1`, `R2`, …. The answer shows it as
+  a card: when, to whom, the file, the owner (Metronome user Wizard), the query and the test run.
+- **The click.** **Create in Metronome** (`POST /api/v1/schedules/{id}/create`) is the only path to Metronome
+  (`wizard_api/metronome_client.py`, reached directly on the office network):
+  1. `GET /api/me` with Wizard's key must name the Wizard user;
+  2. the generated script is uploaded (`POST /api/flows/transform-script?target=python`);
+  3. `POST /api/flows` creates an active Python-script Flow ("Produce a file"): Excel or CSV, the email step with the
+     recipients, the schedule, and `owner_person_id` set to the Wizard user.
+
+  The proposal moves to `creating` first, so a second click creates nothing. A refusal can be tried again. A
+  timeout or 5xx becomes `uncertain` and is never resent. The click is audited (`metronome:create_flow`).
+- **The script** (`wizard_connectors/metronome.py`) runs on Metronome's worker with Metronome's own Python. It holds
+  the query and its SHA-256 and runs it as a subquery in a READ ONLY session and transaction that is rolled back. It
+  writes at most 100,000 rows. It uses `WIZARD_EXTRACT_PG*` or Metronome's `PG*` scanner account, never `DG_UPLOAD_PG*`.
+- **Linking.** Metronome has no API tokens: a caller is the person its `X-Client-Key` is signed in as.
+  `scripts/metronome_link.py` (standard library only) runs once on the Metronome host PC. It makes a key, signs it in
+  as Wizard and prints it.
+- **Settings.** `WIZARD_METRONOME_URL`, `WIZARD_METRONOME_CLIENT_KEY` (DPAPI), `WIZARD_METRONOME_USER` (default
+  `Wizard`). They are in the provisioning file and in Settings → Metronome, which has **Test connection**.
+- **Logos.** The systems stage shows Metronome, with Metronome's own metronome logo in its teal, while Gemini prepares
+  a schedule. Orchestra, a platform documented in the knowledge base, gets its blue-violet sound-wave tile, by id or by
+  name.
+
+**Tests.**
+- `tests/unit/test_metronome.py`, against a fake Metronome with its real ownership and sign-in rules:
+  - settings;
+  - recipient and schedule rules;
+  - the Flow definition;
+  - the client: created as Wizard; a key signed in as nobody, or as someone else, creates nothing; timeout and 5xx are
+    uncertain, 409 is not;
+  - the generated script run as Metronome runs it, with fake psycopg2 and openpyxl: a read-only session, CSV and
+    Excel, the row cap, a changed query and a missing account refused, the dedicated account preferred over the
+    scanner and never the uploader;
+  - the link script against a local HTTP server.
+- `tests/unit/test_schedule_tool.py`: rights, refusals before any query, domains, evidence and the proposal.
+- `tests/integration/test_schedules_api.py`:
+  - a scripted model proposes a schedule, and the card streams;
+  - the click creates one Flow as Wizard;
+  - retry, uncertain and dismiss;
+  - another user gets 404;
+  - Make recurring's prompt;
+  - Settings' Test connection.
+- Web: the card's states, the button's conditions, the stage and both logos.
+
+**Results.** `verify_all.sh --allow-blocked=live-parity`, run as CI does (`CI=1`, a local PostgreSQL 16 for the postgres layer, Gemini CLI 0.62 in `.tools`):
+- spec, secrets, contracts, lint and types: pass;
+- Python: 349 passed, 5 skipped;
+- PostgreSQL 16: 10 passed;
+- web unit: 32 passed; web types, web-dist and web build: pass;
+- browser E2E: 16 passed;
+- live-parity: BLOCKED, as allowed (it needs live sources).
+
+The real-CLI layer first failed on its pinned count of 20 tools; with 21 its 4 tests pass, including the CLI accepting every tool's schema. `tool-catalog.json`, `openapi.json` and `run-event.schema.json` (`schedule_proposed`) were regenerated and reviewed.
+
+**Not yet run against the real Metronome.** The first real use is on the work PC, after the owner creates the Wizard
+user and runs `metronome_link.py`.
+
+## 2026-10-20 (later still) — No model picker: Gemini 3.8 Flash for everyone
 
 The owner asked to remove the model picker again and default to Gemini 3.8 Flash.
 - **Removed:**

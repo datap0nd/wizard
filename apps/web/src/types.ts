@@ -55,6 +55,8 @@ export interface Bootstrap {
   /** The person at this PC may change its settings (their own install). */
   settings_editable?: boolean;
   systems?: SystemInfo[];
+  /** Recurring extractions in Metronome: whether this person can set them up, and the Metronome user that owns them. */
+  metronome?: {enabled: boolean; user: string | null};
 }
 
 export type SettingSource = 'environment' | 'env_file' | 'this_pc' | 'company' | 'default';
@@ -179,10 +181,39 @@ export interface CheckResult { overall: 'CHECKED' | 'DISCREPANCY' | 'NOT_VERIFIA
 
 export interface RunEvent { seq: number; type: string; ts: string; payload: Record<string, any> }
 
+export type RunKind = 'ask' | 'check' | 'recurring';
+
+/** A recurring extraction Gemini proposed (R1, R2...). Only the person's click creates it in Metronome, where the Flow
+ *  belongs to Metronome's Wizard user. */
+export interface Schedule {
+  id: string;
+  label: string;
+  run_id: string;
+  status: 'proposed' | 'creating' | 'created' | 'failed' | 'uncertain' | 'dismissed';
+  title: string;
+  sql: string;
+  database: string | null;
+  recipients: string[];
+  frequency: 'daily' | 'weekly' | 'monthly';
+  time: string;
+  days: string[];
+  day_of_month: number | null;
+  file_format: 'xlsx' | 'csv';
+  subject: string | null;
+  schedule_text: string;
+  evidence_id: string;
+  metronome_user: string;
+  requested_by: {name: string | null};
+  created_at: string;
+  preview: {columns: string[]; rows: (string | number | null)[][]; rows_in_test: number; more: boolean};
+  flow: {id: number | null; name: string; owner: string; enabled: boolean | null; next_run_at: string | null; url: string} | null;
+  error: string | null;
+}
+
 export interface RunRecord {
   id: string;
   conversation_id: string;
-  kind: 'ask' | 'check';
+  kind: RunKind;
   question: string;
   status: RunStatus;
   runtime: RuntimeKind;
@@ -203,6 +234,7 @@ export interface RunRecord {
   visuals: Visual[];
   evidence: EvidenceSummary[];
   attachments?: Attachment[];
+  schedules?: Schedule[];
   active: boolean;
 }
 
@@ -226,7 +258,7 @@ export interface TimelineItem {
 export interface SystemInfo {
   id: string;
   name: string;
-  kind: 'reports' | 'database' | 'knowledge' | 'files';
+  kind: 'reports' | 'database' | 'knowledge' | 'files' | 'schedules';
   data_mode?: DataMode;
   notes?: number;
 }
@@ -234,7 +266,7 @@ export interface SystemInfo {
 export interface RunView {
   id: string;
   conversationId: string;
-  kind: 'ask' | 'check';
+  kind: RunKind;
   question: string;
   status: RunStatus;
   runtime: RuntimeKind;
@@ -257,6 +289,8 @@ export interface RunView {
   lastSeq: number;
   /** Files sent with this question (F1, F2...). */
   attachments: Attachment[];
+  /** Recurring extractions proposed in this answer, with their current state. */
+  schedules: Schedule[];
   createdAt: string;
   /** Server time the agent started (run_started), the zero point for each step's start time. */
   startedAt: string | null;
@@ -271,7 +305,7 @@ export interface Report {
   created_at: string;
   expires_at: string;
   question: string;
-  kind: 'ask' | 'check';
+  kind: RunKind;
   answer: string;
   notes: string[];
   visuals: Visual[];

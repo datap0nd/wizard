@@ -58,6 +58,20 @@ def call_signature(name: str, args: dict[str, Any]) -> str:
     return name + json.dumps(squeeze(args), sort_keys=True, default=str)
 
 
+# What a run that is not a typed question stands for in the conversation, the report and the next prompt.
+KIND_TITLES = {"check": "Check my data", "recurring": "Make this recurring"}
+
+
+def run_title(kind: str, question: str) -> str:
+    return KIND_TITLES.get(kind, question)
+
+
+def public_schedule(schedule: dict[str, Any]) -> dict[str, Any]:
+    """A recurring-extraction proposal as the page shows it (who asked is the viewer; never their user id)."""
+    shown = {k: v for k, v in schedule.items() if k not in ("requested_by", "conversation_id")}
+    return {**shown, "requested_by": {"name": schedule.get("requested_by", {}).get("name")}}
+
+
 class Busy(Exception):
     pass
 
@@ -126,6 +140,10 @@ class Recorder:
         self.store.add_check(self.run.id, payload)
         self.run.checks.append(payload)
 
+    def add_schedule(self, payload: dict[str, Any]) -> str:
+        _, label = self.store.add_schedule(self.run.conversation_id, self.run.id, self.run.identity.id, payload)
+        return label
+
 
 class Bridge:
     def __init__(self, manager: RunManager, run: ActiveRun):
@@ -164,6 +182,7 @@ def tool_label(name: str, args: dict[str, Any], services: Services) -> str:
             "wizard_query_postgresql": f"Queried the {services.postgres_name}",
             "wizard_calculate": f"Calculated {str(args.get('expression', ''))[:80]}",
             "wizard_render_visual": f"Prepared a {args.get('kind', 'visual')}: {args.get('title', '')}",
+            "wizard_schedule_extraction": f"Prepared a recurring email in Metronome: {args.get('title', '')}",
             "wizard_check_my_data": f"Checked {len(args.get('claims', []))} figure(s) against the evidence"}.get(name, name)
 
 
@@ -171,6 +190,8 @@ def tool_summary(name: str, outcome: ToolOutcome) -> str:
     if not outcome.ok:
         return f"{outcome.error_code}: {outcome.error_message}"
     data = outcome.data
+    if "schedule" in data:
+        return f"{data['schedule']} waiting for your confirmation · {data['sends']}"
     if name.endswith("_run_report"):
         extra = f" of {data['total_rows']}" if data.get("truncated") else ""
         as_of = f" · as of {str(data.get('as_of'))[:10]}" if data.get("as_of") else ""
@@ -341,6 +362,9 @@ class RunManager:
         if outcome.ok and "visual_id" in outcome.data:
             visual = self.store.visuals(run.conversation_id, run.id)[-1]
             await self.emit(run, "visual_added", {"visual": visual})
+        if outcome.ok and "schedule" in outcome.data:
+            schedule = next(s for s in self.store.schedules(run.conversation_id, run.id) if s["label"] == outcome.data["schedule"])
+            await self.emit(run, "schedule_proposed", {"schedule": public_schedule(schedule)})
         if outcome.ok and name == "wizard_check_my_data":
             await self.emit(run, "check_result", {"overall": outcome.data["overall"], "summary": outcome.data["summary"],
                                                   "claims": outcome.data["claims"], "replays": outcome.data["replays"]})
@@ -380,7 +404,7 @@ class RunManager:
         turns = []
         for previous in self.store.runs(run.conversation_id):
             if previous["id"] != run.id and previous["status"] == "succeeded" and previous.get("answer"):
-                turns.append(Turn(previous["question"] if previous["kind"] == "ask" else "Check my data", previous["answer"]))
+                turns.append(Turn(run_title(previous["kind"], previous["question"]), previous["answer"]))
         return turns
 
     async def _execute(self, run: ActiveRun) -> None:
@@ -463,7 +487,7 @@ class RunManager:
         report = {
             "id": report_id, "run_id": run.id, "conversation_id": run.conversation_id, "user_id": run.identity.id,
             "user": {"name": run.identity.name, "role": run.identity.role}, "created_at": created,
-            "question": run.question if run.kind == "ask" else "Check my data", "kind": run.kind,
+            "question": run_title(run.kind, run.question), "kind": run.kind,
             "parent_run_id": run.parent_run_id, "answer": answer, "notes": run.notes, "visuals": visuals,
             "evidence": evidence, "uncited_evidence": [e for e in run.evidence_ids if e not in cited],
             "data_mode": data_mode, "data_modes": modes,

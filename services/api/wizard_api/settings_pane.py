@@ -1,5 +1,5 @@
 """The settings pane: the company settings a person may change on their own PC (Gemini model and project, the knowledge
-base, the read-only database, the proxy), where each value comes from, saving, and connection tests.
+base, the read-only database, Metronome, the proxy), where each value comes from, saving, and connection tests.
 
 Values are saved to this PC's store (provisioning.update_local; secrets through the SecretBox). A key that the PC's .env
 also sets is removed from .env on save, so the new value applies and no password stays there in plain text. A key set
@@ -17,11 +17,14 @@ from typing import Any
 import httpx
 
 from wizard_agent import outbound
+from wizard_connectors.metronome import MetronomeConfigError
+from wizard_connectors.metronome import settings_from as metronome_settings
 from wizard_connectors.pg import PgError, PgSettings
 from wizard_connectors.pg import settings_from as pg_settings
 
 from . import knowledge_sync, provisioning
 from .config import ConfigError, Settings, load_settings, read_env_file
+from .metronome_client import MetronomeClient
 
 
 @dataclass(frozen=True)
@@ -42,6 +45,8 @@ SECTIONS = [
     ("gemini", "Gemini", "The model answers under your own Google sign-in."),
     ("knowledge", "Knowledge base", "The private GitHub repository Wizard reads its company notes from."),
     ("postgres", "Company database", "A read-only PostgreSQL account for Gemini's SQL questions."),
+    ("metronome", "Metronome", "Recurring extractions: Metronome emails a table on a schedule, as Flows owned by its "
+                               "Wizard user."),
     ("network", "Network", "Only if Wizard cannot reach Google or GitHub on its own."),
 ]
 FIELDS = [
@@ -62,6 +67,11 @@ FIELDS = [
     Field("WIZARD_PG_PASSWORD", "Password", "postgres"),
     Field("WIZARD_PG_SSLMODE", "SSL", "postgres", "", "prefer",
           ("disable", "prefer", "require", "verify-ca", "verify-full")),
+    Field("WIZARD_METRONOME_URL", "Address", "metronome", "Metronome on the office network.", "http://10.0.0.5:8000"),
+    Field("WIZARD_METRONOME_CLIENT_KEY", "Wizard's key", "metronome",
+          "Signed in to Metronome as the Wizard user; scripts/metronome_link.py makes one on the Metronome host PC."),
+    Field("WIZARD_METRONOME_USER", "Metronome user", "metronome", "Every Flow Wizard creates belongs to this user.",
+          "Wizard"),
     Field("WIZARD_PROXY", "Proxy", "network", "http://host:port, or direct. Empty: the Windows proxy settings.", ""),
 ]
 BY_KEY = {f.key: f for f in FIELDS}
@@ -217,6 +227,19 @@ def test_knowledge(settings: Settings, proposed: dict[str, Any],
                                    token)
     result = knowledge_sync.check(source, proxy=values.get("WIZARD_PROXY") or settings.proxy, transport=transport)
     return {"ok": result.ok, "message": result.message}
+
+
+def test_metronome(settings: Settings, proposed: dict[str, Any],
+                   transport: httpx.BaseTransport | None = None) -> dict[str, Any]:
+    values = _candidate(settings, proposed)
+    try:
+        target = metronome_settings(values.get("WIZARD_METRONOME_URL"), values.get("WIZARD_METRONOME_CLIENT_KEY"),
+                                    values.get("WIZARD_METRONOME_USER"))
+    except MetronomeConfigError as error:
+        return {"ok": False, "message": str(error)}
+    if target is None:
+        return {"ok": False, "message": "Fill in Metronome's address and Wizard's key."}
+    return MetronomeClient(target, transport).check()
 
 
 RELEASE = "https://github.com/datap0nd/wizard/releases/download/desktop-continuous/"

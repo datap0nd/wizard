@@ -87,6 +87,8 @@ WIZARD_PG_SSLMODE=prefer
 GOOGLE_CLOUD_PROJECT=your-gemini-project
 WIZARD_GOOGLE_DOMAINS=company.com
 WIZARD_GEMINI_MODEL=gemini-3.8-flash
+WIZARD_METRONOME_URL=http://metronome-host:8000
+WIZARD_METRONOME_CLIENT_KEY=wizard-...
 ```
 
 ```powershell
@@ -99,6 +101,27 @@ publishing set-up. Names ending in `_PASSWORD`, `_TOKEN`, `_SECRET` or `_KEY` ar
 
 The PostgreSQL account must be **read-only by its grants** (SELECT on the views Wizard may use, nothing else). Everyone
 who has the file can use it, also outside Wizard.
+
+### 4. Metronome, for recurring extractions (optional)
+
+People can have a table Wizard found emailed to them on a schedule: they press **Make recurring** under an answer, or ask
+for it, answer Gemini's questions (who, how often, what time) and press **Create in Metronome** on the card Wizard shows.
+Metronome then runs the query and emails the file. Every Flow belongs to Metronome's **Wizard** user, never to the person
+who asked ([decision](decisions/2026-10-20-metronome-recurring-extractions.md)).
+
+1. In Metronome, on the host PC, open **Users** and add a user named `Wizard` (role BI). Give it the email that should
+   receive Metronome's failure alerts for these Flows.
+2. On the Metronome host PC, run `python metronome_link.py` with Metronome's own Python (copy
+   [scripts/metronome_link.py](../scripts/metronome_link.py) there; it needs only the standard library). It signs a new
+   key in as `Wizard` and prints `WIZARD_METRONOME_CLIENT_KEY=...`. Metronome has no API tokens: it knows a caller by
+   this key, so keep it like a password.
+3. Put that key and Metronome's address on the office network in `company.env` (above) and make the provisioning file
+   again, or set them on one PC in **Settings → Metronome** and press **Test connection**.
+
+The query runs on Metronome's worker under Metronome's read-only `PG*` scanner account, or under a dedicated read-only
+account if Metronome's `.env` sets `WIZARD_EXTRACT_PGHOST`, `WIZARD_EXTRACT_PGUSER`, `WIZARD_EXTRACT_PGPASSWORD` (and
+`_PGPORT`, `_PGDATABASE`, `_PGSSLMODE`). Recipients must be in `WIZARD_GOOGLE_DOMAINS`. Pause or delete a Flow in
+Metronome's **Flows**.
 
 ## The button and the panel
 

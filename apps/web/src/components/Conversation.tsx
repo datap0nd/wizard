@@ -3,7 +3,7 @@ import {ArrowDown} from 'lucide-react';
 import {Button} from './ui/button';
 import {SentFiles} from './Attachments';
 import {RunCard} from './RunCard';
-import type {RunView} from '@/types';
+import type {RunView, Schedule} from '@/types';
 
 interface Props {
   runs: RunView[];
@@ -15,6 +15,9 @@ interface Props {
   onRetry: (run: RunView) => void;
   onFeedback: (run: RunView, category: string) => void;
   onEmail: (run: RunView) => void;
+  onRecurring?: (run: RunView) => void;
+  onSchedule?: (run: RunView, schedule: Schedule, action: 'create' | 'dismiss') => void;
+  canRecur?: boolean;
 }
 
 /** Questions and answers. New output scrolls into view only while the reader follows the latest turn (B2B behaviour). */
@@ -40,7 +43,7 @@ export function Conversation({runs, empty, ...handlers}: Props) {
           {runs.length === 0 && empty}
           {runs.map(run => (
             <article key={run.id} className="flex flex-col gap-3" data-testid="turn">
-              {run.kind === 'ask' && <div className="flex flex-col items-end gap-1.5">
+              {run.kind !== 'check' && <div className="flex flex-col items-end gap-1.5">
                 <p className="max-w-[760px] whitespace-pre-wrap rounded-2xl bg-accent-soft px-4 py-2.5 text-[15px]" data-testid="user-turn">{run.question}</p>
                 <SentFiles files={run.attachments} />
               </div>}

@@ -12,7 +12,7 @@ const SOURCES: Record<string, string> = {
   environment: 'Set by an environment variable (locked)', env_file: 'From the .env file', this_pc: 'Set on this PC',
   company: 'From the company settings file', default: 'Default',
 };
-const TESTS: Record<string, 'postgres' | 'knowledge'> = {knowledge: 'knowledge', postgres: 'postgres'};
+const TESTS: Record<string, 'postgres' | 'knowledge' | 'metronome'> = {knowledge: 'knowledge', postgres: 'postgres', metronome: 'metronome'};
 
 type Draft = Record<string, string | null>;
 type Result = {ok: boolean; message: string} | null;
@@ -74,7 +74,7 @@ export function SettingsDialog({open, onClose, onSaved}: {open: boolean; onClose
     } finally { setSaving(false); }
   }
 
-  async function runTest(section: 'postgres' | 'knowledge') {
+  async function runTest(section: 'postgres' | 'knowledge' | 'metronome') {
     setTests(t => ({...t, [section]: 'running'}));
     const values = Object.fromEntries(Object.entries(draft).filter(([k]) => view?.fields.find(f => f.key === k)?.section === section));
     try { const result = await api.testSettings(section, values); setTests(t => ({...t, [section]: result})); }

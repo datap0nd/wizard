@@ -66,4 +66,7 @@ flowchart TD
 ## What is deliberately absent
 
 An intent router, a fixed tool order, a mandatory verifier, a deterministic ranking engine, write or export tools,
-browser-cookie connectors, and any shared Gemini login. See [AGENTS.md](../AGENTS.md).
+browser-cookie connectors, and any shared Gemini login. See [AGENTS.md](../AGENTS.md). The one path to another system's
+data is the person's own click: **Create in Metronome** on a recurring-extraction card Gemini proposed creates a Flow
+owned by Metronome's Wizard user (`wizard_api/metronome_client.py`,
+[decision](decisions/2026-10-20-metronome-recurring-extractions.md)).

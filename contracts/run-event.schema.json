@@ -10,8 +10,8 @@
     "seq": {"type": "integer", "minimum": 1},
     "ts": {"type": "string"},
     "type": {"enum": ["run_started", "status", "agent_session", "text_delta", "note", "model_tool_trace", "tool_started",
-                      "tool_finished", "visual_added", "check_result", "warning", "agent_stats", "diagnostic",
-                      "run_finished", "run_failed"]},
+                      "tool_finished", "visual_added", "check_result", "schedule_proposed", "warning", "agent_stats",
+                      "diagnostic", "run_finished", "run_failed"]},
     "payload": {"type": "object"}
   },
   "allOf": [

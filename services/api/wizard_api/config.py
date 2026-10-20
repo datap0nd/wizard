@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from wizard_connectors.metronome import MetronomeConfigError, MetronomeSettings
+from wizard_connectors.metronome import settings_from as metronome_settings
 from wizard_connectors.paths import FIXTURES, ROOT
 from wizard_connectors.pg import PgError, PgSettings
 from wizard_connectors.pg import settings_from as pg_settings
@@ -111,7 +113,10 @@ class Settings:
     kb_token: str | None = None
     kb_sync_minutes: int = 30
     # Google accounts allowed to link for Gemini (company domains); empty: any account that matches the user's email rule.
+    # Also the only domains a recurring extraction may be emailed to (else the requester's own).
     google_domains: list[str] = field(default_factory=list)
+    # Metronome, which runs recurring extractions as Flows owned by its Wizard user (WIZARD_METRONOME_*); None = not set.
+    metronome: MetronomeSettings | None = None
     # Names (never values) of what the provisioning file set, for readiness views.
     provision: dict[str, Any] = field(default_factory=dict)
     # A work-PC or desktop install folder (run.py --home) and its .env: the settings pane edits only such installs.
@@ -283,6 +288,11 @@ def load_settings(env: dict[str, str] | None = None, env_file: Path | None = Non
         settings.content_dir = knowledge_sync.active_content(data_dir, kb_source(settings))
     domains = get("WIZARD_GOOGLE_DOMAINS", "") or ""
     settings.google_domains = sorted({d.strip().lower().lstrip("@") for d in domains.split(",") if d.strip()})
+    try:
+        settings.metronome = metronome_settings(get("WIZARD_METRONOME_URL"), get("WIZARD_METRONOME_CLIENT_KEY"),
+                                                get("WIZARD_METRONOME_USER"))
+    except MetronomeConfigError as error:
+        raise ConfigError(str(error)) from None
     if settings.auth_mode == "trusted-header" and settings.runtime != "replay" and not settings.public_origin:
         raise ConfigError("WIZARD_PUBLIC_ORIGIN is required behind a corporate SSO proxy")
     settings.session_secret = _session_secret(data_dir)

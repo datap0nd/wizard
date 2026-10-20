@@ -30,6 +30,7 @@ describe('the systems stage', () => {
     expect(moduleOf('wizard_query_attachment')).toBe('attachment');
     expect(moduleOf('wizard_calculate')).toBe('wizard');
     expect(moduleOf('wizard_search_catalog')).toBe('wizard');
+    expect(moduleOf('wizard_schedule_extraction')).toBe('metronome');
   });
 
   it('shows what each call looked for, from its own arguments', () => {
@@ -64,6 +65,16 @@ describe('the systems stage', () => {
     const model = stageModel(run([tool('1', 'gscm_run_report', 'error')], 'failed'), SYSTEMS);
     expect(model.modules.find(m => m.id === 'gscm')).toMatchObject({name: 'GSCM', kind: 'reports'});
     expect(model.modules.find(m => m.id === 'gscm')!.stats.state).toBe('error');
+  });
+
+  it('shows Metronome, by its own name, while Gemini prepares a recurring email', () => {
+    const scheduled = tool('1', 'wizard_schedule_extraction', 'ok', {evidence: {...evidence('E1', 'postgresql', 20),
+      system_name: 'AI Team Database'}});
+    const model = stageModel(run([scheduled], 'succeeded'), SYSTEMS);
+    const metronome = model.modules.find(m => m.id === 'metronome')!;
+    expect(metronome).toMatchObject({name: 'Metronome', kind: 'schedules'});
+    expect(metronome.stats.calls).toHaveLength(1);
+    expect(model.modules.at(-1)!.id).toBe('metronome');
   });
 
   it('awards only badges the finished run earned', () => {

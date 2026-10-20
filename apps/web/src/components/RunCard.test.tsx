@@ -4,7 +4,8 @@ import {RunCard} from './RunCard';
 import {beam, layout, SystemsContext} from './SystemsStage';
 import {TooltipProvider} from './ui/menu';
 import {applyEvent, emptyRun} from '@/runState';
-import type {RunEvent} from '@/types';
+import type {RunEvent, RunView, Schedule} from '@/types';
+import {brand, SystemLogo} from './SystemLogo';
 
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
@@ -132,5 +133,91 @@ describe('the wizard on the stage', () => {
         expect(Math.abs(a.y - b.y) >= 100 || Math.abs(a.x - b.x) >= l.nodeWidth).toBe(true);
       }
     }
+  });
+});
+
+const SCHEDULE: Schedule = {
+  id: 'sch_1', label: 'R1', run_id: 'run_1', status: 'proposed', title: 'Weekly sell-out by market',
+  sql: 'SELECT market, sum(units) FROM bi_reporting.sell_out GROUP BY 1', database: null,
+  recipients: ['rafael@corp.test', 'cfo@corp.test'], frequency: 'weekly', time: '08:00', days: ['monday'], day_of_month: null,
+  file_format: 'xlsx', subject: null, schedule_text: 'Every Monday at 08:00 (Dubai time)', evidence_id: 'E2',
+  metronome_user: 'Wizard', requested_by: {name: 'Rafael'}, created_at: '2026-10-20T09:00:00Z',
+  preview: {columns: ['market', 'units'], rows: [['EG', 12]], rows_in_test: 1, more: false}, flow: null, error: null,
+};
+
+function answered(extra: Partial<RunView> = {}): RunView {
+  return {...emptyRun('run_1', 'cnv_1', 'Sell-out by market last week'), status: 'succeeded', answer: 'EG led [E1].',
+    evidence: [{id: 'E1', system: 'postgresql', report_id: 'sql-1', report_name: 'SQL', data_mode: 'LIVE', as_of: null,
+      total_rows: 3, truncated: false, warnings: [], access_note: null}], ...extra};
+}
+
+function withHandlers(run: RunView, props: Partial<Parameters<typeof RunCard>[0]> = {}) {
+  return (
+    <TooltipProvider>
+      <RunCard run={run} onEvidence={noop} onCheck={noop} onCancel={noop} onRetry={noop} onFeedback={noop} onEmail={noop}
+        busy={false} {...props} />
+    </TooltipProvider>
+  );
+}
+
+describe('recurring emails', () => {
+  it('offers Make recurring under a database answer only when Metronome is connected', () => {
+    const onRecurring = vi.fn();
+    const {rerender} = render(withHandlers(answered(), {onRecurring, canRecur: true}));
+    fireEvent.click(screen.getByTestId('make-recurring'));
+    expect(onRecurring).toHaveBeenCalledOnce();
+    rerender(withHandlers(answered(), {onRecurring, canRecur: false}));
+    expect(screen.queryByTestId('make-recurring')).toBeNull();
+    rerender(withHandlers(answered({evidence: []}), {onRecurring, canRecur: true}));
+    expect(screen.queryByTestId('make-recurring')).toBeNull();
+    rerender(withHandlers(answered({schedules: [SCHEDULE]}), {onRecurring, canRecur: true}));
+    expect(screen.queryByTestId('make-recurring')).toBeNull();
+  });
+
+  it('shows the proposed schedule and leaves creating it to the person', () => {
+    const onSchedule = vi.fn();
+    let seq = 0;
+    const run = applyEvent(answered(), {seq: ++seq, type: 'schedule_proposed', ts: '2026-10-20T09:00:00Z', payload: {schedule: SCHEDULE}});
+    render(withHandlers(run, {onSchedule}));
+    const shown = screen.getByTestId('recurring-card');
+    expect(shown.dataset.status).toBe('proposed');
+    expect(shown.textContent).toContain('Every Monday at 08:00 (Dubai time)');
+    expect(shown.textContent).toContain('rafael@corp.test, cfo@corp.test');
+    expect(shown.textContent).toContain('Weekly sell-out by market <date>.xlsx (Excel)');
+    expect(shown.textContent).toContain('Metronome user Wizard');
+    expect(shown.textContent).toContain('Nothing is scheduled until you create it.');
+    expect(screen.getByTestId('recurring-sql').textContent).toBe(SCHEDULE.sql);
+    fireEvent.click(screen.getByTestId('recurring-create'));
+    expect(onSchedule).toHaveBeenCalledWith(run, SCHEDULE, 'create');
+    fireEvent.click(screen.getByTestId('recurring-dismiss'));
+    expect(onSchedule).toHaveBeenLastCalledWith(run, SCHEDULE, 'dismiss');
+  });
+
+  it('says where the Flow is once created, and never offers to resend an uncertain one', () => {
+    const created: Schedule = {...SCHEDULE, status: 'created', flow: {id: 41, name: 'Wizard · Weekly sell-out by market · for Rafael · a1',
+      owner: 'Wizard', enabled: true, next_run_at: '2026-10-26T04:00:00Z', url: 'http://metronome.corp:8000/'}};
+    const {rerender} = render(withHandlers(answered({schedules: [created]})));
+    expect(screen.getByTestId('recurring-status').textContent).toBe('Scheduled');
+    expect(screen.getByTestId('recurring-actions').textContent).toContain('Created in Metronome as Flow #41');
+    expect(screen.getByTestId('recurring-actions').textContent).toContain('owned by Wizard');
+    expect(screen.queryByTestId('recurring-create')).toBeNull();
+    rerender(withHandlers(answered({schedules: [{...SCHEDULE, status: 'uncertain', error: 'Metronome did not answer.'}]})));
+    expect(screen.getByRole('alert').textContent).toContain('Metronome did not answer.');
+    expect(screen.queryByTestId('recurring-create')).toBeNull();
+    rerender(withHandlers(answered({schedules: [{...SCHEDULE, status: 'failed', error: 'A flow with that name already exists.'}]})));
+    expect(screen.getByTestId('recurring-create').textContent).toBe('Try again');
+  });
+});
+
+describe('system logos', () => {
+  it('draws Metronome with its own logo and Orchestra with its wave, by id or by name', () => {
+    expect(brand('metronome').color).toBe('#0d7377');
+    expect(brand('orchestra')).toMatchObject({color: '#0125c4', deep: '#561ad4'});
+    expect(brand('orch', 'Orchestra')).toBe(brand('orchestra'));
+    expect(brand('wizard-ish', 'Wizard').icon).toBeNull();
+    const {container} = render(<><SystemLogo id="metronome" /><SystemLogo id="orchestra" /></>);
+    const [metronome, orchestra] = Array.from(container.querySelectorAll('svg'));
+    expect(metronome.querySelector('circle')).not.toBeNull();
+    expect(orchestra.querySelector('path')!.getAttribute('d')).toContain('M11.1 4.1v14.6');
   });
 });

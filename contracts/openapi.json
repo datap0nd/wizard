@@ -610,6 +610,131 @@
         }
       }
     },
+    "/api/v1/runs/{run_id}/recurring": {
+      "post": {
+        "summary": "Make Recurring",
+        "description": "Make recurring under an answer: a follow-up in which Gemini asks who receives the table and when.",
+        "operationId": "make_recurring_api_v1_runs__run_id__recurring_post",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Make Recurring Api V1 Runs  Run Id  Recurring Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/schedules/{schedule_id}/create": {
+      "post": {
+        "summary": "Create Schedule",
+        "description": "The person's confirmation: the only path from Wizard to Metronome. The Flow belongs to Metronome's Wizard\nuser. A proposal moves to `creating` before anything is sent, so a second click never creates a second Flow.",
+        "operationId": "create_schedule_api_v1_schedules__schedule_id__create_post",
+        "parameters": [
+          {
+            "name": "schedule_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Schedule Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Create Schedule Api V1 Schedules  Schedule Id  Create Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/schedules/{schedule_id}/dismiss": {
+      "post": {
+        "summary": "Dismiss Schedule",
+        "operationId": "dismiss_schedule_api_v1_schedules__schedule_id__dismiss_post",
+        "parameters": [
+          {
+            "name": "schedule_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Schedule Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Dismiss Schedule Api V1 Schedules  Schedule Id  Dismiss Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/runs/{run_id}": {
       "get": {
         "summary": "Get Run",
@@ -1698,7 +1823,8 @@
             "type": "string",
             "enum": [
               "postgres",
-              "knowledge"
+              "knowledge",
+              "metronome"
             ],
             "title": "Section"
           },

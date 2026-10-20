@@ -1,5 +1,6 @@
 """SQLite store for development and the restricted pilot: users, conversations, runs, run events, evidence, visuals,
-checks, dated reports, attached files, Gemini account links, audit log and evaluation feedback.
+checks, recurring-extraction proposals, dated reports, attached files, Gemini account links, audit log and evaluation
+feedback.
 
 SQLite is the development default, not an approved production database (Step 02/15 decide with IT). All reads are
 scoped by user id; there is no query that returns another user's conversation, run, evidence or report."""
@@ -48,6 +49,10 @@ CREATE TABLE IF NOT EXISTS attachments(id TEXT PRIMARY KEY, user_id TEXT NOT NUL
   label TEXT, filename TEXT, kind TEXT, bytes INTEGER, sha256 TEXT, origin TEXT, status TEXT, method TEXT, chars INTEGER,
   note TEXT, parts TEXT, modified TEXT, folder TEXT, source_path TEXT, created_at TEXT);
 CREATE INDEX IF NOT EXISTS attachments_conversation ON attachments(conversation_id);
+CREATE TABLE IF NOT EXISTS schedules(id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, label TEXT NOT NULL,
+  run_id TEXT NOT NULL, user_id TEXT NOT NULL, status TEXT NOT NULL, payload TEXT NOT NULL, flow TEXT, error TEXT,
+  created_at TEXT, updated_at TEXT);
+CREATE INDEX IF NOT EXISTS schedules_conversation ON schedules(conversation_id);
 """
 
 
@@ -199,6 +204,43 @@ class Store:
 
     def checks(self, run_id: str) -> list[dict[str, Any]]:
         return [json.loads(r["payload"]) for r in self._q("SELECT payload FROM checks WHERE run_id=? ORDER BY seq", (run_id,))]
+
+    # Recurring extractions: proposed by Gemini, created in Metronome only by the person's click -------------------------
+    @staticmethod
+    def _schedule(row: sqlite3.Row) -> dict[str, Any]:
+        return {**json.loads(row["payload"]), "id": row["id"], "label": row["label"], "run_id": row["run_id"],
+                "conversation_id": row["conversation_id"], "status": row["status"],
+                "flow": json.loads(row["flow"]) if row["flow"] else None, "error": row["error"],
+                "updated_at": row["updated_at"]}
+
+    def add_schedule(self, conversation_id: str, run_id: str, user_id: str, payload: dict[str, Any]) -> tuple[str, str]:
+        """(id, label): R1, R2... per conversation, like visuals."""
+        schedule_id, stamp = new_id("sch"), now()
+        with self.lock:
+            count = self.db.execute("SELECT COUNT(*) FROM schedules WHERE conversation_id=?", (conversation_id,)).fetchone()[0]
+            label = f"R{count + 1}"
+            self.db.execute("INSERT INTO schedules(id,conversation_id,label,run_id,user_id,status,payload,created_at,updated_at) "
+                            "VALUES(?,?,?,?,?,?,?,?,?)", (schedule_id, conversation_id, label, run_id, user_id, "proposed",
+                                                          json.dumps(payload), stamp, stamp))
+        return schedule_id, label
+
+    def schedules(self, conversation_id: str, run_id: str | None = None) -> list[dict[str, Any]]:
+        rows = self._q("SELECT * FROM schedules WHERE conversation_id=? AND (? IS NULL OR run_id=?) "
+                       "ORDER BY CAST(substr(label,2) AS INTEGER)", (conversation_id, run_id, run_id))
+        return [self._schedule(r) for r in rows]
+
+    def schedule(self, user_id: str, schedule_id: str) -> dict[str, Any] | None:
+        rows = self._q("SELECT s.* FROM schedules s JOIN conversations c ON c.id=s.conversation_id "
+                       "WHERE s.id=? AND s.user_id=? AND c.deleted_at IS NULL", (schedule_id, user_id))
+        return self._schedule(rows[0]) if rows else None
+
+    def move_schedule(self, schedule_id: str, status: str, expect: tuple[str, ...], *, flow: dict[str, Any] | None = None,
+                      error: str | None = None) -> bool:
+        """Change a proposal's status only from one of `expect`, so two clicks never both reach Metronome."""
+        marks = ",".join("?" * len(expect))
+        return self._x(f"UPDATE schedules SET status=?, flow=COALESCE(?, flow), error=?, updated_at=? "  # noqa: S608
+                       f"WHERE id=? AND status IN ({marks})",
+                       (status, json.dumps(flow) if flow else None, error, now(), schedule_id, *expect)) == 1
 
     # Reports -----------------------------------------------------------------------------------------------------------
     def save_report(self, report: dict[str, Any], retention_days: int) -> None:

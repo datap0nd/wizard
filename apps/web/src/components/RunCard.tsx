@@ -1,5 +1,5 @@
 import {memo, useEffect, useState} from 'react';
-import {AlertTriangle, ExternalLink, Flag, Link2, ListTree, Mail, RotateCcw, ShieldCheck, Square} from 'lucide-react';
+import {AlertTriangle, CalendarClock, ExternalLink, Flag, Link2, ListTree, Mail, RotateCcw, ShieldCheck, Square} from 'lucide-react';
 import {placedVisuals} from '@/citations';
 import {clock, duration} from '@/format';
 import {Button} from './ui/button';
@@ -8,10 +8,11 @@ import {ActivityTimeline} from './ActivityTimeline';
 import {AnswerMarkdown} from './AnswerMarkdown';
 import {CheckBadge, DataModeBadge, RuntimeBadge} from './Badges';
 import {Diagnostics} from './Diagnostics';
+import {RecurringCard} from './RecurringCard';
 import {SystemsStage} from './SystemsStage';
 import {VisualBlock} from './VisualBlock';
 import mark from '@/assets/wizard-mark.svg';
-import type {RunView} from '@/types';
+import type {RunView, Schedule} from '@/types';
 
 const FEEDBACK = [
   ['wrong_source', 'Wrong source'], ['mismatched_period', 'Mismatched period'], ['wrong_arithmetic', 'Wrong arithmetic'],
@@ -27,8 +28,16 @@ interface Props {
   onRetry: (run: RunView) => void;
   onFeedback: (run: RunView, category: string) => void;
   onEmail: (run: RunView) => void;
+  /** Make recurring: a follow-up in which Gemini asks who receives this table and when. */
+  onRecurring?: (run: RunView) => void;
+  /** The person's answer on a recurring-extraction card. */
+  onSchedule?: (run: RunView, schedule: Schedule, action: 'create' | 'dismiss') => void;
+  /** Metronome is connected and this person may schedule queries. */
+  canRecur?: boolean;
   busy: boolean;
 }
+
+const KIND_LABEL: Record<RunView['kind'], string> = {ask: 'Wizard', check: 'Check my data', recurring: 'Make recurring'};
 
 /** A running answer's time so far, so a long run reads as working rather than stuck (Stop is in the footer). */
 function Elapsed({since}: {since: string}) {
@@ -59,17 +68,19 @@ function CheckPanel({run}: {run: RunView}) {
   );
 }
 
-export const RunCard = memo(function RunCard({run, onEvidence, onCheck, onCancel, onRetry, onFeedback, onEmail, busy}: Props) {
+export const RunCard = memo(function RunCard({run, onEvidence, onCheck, onCancel, onRetry, onFeedback, onEmail, onRecurring, onSchedule,
+  canRecur = false, busy}: Props) {
   const running = run.status === 'running' || run.status === 'queued';
   const text = run.answer ?? run.streamText;
   const placed = placedVisuals(text);
   const loose = run.visuals.filter(v => !placed.has(v.id));
   const took = duration(run.createdAt, run.finishedAt);
+  const queried = run.evidence.some(e => e.system === 'postgresql');
   return (
     <section className="rounded-card border border-line border-t-[3px] border-t-accent bg-canvas shadow-card" aria-label={run.kind === 'check' ? 'Check my data result' : 'Wizard answer'}
       data-testid="run-card" data-status={run.status} data-run-id={run.id}>
       <header className="flex flex-wrap items-center gap-2 px-5 pt-4 sm:px-6">
-        <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-accent"><img src={mark} alt="" className="size-4" />{run.kind === 'check' ? 'Check my data' : 'Wizard'}</span>
+        <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-accent"><img src={mark} alt="" className="size-4" />{KIND_LABEL[run.kind] ?? 'Wizard'}</span>
         {run.runtime === 'replay' && <RuntimeBadge kind={run.runtime} label={run.runtimeLabel} />}
         {(run.dataMode || run.status === 'succeeded') && <DataModeBadge mode={run.dataMode} />}
         {run.status === 'succeeded' && run.kind === 'ask' && <CheckBadge status={run.checkStatus} />}
@@ -80,6 +91,8 @@ export const RunCard = memo(function RunCard({run, onEvidence, onCheck, onCancel
         <ActivityTimeline run={run} onEvidence={id => onEvidence(run, id)} />
         {text && <AnswerMarkdown text={text} visuals={run.visuals} streaming={running} onEvidence={id => onEvidence(run, id)} />}
         {loose.map(v => <VisualBlock key={v.id} visual={v} onEvidence={id => onEvidence(run, id)} />)}
+        {run.schedules.map(schedule => <RecurringCard key={schedule.id} schedule={schedule}
+          onCreate={s => onSchedule?.(run, s, 'create')} onDismiss={s => onSchedule?.(run, s, 'dismiss')} />)}
         <CheckPanel run={run} />
         {run.warnings.length > 0 && run.status !== 'running' && (
           <ul className="space-y-1 rounded-xl border border-warn-line bg-warn-soft px-4 py-2 text-[13px] text-warn" data-testid="warnings">
@@ -112,6 +125,11 @@ export const RunCard = memo(function RunCard({run, onEvidence, onCheck, onCancel
         {run.status === 'succeeded' && run.kind === 'ask' && run.answer && (
           <Hint text="Open an Outlook draft with the question, this answer, how long it took and the sources it used. You add the recipient and send it.">
             <Button variant="ghost" size="sm" onClick={() => onEmail(run)} data-testid="email-answer"><Mail />Email</Button>
+          </Hint>
+        )}
+        {run.status === 'succeeded' && run.kind === 'ask' && canRecur && queried && !run.schedules.length && onRecurring && (
+          <Hint text="Have Metronome email this table on a schedule. Wizard asks who receives it and when, then shows you the schedule to confirm.">
+            <Button variant="ghost" size="sm" onClick={() => onRecurring(run)} disabled={busy} data-testid="make-recurring"><CalendarClock />Make recurring</Button>
           </Hint>
         )}
         {run.status === 'succeeded' && (

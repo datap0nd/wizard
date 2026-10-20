@@ -32,7 +32,7 @@ class AgentRequest:
     user_home: Path
     prompt: str
     question: str
-    kind: Literal["ask", "check"]
+    kind: Literal["ask", "check", "recurring"]
     history: list[Turn] = field(default_factory=list)
     run_token: str = ""
     internal_url: str = ""

@@ -18,7 +18,7 @@ import hashlib
 import json
 import re
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Protocol
@@ -33,15 +33,12 @@ NUMBER_OIDS = {700, 701, 790, 1700}
 DOLLAR_TAG = re.compile(r"\$[A-Za-z_]?[A-Za-z0-9_]*\$")
 
 
-def without_terminator(sql: str) -> str:
-    """Drop a final semicolon when only whitespace and comments follow it ('... DESC;  -- latest week'), scanning
-    string literals, quoted names, dollar quotes and comments so a semicolon inside them is never touched. A semicolon
-    followed by more SQL stays: PostgreSQL then refuses the second statement."""
-    i, n, end = 0, len(sql), None
+def _code(sql: str) -> Iterator[tuple[int, str]]:
+    """Each character of SQL outside comments, with its index. A string literal, quoted name or dollar-quoted body is
+    one item, its opening quote, so a semicolon inside it is never seen."""
+    i, n = 0, len(sql)
     while i < n:
-        c = sql[i]
-        if c in "'\"$":
-            end = None  # a literal, quoted name or parameter is more SQL after any semicolon
+        c, start = sql[i], i
         if c == "'":
             escapes = i > 0 and sql[i - 1] in "eE"
             i += 1
@@ -63,12 +60,33 @@ def without_terminator(sql: str) -> str:
         elif c == "$" and (tag := DOLLAR_TAG.match(sql, i)):
             close = sql.find(tag.group(), tag.end())
             i = n if close < 0 else close + len(tag.group()) - 1
-        elif c == ";":
+        yield start, c
+        i += 1
+
+
+def without_terminator(sql: str) -> str:
+    """Drop a final semicolon when only whitespace and comments follow it ('... DESC;  -- latest week'), scanning
+    string literals, quoted names, dollar quotes and comments so a semicolon inside them is never touched. A semicolon
+    followed by more SQL stays: PostgreSQL then refuses the second statement."""
+    end = None
+    for i, c in _code(sql):
+        if c == ";":
             end = i if end is None else end
         elif not c.isspace():
             end = None
-        i += 1
     return sql[:end] if end is not None else sql
+
+
+def one_statement(sql: str) -> str:
+    """The query without a final semicolon, or SourceError when a semicolon outside literals and comments separates it
+    from more SQL. For a query that runs where PostgreSQL's extended protocol does not refuse a second statement (a
+    recurring extraction's script on Metronome)."""
+    text = without_terminator(sql).strip()
+    if not text:
+        raise SourceError("invalid_sql", "The query is empty.")
+    if any(c == ";" for _, c in _code(text)):
+        raise SourceError("invalid_sql", "Send one query: SELECT ... or WITH ... SELECT ..., without other statements.")
+    return text
 
 
 class QuerySession(Protocol):

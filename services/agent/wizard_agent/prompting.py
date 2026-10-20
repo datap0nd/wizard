@@ -19,6 +19,14 @@ CHECK_REQUEST = (
     "answer (direct figures and derived ones such as ratios and growth), replaying the cited evidence. Then give a short "
     "updated answer: what matched, what you corrected, and what you could not verify."
 )
+RECURRING_REQUEST = (
+    "The user pressed Make this recurring under your previous answer: they want that table emailed to them on a schedule "
+    "by Metronome. Ask in one short message for what you do not know yet: who receives it, how often (every day, which "
+    "weekdays, or which day of the month) and at what time (Dubai time), and Excel or CSV (Excel unless they say). Then "
+    "call wizard_schedule_extraction with the query behind that table, its fixed dates rewritten relative to "
+    "CURRENT_DATE. If the answer has no database query to repeat, say so."
+)
+REQUESTS = {"check": CHECK_REQUEST, "recurring": RECURRING_REQUEST}
 
 
 def system_prompt() -> str:
@@ -94,6 +102,6 @@ def compose(question: str, history: list[Turn], kind: str, today: date, files: l
         lines.append("</conversation_so_far>")
         lines.append("Evidence ids from earlier turns (E1, E2, ...) remain valid in this conversation.")
         parts.append("\n\n".join(lines))
-    request = CHECK_REQUEST if kind == "check" else question
+    request = REQUESTS.get(kind, question)
     parts.append(f"<request>\n{request}\n</request>")
     return "\n\n".join(parts)

@@ -1,4 +1,4 @@
-import type {Attachment, Bootstrap, ConversationSummary, Evidence, GeminiAccount, GeminiQuota, LocalFile, Report, RunRecord, SettingsSaved, SettingsView, SourceCatalog, SourceSummary, UpdateInfo} from './types';
+import type {Attachment, Bootstrap, ConversationSummary, Evidence, GeminiAccount, GeminiQuota, LocalFile, Report, RunRecord, Schedule, SettingsSaved, SettingsView, SourceCatalog, SourceSummary, UpdateInfo} from './types';
 
 export class ApiError extends Error {
   constructor(message: string, public status: number, public code?: string, public loginRequired = false) { super(message); }
@@ -45,6 +45,9 @@ export const api = {
   removeAttachment: (id: string) => request<{ok: true}>(`/api/v1/attachments/${encodeURIComponent(id)}`, {method: 'DELETE'}),
   check: (runId: string) => request<{run_id: string; conversation_id: string}>(`/api/v1/runs/${encodeURIComponent(runId)}/check`, {body: {}}),
   run: (runId: string) => request<RunRecord>(`/api/v1/runs/${encodeURIComponent(runId)}`),
+  recurring: (runId: string) => request<{run_id: string; conversation_id: string}>(`/api/v1/runs/${encodeURIComponent(runId)}/recurring`, {body: {}}),
+  createSchedule: (id: string) => request<{schedule: Schedule}>(`/api/v1/schedules/${encodeURIComponent(id)}/create`, {body: {}}),
+  dismissSchedule: (id: string) => request<{schedule: Schedule}>(`/api/v1/schedules/${encodeURIComponent(id)}/dismiss`, {body: {}}),
   cancel: (runId: string) => request<{cancelled: boolean}>(`/api/v1/runs/${encodeURIComponent(runId)}/cancel`, {body: {}}),
   emailDraft: (runId: string, subject: string, html: string) => request<{ok: true}>(`/api/v1/runs/${encodeURIComponent(runId)}/email`, {body: {subject, html}}),
   feedback: (runId: string, category: string, note = '') => request<{ok: true}>(`/api/v1/runs/${encodeURIComponent(runId)}/feedback`, {body: {category, note}}),
@@ -58,7 +61,7 @@ export const api = {
   unlink: () => request<GeminiAccount>('/api/v1/account/gemini', {method: 'DELETE'}),
   settings: () => request<SettingsView>('/api/v1/settings'),
   saveSettings: (values: Record<string, string | null>) => request<SettingsSaved>('/api/v1/settings', {method: 'PUT', body: {values}}),
-  testSettings: (section: 'postgres' | 'knowledge', values: Record<string, string | null>) =>
+  testSettings: (section: 'postgres' | 'knowledge' | 'metronome', values: Record<string, string | null>) =>
     request<{ok: boolean; message: string}>('/api/v1/settings/test', {body: {section, values}}),
   updates: (refresh = false) => request<UpdateInfo>(`/api/v1/updates${refresh ? '?refresh=true' : ''}`),
   health: () => request<{status: string; version: string}>('/api/v1/health'),

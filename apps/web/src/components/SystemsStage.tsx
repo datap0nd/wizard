@@ -135,7 +135,8 @@ function plural(n: number, word: string) { return `${n.toLocaleString()} ${word}
 function statLine(m: SystemInfo & {stats: ModuleStats}): string {
   const s = m.stats;
   if (!s.calls.length) return m.kind === 'knowledge' && m.notes ? `${plural(m.notes, 'note')} ready` : 'ready';
-  const parts = [plural(s.calls.length, m.kind === 'database' ? 'query' : m.kind === 'knowledge' ? 'lookup' : 'call')
+  const parts = [plural(s.calls.length, m.kind === 'database' ? 'query' : m.kind === 'knowledge' ? 'lookup'
+    : m.kind === 'schedules' ? 'schedule' : 'call')
     .replace('querys', 'queries')];
   if (s.rows) parts.push(plural(s.rows, 'row'));
   if (s.notes) parts.push(plural(s.notes, 'note'));
@@ -143,7 +144,8 @@ function statLine(m: SystemInfo & {stats: ModuleStats}): string {
   return parts.join(' · ');
 }
 
-const VERBS: Record<string, string> = {database: 'Querying', reports: 'Reading', knowledge: 'Searching', files: 'Reading'};
+const VERBS: Record<string, string> = {database: 'Querying', reports: 'Reading', knowledge: 'Searching', files: 'Reading',
+  schedules: 'Preparing a schedule in'};
 
 function Detail({item, className, onlyNew = false}: {item: TimelineItem; className?: string; onlyNew?: boolean}) {
   const detail = detailOf(item);

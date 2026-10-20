@@ -1,11 +1,11 @@
-import type {RunEvent, RunRecord, RunView, TimelineItem} from './types';
+import type {RunEvent, RunKind, RunRecord, RunView, Schedule, TimelineItem} from './types';
 
 export const TERMINAL = new Set(['run_finished', 'run_failed']);
 
-export function emptyRun(id: string, conversationId: string, question: string, kind: 'ask' | 'check' = 'ask'): RunView {
+export function emptyRun(id: string, conversationId: string, question: string, kind: RunKind = 'ask'): RunView {
   return {id, conversationId, kind, question, status: 'queued', runtime: 'replay', runtimeLabel: '', model: '', timeline: [],
     streamText: '', answer: null, visuals: [], evidence: [], check: null, checkStatus: 'NOT_CHECKED', checkSummary: null,
-    dataMode: null, reportId: null, error: null, warnings: [], lastSeq: 0, attachments: [], createdAt: new Date().toISOString(),
+    dataMode: null, reportId: null, error: null, warnings: [], lastSeq: 0, attachments: [], schedules: [], createdAt: new Date().toISOString(),
     startedAt: null, finishedAt: null, parentRunId: null, diagnostics: []};
 }
 
@@ -37,6 +37,8 @@ export function applyEvent(run: RunView, event: RunEvent): RunView {
           ? {...item, state: p.ok ? 'ok' : 'error', summary: String(p.summary ?? ''), evidence: p.evidence, durationMs: p.duration_ms} : item)};
     case 'visual_added':
       return {...next, visuals: [...next.visuals.filter(v => v.id !== p.visual.id), p.visual]};
+    case 'schedule_proposed':
+      return withSchedule(next, p.schedule as Schedule);
     case 'check_result':
       return {...next, check: {overall: p.overall, summary: p.summary, claims: p.claims ?? [], replays: p.replays ?? []}};
     case 'warning':
@@ -64,7 +66,14 @@ export function fromRecord(record: RunRecord): RunView {
     dataMode: record.data_mode ?? view.dataMode, checkStatus: record.check_status, checkSummary: record.check_summary,
     visuals: record.visuals.length ? record.visuals : view.visuals, evidence: record.evidence.length ? record.evidence : view.evidence,
     error: record.error_code ? {code: record.error_code, message: record.error_message ?? ''} : view.error,
-    attachments: record.attachments ?? [], finishedAt: record.finished_at};
+    attachments: record.attachments ?? [], schedules: record.schedules?.length ? record.schedules : view.schedules,
+    finishedAt: record.finished_at};
+}
+
+/** The run with this schedule added, or replaced by its newer state. */
+export function withSchedule(run: RunView, schedule: Schedule): RunView {
+  const known = run.schedules.some(s => s.id === schedule.id);
+  return {...run, schedules: known ? run.schedules.map(s => (s.id === schedule.id ? schedule : s)) : [...run.schedules, schedule]};
 }
 
 export function sourcesConsulted(run: RunView): string[] {

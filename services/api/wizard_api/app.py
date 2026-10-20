@@ -34,8 +34,9 @@ from wizard_connectors.tools import build_registry, build_services
 from . import __version__, knowledge_sync, settings_pane
 from .attachments import AttachmentError, public
 from .config import ConfigError, Settings, kb_source, load_settings
+from .metronome_client import MetronomeClient, MetronomeError
 from .outlook import DraftError, open_outlook_draft
-from .runs import Busy, RunManager, entitled_to
+from .runs import Busy, RunManager, entitled_to, public_schedule
 from .security import REQUEST_HEADER, SECURITY_HEADERS, SESSION_COOKIE, session_token, verify
 from .store import Store
 
@@ -74,7 +75,7 @@ def capture_logs() -> None:
 PUBLIC_PATHS = {"/api/v1/health", "/api/v1/ready", "/api/v1/bootstrap", "/api/v1/session/login",
                 "/api/v1/session/logout", "/api/v1/session/identities"}
 TIMELINE_EVENTS = {"run_started", "status", "agent_session", "note", "tool_started", "tool_finished", "visual_added",
-                   "check_result", "warning", "run_failed", "run_finished"}
+                   "check_result", "schedule_proposed", "warning", "run_failed", "run_finished"}
 TERMINAL = {"run_finished", "run_failed"}
 SUGGESTIONS = [
     {"story": "Executive", "question": "Which market gave us the best return on marketing investment last quarter — tie NERP "
@@ -130,7 +131,7 @@ class SettingsBody(Body):
 
 
 class SettingsTestBody(Body):
-    section: Literal["postgres", "knowledge"]
+    section: Literal["postgres", "knowledge", "metronome"]
     values: dict[str, str | None] = Field(default_factory=dict, max_length=40)
 
 
@@ -171,7 +172,8 @@ def _is_loopback(host: str | None) -> bool:
 
 
 def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = None,
-               google_transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
+               google_transport: httpx.AsyncBaseTransport | None = None,
+               metronome_transport: httpx.BaseTransport | None = None) -> FastAPI:
     settings = settings or load_settings()
     loaded_content = settings.content_dir
     if settings.content_dir:
@@ -191,6 +193,7 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
                                   postgres=settings.postgres, postgres_name=settings.pg_name)
     else:
         services = build_services(postgres=settings.postgres, postgres_name=settings.pg_name)
+    services.metronome, services.mail_domains = settings.metronome, settings.google_domains
     registry = build_registry(services)
     identities = IdentityDirectory.load(settings.identities_file)
     store = Store(settings.data_dir / "wizard.sqlite3")
@@ -358,7 +361,14 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         if services.knowledge.notes:
             found.append({"id": "knowledge", "name": "Knowledge base", "kind": "knowledge", "notes": len(services.knowledge.notes)})
         found.append({"id": "attachment", "name": "Attached files", "kind": "files"})
+        if can_schedule(identity):
+            found.append({"id": "metronome", "name": "Metronome", "kind": "schedules"})
         return found
+
+    def can_schedule(identity: Identity) -> bool:
+        """Recurring extractions: Metronome is connected and the person may query the whole database."""
+        return bool(settings.metronome and services.postgres and identity.can_use_system("postgresql")
+                    and identity.allowed_markets("postgresql") is None)
 
     @app.get("/api/v1/bootstrap")
     async def bootstrap(request: Request) -> dict[str, Any]:
@@ -378,7 +388,9 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
                 "runtime": {"kind": runtime.kind, "label": runtime.label(), "model": runtime.model, **readiness},
                 "gemini_account": await account_status(identity), "data_modes": modes,
                 "attachments": {"from_this_pc": manager.attachments.local_enabled(), "max_mb": settings.max_attachment_mb},
-                "systems": systems_for(identity)}
+                "systems": systems_for(identity),
+                "metronome": {"enabled": can_schedule(identity),
+                              "user": settings.metronome.user if settings.metronome else None}}
 
     # Session (fixture identities only) ---------------------------------------------------------------------------------
     @app.get("/api/v1/session/identities")
@@ -426,8 +438,9 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         shown_run = {k: v for k, v in run.items() if k not in ("user_id", "stats")}
         shown_run["stats"] = json.loads(run["stats"]) if run.get("stats") else {}
         files = [public(a) for a in store.conversation_attachments(run["conversation_id"]) if a["run_id"] == run["id"]]
+        schedules = [public_schedule(s) for s in store.schedules(run["conversation_id"], run["id"])]
         return {**shown_run, "events": events, "visuals": visuals, "evidence": evidence, "attachments": files,
-                "active": run["id"] in manager.active}
+                "schedules": schedules, "active": run["id"] in manager.active}
 
     @app.get("/api/v1/conversations/{conversation_id}")
     def conversation(request: Request, conversation_id: str) -> dict[str, Any]:
@@ -532,6 +545,68 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         except Busy as busy:
             raise HTTPException(429, str(busy)) from None
         return {"run_id": run["id"], "conversation_id": parent["conversation_id"]}
+
+    @app.post("/api/v1/runs/{run_id}/recurring")
+    async def make_recurring(request: Request, run_id: str) -> dict[str, Any]:
+        """Make recurring under an answer: a follow-up in which Gemini asks who receives the table and when."""
+        identity = me(request)
+        parent = store.run(identity.id, run_id)
+        if not parent or parent["status"] != "succeeded":
+            raise HTTPException(404, "Only a finished answer can be made recurring.")
+        if not can_schedule(identity):
+            raise HTTPException(409, "Recurring extractions are not available: Wizard is not connected to Metronome, or "
+                                     "you cannot query the company database.")
+        try:
+            run = manager.start(identity, parent["conversation_id"], "Make this recurring", kind="recurring",
+                                parent_run_id=run_id)
+        except Busy as busy:
+            raise HTTPException(429, str(busy)) from None
+        return {"run_id": run["id"], "conversation_id": parent["conversation_id"]}
+
+    @app.post("/api/v1/schedules/{schedule_id}/create")
+    async def create_schedule(request: Request, schedule_id: str) -> dict[str, Any]:
+        """The person's confirmation: the only path from Wizard to Metronome. The Flow belongs to Metronome's Wizard
+        user. A proposal moves to `creating` before anything is sent, so a second click never creates a second Flow."""
+        identity = me(request)
+        schedule = store.schedule(identity.id, schedule_id)
+        if not schedule:
+            raise HTTPException(404, "Recurring extraction not found.")
+        if schedule["status"] == "created":
+            return {"schedule": public_schedule(schedule)}
+        if not settings.metronome or not can_schedule(identity):
+            raise HTTPException(409, "Wizard is not connected to Metronome, or you can no longer query the company database.")
+        if not store.move_schedule(schedule_id, "creating", ("proposed", "failed")):
+            raise HTTPException(409, "This recurring extraction is already being created, or its outcome is uncertain: "
+                                     "look for it in Metronome's Flows.")
+        client = MetronomeClient(settings.metronome, metronome_transport)
+        try:
+            flow = await asyncio.to_thread(client.create, schedule)
+        except Exception as error:  # noqa: BLE001 - a proposal never stays `creating`; an unknown failure may have created it
+            if isinstance(error, MetronomeError):
+                status, message = ("uncertain" if error.uncertain else "failed"), error.message
+            else:
+                log.exception("creating recurring extraction %s in Metronome failed", schedule_id)
+                status, message = "uncertain", (f"Wizard hit an unexpected error while creating the Flow "
+                                                f"({type(error).__name__}). It may have been created: look for it in "
+                                                "Metronome's Flows before asking again.")
+            store.move_schedule(schedule_id, status, ("creating",), error=message)
+            store.audit(identity.id, "metronome:create_flow", run_id=schedule["run_id"], system="metronome", outcome=status,
+                        detail={"schedule": schedule["label"]})
+        else:
+            store.move_schedule(schedule_id, "created", ("creating",), flow=flow)
+            store.audit(identity.id, "metronome:create_flow", run_id=schedule["run_id"], system="metronome",
+                        detail={"schedule": schedule["label"], "flow_id": flow.get("id"),
+                                "recipients": len(schedule["recipients"]), "frequency": schedule["frequency"]})
+        return {"schedule": public_schedule(store.schedule(identity.id, schedule_id) or schedule)}
+
+    @app.post("/api/v1/schedules/{schedule_id}/dismiss")
+    def dismiss_schedule(request: Request, schedule_id: str) -> dict[str, Any]:
+        identity = me(request)
+        if not store.schedule(identity.id, schedule_id):
+            raise HTTPException(404, "Recurring extraction not found.")
+        if not store.move_schedule(schedule_id, "dismissed", ("proposed", "failed")):
+            raise HTTPException(409, "Only a recurring extraction that was not created can be dismissed.")
+        return {"schedule": public_schedule(store.schedule(identity.id, schedule_id) or {})}
 
     @app.get("/api/v1/runs/{run_id}")
     def get_run(request: Request, run_id: str) -> dict[str, Any]:
@@ -829,6 +904,9 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         try:
             if body.section == "postgres":
                 return await asyncio.to_thread(settings_pane.test_postgres, settings, dict(body.values))
+            if body.section == "metronome":
+                return await asyncio.to_thread(settings_pane.test_metronome, settings, dict(body.values),
+                                               metronome_transport)
             return await asyncio.to_thread(settings_pane.test_knowledge, settings, dict(body.values))
         except settings_pane.PaneError as error:
             return {"ok": False, "message": str(error)}

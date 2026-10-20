@@ -1,7 +1,7 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {api, ApiError, eventsUrl} from './api';
 import {buildEmail, emlFile, emlName} from './email';
-import {applyEvent, emptyRun, fromRecord, TERMINAL} from './runState';
+import {applyEvent, emptyRun, fromRecord, TERMINAL, withSchedule} from './runState';
 import {AccountDialog} from './components/AccountDialog';
 import {LocalFilesDialog, type PendingFile} from './components/Attachments';
 import {LogDialog} from './components/LogDialog';
@@ -20,7 +20,7 @@ import {WizardSprite} from './components/WizardSprite';
 import {dropToHost, onHost, toHost, type DroppedFile} from './host';
 import {cn} from './lib/utils';
 import {wizardAnimation} from './wizard';
-import type {Attachment, Bootstrap, ConversationSummary, EvidenceSummary, LocalFile, RunEvent, RunView} from './types';
+import type {Attachment, Bootstrap, ConversationSummary, EvidenceSummary, LocalFile, RunEvent, RunView, Schedule} from './types';
 
 const LAST = 'wizard-conversation';
 
@@ -179,6 +179,27 @@ export function App({compact = false}: {compact?: boolean}) {
     } catch (e) { setNotice(e instanceof Error ? e.message : 'The check could not start.'); }
   }, [follow]);
 
+  const recurring = useCallback(async (run: RunView) => {
+    try {
+      const started = await api.recurring(run.id);
+      setRuns(prev => [...prev, {...emptyRun(started.run_id, started.conversation_id, 'Make this recurring', 'recurring'), parentRunId: run.id}]);
+      follow(started.run_id, 0, run.id);
+    } catch (e) { setNotice(e instanceof Error ? e.message : 'Could not start making this recurring.'); }
+  }, [follow]);
+
+  /** The person's answer on a recurring-extraction card: only this reaches Metronome. */
+  const decide = useCallback(async (run: RunView, schedule: Schedule, action: 'create' | 'dismiss') => {
+    const update = (next: Schedule) => setRuns(prev => prev.map(r => (r.id === run.id ? withSchedule(r, next) : r)));
+    if (action === 'create') update({...schedule, status: 'creating', error: null});
+    try {
+      const result = action === 'create' ? await api.createSchedule(schedule.id) : await api.dismissSchedule(schedule.id);
+      update(result.schedule);
+    } catch (e) {
+      update(schedule);
+      setNotice(e instanceof Error ? e.message : 'Metronome could not be reached.');
+    }
+  }, []);
+
   const email = useCallback(async (run: RunView) => {
     setNotice('Preparing the email…');
     try {
@@ -223,7 +244,8 @@ export function App({compact = false}: {compact?: boolean}) {
         onEvidence={(run, id) => setDrawer({items: id ? allEvidence : run.evidence, focus: id})}
         onCheck={run => void check(run)} onCancel={run => void api.cancel(run.id)} onRetry={run => void ask(run.question)}
         onFeedback={(run, category) => void api.feedback(run.id, category).then(() => setNotice('Thanks — recorded in the evaluation log.'))}
-        onEmail={run => void email(run)} />
+        onEmail={run => void email(run)} onRecurring={run => void recurring(run)}
+        onSchedule={(run, schedule, action) => void decide(run, schedule, action)} canRecur={!!boot.metronome?.enabled} />
     </SystemsContext.Provider>
   );
   const composer = (
