@@ -50,12 +50,7 @@ jobs:
           $run = Start-Process -FilePath artifacts/desktop/payload/bar/WizardBar.exe -ArgumentList '--snapshot', "$PWD/artifacts/desktop/snapshot" -Wait -PassThru
           if ($run.ExitCode -ne 0) { throw "WizardBar --snapshot exited with $($run.ExitCode)" }
           foreach ($name in @('button-100.png', 'button-200.png')) {
-            $file = Get-Item "artifacts/desktop/snapshot/$name"
-            if ($file.Length -lt 2000) { throw "$name is empty" }
-            # Printed so the picture can be checked from the log without downloading the artifact.
-            "----- $name base64 -----"
-            [Convert]::ToBase64String([IO.File]::ReadAllBytes($file.FullName))
-            "----- end -----"
+            if ((Get-Item "artifacts/desktop/snapshot/$name").Length -lt 2000) { throw "$name is empty" }
           }
 
       - uses: actions/upload-artifact@v4
@@ -143,6 +138,13 @@ jobs:
             artifacts/desktop/WizardSetup.exe
             artifacts/desktop/wizard-desktop.json
           retention-days: 14
+
+      - name: Show the button at 100 % (base64 PNG, last in the log so it can be read without the artifact)
+        shell: pwsh
+        run: |
+          "----- button-100.png base64 -----"
+          [Convert]::ToBase64String([IO.File]::ReadAllBytes("$PWD/artifacts/desktop/snapshot/button-100.png"))
+          "----- end -----"
 
   publish:
     needs: installer

@@ -852,6 +852,45 @@ def scaled(cv: Canvas, scale: int, size: int) -> Canvas:
     return out
 
 
+def bmp(cv: Canvas, background: RGBA) -> bytes:
+    """A 24-bit Windows bitmap on a solid background (Inno Setup's wizard images)."""
+    stride = (cv.w * 3 + 3) // 4 * 4
+    rows = bytearray()
+    for y in range(cv.h - 1, -1, -1):  # bottom-up
+        row = bytearray()
+        for x in range(cv.w):
+            r, g, b, a = cv.px[y][x] or background
+            if a < 255:
+                r, g, b = (round((c * a + bg * (255 - a)) / 255) for c, bg in zip((r, g, b), background[:3], strict=True))
+            row += bytes((b, g, r))
+        rows += row + b"\0" * (stride - len(row))
+    header = struct.pack("<IiiHHIIiiII", 40, cv.w, cv.h, 1, 24, 0, len(rows), 3780, 3780, 0, 0)
+    return b"BM" + struct.pack("<IHHI", 14 + len(header) + len(rows), 0, 0, 14 + len(header)) + header + rows
+
+
+def installer_images() -> tuple[bytes, bytes]:
+    """Setup's pictures: the wizard on Samsung Blue beside the first and last pages (164 x 314 at 100 %, drawn for
+    200 %), and the wizard in the corner of the others (55 x 58, drawn for 200 %)."""
+    rest = anim_idle()[0]
+    blue = PALETTE["B"]
+    large = Canvas(328, 628)
+    for y in range(large.h):
+        for x in range(large.w):
+            large.px[y][x] = blue
+    halo = Canvas(48, 48)
+    for y in range(48):
+        for x in range(48):
+            d = math.hypot(x - 23.5, y - 30)
+            if d < 22:
+                halo.px[y][x] = (58, 92, 214, 255) if d < 19 else (34, 62, 186, 255)
+    large.paste(scaled(halo, 5, 240), 44, 180)
+    large.paste(scaled(rest, 5, 240), 44, 180)
+    small = scaled(rest, 2, 116)
+    small_wide = Canvas(110, 116)
+    small_wide.paste(small, -3, 0)
+    return bmp(large, blue), bmp(small_wide, (255, 255, 255, 255))
+
+
 def desktop_icon() -> bytes:
     """WizardBar's icon (tray, taskbar, Start menu, setup): the hat where 16 pixels allow only that, his portrait at
     32 and 64, the whole wizard from 48 up."""
@@ -994,6 +1033,9 @@ def outputs() -> dict[Path, bytes]:
 
     files[DESKTOP / "assets" / "wizard.ico"] = desktop_icon()
     files[DESKTOP / "assets" / "wizard-sprite.png"] = png(full)
+    large, small = installer_images()
+    files[ROOT / "installer" / "wizard-large.bmp"] = large
+    files[ROOT / "installer" / "wizard-small.bmp"] = small
     entries = [f"            {{ \"{name}\", new Animation({r}, {len(frames)}, {fps}, {str(loops).lower()}) }},"
                for r, ((name, _, fps, loops), frames) in enumerate(zip(ANIMATIONS, rows, strict=True))]
     files[DESKTOP / "WizardBar" / "SpriteSheet.g.cs"] = "\n".join([

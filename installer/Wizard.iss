@@ -33,6 +33,9 @@ Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 SetupIconFile=..\apps\desktop\assets\wizard.ico
+; The pixel wizard beside setup's pages (drawn by scripts/wizard_art.py, for 200 %; Inno scales them).
+WizardImageFile=wizard-large.bmp
+WizardSmallImageFile=wizard-small.bmp
 UninstallDisplayIcon={app}\bar\WizardBar.exe
 UninstallDisplayName={#AppName}
 CloseApplications=force

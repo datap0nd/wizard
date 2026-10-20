@@ -98,5 +98,7 @@ The previews are animated PNGs at 4x. They loop, and a one-shot animation pauses
   - While a question runs he acts out what the page shows (the page sends its animation).
   - He hops when an answer is ready and fizzles when the service stopped.
   - With a file dragged over the tab he opens his book ("Drop to attach").
+- `installer/wizard-large.bmp` and `wizard-small.bmp`: setup's pictures (the wizard on Samsung Blue beside the first and
+  last pages, and in the corner of the others).
 - `WizardBar.exe --snapshot FOLDER` draws every look of the button to PNG; the Windows CI job runs it.
-- The script writes the icon, the copy of the sheet and `SpriteSheet.g.cs`, and `--check` covers them.
+- The script writes the icon, the copy of the sheet, `SpriteSheet.g.cs` and setup's pictures, and `--check` covers them.

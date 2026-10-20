@@ -51,8 +51,9 @@ The owner asked for:
     place.
   - A full-window "Drop to attach" target with the wizard reading shows while a file is dragged over the page.
   - See the [decision addendum](decisions/2026-10-20-desktop-app.md).
+- **Setup's pages** show the pixel wizard too (`installer/wizard-large.bmp`, `wizard-small.bmp`, drawn by the script).
 - **CI** draws every look of the button on Windows (`WizardBar.exe --snapshot`), fails if the sprite is missing,
-  uploads the PNGs and prints them into the log.
+  uploads the PNGs and prints the 100 % one at the end of the log.
 
 **Tests.**
 - Python: 299 passed, 5 skipped. A new desktop test drops a CSV from a folder outside the attachment folders, a PDF

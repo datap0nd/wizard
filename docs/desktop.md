@@ -224,6 +224,6 @@ ISCC installer\Wizard.iss                                                       
 ```
 
 For development without the installer, run WizardBar with `--install <folder with app\ and runtime\python\>` and
-`--home <folder>`. `WizardBar.exe --snapshot <folder>` draws every look of the button to PNG files (CI does this on
-Windows and prints them into its log). The icon and the button's sprite come from `scripts/wizard_art.py`
-([brand/README.md](../brand/README.md)).
+`--home <folder>`. `WizardBar.exe --snapshot <folder>` draws every look of the button to PNG files. CI does this on
+Windows, uploads them, and prints the 100 % one at the end of its log. The icon, the button's sprite and setup's
+pictures come from `scripts/wizard_art.py` ([brand/README.md](../brand/README.md)).
