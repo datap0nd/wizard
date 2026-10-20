@@ -261,7 +261,13 @@ namespace WizardBar
             var wasDragging = dragging;
             pressed = false;
             dragging = false;
-            if (e.Button == MouseButtons.Right) RightClickMenu?.Show(this, new Point(e.X, Height));
+            if (e.Button == MouseButtons.Right && RightClickMenu != null)
+            {
+                // As NotifyIcon does: a menu from a window that never takes the focus closes on an outside click only
+                // when it is the foreground window.
+                RightClickMenu.Show(this, new Point(e.X, Height));
+                Native.SetForegroundWindow(RightClickMenu.Handle);
+            }
             else if (wasDragging)
             {
                 var screen = Screen.PrimaryScreen.WorkingArea;

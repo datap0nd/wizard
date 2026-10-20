@@ -40,7 +40,8 @@ jobs:
                               'runtimes/win-x64/native/WebView2Loader.dll')) {
             if (-not (Test-Path "artifacts/desktop/payload/bar/$file")) { throw "Missing $file in the WizardBar build" }
           }
-          $version = (Get-Item artifacts/desktop/payload/bar/WizardBar.exe).VersionInfo.FileVersion
+          $v = (Get-Item artifacts/desktop/payload/bar/WizardBar.exe).VersionInfo
+          $version = "$($v.FileMajorPart).$($v.FileMinorPart).$($v.FileBuildPart).$($v.FilePrivatePart)"
           if ($version -ne "$env:WIZARD_DESKTOP_VERSION.0") { throw "WizardBar.exe has version $version" }
 
       - name: Assemble the payload (portable Python + locked libraries, SHA-256 checked)
@@ -101,7 +102,9 @@ jobs:
         shell: pwsh
         run: |
           $setup = Get-Item artifacts/desktop/WizardSetup.exe
-          $version = $setup.VersionInfo.FileVersion
+          # The numeric file version, as the updater reads it (Inno's version text says 1.0.N, the number is 1.0.N.0).
+          $v = $setup.VersionInfo
+          $version = "$($v.FileMajorPart).$($v.FileMinorPart).$($v.FileBuildPart).$($v.FilePrivatePart)"
           if ($version -ne "$env:WIZARD_DESKTOP_VERSION.0") { throw "WizardSetup.exe has version $version" }
           $manifest = [ordered]@{
             version = $version; commit = '${{ github.sha }}'; installer = 'WizardSetup.exe'

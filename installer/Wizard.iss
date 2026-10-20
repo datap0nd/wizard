@@ -87,9 +87,9 @@ end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
-  Code: Integer;
+  ResultCode: Integer;
 begin
   Result := '';
   Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
-    '-NoProfile -NonInteractive -Command "' + StopCommand('') + '"', '', SW_HIDE, ewWaitUntilTerminated, Code);
+    '-NoProfile -NonInteractive -Command "' + StopCommand('') + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
