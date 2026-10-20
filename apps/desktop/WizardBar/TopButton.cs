@@ -261,7 +261,8 @@ namespace WizardBar
                 var shadow = (int)Math.Round(7 * scale);
                 var height = (int)Math.Round(40 * px + 2 * scale + 8 * scale * p.Lift + 14 * scale * p.Grow);
                 var spriteWidth = 37 * px;  // the wizard and his staff: columns 7 to 43 of the 48-pixel frame
-                var width = (int)Math.Round(6 * scale + spriteWidth + 8 * scale + textWidth + 16 * scale);
+                var badge = p.Pulse >= 0 ? 14 * scale : 0;  // room for the "answer waiting" dot after the caption
+                var width = (int)Math.Round(6 * scale + spriteWidth + 8 * scale + textWidth + badge + 16 * scale);
                 var bitmap = new Bitmap(width + 2 * shadow, height + shadow, PixelFormat.Format32bppArgb);
                 using (var g = Graphics.FromImage(bitmap))
                 {
@@ -311,20 +312,21 @@ namespace WizardBar
                             : new Pen(p.Lift > 0 ? Color.FromArgb((int)(90 + 140 * p.Lift), BlueLight) : Color.FromArgb(255, 201, 211, 238), (1f + 0.5f * (float)p.Lift) * scale))
                             g.DrawPath(pen, path);
                     }
-                    if (p.Pulse >= 0)
-                    {
-                        // An answer is waiting: a green dot by the wizard's hat.
-                        var dot = (6.5f + (p.Pulse < 8 ? p.Pulse : 16 - p.Pulse) * 0.18f) * scale;
-                        var cx = body.X + 6 * scale + 30 * px;
-                        var cy = body.Bottom - 2 * scale - 40 * px + 4 * scale;
-                        using (var brush = new SolidBrush(Green)) g.FillEllipse(brush, cx - dot / 2, cy - dot / 2, dot, dot);
-                        using (var pen = new Pen(Color.White, 1.5f * scale)) g.DrawEllipse(pen, cx - dot / 2, cy - dot / 2, dot, dot);
-                    }
                     var textX = body.X + 6 * scale + spriteWidth + 8 * scale;
                     var lineOne = font.GetHeight(g);
                     var lineTwo = small.GetHeight(g) * (float)show;
                     var textY = (height - 1 - lineOne - lineTwo) / 2f - 1;
                     var captionColor = p.Look == ButtonLook.Failed ? Color.FromArgb(255, 190, 30, 30) : Blue;
+                    if (p.Pulse >= 0)
+                    {
+                        // An answer is waiting: a green dot after the caption, gently pulsing.
+                        var dot = (7f + (p.Pulse < 8 ? p.Pulse : 16 - p.Pulse) * 0.2f) * scale;
+                        var cx = textX + captionWidth + 8 * scale;
+                        var cy = textY + lineOne / 2 + 1 * scale;
+                        using (var brush = new SolidBrush(Green)) g.FillEllipse(brush, cx - dot / 2, cy - dot / 2, dot, dot);
+                        using (var pen = new Pen(Color.FromArgb(120, Green), 1.2f * scale))
+                            g.DrawEllipse(pen, cx - dot / 2 - 2 * scale, cy - dot / 2 - 2 * scale, dot + 4 * scale, dot + 4 * scale);
+                    }
                     using (var text = new SolidBrush(Color.FromArgb(p.Look == ButtonLook.Starting ? 170 : 255, captionColor)))
                     using (var format = new StringFormat { FormatFlags = StringFormatFlags.NoWrap, Trimming = StringTrimming.None })
                     {

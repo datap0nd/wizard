@@ -106,7 +106,7 @@ aside for full-screen apps and slide shows.
 | The tab drops down and he waves; a second line appears | The pointer is on it ("Click, Ctrl+Alt+W, or drop a file") |
 | He casts | You clicked: the panel slides down from under the tab and the page unrolls |
 | "Wizard is working…", a glint running along the bottom, the wizard reading, searching, writing… | A question is running. He acts out the same step as the wizard on the page |
-| "Wizard answered", he hops, a green dot by his hat | The answer is ready (a notification says so too) |
+| "Wizard answered" with a green dot, and he hops | The answer is ready (a notification says so too) |
 | "Starting Wizard…" (thinking) / "Wizard stopped" (fizzling) | The service is starting / stopped: click for the reason |
 | "Drop to attach", a dashed outline, the wizard with his book open | A file is being dragged over the tab |
 

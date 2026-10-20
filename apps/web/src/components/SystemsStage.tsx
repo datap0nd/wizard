@@ -13,7 +13,7 @@ import type {RunView, SystemInfo, TimelineItem} from '@/types';
 export const SystemsContext = createContext<SystemInfo[]>([]);
 
 type Point = {x: number; y: number};
-interface Layout { width: number; height: number; orb: Point; radius: number; scale: number; nodes: Point[]; mode: 'orbit' | 'row' }
+interface Layout { width: number; height: number; orb: Point; radius: number; scale: number; nodes: Point[]; nodeWidth: number; mode: 'orbit' | 'row' }
 
 const TILE = 58;
 
@@ -32,16 +32,16 @@ export function layout(width: number, count: number): Layout {
       return {x: orb.x + (toLeft ? -1 : 1) * rx * Math.cos(t), y: orb.y + ry * Math.sin(t)};
     };
     const nodes = Array.from({length: count}, (_, i) => (i % 2 === 0 ? arc(left, i / 2, true) : arc(right, (i - 1) / 2, false)));
-    return {width, height, orb, radius, scale, nodes, mode: 'orbit'};
+    return {width, height, orb, radius, scale, nodes, nodeWidth: 132, mode: 'orbit'};
   }
-  const perRow = Math.min(4, Math.max(count, 1)), rows = Math.max(1, Math.ceil(count / perRow));
+  const perRow = Math.max(1, Math.min(4, count, Math.floor(width / 116))), rows = Math.max(1, Math.ceil(count / perRow));
   const radius = 24 * 2 + 18, orb = {x: width / 2, y: radius + 12};
   const top = orb.y + radius + 78;
   const nodes = Array.from({length: count}, (_, i) => {
     const row = Math.floor(i / perRow), inRow = Math.min(perRow, count - row * perRow);
     return {x: ((i % perRow) + 0.5) / inRow * width, y: top + row * 112};
   });
-  return {width, height: top + (rows - 1) * 112 + 66, orb, radius, scale: 2, nodes, mode: 'row'};
+  return {width, height: top + (rows - 1) * 112 + 66, orb, radius, scale: 2, nodes, nodeWidth: Math.min(132, Math.floor(width / perRow) - 4), mode: 'row'};
 }
 
 /** A stream from a module into the wizard's circle, bent a little the same way for every module, like a vortex. */
@@ -308,9 +308,9 @@ function Stage({run, model, onEvidence, finale}: {run: RunView; model: StageMode
           return (
             <button key={m.id} type="button" onClick={() => setSelected(selected === m.id ? null : m.id)}
               aria-label={`${m.name}: ${statLine(m)}. Show what Wizard did here`} aria-pressed={selected === m.id}
-              className={cn('absolute flex w-[132px] -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1 rounded-xl px-1 py-1.5 transition-all duration-300 hover:-translate-y-[calc(50%+2px)] hover:bg-surface/80',
+              className={cn('absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1 rounded-xl px-1 py-1.5 transition-all duration-300 hover:-translate-y-[calc(50%+2px)] hover:bg-surface/80',
                 state === 'idle' && 'opacity-55 grayscale-[40%] hover:opacity-90', state === 'active' && 'scale-[1.08]', selected === m.id && 'bg-surface')}
-              style={{left: node.x, top: node.y}} data-testid="stage-node" data-system={m.id} data-state={state}>
+              style={{left: node.x, top: node.y, width: l.nodeWidth}} data-testid="stage-node" data-system={m.id} data-state={state}>
               <span key={on && last ? last.key : 'rest'} className={cn('relative', on && 'stage-hop')}>
                 {state === 'active' && <span className="stage-ping absolute -inset-1.5 rounded-[32%]" style={{boxShadow: `0 0 0 2px ${c}`}} />}
                 {state === 'active' && <span className="stage-glow absolute inset-0 rounded-[28%]" style={{['--glow' as string]: c}} />}

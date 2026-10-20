@@ -113,6 +113,13 @@ describe('the wizard on the stage', () => {
       for (let i = 0; i < count; i++) for (let j = i + 1; j < count; j++)
         expect(Math.hypot(l.nodes[i].x - l.nodes[j].x, l.nodes[i].y - l.nodes[j].y)).toBeGreaterThan(100);
     }
-    expect(layout(420, 6).mode).toBe('row');
+    for (const [width, count] of [[380, 4], [460, 6], [540, 3]]) {
+      const l = layout(width, count);
+      expect(l.mode).toBe('row');
+      for (let i = 0; i < count; i++) for (let j = i + 1; j < count; j++) {
+        const [a, b] = [l.nodes[i], l.nodes[j]];
+        expect(Math.abs(a.y - b.y) >= 100 || Math.abs(a.x - b.x) >= l.nodeWidth).toBe(true);
+      }
+    }
   });
 });

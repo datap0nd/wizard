@@ -23,7 +23,8 @@ The owner asked for:
   sheet and `SpriteSheet.g.cs`, and `--check` (a unit test) covers them.
 - **The stage** (`SystemsStage.tsx`) is bigger:
   - The pixel wizard (3x on a wide card, 2x in the panel) stands in a magic circle with turning rune rings and a glowing
-    floor. The systems sit around him in two arcs, an orbit, on 58 px tiles.
+    floor. The systems sit around him in two arcs, an orbit, on 58 px tiles. A narrow panel puts them in rows that
+    fit its width.
   - He acts out the step in progress, and keeps acting out a fast step while its system stays lit.
   - Beams bend like a vortex and carry pixel "data bits". A finished call floats its result up from the wizard
     ("+ 4 rows · as of 2026-10-01"). An active tile hops, glows and pings. Pixel stars twinkle while he works.
@@ -66,8 +67,10 @@ The owner asked for:
   `wizard_art --check` passes and WizardBar builds with warnings as errors.
 - Screenshots of a slowed replay show the orbit, the beams and data bits, the floating result, the pinned bar while
   writing, the landing confetti, the panel's waving start and the drop target.
-- Not yet seen on a real desktop: the button's animation, the slide, and drops from Explorer and Outlook. CI draws the
-  button's looks on Windows. Outlook's virtual files use the standard FileGroupDescriptorW/FileContents formats
+- The button's eight looks, drawn by GDI+ on the Windows runner and read back from the CI log at 100 %: rest, hover
+  (glow, second line), click (cast), a file over it (dashed outline), starting, working (glint), answered, stopped, on
+  light and dark title bars. That check moved the "answer waiting" dot from the staff's orb to after the caption.
+- Not yet seen on a real desktop: the button's animation over time, the slide, and drops from Explorer and Outlook. Outlook's virtual files use the standard FileGroupDescriptorW/FileContents formats
   (stream, memory, or a structured storage saved as `.msg`) and are untested until a work PC.
 
 ## 2026-10-20 (later still) — The systems stage: a visual view of what Wizard pulls from each system
