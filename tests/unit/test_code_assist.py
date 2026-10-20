@@ -211,19 +211,28 @@ def test_flash_without_capacity_hands_over_to_pro_like_gemini_cli(tmp_path, wait
     assert waits == [1.0, 3.0], "two quick tries, as Gemini CLI, then no more waiting"
     sessions = [p["model"] for k, p in events if k == "agent_session"]
     assert sessions == ["gemini-3.8-flash", "gemini-3.1-pro-preview"], "the run records the model that answered"
-    assert not any(k == "warning" for k, _ in events), "as in Gemini CLI, switching model is not an error"
-    switch = [p["message"] for k, p in events if k == "status"][-1]
-    assert "no capacity for gemini-3.8-flash" in switch and "Wizard continues with gemini-3.1-pro-preview." in switch
-    assert switch.endswith('Google said: "No capacity available for model gemini-3.8-flash on the server"')
+    assert not any(k in ("warning", "status") for k, _ in events), "as in Gemini CLI, the switch is silent: no error, no notice"
     switched = fake.requests[-1]["request"]["contents"]
     assert switched[1]["parts"][0]["thoughtSignature"] == "skip_thought_signature_validator"
     assert fake.requests[-1]["request"]["generationConfig"]["thinkingConfig"] == {"thinkingLevel": "HIGH"}
     assert [p["text"] for k, p in events if k == "text_delta"][-1] == "EG [E1]."
-    # The next question starts on Pro for a while, and the stage says why.
+    # The next question starts on Pro for a while, without saying "no capacity" again on every question.
     events = run_and_collect(rt, req)
     assert fake.models[-1] == "gemini-3.1-pro-preview" and len(fake.models) == 6
+    assert [p["model"] for k, p in events if k == "agent_session"] == ["gemini-3.1-pro-preview"]
+    assert not any(k in ("warning", "status") for k, _ in events)
+
+
+def test_a_used_up_quota_still_says_why_another_model_answers(tmp_path, waits):
+    fake = FakeGoogle([[{"text": "ok"}], [{"text": "again"}]],
+                      refusals={"gemini-3.8-flash": [google_error("QUOTA_EXHAUSTED", delay="7200s")]})
+    rt, req = make(tmp_path, fake, fallback="gemini-3.1-pro-preview")
+    events = run_and_collect(rt, req)
+    assert fake.models == ["gemini-3.8-flash", "gemini-3.1-pro-preview"] and waits == []
+    switch = next(p["message"] for k, p in events if k == "status")
+    assert "quota for gemini-3.8-flash is used up" in switch and "Wizard continues with gemini-3.1-pro-preview." in switch
+    events = run_and_collect(rt, req)
     assert any(k == "status" and "answers with gemini-3.1-pro-preview" in p["message"] for k, p in events)
-    assert not any(k == "warning" for k, _ in events)
 
 
 def test_a_used_up_quota_is_not_waited_for(tmp_path, waits):
@@ -254,8 +263,8 @@ def test_no_capacity_with_no_other_model_is_waited_out(tmp_path, waits, fallback
     assert [p["text"] for k, p in events if k == "text_delta"] == ["ok"]
     assert len(waits) == 3 and all(base <= wait <= base * 1.2 for base, wait in zip([5, 10, 20], waits, strict=True))
     statuses = [p["message"] for k, p in events if k == "status"]
-    assert statuses[0].startswith("Google has no capacity for gemini-3.8-flash right now; trying again in")
-    assert "(attempt 1 of 10)." in statuses[0] and 'Google said: "No capacity available' in statuses[0]
+    assert len(statuses) == 3 and statuses[0].startswith("Gemini is busy; trying again in") and "(attempt 1 of 10)." in statuses[0]
+    assert not any("capacity" in m for m in statuses), "the wait is shown, Google's capacity is not repeated on every step"
     assert not any(k == "warning" for k, _ in events)
 
 
@@ -278,3 +287,5 @@ def test_a_fallback_model_without_capacity_is_waited_for(tmp_path, waits):
     assert fake.models == ["gemini-3.8-flash"] * 3 + ["gemini-3.1-pro-preview"] * 2
     assert waits[:2] == [1.0, 3.0] and 5 <= waits[2] <= 6, "quick tries on Flash, then Pro, the last model, is waited for"
     assert [p["text"] for k, p in events if k == "text_delta"] == ["ok"]
+    statuses = [p["message"] for k, p in events if k == "status"]
+    assert len(statuses) == 1 and statuses[0].startswith("Gemini is busy; trying again in "), "only the wait on Pro is shown"

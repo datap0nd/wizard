@@ -1,6 +1,7 @@
 import {memo, useEffect, useState} from 'react';
 import {AlertTriangle, CalendarClock, ExternalLink, Flag, Link2, ListTree, Mail, RotateCcw, ShieldCheck, Square} from 'lucide-react';
 import {placedVisuals} from '@/citations';
+import {sourceCount, sourceGroups} from '@/sources';
 import {clock, duration} from '@/format';
 import {Button} from './ui/button';
 import {DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger, Hint} from './ui/menu';
@@ -79,6 +80,7 @@ export const RunCard = memo(function RunCard({run, onEvidence, onCheck, onCancel
   const loose = run.visuals.filter(v => !placed.has(v.id));
   const took = duration(run.createdAt, run.finishedAt);
   const queried = run.evidence.some(e => e.system === 'postgresql');
+  const sources = sourceCount(sourceGroups(run.evidence));  // tables, reports and files, not each query
   return (
     <section className="rounded-card border border-line border-t-[3px] border-t-accent bg-canvas shadow-card" aria-label={run.kind === 'check' ? 'Check my data result' : 'Wizard answer'}
       data-testid="run-card" data-status={run.status} data-run-id={run.id}>
@@ -118,7 +120,7 @@ export const RunCard = memo(function RunCard({run, onEvidence, onCheck, onCancel
             <Button variant="outline" size="sm" onClick={() => onCheck(run)} disabled={busy} data-testid="check-my-data"><ShieldCheck />Check my data</Button>
           </Hint>
         )}
-        {run.evidence.length > 0 && <Button variant="ghost" size="sm" onClick={() => onEvidence(run, null)} data-testid="show-sources"><ListTree />Show sources ({run.evidence.length})</Button>}
+        {run.evidence.length > 0 && <Button variant="ghost" size="sm" onClick={() => onEvidence(run, null)} data-testid="show-sources"><ListTree />{sources ? `Show sources (${sources})` : 'Show sources'}</Button>}
         {run.reportId && <>
           <a href={`/r/${run.reportId}`} target="_blank" rel="noopener" className="inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-[13px] font-medium text-ink-2 hover:bg-surface hover:text-ink [&_svg]:size-4" data-testid="open-report"><ExternalLink />Report</a>
           <Hint text="Copy a link to this dated report. It opens only for you while your source rights still allow it.">

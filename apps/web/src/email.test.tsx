@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {buildEmail, emlFile, emlName, finalSources, sqlRelations, tookWords, type EmailInput} from './email';
+import {buildEmail, emlFile, emlName, finalSources, tookWords, type EmailInput} from './email';
 import type {Evidence, EvidenceSummary, Visual} from './types';
 
 function sqlEvidence(id: string, sql: string): Evidence {
@@ -15,23 +15,6 @@ function sqlEvidence(id: string, sql: string): Evidence {
 const gscm: EvidenceSummary = {id: 'E4', system: 'gscm', system_name: 'GSCM', report_id: 'r1', report_name: 'Weekly PSI by market',
   data_mode: 'SYNTHETIC', as_of: null, total_rows: 3, truncated: false, warnings: [], access_note: null};
 
-describe('sqlRelations', () => {
-  it('names the tables and views a query reads, not CTEs, functions or EXTRACT ... FROM', () => {
-    const sql = `-- last week by market
-      WITH wk AS (SELECT * FROM bi_reporting.psi_combined p WHERE EXTRACT(week FROM p.week_start) = 40),
-           plan(market, units) AS (SELECT market, sum(units) FROM "BI_Reporting"."Sell_In_Plan" GROUP BY 1)
-      SELECT w.market, sum(w.units), max(pl.units)
-      FROM wk w JOIN plan pl ON pl.market = w.market
-      LEFT JOIN LATERAL (SELECT name FROM ref.markets m WHERE m.code = w.market) n ON true
-      CROSS JOIN generate_series(1, 3) g, ref.subsidiaries s
-      WHERE w.market IN (SELECT code FROM ref.active_markets) AND substring(w.note FROM 1 FOR 3) <> 'x FROM y'
-      GROUP BY 1`;
-    expect(sqlRelations(sql)).toEqual(['bi_reporting.psi_combined', 'BI_Reporting.Sell_In_Plan', 'ref.markets', 'ref.subsidiaries',
-                                       'ref.active_markets']);
-    expect(sqlRelations('select * from a.b x, c.d as y, e where 1 = 1')).toEqual(['a.b', 'c.d', 'e']);
-  });
-});
-
 describe('finalSources', () => {
   it('lists only the sources the answer cites or charts, one line per table or report', () => {
     const evidence = [sqlEvidence('E1', 'SELECT 1 FROM bi_reporting.psi_combined'), sqlEvidence('E2', 'SELECT * FROM bi_reporting.calendar'),
@@ -43,6 +26,8 @@ describe('finalSources', () => {
       {system: 'GSCM', name: 'Weekly PSI by market', ids: ['E4']},
     ]);
     expect(finalSources('No citations.', [], [gscm]).map(s => s.name)).toEqual(['Weekly PSI by market']);
+    expect(finalSources('[E5]', [], [{...gscm, id: 'E5', folder_path: ['Biz Plan']}])).toEqual([
+      {system: 'GSCM › Biz Plan', name: 'Weekly PSI by market', ids: ['E5']}]);
   });
 });
 

@@ -141,6 +141,10 @@ export interface EvidenceSummary {
   warnings: string[];
   access_note: string | null;
   run_id?: string;
+  /** A report's folders in its system (its module). */
+  folder_path?: string[];
+  /** A database query's SQL, so the card can name the tables it read. */
+  sql?: string | null;
 }
 
 export interface Column { key: string; label: string; type: string; unit?: string; aggregation?: string }

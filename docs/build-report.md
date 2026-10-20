@@ -3,7 +3,56 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-20 (latest) — `uv.lock` back in step with `pyproject.toml`; a stale lock now fails CI
+## 2026-10-20 (latest) — Show sources lists real sources; no "Google has no capacity" on every question
+
+**Show sources.** The owner asked that the button show the sources actually used, "a file, a postgres table or a name of
+a report in one of these modules (like sell in biz plan GSCM)", not "Show sources (14)" for 14 queries on one table.
+The queries should show only when a source is opened.
+- Each evidence summary (the `tool_finished` event and the run's stored evidence) now carries the query's `sql` and the
+  report's `folder_path` (`runs.evidence_summary`, one helper for both).
+- `apps/web/src/sources.ts` groups evidence into sources. A query counts under each table or view its SQL reads (the
+  email's existing parser, moved here). A report is its system, module and name (GSCM › Biz Plan · Sell in). An
+  attached file is one source whichever sheet was read. Lookups in `information_schema` or `pg_catalog` are listed last
+  as "Table and column definitions" and not counted.
+- The button reads "Show sources (2)": one table and one report. The drawer shows one card per source, with its system
+  and module, data mode, newest as-of and how often it was read ("14 queries"). A card opens to one line per query (id, what
+  sets it apart from the others, e.g. `… week_start = date '2026-07-01' …`, and rows; the whole SQL on hover). A line
+  opens to the full SQL, rows and freshness, loaded only then. A citation chip
+  opens the drawer on its source and query.
+- The report page's "Sources consulted" and the email's source list use the same grouping. The email now names a
+  report's module.
+
+**"No capacity" notices.** The owner: "I don't want the user to see 'google has no capacity' message constantly".
+Cause: every capacity refusal on Flash added a status line (two quick tries, then the switch to Pro). For ten minutes
+after a switch, every new question also opened with "Google has no capacity for gemini-3.8-flash… Wizard answers with
+gemini-3.1-pro-preview". In `code_assist.py`, as in Gemini CLI's default (errorVerbosity low):
+- The quick tries and the switch to the fallback show nothing. Each refusal and the switch are still in
+  `wizard.log`. The run still records the model that answered.
+- New questions that start on the fallback because of capacity show nothing. A used-up quota still says so: that
+  is the person's own limit, and it lasts hours.
+- Waiting on the last model (Pro without capacity, or no fallback) shows "Gemini is busy; trying again in 10 s (attempt
+  2 of 10)", without Google's capacity wording.
+- Unchanged: if all 10 tries fail, the answer stops with "Google has no capacity for … This is on Google's side, not
+  your quota", quoting Google.
+
+**Tests.**
+- Python: the Flash to Pro hand-over emits no status and no warning, and neither does the next question. A
+  used-up quota still explains the switch and the next question's start on Pro. Waiting on the last model shows only
+  "Gemini is busy". The evidence summary carries `sql` and `folder_path`, and so do the API's events and the restored
+  run.
+- Web:
+  - `sourceGroups`: 14 queries on one table, a report with its module, a file read twice, joins, catalog lookups, full
+    evidence. `distinctLines`: shared SQL openings are cut, keeping three words before the difference.
+  - The drawer: two cards, opening to 14 query lines and then to the SQL; a citation opens its source.
+  - The button reads "Show sources (2)", and the email names the module.
+- E2E: the email test expects the module (`NERP › Marketing`). The compact-view test no longer waits for the host to
+  get the "read" animation. In replay a report tool returns in about 3 ms, the same on `main` and this branch, and a
+  browser did not always render a frame in between (main 16 of 20 runs, this branch 13 of 20, measured side by side).
+  It now checks "think" and "write", which last long enough to see every time; the tool-to-animation mapping stays
+  unit-tested. After that, 5 full runs without retries passed 16 of 16 each (Chromium; locally `msedge` is not
+  installed, so `verify_all`'s e2e layer cannot launch here).
+
+## 2026-10-20 — `uv.lock` back in step with `pyproject.toml`; a stale lock now fails CI
 
 `uv lock --check` failed: `uv.lock` had not been updated since `truststore`, so it lacked pywin32 (added for Office
 automation) and pg8000 (the driver behind `wizard_query_postgresql` and the catalog export), with pg8000's

@@ -35,6 +35,27 @@ describe('run card timing', () => {
   });
 });
 
+describe('show sources', () => {
+  it('counts the tables, reports and files read, not each query', () => {
+    let seq = 0;
+    const ev = (type: string, payload: Record<string, unknown>): RunEvent => ({seq: ++seq, type, ts: '2026-10-07T07:25:00Z', payload});
+    let run = applyEvent(emptyRun('run_5', 'cnv_1', 'Sell-in by market'), ev('run_started', {runtime: 'code-assist', runtime_label: 'x', model: 'm'}));
+    const summary = (id: string, sql: string | null, extra: Record<string, unknown> = {}) => ({id, system: 'postgresql', system_name: 'PostgreSQL',
+      report_id: `sql-${id}`, report_name: 'SQL query on meto_db', data_mode: 'LIVE', as_of: null, total_rows: 3, truncated: false, warnings: [],
+      access_note: null, sql, ...extra});
+    for (let i = 1; i <= 14; i++) {
+      run = applyEvent(run, ev('tool_started', {call_id: `c${i}`, name: 'wizard_query_postgresql', label: 'Queried', category: 'source'}));
+      run = applyEvent(run, ev('tool_finished', {call_id: `c${i}`, name: 'wizard_query_postgresql', ok: true, duration_ms: 5, summary: '3 rows',
+        evidence: summary(`E${i}`, `SELECT * FROM bi_reporting.sell_in_amt_mv WHERE week = ${i}`)}));
+    }
+    run = applyEvent(run, ev('tool_started', {call_id: 'g1', name: 'gscm_run_report', label: 'Read GSCM', category: 'source'}));
+    run = applyEvent(run, ev('tool_finished', {call_id: 'g1', name: 'gscm_run_report', ok: true, duration_ms: 5, summary: '3 rows',
+      evidence: summary('E15', null, {system: 'gscm', system_name: 'GSCM', report_id: 'gscm-sell-in', report_name: 'Sell in', folder_path: ['Biz Plan']})}));
+    render(card(run));
+    expect(screen.getByTestId('show-sources').textContent).toBe('Show sources (2)');
+  });
+});
+
 describe('systems stage', () => {
   it('lights up the system Gemini is reading and shows the query it sent', () => {
     let seq = 0;
@@ -93,9 +114,9 @@ describe('the wizard on the stage', () => {
     let run = applyEvent(emptyRun('run_4', 'cnv_1', 'q'), ev('run_started', {runtime: 'code-assist', runtime_label: 'x', model: 'gemini-3.1-pro'}));
     run = applyEvent(run, ev('tool_started', {call_id: 'c1', name: 'nerp_run_report', label: 'Read NERP', category: 'source'}));
     run = applyEvent(run, ev('tool_finished', {call_id: 'c1', name: 'nerp_run_report', ok: true, duration_ms: 3, summary: '3 rows'}));
-    run = applyEvent(run, ev('status', {message: 'Google has no capacity for gemini-3.1-pro right now; trying again in 1 s.'}));
+    run = applyEvent(run, ev('status', {message: 'Gemini is busy; trying again in 10 s (attempt 2 of 10).'}));
     render(card(run));
-    expect(screen.getByTestId('stage-waiting').textContent).toContain('no capacity for gemini-3.1-pro');
+    expect(screen.getByTestId('stage-waiting').textContent).toContain('Gemini is busy; trying again in 10 s');
   });
 
   it('has no finale for a run loaded already finished', () => {

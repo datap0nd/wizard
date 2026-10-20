@@ -37,7 +37,7 @@ from .attachments import AttachmentError, public
 from .config import ConfigError, Settings, kb_source, load_settings
 from .metronome_client import MetronomeClient, MetronomeError
 from .outlook import DraftError, open_outlook_draft
-from .runs import Busy, RunManager, entitled_to, public_schedule
+from .runs import Busy, RunManager, entitled_to, evidence_summary, public_schedule
 from .security import REQUEST_HEADER, SECURITY_HEADERS, SESSION_COOKIE, session_token, verify
 from .store import Store
 
@@ -438,9 +438,7 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         shown = TIMELINE_EVENTS | {"diagnostic"} if settings.diagnostics else TIMELINE_EVENTS
         events = [e for e in store.events(run["id"]) if e["type"] in shown]
         visuals = store.visuals(run["conversation_id"], run["id"])
-        evidence = [{k: e.get(k) for k in ("id", "system", "system_name", "report_id", "report_name", "data_mode",
-                                           "as_of", "total_rows", "truncated", "warnings", "access_note", "run_id")}
-                    for e in store.evidence(run["conversation_id"]) if e.get("run_id") == run["id"]]
+        evidence = [evidence_summary(e) for e in store.evidence(run["conversation_id"]) if e.get("run_id") == run["id"]]
         shown_run = {k: v for k, v in run.items() if k not in ("user_id", "stats")}
         shown_run["stats"] = json.loads(run["stats"]) if run.get("stats") else {}
         files = [public(a) for a in store.conversation_attachments(run["conversation_id"]) if a["run_id"] == run["id"]]
