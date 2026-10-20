@@ -1,5 +1,5 @@
 import {createContext, useContext, useEffect, useMemo, useRef, useState} from 'react';
-import {CheckCircle2, ChevronDown, Loader2, MessageSquareText, Sparkles, Trophy, X, XCircle} from 'lucide-react';
+import {CheckCircle2, ChevronDown, Hourglass, Loader2, MessageSquareText, Sparkles, Trophy, X, XCircle} from 'lucide-react';
 import {spoken} from '@/format';
 import {cn} from '@/lib/utils';
 import {badges, detailOf, stageModel, WIZARD, type ModuleStats, type StageModel} from '@/stage';
@@ -248,6 +248,9 @@ function Stage({run, model, onEvidence, finale}: {run: RunView; model: StageMode
   const active = model.active ?? recent;
   const activeModule = active ? model.modules.find(m => m.stats.calls.includes(active)) : null;
   const note = running ? [...run.timeline].reverse().find(t => t.kind === 'note') : undefined;
+  // Gemini's own limits (a wait, a switch of model) come as status lines and warnings: the latest one, while it is news.
+  const last = run.timeline[run.timeline.length - 1];
+  const waiting = running && !model.active && (last?.kind === 'status' || last?.kind === 'warning') ? last : undefined;
   const chosen = model.modules.find(m => m.id === selected);
   // The wizard acts out the step in progress, or the one that just finished while its module is still lit.
   const animation: WizardAnimation = finale ?? (!running ? 'idle' : active ? toolAnimation(active.name ?? '') : wizardAnimation(run));
@@ -343,6 +346,10 @@ function Stage({run, model, onEvidence, finale}: {run: RunView; model: StageMode
                 )}
               </div>
             </div>
+          ) : waiting ? (
+            <p className={cn('flex items-center gap-2 text-[13px]', waiting.kind === 'warning' ? 'text-warn' : 'text-ink-2')} data-testid="stage-waiting">
+              <Hourglass className="size-4 shrink-0" />{waiting.label}
+            </p>
           ) : (
             <p className="flex items-center gap-2 text-[13px] text-ink-2">
               <Sparkles className="size-4 text-accent" />{run.streamText ? 'Writing the answer' : 'Gemini is deciding the next step'}<span className="stage-dots" aria-hidden="true" />

@@ -138,7 +138,7 @@ of Wizard on this PC:
 
 | Section | Settings | Test |
 |---|---|---|
-| Gemini | Model, Google Cloud project, company Google domains | — |
+| Gemini | Model, fallback model, Google Cloud project, company Google domains | — |
 | Knowledge base | Repository, read-only token, branch, folder, check interval | **Test connection**: can the token read the repository? |
 | Company database | Name people see (default "AI Team Database"), server, port, database, read-only user, password, SSL | **Test connection**: connects read-only and reports the user |
 | Network | Proxy | — |
@@ -154,6 +154,16 @@ of Wizard on this PC:
 - **Model picker:** the model chip in the panel's header (and the full app's top bar) lists the models your own Gemini
   entitlement has quota for, from Google's quota answer for your account. "Another model or more settings…" opens
   Settings, where any model id can be typed (for example `gemini-3.1-pro`). A run keeps the model it started with.
+- **When Gemini says no.** Wizard reads Google's refusal the way Gemini CLI does, and the stage shows what it is doing:
+  - *No capacity for the model* (Google's side, not your quota; common for Pro models at busy times): two quick tries,
+    then the rest of the answer comes from the **fallback model** (Settings, default `gemini-3.8-flash`; `none` turns
+    it off). The answer says so, and its report names the model that answered. For ten minutes, new questions start on
+    the fallback, and say so.
+  - *Your quota for the model is used up* (often the daily quota): no waiting. The answer continues on the fallback
+    model, until Google's reset time.
+  - *Per-minute limit* (Wizard asks Gemini once per step, so a long answer can reach it): Wizard waits as long as
+    Google asks, then continues.
+  - `logs\wizard.log` records each refusal with Google's own reason (lines from `wizard.gemini`).
 - **Update:** Check for updates reads the public release manifest; **Update to 1.0.N** has WizardBar download it, check
   size, SHA-256 and version, install it silently and start again. In a normal browser it offers the download instead.
 
@@ -218,6 +228,7 @@ Someone who already has Wizard can import a new file from the tray menu: **Impor
 | No tab, but the tray icon is there | The tab hides during full-screen apps and slide shows, or was turned off in the menu |
 | Ctrl+Alt+W does nothing | Another program owns it (`bar.log` says "taken by another program"); use the tab or the tray icon |
 | The panel is blank and mentions WebView2 | The Edge WebView2 runtime is missing; it ships with Windows 10/11 and Edge |
+| Many "Google has no capacity for …" lines, or answers from the fallback model | Google's capacity for that model (often a Pro model at busy times), not your quota. Pick a Flash model in the model chip, or wait. `logs\wizard.log` has Google's reason for each refusal |
 | A dropped file shows "Could not read" | Point at the file in the panel for the reason (type, size, a protected file Office would not open). `bar.log` has drop errors |
 
 ## Building it yourself

@@ -121,6 +121,19 @@ def test_the_model_changes_without_a_restart(tmp_path):
     assert load_settings(env={}, home=tmp_path).model == "gemini-3.1-pro", "kept after a restart"
 
 
+def test_the_fallback_model_changes_without_a_restart(tmp_path):
+    assert load_settings(env={}, home=tmp_path).fallback_model == "gemini-3.8-flash"
+    with TestClient(create_app(install(tmp_path))) as client:
+        owner(client)
+        runtime = client.app.state.manager.runtime
+        assert put(client, {"WIZARD_GEMINI_FALLBACK_MODEL": "gemini-3.1-flash"}).json()["apply"] == "none"
+        assert runtime.fallback_model == "gemini-3.1-flash"
+        assert put(client, {"WIZARD_GEMINI_FALLBACK_MODEL": "none"}).json()["apply"] == "none"
+        assert runtime.fallback_model is None
+        assert put(client, {"WIZARD_GEMINI_FALLBACK_MODEL": "Flash please"}).status_code == 400
+    assert load_settings(env={}, home=tmp_path).fallback_model is None, "kept after a restart"
+
+
 def test_desktop_restarts_itself_to_apply_other_settings(tmp_path):
     settings = install(tmp_path)
     settings.desktop = True

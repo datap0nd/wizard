@@ -159,7 +159,7 @@ def build_runtime(settings: Settings, secret_box: SecretBox, scopes: list[str]) 
             shim_command=[str(ROOT / "wizard_mcp_shim.py")], proxy=settings.proxy, diagnostics=settings.diagnostics))
     if settings.runtime == "code-assist":
         return CodeAssistRuntime(settings.model, secret_box, gemini_project(settings), settings.thinking,
-                                 proxy=settings.proxy)
+                                 proxy=settings.proxy, fallback_model=settings.fallback_model)
     return ReplayRuntime(settings.transcripts_dir, settings.replay_delay_s)
 
 
@@ -828,10 +828,13 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
             raise HTTPException(error.status, str(error)) from None
         changed = result["changed"]
         store.audit(identity.id, "settings:update", detail={"keys": changed})
-        if "WIZARD_GEMINI_MODEL" in changed:
+        if {"WIZARD_GEMINI_MODEL", "WIZARD_GEMINI_FALLBACK_MODEL"} & set(changed):
             fresh = await asyncio.to_thread(load_settings, None, None, settings.home)
             apply_model(fresh.model)
-        others = [k for k in changed if k != "WIZARD_GEMINI_MODEL"]
+            settings.fallback_model = fresh.fallback_model
+            if isinstance(runtime, CodeAssistRuntime):
+                runtime.fallback_model = fresh.fallback_model
+        others = [k for k in changed if k not in ("WIZARD_GEMINI_MODEL", "WIZARD_GEMINI_FALLBACK_MODEL")]
         return {**settings_view(), "changed": changed, "apply": schedule_restart() if others else "none"}
 
     @app.post("/api/v1/settings/test")

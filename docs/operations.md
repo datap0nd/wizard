@@ -15,7 +15,8 @@ To be completed and rehearsed with the named operations owner on the pilot host.
 |---|---|---|
 | User sees "Link your own Gemini account" | No per-user sign-in | User links via Account; never copy another user's credentials |
 | Runs fail with `model_unreachable` | Proxy/TLS/DNS to Google | Check `HTTPS_PROXY`, `NODE_EXTRA_CA_CERTS`, firewall to `*.googleapis.com` |
-| Runs fail with `model_capacity` | Quota or capacity | Retry later; check entitlement/quota in the Google admin console |
+| Runs fail with `model_capacity` | Google has no capacity for the model (not the user's quota), or kept rate-limiting | The fallback model (`WIZARD_GEMINI_FALLBACK_MODEL`, default `gemini-3.8-flash`) takes over unless it is the same model or `none`; pick a Flash model, or retry later. `wizard.log` (`wizard.gemini`) has Google's reason |
+| Runs fail with `model_quota` | The user's quota for that model is used up (often daily) | Another model, or wait for Google's reset; check entitlement/quota in the Google admin console |
 | A source tool returns `source_unavailable` | Source outage or schema change | Check the adapter log; the answer discloses the gap; open a source-owner ticket |
 | Wrong number reported | Data, definition or model error | Ask the user for the report link; open evidence; Check my data; record in the eval log; escalate to source owner if rows differ from the source |
 | Stale data | Source refresh failed | Compare evidence as-of with the source schedule; notify the owner |

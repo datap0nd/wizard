@@ -86,6 +86,17 @@ describe('the wizard on the stage', () => {
     expect(screen.getByTestId('journey')).toBeTruthy();
   });
 
+  it('shows what Gemini is waiting on instead of "deciding"', () => {
+    let seq = 0;
+    const ev = (type: string, payload: Record<string, unknown>): RunEvent => ({seq: ++seq, type, ts: '2026-10-20T08:00:00Z', payload});
+    let run = applyEvent(emptyRun('run_4', 'cnv_1', 'q'), ev('run_started', {runtime: 'code-assist', runtime_label: 'x', model: 'gemini-3.1-pro'}));
+    run = applyEvent(run, ev('tool_started', {call_id: 'c1', name: 'nerp_run_report', label: 'Read NERP', category: 'source'}));
+    run = applyEvent(run, ev('tool_finished', {call_id: 'c1', name: 'nerp_run_report', ok: true, duration_ms: 3, summary: '3 rows'}));
+    run = applyEvent(run, ev('status', {message: 'Google has no capacity for gemini-3.1-pro right now; trying again in 1 s.'}));
+    render(card(run));
+    expect(screen.getByTestId('stage-waiting').textContent).toContain('no capacity for gemini-3.1-pro');
+  });
+
   it('has no finale for a run loaded already finished', () => {
     let seq = 0;
     const ev = (type: string, payload: Record<string, unknown>): RunEvent => ({seq: ++seq, type, ts: '2026-10-20T08:00:00Z', payload});

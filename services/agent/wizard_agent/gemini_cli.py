@@ -105,8 +105,14 @@ def classify(message: str) -> tuple[str, str]:
     if has(r"auth method", r"\bunauthenticated\b", r"invalid_grant", r"\b401\b", r"failed to login", r"login required",
            r"oauth credentials"):
         return "gemini_signin_required", "Your Gemini sign-in is missing or expired. Link your Gemini account again."
-    if has(r"\b429\b", r"resource_exhausted", r"quota", r"at capacity"):
-        return "model_capacity", "Gemini is at capacity or your quota is exhausted. Try again in a few minutes."
+    if has(r"model_capacity_exhausted", r"model_capacity_exceeded", r"no capacity available", r"exhausted your capacity",
+           r"capacity exceeded"):
+        return "model_capacity", ("Google has no capacity for this model right now. This is on Google's side, not your "
+                                  "quota. Try again in a few minutes, or choose another model.")
+    if has(r"quota_exhausted", r"daily quota", r"perday", r"limit:\s*0\b", r"quota exceeded", r"exhausted your daily"):
+        return "model_quota", "Your Gemini quota for this model is used up. Choose another model or try again later."
+    if has(r"\b429\b", r"resource_exhausted", r"quota", r"at capacity", r"rate_limit_exceeded"):
+        return "model_capacity", "Gemini refused more requests for now (rate limit). Try again in a few minutes."
     if has(r"requires setting the google_cloud_project", r"google_cloud_project.{0,60}must be set", r"projectidrequired"):
         return "project_required", ("Your Gemini licence needs a Google Cloud project id. Put GOOGLE_CLOUD_PROJECT=<id> in "
                                     "Wizard's .env (the id your own Gemini CLI uses) and restart.")

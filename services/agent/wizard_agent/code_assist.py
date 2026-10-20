@@ -4,15 +4,23 @@ This is the plan's per-user OAuth route (Step 02) for hosts where running isolat
 Ported from Scribble's GeminiCodeAssistGateway (datap0nd/scribble 41ab532): project resolution via loadCodeAssist /
 onboardUser with GOOGLE_CLOUD_PROJECT for enterprise tiers, SSE streamGenerateContent, function calling with thought
 signatures echoed back, and Gemini CLI style 429 handling. Gemini still chooses every tool call; Wizard only executes
-them through the same registry, rights checks and evidence capture as the MCP path."""
+them through the same registry, rights checks and evidence capture as the MCP path.
+
+Limits are read the way Gemini CLI reads them (packages/core/src/utils/googleQuotaErrors.ts): Google's error details
+tell apart a model with no capacity on Google's side, a used-up (daily) quota, and a per-minute rate limit. Only the
+last is worth waiting for. When the chosen model cannot answer, the rest of the run continues on the fallback model,
+and the run says so."""
 from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import random
 import re
+import time
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 
@@ -26,6 +34,12 @@ API_BASE = "https://cloudcode-pa.googleapis.com/v1internal"
 # with an answer; this guards against a model that keeps calling tools after they refuse.
 MAX_STEPS = 200
 MAX_RETRIES = 6
+CAPACITY_RETRIES = 2         # quick tries before leaving a model Google has no room for (Gemini CLI: 1 s, then 3 s)
+MAX_RETRYABLE_DELAY_S = 300  # a longer suggested wait means the quota will not come back within the run
+CAPACITY_REST_S = 600        # after leaving a model for lack of capacity, later questions start on the fallback
+RETRY_STATUSES = (429, 499, 500, 502, 503, 504)
+log = logging.getLogger("wizard.gemini")
+sleep = asyncio.sleep  # one place to wait, so tests need not
 KEEP_SCHEMA_KEYS = ("description", "enum", "required", "minItems", "maxItems", "minimum", "maximum")
 
 
@@ -64,11 +78,97 @@ def thinking_config(model: str, level: str) -> dict[str, Any] | None:
     return {"thinkingLevel": level.upper()}
 
 
-def retry_delay(body: str, attempt: int) -> float:
-    match = re.search(r'"retryDelay"\s*:\s*"(\d+)', body) or re.search(r"after\s+(\d+)\s*s", body)
-    hint = int(match.group(1)) if match else 0
-    backoff = min(30, 2 ** (attempt + 1))
-    return min(90, max(backoff, hint)) * (1 + 0.2 * random.random())  # noqa: S311 - jitter, not security
+@dataclass
+class Limit:
+    """Why Google refused a request: no room for the model on its side, the person's quota used up, a per-minute
+    rate limit, or a busy server."""
+    kind: Literal["capacity", "quota", "rate", "busy"]
+    delay: float | None  # Google's suggested wait, in seconds
+    detail: str          # Google's own message, for the log
+
+
+def _seconds(text: str) -> float | None:
+    match = re.fullmatch(r"\s*([0-9.]+)\s*(ms|s)\s*", text or "")
+    if not match:
+        return None
+    try:
+        value = float(match.group(1))
+    except ValueError:
+        return None
+    return value / 1000 if match.group(2) == "ms" else value
+
+
+def classify_limit(status: int, body: str) -> Limit:
+    """A 429 (or 499/5xx) the way Gemini CLI reads it, from google.rpc ErrorInfo, QuotaFailure and RetryInfo."""
+    try:
+        data: Any = json.loads(body)
+    except json.JSONDecodeError:
+        data = None
+    if isinstance(data, list):
+        data = data[0] if data else None
+    found = data.get("error") if isinstance(data, dict) else None
+    error: dict[str, Any] = found if isinstance(found, dict) else {}
+    message = str(error.get("message") or body or f"HTTP {status}").strip()[:500]
+    details = [d for d in error.get("details") or [] if isinstance(d, dict)]
+
+    def detail(kind: str) -> dict[str, Any]:
+        return next((d for d in details if str(d.get("@type", "")).endswith(kind)), {})
+
+    info, failure, retry = detail("google.rpc.ErrorInfo"), detail("google.rpc.QuotaFailure"), detail("google.rpc.RetryInfo")
+    hint = re.search(r'"retryDelay"\s*:\s*"([0-9.]+m?s)"', body) or re.search(r"retry in ([0-9.]+m?s)", message, re.IGNORECASE)
+    delay = _seconds(str(retry.get("retryDelay") or "")) or (_seconds(hint.group(1)) if hint else None)
+    reason = str(info.get("reason") or "")
+    quota_ids = [str(v.get("quotaId") or "") for v in failure.get("violations") or [] if isinstance(v, dict)]
+    quota_ids.append(str((info.get("metadata") or {}).get("quota_limit") or ""))
+    lower = message.lower()
+    if reason in ("MODEL_CAPACITY_EXHAUSTED", "MODEL_CAPACITY_EXCEEDED") or re.search(
+            r"exhausted your capacity|capacity exceeded|model_capacity_exhausted|no capacity available", lower):
+        return Limit("capacity", delay, message)
+    if status not in (429, 499, 503) and not delay:
+        return Limit("busy", None, message)  # a server error: try again
+    if (re.search(r"limit:\s*0(?!\d|\.\d)", lower) or reason in ("QUOTA_EXHAUSTED", "INSUFFICIENT_G1_CREDITS_BALANCE")
+            or any("PerDay" in q or "Daily" in q for q in quota_ids) or (delay or 0) > MAX_RETRYABLE_DELAY_S
+            or (reason == "RATE_LIMIT_EXCEEDED" and delay is None)):
+        return Limit("quota", delay, message)
+    if reason == "RATE_LIMIT_EXCEEDED" or any("PerMinute" in q for q in quota_ids):
+        return Limit("rate", delay if delay is not None else 60.0, message)
+    return Limit("busy", delay, message)
+
+
+def retry_delay(hint: float | None, attempt: int) -> float:
+    """At least Google's suggested wait; otherwise 5, 10, 20, 30 s (Gemini CLI), with up to 20 % jitter."""
+    backoff = min(30.0, 5.0 * 2 ** attempt)
+    return min(float(MAX_RETRYABLE_DELAY_S), max(backoff, hint or 0.0)) * (1 + 0.2 * random.random())  # noqa: S311 - jitter
+
+
+def _about(seconds: float | None) -> str:
+    if not seconds:
+        return ""
+    minutes = round(seconds / 60)
+    if minutes < 1:
+        return f" (back in about {seconds:.0f} s)"
+    return f" (back in about {minutes} min)" if minutes < 90 else f" (back in about {minutes / 60:.0f} h)"
+
+
+def limit_message(limit: Limit, model: str, fallback: str | None = None) -> str:
+    """What the person reads when a model cannot answer, and what Wizard does about it."""
+    then = f" Wizard continues with {fallback}." if fallback else ""
+    if limit.kind == "capacity":
+        return (f"Google has no capacity for {model} right now. This is on Google's side, not your quota."
+                + (then or " Try again in a few minutes, or pick another model in the model chip."))
+    if limit.kind == "quota":
+        return (f"Your Gemini quota for {model} is used up{_about(limit.delay)}."
+                + (then or " Pick another model in the model chip."))
+    return (f"Gemini kept refusing requests for {model} ({'per-minute limit' if limit.kind == 'rate' else 'busy'})."
+            + (then or " Try again in a few minutes."))
+
+
+class _Unavailable(Exception):
+    """The run's model cannot answer now; the run may continue on the fallback model."""
+
+    def __init__(self, limit: Limit):
+        super().__init__(limit.kind)
+        self.limit = limit
 
 
 def summarize_quota(raw: dict[str, Any], model: str) -> dict[str, Any]:
@@ -95,8 +195,11 @@ class CodeAssistRuntime:
     kind: RuntimeKind = "code-assist"
 
     def __init__(self, model: str, secret_box: SecretBox, project: str | None = None, thinking: str = "high",
-                 api_base: str = API_BASE, transport: httpx.AsyncBaseTransport | None = None, proxy: str | None = None):
+                 api_base: str = API_BASE, transport: httpx.AsyncBaseTransport | None = None, proxy: str | None = None,
+                 fallback_model: str | None = None):
         self.model = model
+        self.fallback_model = fallback_model
+        self._resting: dict[str, tuple[float, Limit]] = {}  # model -> (until, why): later runs start on the fallback
         self.proxy = proxy
         self.secret_box = secret_box
         self.project_override = project
@@ -193,19 +296,36 @@ class CodeAssistRuntime:
 
     async def _stream(self, http: httpx.AsyncClient, token: str, envelope: dict[str, Any], emit: Emit
                       ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+        model = str(envelope["model"])
         dropped_thinking = False
+        capacity_tries = 0
+        limit = Limit("busy", None, "")
         for attempt in range(MAX_RETRIES):
             parts: list[dict[str, Any]] = []
             calls: list[dict[str, Any]] = []
             usage: dict[str, Any] = {}
             async with http.stream("POST", f"{self.api_base}:streamGenerateContent", params={"alt": "sse"}, json=envelope,
                                    headers={"Authorization": f"Bearer {token}", "Accept": "text/event-stream"}) as response:
-                if response.status_code == 429:
+                if response.status_code in RETRY_STATUSES:
                     body = (await response.aread()).decode("utf-8", "replace")
-                    delay = retry_delay(body, attempt)
-                    await emit("status", {"message": f"Gemini is at capacity; retrying in {delay:.0f}s "
-                                                     f"(attempt {attempt + 1} of {MAX_RETRIES})."})
-                    await asyncio.sleep(delay)
+                    limit = classify_limit(response.status_code, body)
+                    log.warning("Gemini refused a request for %s: %s (HTTP %s): %s", model, limit.kind,
+                                response.status_code, limit.detail[:300])
+                    if limit.kind == "quota":
+                        raise _Unavailable(limit)
+                    if limit.kind == "capacity":
+                        capacity_tries += 1
+                        if capacity_tries > CAPACITY_RETRIES:
+                            raise _Unavailable(limit)
+                        delay = limit.delay if limit.delay is not None else (1.0 if capacity_tries == 1 else 3.0)
+                        message = f"Google has no capacity for {model} right now; trying again in {delay:.0f} s."
+                    else:
+                        delay = retry_delay(limit.delay, attempt)
+                        message = (f"Gemini's per-minute limit for {model} was reached; waiting {delay:.0f} s"
+                                   if limit.kind == "rate" else f"Gemini is busy; trying again in {delay:.0f} s")
+                        message += f" (attempt {attempt + 1} of {MAX_RETRIES})."
+                    await emit("status", {"message": message})
+                    await sleep(delay)
                     continue
                 if response.status_code == 400 and not dropped_thinking and "thinking" in (await response.aread()).decode(
                         "utf-8", "replace").lower():
@@ -228,7 +348,15 @@ class CodeAssistRuntime:
                 if data_lines:
                     await self._consume("\n".join(data_lines), parts, calls, usage, emit)
             return parts, calls, usage
-        raise AgentFailure("model_capacity", f"Gemini stayed at capacity through {MAX_RETRIES} attempts. Try again later.")
+        raise _Unavailable(limit)
+
+    def _start_model(self) -> tuple[str, Limit | None]:
+        """The chosen model, unless it was left for the fallback a short while ago (then the fallback, and why)."""
+        resting = self._resting.get(self.model)
+        if resting and resting[0] > time.monotonic() and self.fallback_model and self.fallback_model != self.model:
+            return self.fallback_model, resting[1]
+        self._resting.pop(self.model, None)
+        return self.model, None
 
     @staticmethod
     async def _consume(payload: str, parts: list[dict[str, Any]], calls: list[dict[str, Any]], usage: dict[str, Any],
@@ -250,6 +378,10 @@ class CodeAssistRuntime:
             if isinstance(part.get("functionCall"), dict):
                 calls.append(part["functionCall"])
 
+    def _generation(self, model: str) -> dict[str, Any]:
+        thinking = thinking_config(model, self.thinking)
+        return {"thinkingConfig": thinking} if thinking else {}
+
     async def run(self, request: AgentRequest, emit: Emit, tools: ToolBridge, cancelled: Any) -> None:
         try:
             await self._run(request, emit, tools, cancelled)
@@ -260,14 +392,14 @@ class CodeAssistRuntime:
         async with self._http() as http:
             token = await self._access_token(http, request)
             project = await self.resolve_project(http, token, request.user_id)
-            model = self.model  # the model picker may change self.model; a run keeps the one it started with
+            chosen = self.model  # the model picker may change self.model; a run keeps the one it started with
+            model, rested = self._start_model()
             await emit("agent_session", {"session_id": request.run_id, "model": model, "project": project})
+            if rested:
+                await emit("warning", {"message": limit_message(rested, chosen, model).replace(" continues ", " answers ")})
             declarations = [{"name": t["name"], "description": t["description"], "parameters": gemini_schema(t["inputSchema"])}
                             for t in tools.describe()]
-            generation: dict[str, Any] = {}
-            thinking = thinking_config(model, self.thinking)
-            if thinking:
-                generation["thinkingConfig"] = thinking
+            generation = self._generation(model)
             contents: list[dict[str, Any]] = [{"role": "user", "parts": [{"text": request.prompt}]}]
             totals = {"tool_calls": 0, "input_tokens": 0, "output_tokens": 0}
             for _ in range(MAX_STEPS):
@@ -278,7 +410,22 @@ class CodeAssistRuntime:
                     "systemInstruction": {"role": "user", "parts": [{"text": system_prompt()}]},
                     "tools": [{"functionDeclarations": declarations}],
                     "generationConfig": generation}}
-                parts, calls, usage = await self._stream(http, token, envelope, emit)
+                try:
+                    parts, calls, usage = await self._stream(http, token, envelope, emit)
+                except _Unavailable as unavailable:
+                    fallback = self.fallback_model
+                    if not fallback or fallback == model:
+                        raise AgentFailure("model_quota" if unavailable.limit.kind == "quota" else "model_capacity",
+                                           limit_message(unavailable.limit, model)) from None
+                    if model == chosen:
+                        rest = (unavailable.limit.delay or 3600) if unavailable.limit.kind == "quota" else CAPACITY_REST_S
+                        self._resting[chosen] = (time.monotonic() + min(rest, 6 * 3600), unavailable.limit)
+                    await emit("warning", {"message": limit_message(unavailable.limit, model, fallback)})
+                    model = fallback
+                    generation = self._generation(model)
+                    _skip_signatures(contents)
+                    await emit("agent_session", {"session_id": request.run_id, "model": model, "project": project})
+                    continue
                 totals["input_tokens"] += int(usage.get("promptTokenCount", 0))
                 totals["output_tokens"] += int(usage.get("candidatesTokenCount", 0))
                 if not parts:
@@ -296,3 +443,12 @@ class CodeAssistRuntime:
                                                            "response": payload if ok else {"error": payload.get("error")}}})
                 contents.append({"role": "user", "parts": responses})
             raise AgentFailure("too_many_steps", f"Gemini used more than {MAX_STEPS} steps without finishing.")
+
+
+def _skip_signatures(contents: list[dict[str, Any]]) -> None:
+    """Thought signatures belong to the model that wrote them. After switching models, earlier turns carry Google's
+    documented placeholder instead, so the new model does not reject them."""
+    for turn in contents:
+        for part in turn.get("parts") or []:
+            if isinstance(part, dict) and "thoughtSignature" in part:
+                part["thoughtSignature"] = "skip_thought_signature_validator"

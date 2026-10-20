@@ -113,6 +113,15 @@ export function SettingsDialog({open, onClose, onSaved}: {open: boolean; onClose
         </div>
       );
     }
+    if (f.key === 'WIZARD_GEMINI_FALLBACK_MODEL') {
+      return (
+        <>
+          <input value={value(f)} placeholder={f.placeholder} disabled={disabled} aria-label={f.label} list="wizard-fallback-models"
+            autoComplete="off" spellCheck={false} onChange={e => edit(f.key, e.target.value)} className={common} data-testid={`setting-${f.key}`} />
+          <datalist id="wizard-fallback-models">{['none', ...models].map(m => <option key={m} value={m} />)}</datalist>
+        </>
+      );
+    }
     if (f.choices.length) {
       return (
         <select value={value(f) || f.placeholder} disabled={disabled} onChange={e => edit(f.key, e.target.value)} aria-label={f.label} className={common}>

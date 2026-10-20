@@ -3,6 +3,44 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
+## 2026-10-20 (latest) — "Gemini is at capacity": telling Google's refusals apart, and a fallback model
+
+The owner reported many "Gemini is at capacity" lines. Wizard showed that text for every HTTP 429 from Google and
+retried the same model up to six times, for minutes. Google's 429s mean different things, and only one of them is
+worth waiting for.
+
+**What changed** (`wizard_agent/code_assist.py`, after Gemini CLI's `googleQuotaErrors.ts` and `retry.ts`):
+- `classify_limit` reads Google's error details (ErrorInfo reason, QuotaFailure ids, RetryInfo delay, the message):
+  - **capacity:** `MODEL_CAPACITY_EXHAUSTED`, "no capacity available". Google has no room for the model; it is not the
+    person's quota. Two quick tries (1 s, 3 s), as Gemini CLI does, then the model is left.
+  - **quota:** `QUOTA_EXHAUSTED`, a per-day quota, "limit: 0", or a suggested wait over 5 minutes. No waiting.
+  - **rate:** `RATE_LIMIT_EXCEEDED` or a per-minute quota. Wizard asks Gemini once per step, so a long answer can reach
+    it. Wizard waits at least as long as Google asks (60 s for a per-minute quota without a hint).
+  - **busy:** anything else, and 5xx. Retried with 5–30 s backoff.
+- **Fallback model** (`WIZARD_GEMINI_FALLBACK_MODEL`, in Settings, default `gemini-3.8-flash`, `none` turns it off):
+  - When the run's model has no capacity, no quota, or keeps refusing, the rest of the answer continues on it.
+  - A warning says so in plain words, and the run's model (report, history) becomes the one that answered.
+  - Earlier turns' thought signatures get Google's documented placeholder, so the new model accepts them.
+  - New questions start on the fallback for 10 minutes after a capacity problem, or until the quota resets, and say so.
+- Without a fallback the failure says whose side it is: `model_capacity` ("on Google's side, not your quota") or the
+  new `model_quota` (with the reset time).
+- Each refusal is logged with Google's reason (`wizard.gemini` in `wizard.log`).
+- The stage shows the wait or the switch instead of "Gemini is deciding the next step".
+- The Gemini CLI runtime's error text now tells capacity, quota and rate limits apart too.
+
+**Tests.** 16 new Python tests:
+- Google's refusal bodies classified as Gemini CLI does: capacity, daily, quota exhausted, rate with and without a
+  delay, "limit: 0", a list-wrapped body, 503 and 500.
+- Pro handing over to Flash after two quick tries, with the warning, the recorded model, the signature placeholder and
+  the next question starting on Flash.
+- A used-up quota is not waited for.
+- A per-minute limit waits as long as Google asks.
+- No capacity without a fallback names Google's side.
+- The fallback setting is saved, applied live and validated.
+
+One new web test: the stage shows the wait. Python 317 passed, web 27, plus spec, contracts, secrets, lint and types.
+Google's real refusals are not reproducible here; the cases follow Gemini CLI's own tests and Google's error format.
+
 ## 2026-10-20 (latest) — The pixel wizard everywhere, a bigger stage, an animated button, files dropped on it
 
 The owner asked for:

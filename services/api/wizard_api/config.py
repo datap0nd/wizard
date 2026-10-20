@@ -52,6 +52,8 @@ class Settings:
     public_origin: str | None = None
     runtime: str = "replay"
     model: str = "gemini-3.8-flash"
+    # Used for the rest of an answer when Google has no capacity for the chosen model or its quota is used up.
+    fallback_model: str | None = "gemini-3.8-flash"
     thinking: str = "high"
     gemini_cli_js: str | None = None
     node: str | None = None
@@ -177,6 +179,9 @@ def load_settings(env: dict[str, str] | None = None, env_file: Path | None = Non
     if settings.runtime not in RUNTIMES:
         raise ConfigError(f"WIZARD_AGENT_RUNTIME must be one of {', '.join(RUNTIMES)}")
     settings.model = get("WIZARD_GEMINI_MODEL", settings.model) or settings.model
+    fallback = get("WIZARD_GEMINI_FALLBACK_MODEL")
+    if fallback is not None:
+        settings.fallback_model = None if fallback.strip().lower() in ("", "none") else fallback.strip()
     settings.thinking = get("WIZARD_GEMINI_THINKING", "high") or "high"
     if settings.thinking not in ("high", "low", "none"):
         raise ConfigError("WIZARD_GEMINI_THINKING must be high, low or none")
