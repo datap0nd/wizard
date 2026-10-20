@@ -163,7 +163,8 @@ of Wizard on this PC:
     model, until Google's reset time.
   - *Per-minute limit* (Wizard asks Gemini once per step, so a long answer can reach it): Wizard waits as long as
     Google asks, then continues.
-  - `logs\wizard.log` records each refusal with Google's own reason (lines from `wizard.gemini`).
+  - The message quotes Google's own words (`Google said: "..."`), and `logs\wizard.log` records each refusal with
+    Google's reason (lines from `wizard.gemini`).
 - **Update:** Check for updates reads the public release manifest; **Update to 1.0.N** has WizardBar download it, check
   size, SHA-256 and version, install it silently and start again. In a normal browser it offers the download instead.
 

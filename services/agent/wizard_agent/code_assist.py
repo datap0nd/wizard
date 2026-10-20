@@ -150,17 +150,27 @@ def _about(seconds: float | None) -> str:
     return f" (back in about {minutes} min)" if minutes < 90 else f" (back in about {minutes / 60:.0f} h)"
 
 
+def google_says(limit: Limit) -> str:
+    """Google's own words, short and on one line, so the person (and whoever helps them) sees the real reason."""
+    text = " ".join(limit.detail.split())
+    if not text or text.startswith(("HTTP ", "{", "[")):
+        return ""
+    return f' Google said: "{text[:177] + "..." if len(text) > 180 else text}"'
+
+
 def limit_message(limit: Limit, model: str, fallback: str | None = None) -> str:
     """What the person reads when a model cannot answer, and what Wizard does about it."""
     then = f" Wizard continues with {fallback}." if fallback else ""
     if limit.kind == "capacity":
-        return (f"Google has no capacity for {model} right now. This is on Google's side, not your quota."
+        text = (f"Google has no capacity for {model} right now. This is on Google's side, not your quota."
                 + (then or " Try again in a few minutes, or pick another model in the model chip."))
-    if limit.kind == "quota":
-        return (f"Your Gemini quota for {model} is used up{_about(limit.delay)}."
+    elif limit.kind == "quota":
+        text = (f"Your Gemini quota for {model} is used up{_about(limit.delay)}."
                 + (then or " Pick another model in the model chip."))
-    return (f"Gemini kept refusing requests for {model} ({'per-minute limit' if limit.kind == 'rate' else 'busy'})."
-            + (then or " Try again in a few minutes."))
+    else:
+        text = (f"Gemini kept refusing requests for {model} ({'per-minute limit' if limit.kind == 'rate' else 'busy'})."
+                + (then or " Try again in a few minutes."))
+    return text + google_says(limit)
 
 
 class _Unavailable(Exception):
@@ -324,6 +334,8 @@ class CodeAssistRuntime:
                         message = (f"Gemini's per-minute limit for {model} was reached; waiting {delay:.0f} s"
                                    if limit.kind == "rate" else f"Gemini is busy; trying again in {delay:.0f} s")
                         message += f" (attempt {attempt + 1} of {MAX_RETRIES})."
+                    if attempt == 0:
+                        message += google_says(limit)
                     await emit("status", {"message": message})
                     await sleep(delay)
                     continue

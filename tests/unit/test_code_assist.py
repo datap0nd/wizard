@@ -208,6 +208,7 @@ def test_a_model_google_has_no_room_for_hands_over_to_the_fallback_and_says_so(t
     assert sessions == ["gemini-3.1-pro", "gemini-3.8-flash"], "the run records the model that answered"
     warning = next(p["message"] for k, p in events if k == "warning")
     assert "no capacity for gemini-3.1-pro" in warning and "not your quota" in warning and "gemini-3.8-flash" in warning
+    assert warning.endswith('Google said: "No capacity available for model gemini-3.1-pro on the server"')
     switched = fake.requests[-1]["request"]["contents"]
     assert switched[1]["parts"][0]["thoughtSignature"] == "skip_thought_signature_validator"
     assert [p["text"] for k, p in events if k == "text_delta"][-1] == "EG [E1]."

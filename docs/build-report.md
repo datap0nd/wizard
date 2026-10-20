@@ -24,7 +24,8 @@ worth waiting for.
   - New questions start on the fallback for 10 minutes after a capacity problem, or until the quota resets, and say so.
 - Without a fallback the failure says whose side it is: `model_capacity` ("on Google's side, not your quota") or the
   new `model_quota` (with the reset time).
-- Each refusal is logged with Google's reason (`wizard.gemini` in `wizard.log`).
+- Each refusal is logged with Google's reason (`wizard.gemini` in `wizard.log`). The first wait, the switch and the
+  failure also quote Google's own words (`Google said: "..."`), so the real reason is on screen.
 - The stage shows the wait or the switch instead of "Gemini is deciding the next step".
 - The Gemini CLI runtime's error text now tells capacity, quota and rate limits apart too.
 
