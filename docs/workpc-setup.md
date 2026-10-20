@@ -17,7 +17,7 @@ git, no pip and no Node build. The PC only ever **pulls** `main` from GitHub; no
 |---|---|---|
 | Optional: `DG_GITHUB_TOKEN` (the token the B2B / data-governance installers already use) | The repository is public, so setup works without it, but anonymous GitHub API calls are limited to 60 per hour per IP address, which an office network shares. Setup uses 2 or 3 per run (archives come from the public download links, not the API). | setup names a rate-limit refusal (HTTP 403) |
 | Node.js and Gemini CLI, signed in with your enterprise Google account | Wizard's analyst runs through Gemini CLI; you also use Gemini CLI for the documentation tasks | `node --version`, `gemini --version` |
-| Outbound HTTPS to `api.github.com`, `github.com` release downloads, `accounts.google.com`, `oauth2.googleapis.com`, `codeassist.google.com`, `cloudcode-pa.googleapis.com`, and the company's GitHub Enterprise Server when the knowledge base is there | install, Google sign-in, Gemini, knowledge base | task 00 tests each one |
+| Outbound HTTPS to `api.github.com`, `github.com` release downloads, `accounts.google.com`, `oauth2.googleapis.com`, `codeassist.google.com`, `cloudcode-pa.googleapis.com`, `github.sec.samsung.net` | install, Google sign-in, Gemini, the knowledge base | task 00 tests each one |
 
 `GOOGLE_CLOUD_PROJECT`: if your Gemini CLI needs it (enterprise Code Assist), set it in your user environment before
 the first setup and setup copies it into `.env`, or add it to `.env` yourself.

@@ -4,8 +4,8 @@ Only what Wizard reads is published: content/knowledge/**/*.md and content/contr
 first time. The inbox (raw documents), digests, registers, quiz logs and stakeholder lists stay on this PC, because
 every file in the repository reaches every PC that syncs it.
 
-Work PCs have no git, so this writes one commit through GitHub's API (github.com, or the company's GitHub Enterprise
-Server named by WIZARD_KB_API): unchanged files are not uploaded again (their git blob ids match), notes deleted here
+Work PCs have no git, so this writes one commit through the API of the company's GitHub Enterprise Server (fixed:
+wizard_connectors.github): unchanged files are not uploaded again (their git blob ids match), notes deleted here
 are deleted there, and anything else in the repository is left alone. Before writing it checks that the repository is
 private, that the token can push, and that the content passes Wizard's own validation. The publishing token
 (WIZARD_KB_PUBLISH_TOKEN: Contents read and write) stays in this PC's .env; it is never the read-only token handed to
@@ -24,7 +24,7 @@ import httpx
 
 from wizard_agent import outbound
 from wizard_connectors.content import errors, validate_content
-from wizard_connectors.github import PUBLIC_API, web_root
+from wizard_connectors.github import API, WEB
 
 MANAGED = ("knowledge/", "contracts/sources/")
 MAX_FILE_BYTES = 2 * 1024 * 1024
@@ -88,13 +88,13 @@ def blob_id(data: bytes) -> str:
 
 
 class GitHub:
-    def __init__(self, repo: str, token: str, client: httpx.Client, api: str = PUBLIC_API):
-        self.repo, self.client, self.api = repo, client, api
+    def __init__(self, repo: str, token: str, client: httpx.Client):
+        self.repo, self.client = repo, client
         self.headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json",
                         "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "Wizard-Knowledge-Publish"}
 
     def call(self, method: str, path: str, body: dict[str, Any] | None = None, ok: tuple[int, ...] = (200, 201)) -> Any:
-        response = self.client.request(method, f"{self.api}/repos/{self.repo}{path}", headers=self.headers, json=body)
+        response = self.client.request(method, f"{API}/repos/{self.repo}{path}", headers=self.headers, json=body)
         if response.status_code not in ok:
             raise PublishError(explain(response, self.repo))
         return response.json() if response.content else None
@@ -118,14 +118,13 @@ def explain(response: httpx.Response, repo: str) -> str:
     return f"GitHub answered HTTP {code} ({detail})."
 
 
-def _client(proxy: str | None, api: str) -> httpx.Client:
-    route, _ = outbound.proxy_for(api, proxy)
+def _client(proxy: str | None) -> httpx.Client:
+    route, _ = outbound.proxy_for(API, proxy)
     return httpx.Client(timeout=60, verify=outbound.ssl_context(), proxy=route, trust_env=False)
 
 
 def publish(content: Path, repo: str, token: str, *, branch: str | None = None, message: str | None = None,
-            dry_run: bool = False, proxy: str | None = None, client: httpx.Client | None = None,
-            api: str = PUBLIC_API) -> Outcome:
+            dry_run: bool = False, proxy: str | None = None, client: httpx.Client | None = None) -> Outcome:
     outcome = Outcome()
     files = collect(content)
     if not files:
@@ -134,8 +133,8 @@ def publish(content: Path, repo: str, token: str, *, branch: str | None = None, 
     if problems:
         raise PublishError(f"{len(problems)} problem(s) in the notes; fix them first (docs.ps1 validate). First: {problems[0]}")
     outcome.lines.append(f"PASS  {len(files)} file(s) pass Wizard's checks")
-    with client or _client(proxy, api) as http:
-        gh = GitHub(repo, token, http, api)
+    with client or _client(proxy) as http:
+        gh = GitHub(repo, token, http)
         info = gh.call("GET", "")
         if not info.get("private"):
             raise PublishError(f"{repo} is not private. Company notes must never go to a public repository: make it "
@@ -144,7 +143,7 @@ def publish(content: Path, repo: str, token: str, *, branch: str | None = None, 
             raise PublishError("This account cannot write to the repository: ask an organisation owner for write access.")
         branch = branch or info.get("default_branch") or "main"
         outcome.lines.append(f"PASS  {repo} is private and the token can write; branch {branch}")
-        ref = http.get(f"{api}/repos/{repo}/git/ref/heads/{branch}", headers=gh.headers)
+        ref = http.get(f"{API}/repos/{repo}/git/ref/heads/{branch}", headers=gh.headers)
         if ref.status_code in (404, 409):  # an empty repository has no branch yet: its first commit is the README
             if dry_run:
                 outcome.added = sorted(files) + ["README.md"]
@@ -152,7 +151,7 @@ def publish(content: Path, repo: str, token: str, *, branch: str | None = None, 
                 return outcome
             gh.call("PUT", "/contents/README.md", {"message": "Start the Wizard knowledge base", "branch": branch,
                                                     "content": base64.b64encode(README.encode("utf-8")).decode("ascii")})
-            ref = http.get(f"{api}/repos/{repo}/git/ref/heads/{branch}", headers=gh.headers)
+            ref = http.get(f"{API}/repos/{repo}/git/ref/heads/{branch}", headers=gh.headers)
         if ref.status_code != 200:
             raise PublishError(explain(ref, repo))
         parent = ref.json()["object"]["sha"]
@@ -188,17 +187,17 @@ def publish(content: Path, repo: str, token: str, *, branch: str | None = None, 
                                                    "tree": new_tree["sha"], "parents": [parent]})
         gh.call("PATCH", f"/git/refs/heads/{branch}", {"sha": commit["sha"], "force": False})
         outcome.commit = commit["sha"]
-        outcome.lines.append(f"PASS  published {summary}: {web_root(api)}/{repo}/commit/{commit['sha']}")
+        outcome.lines.append(f"PASS  published {summary}: {WEB}/{repo}/commit/{commit['sha']}")
     return outcome
 
 
 def check_read(repo: str, token: str, ref: str = "main", *, proxy: str | None = None,
-               client: httpx.Client | None = None, api: str = PUBLIC_API) -> tuple[bool, str]:
+               client: httpx.Client | None = None) -> tuple[bool, str]:
     """Can the read-only token (the one users get) read the repository? The same request the desktop app makes."""
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.sha",
                "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "Wizard-Knowledge-Sync"}
-    with client or _client(proxy, api) as http:
-        response = http.get(f"{api}/repos/{repo}/commits/{ref}", headers=headers)
+    with client or _client(proxy) as http:
+        response = http.get(f"{API}/repos/{repo}/commits/{ref}", headers=headers)
         if response.status_code != 200:
             return False, explain(response, repo).replace("publishing token", "read-only token")
         commit = response.text.strip()

@@ -18,7 +18,6 @@ from typing import Any
 import httpx
 
 from wizard_agent import outbound
-from wizard_connectors.github import EXAMPLE, api_root
 from wizard_connectors.pg import PgError, PgSettings
 from wizard_connectors.pg import settings_from as pg_settings
 
@@ -53,8 +52,6 @@ FIELDS = [
     Field("GOOGLE_CLOUD_PROJECT", "Google Cloud project", "gemini", "Your organisation's Gemini project, if it has one."),
     Field("WIZARD_GOOGLE_DOMAINS", "Company Google domains", "gemini", "Only these accounts may link, e.g. company.com.",
           "company.com"),
-    Field("WIZARD_KB_API", "GitHub server", "knowledge", "The company's GitHub Enterprise Server API address. Leave "
-          "empty for github.com.", EXAMPLE),
     Field("WIZARD_KB_REPO", "Repository", "knowledge", "owner/name of the private repository.", "acme/wizard-content"),
     Field("WIZARD_KB_TOKEN", "Read-only token", "knowledge", "Fine-grained token: that repository only, Contents read.",
           "github_pat_…"),
@@ -224,12 +221,8 @@ def test_knowledge(settings: Settings, proposed: dict[str, Any],
     repo, token = values.get("WIZARD_KB_REPO"), values.get("WIZARD_KB_TOKEN")
     if not repo or not token:
         return {"ok": False, "message": "Fill in the repository and the token."}
-    try:
-        api = api_root(values.get("WIZARD_KB_API"))
-    except ValueError as error:
-        return {"ok": False, "message": f"GitHub server {error}."}
     source = knowledge_sync.Source(repo, values.get("WIZARD_KB_REF") or "main", (values.get("WIZARD_KB_PATH") or "").strip("/\\"),
-                                   token, api)
+                                   token)
     result = knowledge_sync.check(source, proxy=values.get("WIZARD_PROXY") or settings.proxy, transport=transport)
     return {"ok": result.ok, "message": result.message}
 

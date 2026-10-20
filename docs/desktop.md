@@ -42,10 +42,10 @@ token and makes the provisioning file. You type the tokens into files yourself; 
 A **private** repository in the company's GitHub organisation (for example `acme/wizard-content`), created **empty**.
 Users never get a GitHub account or a link to it.
 
-When the company's GitHub is a **GitHub Enterprise Server** rather than github.com, set `WIZARD_KB_API` to its API
-address, for example `https://github.example.com/api/v3` (the host alone also works). Set it in the work PC's `.env` for
-`docs.ps1`, and in the provisioning file for every PC. Without it, Wizard calls `api.github.com`, and a token from the
-company's server gets HTTP 401 there.
+The repository is on the company's GitHub Enterprise Server, `https://github.sec.samsung.net`. Wizard calls its API
+(`https://github.sec.samsung.net/api/v3`) for the sync, Test connection, `kb-publish` and `kb-check`. The server is
+built in (`wizard_connectors/github.py`): no setting, provisioning file or `.env` value changes it, and Wizard never
+calls `api.github.com` for company content. Only the app's own updates come from the public release on github.com.
 
 `.\docs.ps1 kb-publish` fills it from the work PC (no git needed: one commit through GitHub's API). It publishes only
 what Wizard reads, `content\knowledge\**\*.md` and `content\contracts\sources\*.json`, plus a README the first time:
@@ -75,7 +75,6 @@ Keep the company settings in a `KEY=value` file outside every Git repository: on
 here, and `scan_secrets.py` refuses `.provision` files and GitHub tokens):
 
 ```ini
-WIZARD_KB_API=https://github.example.com/api/v3
 WIZARD_KB_REPO=acme/wizard-content
 WIZARD_KB_TOKEN=github_pat_...
 WIZARD_KB_PATH=
@@ -109,7 +108,7 @@ of Wizard on this PC:
 | Section | Settings | Test |
 |---|---|---|
 | Gemini | Model, Google Cloud project, company Google domains | — |
-| Knowledge base | GitHub server, repository, read-only token, branch, folder, check interval | **Test connection**: can the token read the repository? |
+| Knowledge base | Repository, read-only token, branch, folder, check interval | **Test connection**: can the token read the repository? |
 | Company database | Name people see (default "AI Team Database"), server, port, database, read-only user, password, SSL | **Test connection**: connects read-only and reports the user |
 | Network | Proxy | — |
 | Version and updates | The installed version | **Check for updates** / **Update to 1.0.N** |
@@ -184,7 +183,7 @@ Someone who already has Wizard can import a new file from the tray menu: **Impor
 |---|---|
 | The tab says "Wizard stopped" | The panel shows the reason. `logs\wizard.log` names a settings problem (exit code 2); Restart Wizard tries again |
 | "Starting Wizard…" for minutes | `logs\service-output.log`. Another program may use port 8771: set `WIZARD_PORT` in `%LOCALAPPDATA%\Wizard\.env` |
-| Knowledge base not updating | About Wizard shows the last sync problem: 401 = token expired, or a GitHub Enterprise Server token sent to github.com (set `WIZARD_KB_API`), 404 = token lacks access, 403 = SSO approval or rate limit. `run.py --check` names the server |
+| Knowledge base not updating | About Wizard shows the last sync problem: 401 = token expired, 404 = token lacks access, 403 = SSO approval or rate limit |
 | No tab, but the tray icon is there | The tab hides during full-screen apps and slide shows, or was turned off in the menu |
 | Ctrl+Alt+W does nothing | Another program owns it (`bar.log` says "taken by another program"); use the tab or the tray icon |
 | The panel is blank and mentions WebView2 | The Edge WebView2 runtime is missing; it ships with Windows 10/11 and Edge |

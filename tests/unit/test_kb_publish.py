@@ -64,7 +64,7 @@ class FakeGitHub:
     def __call__(self, request: httpx.Request) -> httpx.Response:
         assert request.headers["authorization"] == f"Bearer {TOKEN}"
         self.hosts.add(request.url.host)
-        path = request.url.path.removeprefix("/api/v3").removeprefix("/repos/acme/kb")
+        path = request.url.path.removeprefix("/api/v3/repos/acme/kb")
         body = json.loads(request.content) if request.content else None
         self.calls.append(f"{request.method} {path}")
         if request.method != "GET":
@@ -129,6 +129,8 @@ def test_first_publish_of_an_empty_repository_sends_only_what_wizard_reads(tmp_p
     assert set(files) == {"README.md", "knowledge/company/overview.md"}, "no inbox, digests or registers"
     assert files["knowledge/company/overview.md"].decode() == NOTE
     assert any("published 1 added" in line for line in outcome.lines)
+    assert github.hosts == {"github.sec.samsung.net"}, "only the company's GitHub Enterprise Server"
+    assert outcome.lines[-1].endswith(f"https://github.sec.samsung.net/acme/kb/commit/{outcome.commit}")
 
 
 def test_unchanged_files_are_not_uploaded_and_deletions_follow(tmp_path):
@@ -149,13 +151,6 @@ def test_unchanged_files_are_not_uploaded_and_deletions_follow(tmp_path):
     assert third.changed == ["knowledge/company/overview.md"] and third.removed == ["knowledge/company/history.md"]
     assert github.calls.count("POST /git/blobs") == 1, "only the changed note is uploaded"
     assert set(github.files()) == {"README.md", ".github/CODEOWNERS", "knowledge/company/overview.md"}
-
-
-def test_publishing_to_the_companys_github_enterprise_server(tmp_path):
-    github = FakeGitHub()
-    outcome = publish(content_folder(tmp_path), github, api="https://github.example.com/api/v3")
-    assert github.hosts == {"github.example.com"}
-    assert outcome.lines[-1].endswith(f"https://github.example.com/acme/kb/commit/{outcome.commit}")
 
 
 def test_dry_run_writes_nothing(tmp_path):
@@ -192,7 +187,7 @@ def test_the_read_check_uses_the_users_token(tmp_path):
 
 def test_the_command_reads_repo_and_tokens_from_env_and_never_prints_them(tmp_path, capsys, monkeypatch):
     root = content_folder(tmp_path)
-    (tmp_path / ".env").write_text("WIZARD_KB_PUBLISH_REPO=acme/kb\nWIZARD_KB_API=github.example.com\n", encoding="utf-8")
+    (tmp_path / ".env").write_text("WIZARD_KB_PUBLISH_REPO=acme/kb\n", encoding="utf-8")
     assert docs_main(["kb-publish", str(root)]) == 2
     assert "WIZARD_KB_PUBLISH_TOKEN" in capsys.readouterr().out
     github = FakeGitHub()
@@ -202,7 +197,3 @@ def test_the_command_reads_repo_and_tokens_from_env_and_never_prints_them(tmp_pa
     assert docs_main(["kb-publish", str(root), "--dry-run"]) == 0
     out = capsys.readouterr().out
     assert "added    knowledge/company/overview.md" in out and TOKEN not in out and github.writes == []
-    assert github.hosts == {"github.example.com"}, "WIZARD_KB_API in .env names the server"
-    monkeypatch.setenv("WIZARD_KB_API", "http://github.example.com")
-    assert docs_main(["kb-publish", str(root), "--dry-run"]) == 2
-    assert "FAIL  WIZARD_KB_API must be" in capsys.readouterr().out

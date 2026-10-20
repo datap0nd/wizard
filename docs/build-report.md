@@ -6,29 +6,23 @@ decisions. Update it with every change that alters behaviour.
 ## 2026-10-20 (latest) — The knowledge base on the company's GitHub Enterprise Server
 
 The owner reported that Wizard could not reach the knowledge base. It called public GitHub (`api.github.com`), but the
-repository is on the company's GitHub Enterprise Server, whose API is at `https://<host>/api/v3`.
+repository is on the company's GitHub Enterprise Server, `https://github.sec.samsung.net`.
 
-**What changed.**
-- **`WIZARD_KB_API`** names the GitHub API the knowledge base lives on (`wizard_connectors/github.py`).
-  - Empty means github.com, as before.
-  - A GitHub Enterprise Server may be given as its host, its address or its API address. All three become
-    `https://<host>/api/v3`.
-  - Anything else stops start-up with a clear message: plain http, another path, or a user name in the address.
+**What changed (owner decision, 20 October 2026: built in, not changeable).**
+- **One fixed server.** `wizard_connectors/github.py` holds `https://github.sec.samsung.net/api/v3`. No setting,
+  provisioning file or `.env` value changes it.
 - **Everything that talks to the repository uses it:** the desktop sync, Settings → Knowledge base → Test connection,
   `docs.ps1 kb-publish` and `docs.ps1 kb-check`. The publish's commit link points to the same server.
-- **Visible:** Settings → Knowledge base has a new "GitHub server" field. The sync status reports the server, and
-  `run.py --check` names it in the knowledge-base line.
-- **No mix-ups:** a snapshot synced from one server is never used for another, even when both have the same
-  `owner/name`.
-- **A company setting:** it comes from the provisioning file, the Settings pane or `.env`. The host is not written into
-  the code, because the code and its releases are public. The app's own updates still come from the public release on
-  github.com.
+- **Visible:** the sync status reports the server, and `run.py --check` names it in the knowledge-base line.
+- **No mix-ups:** a snapshot synced before the server was fixed (its state has no server recorded) is not used; the
+  first sync from the company's server replaces it.
+- **Unchanged:** the app's own updates still come from the public release on github.com.
 
-**Tests.** Python suite 299 passed (4 new: the sync, the publish and the Settings test against an enterprise
-server, and the WIZARD_KB_API forms that are accepted or refused). Web unit tests and the 16 browser tests pass. The
-spec, contracts, secrets, lint and types checks pass. The Gemini CLI layer is BLOCKED in this sandbox (the CLI is not
-installed); PostgreSQL and live parity are BLOCKED as usual. Not yet tried against the real server: the first sync
-on a work PC confirms it.
+**Tests.** Python suite 296 passed, including a new test that every sync request goes to the company's server
+whatever the environment says, and that an older snapshot is not used. The publish and Settings tests now also check the
+server. Web unit tests and the 16 browser tests pass. The spec, contracts, secrets, lint and types checks pass. The
+Gemini CLI layer is BLOCKED in this sandbox (the CLI is not installed); PostgreSQL and live parity are BLOCKED as usual.
+Not yet tried against the real server: the first sync on a work PC confirms it.
 
 ## 2026-10-20 (evening) — The systems stage: a visual view of what Wizard pulls from each system
 

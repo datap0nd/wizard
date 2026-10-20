@@ -1,7 +1,7 @@
 """The knowledge base, synced from a private GitHub repository the owner maintains.
 
 Users never get the repository: each PC holds a read-only token (from the provisioning file) that lets Wizard download
-the content. The repository is on github.com or, with WIZARD_KB_API, on the company's GitHub Enterprise Server. A sync
+the content. The repository is on the company's GitHub Enterprise Server (fixed: wizard_connectors.github). A sync
 asks GitHub for the commit at WIZARD_KB_REF (a conditional request, so an unchanged repository costs no rate limit),
 downloads that commit's archive only when it changed, unpacks the WIZARD_KB_PATH folder into
 data/knowledge/snapshots/<commit>, and validates it with the same checks as WIZARD_CONTENT_DIR. Only a valid snapshot
@@ -27,7 +27,7 @@ import httpx
 
 from wizard_agent import outbound
 from wizard_connectors.content import errors, validate_content
-from wizard_connectors.github import PUBLIC_API
+from wizard_connectors.github import API
 
 MAX_ARCHIVE_BYTES = 200 * 1024 * 1024
 MAX_UNPACKED_BYTES = 500 * 1024 * 1024
@@ -43,7 +43,6 @@ class Source:
     ref: str
     path: str
     token: str | None
-    api: str = PUBLIC_API  # the REST API root: https://api.github.com or https://<enterprise host>/api/v3
 
 
 @dataclass(frozen=True)
@@ -85,9 +84,10 @@ def _snapshot(data_dir: Path, name: object) -> Path | None:
 
 
 def _same(state: dict[str, Any], source: Source, ref: bool = True) -> bool:
-    """The state describes this repository (on this GitHub server), folder and, with `ref`, branch."""
-    return (state.get("api", PUBLIC_API) == source.api and state.get("repo") == source.repo
-            and state.get("path", "") == source.path and (not ref or state.get("ref") == source.ref))
+    """The state describes this repository on the company's server, this folder and, with `ref`, this branch. A state
+    without "api" predates the fixed server: whatever it synced came from another GitHub."""
+    return (state.get("api") == API and state.get("repo") == source.repo and state.get("path", "") == source.path
+            and (not ref or state.get("ref") == source.ref))
 
 
 def active_content(data_dir: Path, source: Source | None = None) -> Path | None:
@@ -104,7 +104,7 @@ def status(data_dir: Path, source: Source | None, loaded: Path | None) -> dict[s
         return {"configured": False}
     state = read_state(data_dir)
     active = active_content(data_dir, source)
-    return {"configured": True, "api": source.api, "repo": source.repo, "ref": source.ref, "path": source.path or None,
+    return {"configured": True, "api": API, "repo": source.repo, "ref": source.ref, "path": source.path or None,
             "token": bool(source.token), "commit": state.get("commit") if active else None,
             "synced_at": state.get("synced_at"), "checked_at": state.get("checked_at"), "last_error": state.get("last_error"),
             "loaded": bool(loaded),
@@ -116,7 +116,7 @@ def _record(data_dir: Path, source: Source, **changes: Any) -> None:
     if not _same(state, source):
         state = {key: state[key] for key in ("active", "previous", "commit", "synced_at") if key in state}
         state["etag"] = None
-    state.update({"api": source.api, "repo": source.repo, "ref": source.ref, "path": source.path, **changes})
+    state.update({"api": API, "repo": source.repo, "ref": source.ref, "path": source.path, **changes})
     _write_state(data_dir, state)
 
 
@@ -182,7 +182,7 @@ def _clean(data_dir: Path, keep: set[str]) -> None:
 def check(source: Source, *, proxy: str | None = None, timeout: float = 30.0,
           transport: httpx.BaseTransport | None = None) -> Result:
     """Can this token read the repository at this ref? One request, nothing downloaded or stored."""
-    url = f"{source.api}/repos/{source.repo}/commits/{source.ref}"
+    url = f"{API}/repos/{source.repo}/commits/{source.ref}"
     headers = {"Authorization": f"Bearer {source.token}", "Accept": "application/vnd.github.sha",
                "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "Wizard-Knowledge-Sync"}
     try:
@@ -224,7 +224,7 @@ def _sync(source: Source, data_dir: Path, proxy: str | None, timeout: float,
                "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "Wizard-Knowledge-Sync"}
     if same_source and current and state.get("etag"):
         headers["If-None-Match"] = str(state["etag"])
-    url = f"{source.api}/repos/{source.repo}/commits/{source.ref}"
+    url = f"{API}/repos/{source.repo}/commits/{source.ref}"
     try:
         if transport is not None:
             http = httpx.Client(transport=transport, timeout=timeout, follow_redirects=True)
@@ -256,7 +256,7 @@ def _sync(source: Source, data_dir: Path, proxy: str | None, timeout: float,
             try:
                 zip_headers = {**headers, "Accept": "application/vnd.github+json"}
                 zip_headers.pop("If-None-Match", None)
-                with http.stream("GET", f"{source.api}/repos/{source.repo}/zipball/{commit}", headers=zip_headers) as download:
+                with http.stream("GET", f"{API}/repos/{source.repo}/zipball/{commit}", headers=zip_headers) as download:
                     if download.status_code != 200:
                         message = _explain(download, source)
                         _record(data_dir, source, checked_at=now, last_error=message)

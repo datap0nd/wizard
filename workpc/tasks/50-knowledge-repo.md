@@ -37,16 +37,15 @@ All `.\docs.ps1` commands run in PowerShell in this folder. If your shell is cmd
    ask what to do: remove it, reword it, or keep it. Wait for the answer, make the changes, and run
    `.\docs.ps1 validate` again.
 3. **Create the repository (the user, in the browser).** Give these steps and wait:
-   1. On the company's GitHub (https://github.com, or the company's GitHub Enterprise Server address) click **+**
-      (top right) → **New repository**, and choose the company organisation as the **Owner**. If the organisation is
-      not offered, an organisation owner must create the repository and give the user write access.
+   1. On the company's GitHub Enterprise Server, https://github.sec.samsung.net (Wizard reads only from there, never
+      from github.com), click **+** (top right) → **New repository**, and choose the company organisation as the
+      **Owner**. If the organisation is not offered, an organisation owner must create the repository and give the
+      user write access.
    2. Name: `wizard-content` (or a name the user prefers). Visibility: **Private**. Leave "Add a README", .gitignore
       and licence **off**: the repository must start empty.
-   3. Ask the user for the result as `owner/name`, for example `acme/wizard-content`, and for the GitHub address they
-      used. When it is not github.com, Wizard needs that server's API address: `https://<that host>/api/v3`.
-4. **Two tokens (the user, in the browser).** At `<the GitHub address>/settings/personal-access-tokens/new`
-   (fine-grained tokens; on github.com https://github.com/settings/personal-access-tokens/new), make two, one at a
-   time:
+   3. Ask the user for the result as `owner/name`, for example `acme/wizard-content`.
+4. **Two tokens (the user, in the browser).** At https://github.sec.samsung.net/settings/personal-access-tokens/new
+   (fine-grained tokens), make two, one at a time:
    1. **Publishing (stays on this PC):** name `Wizard publish (work PC)`; Resource owner: the company organisation;
       Repository access: **Only select repositories** → the new repository; Permissions → Repository permissions →
       **Contents: Read and write**. Expiration: the longest the organisation allows.
@@ -61,15 +60,12 @@ All `.\docs.ps1` commands run in PowerShell in this folder. If your shell is cmd
    WIZARD_KB_PUBLISH_TOKEN=<the publishing token>
    WIZARD_KB_READ_TOKEN=<the read-only token>
    ```
-   When the repository is on a GitHub Enterprise Server, a fourth line names it (no secret, but the user adds it too):
-   `WIZARD_KB_API=https://<that host>/api/v3`.
    These names only serve `docs.ps1`. They do not change how the Wizard installed in this folder runs.
 6. **Dry run.** `.\docs.ps1 kb-publish --dry-run`. It checks the notes again, that the repository is private and that
    the account can write to it, then lists what it would add, change and remove. Read the `FAIL` line if there is
-   one: 401 means the publishing token is wrong or expired (or `WIZARD_KB_API` is missing, so the token went to
-   github.com), 404 means the name is wrong or the token lacks this repository, 403 means it lacks Contents read and
-   write or awaits approval. Show the user the list and ask: "Publish these N files to <owner/name>?" Wait for a clear
-   yes.
+   one: 401 means the publishing token is wrong or expired, 404 means the name is wrong or the token lacks this
+   repository, 403 means it lacks Contents read and write or awaits approval. Show the user the list and ask:
+   "Publish these N files to <owner/name>?" Wait for a clear yes.
 7. **Publish.** `.\docs.ps1 kb-publish --message "First publish of the Wizard knowledge base"`. It prints the commit
    link. Ask the user to open it and check that only `README.md`, `knowledge/` and (if catalogs exist)
    `contracts/sources/` are in the repository.
@@ -77,13 +73,11 @@ All `.\docs.ps1` commands run in PowerShell in this folder. If your shell is cmd
    app given this token can sync. Remind the user that GitHub cannot tell from outside whether a token can also
    write: they should look once more at the read-only token's page on GitHub and confirm it shows Contents: Read-only.
 9. **Give it to the users.** Two ways; ask the user which they want:
-   - **One PC (theirs):** in the Wizard desktop app, ⚙ Settings → Knowledge base: the GitHub server (only for a
-     GitHub Enterprise Server), the repository and the read-only token → **Test connection** → **Save**. Wizard
-     restarts and syncs.
+   - **One PC (theirs):** in the Wizard desktop app, ⚙ Settings → Knowledge base: the repository and the read-only
+     token → **Test connection** → **Save**. Wizard restarts and syncs.
    - **Everyone:** a provisioning file. The user creates the folder `private\` in this folder (Gemini CLI does not
      read it) and, in Notepad, the file `private\company.env` with the company settings, one per line:
      ```
-     WIZARD_KB_API=https://<host>/api/v3   (only for a GitHub Enterprise Server)
      WIZARD_KB_REPO=<owner/name>
      WIZARD_KB_TOKEN=<the read-only token>
      WIZARD_PG_HOST=…   WIZARD_PG_PORT=5432   WIZARD_PG_DATABASE=…   WIZARD_PG_USER=…   WIZARD_PG_PASSWORD=…
@@ -101,7 +95,7 @@ All `.\docs.ps1` commands run in PowerShell in this folder. If your shell is cmd
 
 ## Write `outbox\50-knowledge-repo.md` (internal)
 
-- The repository (`owner/name`), the GitHub server, its branch, and the commit link from step 7.
+- The repository (`owner/name`), its branch, and the commit link from step 7.
 - What was published: notes per area and catalogs (from the publish output), and what step 2 removed or reworded.
 - The two tokens by name, with their expiry dates (never the tokens). Add a reminder to make new ones before they
   expire, then publish again and hand out a new provisioning file.
