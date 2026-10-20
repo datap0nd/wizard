@@ -45,6 +45,12 @@ gemini-3.1-pro-preview". In `code_assist.py`, as in Gemini CLI's default (errorV
     evidence. `distinctLines`: shared SQL openings are cut, keeping three words before the difference.
   - The drawer: two cards, opening to 14 query lines and then to the SQL; a citation opens its source.
   - The button reads "Show sources (2)", and the email names the module.
+- E2E: the email test expects the module (`NERP › Marketing`). The compact-view test no longer waits for the host to
+  get the "read" animation. In replay a report tool returns in about 3 ms, the same on `main` and this branch, and a
+  browser did not always render a frame in between (main 16 of 20 runs, this branch 13 of 20, measured side by side).
+  It now checks "think" and "write", which last long enough to see every time; the tool-to-animation mapping stays
+  unit-tested. After that, 5 full runs without retries passed 16 of 16 each (Chromium; locally `msedge` is not
+  installed, so `verify_all`'s e2e layer cannot launch here).
 
 ## 2026-10-20 — `uv.lock` back in step with `pyproject.toml`; a stale lock now fails CI
 

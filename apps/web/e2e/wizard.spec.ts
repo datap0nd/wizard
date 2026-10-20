@@ -168,7 +168,10 @@ test('the compact desktop view answers and tells its Windows host what happened'
   const sent = await page.evaluate(() => (window as unknown as {__sent: unknown[]}).__sent);
   expect(sent).toContainEqual({type: 'busy', busy: true});
   expect(sent).toContainEqual(expect.objectContaining({type: 'finished', ok: true, question: expect.stringMatching(CEO)}));
-  expect(sent).toContainEqual({type: 'activity', animation: 'read'});
+  // The button acts out the run. In replay a tool returns in about 3 ms, too fast to be sure a frame shows it (the
+  // tool-to-animation mapping is unit-tested); thinking and writing the answer last long enough to see every time.
+  expect(sent).toContainEqual({type: 'activity', animation: 'think'});
+  expect(sent).toContainEqual({type: 'activity', animation: 'write'});
   // A file dropped on the page goes to WizardBar with its place on disk; one dropped on the button comes back as attach.
   await page.evaluate(() => {
     const files = new DataTransfer();
