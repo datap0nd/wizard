@@ -155,11 +155,13 @@ of Wizard on this PC:
   removed it on 20 October 2026, and a model chosen with it before no longer applies. Only the company file, `.env` or
   the environment can set another (`WIZARD_GEMINI_MODEL`, and `WIZARD_GEMINI_FALLBACK_MODEL` for the fallback below).
 - **When Gemini says no.** Wizard reads Google's refusal the way Gemini CLI does, and the stage shows what it is doing:
-  - *No capacity for the model* (Google's side, not your quota; common for Pro models at busy times): two quick tries,
-    then the rest of the answer comes from the **fallback model** when one is set apart from the model
-    (`WIZARD_GEMINI_FALLBACK_MODEL`, default `gemini-3.8-flash`, the same as the default model, so normally none).
-    Otherwise the answer stops with Google's reason. After a switch the answer says so, its report names the model
-    that answered, and for ten minutes new questions start on the fallback.
+  - *No capacity for the model* (Google's side, not your quota; it usually passes within a minute or two): when a
+    **fallback model** is set apart from the model (`WIZARD_GEMINI_FALLBACK_MODEL`; the default, `gemini-3.8-flash`, is
+    the model itself, so normally none), two quick tries, then the rest of the answer comes from the fallback. After a
+    switch the answer says so, its report names the model that answered, and for ten minutes new questions start on
+    the fallback. With no other model to go to (the default, and on the fallback itself), Wizard waits it out as Gemini
+    CLI does: up to 10 tries, 5 to 30 s apart (about 4 minutes), showing each wait. Only then does the answer stop with
+    Google's reason.
   - *Your quota for the model is used up* (often the daily quota): no waiting. The answer continues on the fallback
     model, until Google's reset time.
   - *Per-minute limit* (Wizard asks Gemini once per step, so a long answer can reach it): Wizard waits as long as
@@ -230,7 +232,7 @@ Someone who already has Wizard can import a new file from the tray menu: **Impor
 | No tab, but the tray icon is there | The tab hides during full-screen apps and slide shows, or was turned off in the menu |
 | Ctrl+Alt+W does nothing | Another program owns it (`bar.log` says "taken by another program"); use the tab or the tray icon |
 | The panel is blank and mentions WebView2 | The Edge WebView2 runtime is missing; it ships with Windows 10/11 and Edge |
-| "Google has no capacity for …" | Google's capacity for the model, not your quota: try again in a few minutes. The message quotes Google's reason, and `logs\wizard.log` has it for each refusal |
+| "Google has no capacity for …" | Google's capacity for the model, not your quota. Wizard already waited about 4 minutes; try again a little later. The message quotes Google's reason, and `logs\wizard.log` has it for each refusal |
 | A dropped file shows "Could not read" | Point at the file in the panel for the reason (type, size, a protected file Office would not open). `bar.log` has drop errors |
 
 ## Building it yourself

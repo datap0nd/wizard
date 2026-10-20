@@ -224,8 +224,8 @@ def test_a_used_up_quota_is_not_waited_for(tmp_path, waits):
     with pytest.raises(AgentFailure) as error:
         run_and_collect(rt, req)
     assert error.value.code == "model_quota" and waits == []
-    assert "quota for gemini-3.1-pro is used up (back in about 2 h)" in error.value.message
-    assert "model chip" in error.value.message
+    assert "quota for gemini-3.1-pro is used up (back in about 2 h). Try again once it resets." in error.value.message
+    assert "model chip" not in error.value.message, "the model picker is gone"
 
 
 def test_a_per_minute_limit_waits_as_long_as_google_asks(tmp_path, waits):
@@ -237,10 +237,35 @@ def test_a_per_minute_limit_waits_as_long_as_google_asks(tmp_path, waits):
     assert status.startswith("Gemini's per-minute limit for gemini-3.8-flash was reached; waiting")
 
 
-def test_no_capacity_without_a_fallback_says_whose_side_it_is(tmp_path, waits):
+@pytest.mark.parametrize("fallback", ["gemini-3.8-flash", None])
+def test_no_capacity_with_no_other_model_is_waited_out(tmp_path, waits, fallback):
+    # The default: the fallback is the model itself, so there is nowhere to go. Gemini CLI (unattended) keeps trying.
     fake = FakeGoogle([[{"text": "ok"}]], refusals={"gemini-3.8-flash": [CAPACITY, CAPACITY, CAPACITY]})
+    rt, req = make(tmp_path, fake, fallback=fallback)
+    events = run_and_collect(rt, req)
+    assert [p["text"] for k, p in events if k == "text_delta"] == ["ok"]
+    assert len(waits) == 3 and all(base <= wait <= base * 1.2 for base, wait in zip([5, 10, 20], waits, strict=True))
+    statuses = [p["message"] for k, p in events if k == "status"]
+    assert statuses[0].startswith("Google has no capacity for gemini-3.8-flash right now; trying again in")
+    assert "(attempt 1 of 10)." in statuses[0] and 'Google said: "No capacity available' in statuses[0]
+    assert not any(k == "warning" for k, _ in events)
+
+
+def test_no_capacity_through_every_attempt_says_whose_side_it_is(tmp_path, waits):
+    fake = FakeGoogle([[{"text": "ok"}]], refusals={"gemini-3.8-flash": [CAPACITY] * code_assist.MAX_RETRIES})
     rt, req = make(tmp_path, fake, fallback="gemini-3.8-flash")
     with pytest.raises(AgentFailure) as error:
         run_and_collect(rt, req)
     assert error.value.code == "model_capacity"
     assert error.value.message.startswith("Google has no capacity for gemini-3.8-flash right now. This is on Google's side")
+    assert "Wizard kept trying for several minutes" in error.value.message and "model chip" not in error.value.message
+    assert len(fake.models) == code_assist.MAX_RETRIES and len(waits) == code_assist.MAX_RETRIES - 1, "no wait after the last"
+
+
+def test_a_fallback_model_without_capacity_is_waited_for(tmp_path, waits):
+    fake = FakeGoogle([[{"text": "ok"}]], refusals={"gemini-3.1-pro": [CAPACITY] * 3, "gemini-3.8-flash": [CAPACITY]})
+    rt, req = make(tmp_path, fake, model="gemini-3.1-pro", fallback="gemini-3.8-flash")
+    events = run_and_collect(rt, req)
+    assert fake.models == ["gemini-3.1-pro"] * 3 + ["gemini-3.8-flash"] * 2
+    assert waits[:2] == [1.0, 3.0] and 5 <= waits[2] <= 6, "quick tries on Pro, then Flash, the last model, is waited for"
+    assert [p["text"] for k, p in events if k == "text_delta"] == ["ok"]

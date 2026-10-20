@@ -3,7 +3,35 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-20 (latest) — No model picker: Gemini 3.8 Flash for everyone
+## 2026-10-20 (latest) — "No capacity" no longer stops every answer: Wizard waits it out, as Gemini CLI does
+
+The owner reported that Wizard "just stops with the Gemini capacity error constantly". Cause: the change below left
+the fallback model equal to the model (both `gemini-3.8-flash`), so there was nowhere to go. A capacity refusal got the
+two quick tries meant for switching models (1 s, 3 s), then the answer failed about 4 seconds after Google's first
+refusal. Before the fallback change the same refusal was retried for about a minute and a half.
+
+That copied only half of Gemini CLI's `retry.ts`. The CLI gives a model without capacity two quick tries only when a
+fallback can take over. Without one (unattended mode) it retries the refusal up to `DEFAULT_MAX_ATTEMPTS` (10) times,
+5 to 30 s apart.
+
+**What changed** (`wizard_agent/code_assist.py`):
+- Two quick tries, then the switch, only when a different fallback model is set. Otherwise (the default, and on the
+  fallback itself) a capacity refusal is waited for like a busy server: Google's suggested delay or 5, 10, 20, 30 s
+  backoff. The stage shows each wait ("Google has no capacity for … trying again in 10 s (attempt 2 of 10)").
+- Up to 10 attempts per step (was 6), Gemini CLI's default, about 4 minutes in all. No wait after the last attempt.
+- Failure messages no longer point to the removed model chip (Code Assist and Gemini CLI runtimes). A capacity failure
+  says Wizard already kept trying; a used-up quota says to try again once it resets.
+- `docs/desktop.md` and `docs/operations.md` describe the waits.
+
+**Tests.** 4 new tests replace 1:
+- No capacity with no other model, or no fallback at all, is waited out with 5, 10, 20 s backoff, then answers.
+- No capacity through all 10 attempts fails with `model_capacity` naming Google's side, after 9 waits.
+- A fallback model without capacity is waited for, after the chosen model's two quick tries.
+- The quota failure no longer mentions the model chip.
+
+The new tests fail on the previous code. Python 317 passed, 20 skipped.
+
+## 2026-10-20 (noon) — No model picker: Gemini 3.8 Flash for everyone
 
 The owner asked to remove the model picker again and default to Gemini 3.8 Flash.
 - **Removed:**

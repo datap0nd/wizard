@@ -108,9 +108,9 @@ def classify(message: str) -> tuple[str, str]:
     if has(r"model_capacity_exhausted", r"model_capacity_exceeded", r"no capacity available", r"exhausted your capacity",
            r"capacity exceeded"):
         return "model_capacity", ("Google has no capacity for this model right now. This is on Google's side, not your "
-                                  "quota. Try again in a few minutes, or choose another model.")
+                                  "quota. Try again in a few minutes.")
     if has(r"quota_exhausted", r"daily quota", r"perday", r"limit:\s*0\b", r"quota exceeded", r"exhausted your daily"):
-        return "model_quota", "Your Gemini quota for this model is used up. Choose another model or try again later."
+        return "model_quota", "Your Gemini quota for this model is used up. Try again once it resets."
     if has(r"\b429\b", r"resource_exhausted", r"quota", r"at capacity", r"rate_limit_exceeded"):
         return "model_capacity", "Gemini refused more requests for now (rate limit). Try again in a few minutes."
     if has(r"requires setting the google_cloud_project", r"google_cloud_project.{0,60}must be set", r"projectidrequired"):
