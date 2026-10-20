@@ -159,9 +159,9 @@ of Wizard on this PC:
     **fallback model** is set apart from the model (`WIZARD_GEMINI_FALLBACK_MODEL`; the default, `gemini-3.8-flash`, is
     the model itself, so normally none), two quick tries, then the rest of the answer comes from the fallback. After a
     switch the answer says so, its report names the model that answered, and for ten minutes new questions start on
-    the fallback. With no other model to go to (the default, and on the fallback itself), Wizard waits it out as Gemini
-    CLI does: up to 10 tries, 5 to 30 s apart (about 4 minutes), showing each wait. Only then does the answer stop with
-    Google's reason.
+    the fallback. With no other model to go to (the default, and on the fallback itself), Wizard waits it out: up to
+    10 tries, 5 to 30 s apart (about 4 minutes), showing each wait. Only then does the answer stop with Google's reason.
+    (Gemini CLI instead switches model: within Gemini 3, Flash and Pro stand in for each other.)
   - *Your quota for the model is used up* (often the daily quota): no waiting. The answer continues on the fallback
     model, until Google's reset time.
   - *Per-minute limit* (Wizard asks Gemini once per step, so a long answer can reach it): Wizard waits as long as

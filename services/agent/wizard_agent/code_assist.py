@@ -9,8 +9,9 @@ them through the same registry, rights checks and evidence capture as the MCP pa
 Limits are read the way Gemini CLI reads them (packages/core/src/utils/googleQuotaErrors.ts): Google's error details
 tell apart a model with no capacity on Google's side, a used-up (daily) quota, and a per-minute rate limit. A used-up
 quota is not waited for. When the chosen model cannot answer, the rest of the run continues on the fallback model, and
-the run says so. With no other model to go to, a model without capacity is waited for like a busy one, as Gemini CLI
-does in unattended mode (retry.ts): Google's capacity usually comes back within a minute or two."""
+the run says so. Gemini CLI answers "no capacity" by switching model (within Gemini 3, Flash and Pro stand in for each
+other). With no other model to go to, Wizard instead waits for the model like a busy one, as it did before the
+fallback: Google's capacity usually comes back within a minute or two."""
 from __future__ import annotations
 
 import asyncio

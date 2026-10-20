@@ -3,16 +3,16 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-20 (latest) — "No capacity" no longer stops every answer: Wizard waits it out, as Gemini CLI does
+## 2026-10-20 (latest) — "No capacity" no longer stops every answer: Wizard waits it out
 
 The owner reported that Wizard "just stops with the Gemini capacity error constantly". Cause: the change below left
 the fallback model equal to the model (both `gemini-3.8-flash`), so there was nowhere to go. A capacity refusal got the
 two quick tries meant for switching models (1 s, 3 s), then the answer failed about 4 seconds after Google's first
 refusal. Before the fallback change the same refusal was retried for about a minute and a half.
 
-That copied only half of Gemini CLI's `retry.ts`. The CLI gives a model without capacity two quick tries only when a
-fallback can take over. Without one (unattended mode) it retries the refusal up to `DEFAULT_MAX_ATTEMPTS` (10) times,
-5 to 30 s apart.
+The two quick tries come from Gemini CLI, which follows them with a switch of model, not a wait. Gemini 3 chains wrap
+around, so Flash without capacity falls back to Pro (`policyHelpers.ts`): silently on the auto model, otherwise after
+asking. Wizard has one model, so it waits instead, as it did before the fallback (then 6 tries over about 90 s).
 
 **What changed** (`wizard_agent/code_assist.py`):
 - Two quick tries, then the switch, only when a different fallback model is set. Otherwise (the default, and on the
