@@ -7,9 +7,11 @@ signatures echoed back, and Gemini CLI style 429 handling. Gemini still chooses 
 them through the same registry, rights checks and evidence capture as the MCP path.
 
 Limits are read the way Gemini CLI reads them (packages/core/src/utils/googleQuotaErrors.ts): Google's error details
-tell apart a model with no capacity on Google's side, a used-up (daily) quota, and a per-minute rate limit. Only the
-last is worth waiting for. When the chosen model cannot answer, the rest of the run continues on the fallback model,
-and the run says so."""
+tell apart a model with no capacity on Google's side, a used-up (daily) quota, and a per-minute rate limit. A used-up
+quota is not waited for. When the chosen model cannot answer, the rest of the run continues on the fallback model, as
+Gemini CLI does (within Gemini 3, Flash and Pro stand in for each other). Like the CLI's default (errorVerbosity low),
+the switch is not an error: the stage notes it, and the run records the model that answered. With no other model to go
+to, Wizard waits for the model like a busy one: Google's capacity usually comes back within a minute or two."""
 from __future__ import annotations
 
 import asyncio
@@ -33,7 +35,7 @@ API_BASE = "https://cloudcode-pa.googleapis.com/v1internal"
 # Model turns per run: a runaway backstop only. The run's time limit and Wizard's tool checks (runs.py) end a long run
 # with an answer; this guards against a model that keeps calling tools after they refuse.
 MAX_STEPS = 200
-MAX_RETRIES = 6
+MAX_RETRIES = 10             # Gemini CLI's DEFAULT_MAX_ATTEMPTS: with 5-30 s backoff, about 4 minutes in all
 CAPACITY_RETRIES = 2         # quick tries before leaving a model Google has no room for (Gemini CLI: 1 s, then 3 s)
 MAX_RETRYABLE_DELAY_S = 300  # a longer suggested wait means the quota will not come back within the run
 CAPACITY_REST_S = 600        # after leaving a model for lack of capacity, later questions start on the fallback
@@ -163,10 +165,10 @@ def limit_message(limit: Limit, model: str, fallback: str | None = None) -> str:
     then = f" Wizard continues with {fallback}." if fallback else ""
     if limit.kind == "capacity":
         text = (f"Google has no capacity for {model} right now. This is on Google's side, not your quota."
-                + (then or " Try again in a few minutes, or pick another model in the model chip."))
+                + (then or " Wizard kept trying for several minutes; try again a little later."))
     elif limit.kind == "quota":
         text = (f"Your Gemini quota for {model} is used up{_about(limit.delay)}."
-                + (then or " Pick another model in the model chip."))
+                + (then or " Try again once it resets."))
     else:
         text = (f"Gemini kept refusing requests for {model} ({'per-minute limit' if limit.kind == 'rate' else 'busy'})."
                 + (then or " Try again in a few minutes."))
@@ -304,8 +306,10 @@ class CodeAssistRuntime:
         self._projects[user_id] = resolved
         return resolved
 
-    async def _stream(self, http: httpx.AsyncClient, token: str, envelope: dict[str, Any], emit: Emit
+    async def _stream(self, http: httpx.AsyncClient, token: str, envelope: dict[str, Any], emit: Emit, can_leave: bool
                       ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+        """One model turn. `can_leave`: another model can take over, so a model without capacity gets only two quick
+        tries; otherwise it is waited for like a busy one."""
         model = str(envelope["model"])
         dropped_thinking = False
         capacity_tries = 0
@@ -321,9 +325,9 @@ class CodeAssistRuntime:
                     limit = classify_limit(response.status_code, body)
                     log.warning("Gemini refused a request for %s: %s (HTTP %s): %s", model, limit.kind,
                                 response.status_code, limit.detail[:300])
-                    if limit.kind == "quota":
+                    if limit.kind == "quota" or attempt + 1 == MAX_RETRIES:  # no wait after the last attempt
                         raise _Unavailable(limit)
-                    if limit.kind == "capacity":
+                    if limit.kind == "capacity" and can_leave:
                         capacity_tries += 1
                         if capacity_tries > CAPACITY_RETRIES:
                             raise _Unavailable(limit)
@@ -331,8 +335,12 @@ class CodeAssistRuntime:
                         message = f"Google has no capacity for {model} right now; trying again in {delay:.0f} s."
                     else:
                         delay = retry_delay(limit.delay, attempt)
-                        message = (f"Gemini's per-minute limit for {model} was reached; waiting {delay:.0f} s"
-                                   if limit.kind == "rate" else f"Gemini is busy; trying again in {delay:.0f} s")
+                        if limit.kind == "capacity":
+                            message = f"Google has no capacity for {model} right now; trying again in {delay:.0f} s"
+                        elif limit.kind == "rate":
+                            message = f"Gemini's per-minute limit for {model} was reached; waiting {delay:.0f} s"
+                        else:
+                            message = f"Gemini is busy; trying again in {delay:.0f} s"
                         message += f" (attempt {attempt + 1} of {MAX_RETRIES})."
                     if attempt == 0:
                         message += google_says(limit)
@@ -408,7 +416,7 @@ class CodeAssistRuntime:
             model, rested = self._start_model()
             await emit("agent_session", {"session_id": request.run_id, "model": model, "project": project})
             if rested:
-                await emit("warning", {"message": limit_message(rested, chosen, model).replace(" continues ", " answers ")})
+                await emit("status", {"message": limit_message(rested, chosen, model).replace(" continues ", " answers ")})
             declarations = [{"name": t["name"], "description": t["description"], "parameters": gemini_schema(t["inputSchema"])}
                             for t in tools.describe()]
             generation = self._generation(model)
@@ -422,17 +430,18 @@ class CodeAssistRuntime:
                     "systemInstruction": {"role": "user", "parts": [{"text": system_prompt()}]},
                     "tools": [{"functionDeclarations": declarations}],
                     "generationConfig": generation}}
+                fallback = self.fallback_model
                 try:
-                    parts, calls, usage = await self._stream(http, token, envelope, emit)
+                    parts, calls, usage = await self._stream(http, token, envelope, emit,
+                                                             can_leave=bool(fallback) and fallback != model)
                 except _Unavailable as unavailable:
-                    fallback = self.fallback_model
                     if not fallback or fallback == model:
                         raise AgentFailure("model_quota" if unavailable.limit.kind == "quota" else "model_capacity",
                                            limit_message(unavailable.limit, model)) from None
                     if model == chosen:
                         rest = (unavailable.limit.delay or 3600) if unavailable.limit.kind == "quota" else CAPACITY_REST_S
                         self._resting[chosen] = (time.monotonic() + min(rest, 6 * 3600), unavailable.limit)
-                    await emit("warning", {"message": limit_message(unavailable.limit, model, fallback)})
+                    await emit("status", {"message": limit_message(unavailable.limit, model, fallback)})
                     model = fallback
                     generation = self._generation(model)
                     _skip_signatures(contents)

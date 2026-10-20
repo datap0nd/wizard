@@ -88,7 +88,57 @@ CLI 0.62 in `.tools`):
 **Not yet run against the real Metronome.** The first real use is on the work PC, after the owner creates the Wizard
 user and runs `metronome_link.py`.
 
-## 2026-10-20 (later still) — No model picker: Gemini 3.8 Flash for everyone
+## 2026-10-20 (night) — Flash falls back to Gemini 3.1 Pro preview, as in Gemini CLI
+
+The owner asked for "the exact same experience as Gemini CLI": when Flash has no capacity, fall back to Pro, Gemini 3.1
+Pro preview. Read in Gemini CLI 0.62.0:
+- `retry.ts`: two quick tries (1 s, 3 s), then the fallback handler.
+- `policyHelpers.ts`: Gemini 3 chains wrap around, so Flash falls back to Pro.
+- `useQuotaAndFallback.ts`: with the default `errorVerbosity: low`, it switches without a dialog or an error.
+
+**What changed:**
+- `WIZARD_GEMINI_FALLBACK_MODEL` defaults to `gemini-3.1-pro-preview` (was the model itself, `gemini-3.8-flash`). So a
+  capacity refusal on Flash gets two quick tries, then the rest of the answer comes from Pro. For ten minutes new
+  questions start on Pro. A used-up Flash quota also goes straight to Pro.
+- The switch is a status line on the stage, not a warning in the answer, as the CLI shows no error. The answer's report
+  still names the model that answered.
+- Unchanged from the entry below: if Pro has no capacity either, Wizard waits on it (10 tries, about 4 minutes) before
+  failing. Here Wizard is more patient than the CLI, which goes back to Flash once and then stops.
+- `desktop.md`, `operations.md`, the decision record and the README name the fallback.
+
+**Tests.** The hand-over test now uses the default settings: Flash to `gemini-3.1-pro-preview` after 1 s and 3 s, a
+status line and no warning, thinking HIGH on Pro, and the next question starting on Pro. The settings test expects the
+new default. Both fail on the previous code.
+
+## 2026-10-20 (earlier) — "No capacity" no longer stops every answer: Wizard waits it out
+
+The owner reported that Wizard "just stops with the Gemini capacity error constantly". Cause: the change below left
+the fallback model equal to the model (both `gemini-3.8-flash`), so there was nowhere to go. A capacity refusal got the
+two quick tries meant for switching models (1 s, 3 s), then the answer failed about 4 seconds after Google's first
+refusal. Before the fallback change the same refusal was retried for about a minute and a half.
+
+The two quick tries come from Gemini CLI, which follows them with a switch of model, not a wait. Gemini 3 chains wrap
+around, so Flash without capacity falls back to Pro (`policyHelpers.ts`): silently on the auto model, otherwise after
+asking. Wizard has one model, so it waits instead, as it did before the fallback (then 6 tries over about 90 s).
+
+**What changed** (`wizard_agent/code_assist.py`):
+- Two quick tries, then the switch, only when a different fallback model is set. Otherwise (the default, and on the
+  fallback itself) a capacity refusal is waited for like a busy server: Google's suggested delay or 5, 10, 20, 30 s
+  backoff. The stage shows each wait ("Google has no capacity for … trying again in 10 s (attempt 2 of 10)").
+- Up to 10 attempts per step (was 6), Gemini CLI's default, about 4 minutes in all. No wait after the last attempt.
+- Failure messages no longer point to the removed model chip (Code Assist and Gemini CLI runtimes). A capacity failure
+  says Wizard already kept trying; a used-up quota says to try again once it resets.
+- `docs/desktop.md` and `docs/operations.md` describe the waits.
+
+**Tests.** 4 new tests replace 1:
+- No capacity with no other model, or no fallback at all, is waited out with 5, 10, 20 s backoff, then answers.
+- No capacity through all 10 attempts fails with `model_capacity` naming Google's side, after 9 waits.
+- A fallback model without capacity is waited for, after the chosen model's two quick tries.
+- The quota failure no longer mentions the model chip.
+
+The new tests fail on the previous code. Python 317 passed, 20 skipped.
+
+## 2026-10-20 (noon) — No model picker: Gemini 3.8 Flash for everyone
 
 The owner asked to remove the model picker again and default to Gemini 3.8 Flash.
 - **Removed:**

@@ -56,8 +56,9 @@ class Settings:
     public_origin: str | None = None
     runtime: str = "replay"
     model: str = "gemini-3.8-flash"
-    # Used for the rest of an answer when Google has no capacity for the chosen model or its quota is used up.
-    fallback_model: str | None = "gemini-3.8-flash"
+    # Used for the rest of an answer when Google has no capacity for the chosen model or its quota is used up. As in
+    # Gemini CLI, Flash and Pro stand in for each other (owner, 20 Oct 2026: "fall back to Pro, 3.1 Pro preview").
+    fallback_model: str | None = "gemini-3.1-pro-preview"
     thinking: str = "high"
     gemini_cli_js: str | None = None
     node: str | None = None

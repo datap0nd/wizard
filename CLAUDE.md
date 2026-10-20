@@ -3,6 +3,9 @@
 Read and follow [AGENTS.md](AGENTS.md). It holds the repository rules (agent-first design, read-only tools, per-user
 Gemini identity, honest data modes, no corporate data in Git) and the verification commands.
 
+**Always finish by merging to main** (owner, 20 Oct 2026): once the checks pass, merge the work branch into `main` and
+push it. Work left on a branch does not reach anyone.
+
 Quick commands:
 
 ```bash
