@@ -9,7 +9,8 @@ to data/provision/secrets.bin through the SecretBox (DPAPI on Windows), and the 
 Whoever uses the PC can still recover these values (they are on that PC, and the app must read them). What the file
 avoids is publishing them: the repository, releases and CI artifacts stay free of credentials.
 
-Precedence: provisioning < the PC's .env < the environment, so a PC can override one value without a new file."""
+The settings pane edits a second store in the same format, data/settings ("this PC"), so a new company file never wipes
+what the person chose. Precedence: provisioning < this PC (settings pane) < the PC's .env < the environment."""
 from __future__ import annotations
 
 import json
@@ -31,6 +32,7 @@ LOCAL_ONLY = frozenset({
     "WIZARD_IDENTITIES_FILE", "WIZARD_IDENTITY_HEADER", "WIZARD_TRUSTED_PROXIES", "WIZARD_PUBLIC_ORIGIN", "WIZARD_CONTENT_DIR",
     "WIZARD_WEB_DIST", "WIZARD_TRANSCRIPTS_DIR", "WIZARD_ATTACHMENT_FOLDERS", "WIZARD_HTML_REPORTS_DIR", "WIZARD_GEMINI_CLI_JS",
     "WIZARD_NODE", "WIZARD_GEMINI_FAKE_RESPONSES", "WIZARD_CONTROL_TOKEN", "WIZARD_INSTALL_ROOT",
+    "WIZARD_KB_PUBLISH_REPO", "WIZARD_KB_PUBLISH_TOKEN", "WIZARD_KB_READ_TOKEN",  # the owner's publishing set-up
 })
 MAX_BYTES = 64 * 1024
 
@@ -43,8 +45,11 @@ def is_secret(key: str) -> bool:
     return key.endswith(SECRET_SUFFIXES)
 
 
-def folder(data_dir: Path) -> Path:
-    return data_dir / "provision"
+LAYERS = {"provision": "provision", "local": "settings"}
+
+
+def folder(data_dir: Path, layer: str = "provision") -> Path:
+    return data_dir / LAYERS[layer]
 
 
 @dataclass(frozen=True)
@@ -86,23 +91,47 @@ def import_file(path: Path, data_dir: Path, box: SecretBox | None = None, delete
     if path.stat().st_size > MAX_BYTES:
         raise ProvisionError("the provisioning file is too large")
     provision = parse(path.read_text(encoding="utf-8-sig"))
-    target = folder(data_dir)
-    target.mkdir(parents=True, exist_ok=True)
-    (box or SecretBox()).write(target / "secrets.bin", json.dumps(provision.secrets))
-    record = {"format": FORMAT, "name": provision.name, "imported_at": datetime.now(UTC).isoformat(timespec="seconds"),
-              "settings": provision.settings, "secret_keys": sorted(provision.secrets)}
-    pending = target / "settings.json.tmp"
-    pending.write_text(json.dumps(record, indent=2), encoding="utf-8")
-    pending.replace(target / "settings.json")
+    _store(folder(data_dir), provision, box, {"imported_at": datetime.now(UTC).isoformat(timespec="seconds")})
     if delete:
         path.unlink(missing_ok=True)
     return provision
 
 
-def load(data_dir: Path, box: SecretBox | None = None) -> Provision | None:
-    """The imported provisioning, or None. A secret that cannot be decrypted (the data folder was copied from another
-    PC or account) is left out, so the setting reads as missing instead of wrong."""
-    target = folder(data_dir)
+def _store(target: Path, provision: Provision, box: SecretBox | None, extra: dict[str, Any]) -> None:
+    target.mkdir(parents=True, exist_ok=True)
+    (box or SecretBox()).write(target / "secrets.bin", json.dumps(provision.secrets))
+    record = {"format": FORMAT, "name": provision.name, **extra, "settings": provision.settings,
+              "secret_keys": sorted(provision.secrets)}
+    pending = target / "settings.json.tmp"
+    pending.write_text(json.dumps(record, indent=2), encoding="utf-8")
+    pending.replace(target / "settings.json")
+
+
+def update_local(data_dir: Path, changes: dict[str, str | None], box: SecretBox | None = None) -> Provision:
+    """Apply settings-pane changes to this PC's store: a value sets the key, None or "" removes it (the company value or
+    the default applies again). Returns the new store."""
+    current = load(data_dir, box, "local") or Provision("", {}, {})
+    settings, secrets = dict(current.settings), dict(current.secrets)
+    for key, value in changes.items():
+        if not KEY.match(key) or key in LOCAL_ONLY:
+            raise ProvisionError(f"{key} cannot be set here")
+        text = (value or "").strip()
+        if "\n" in text or "\r" in text:
+            raise ProvisionError(f"{key} must be a one-line value")
+        target = secrets if is_secret(key) else settings
+        if text:
+            target[key] = text
+        else:
+            target.pop(key, None)
+    updated = Provision("this PC", settings, secrets)
+    _store(folder(data_dir, "local"), updated, box, {"updated_at": datetime.now(UTC).isoformat(timespec="seconds")})
+    return updated
+
+
+def load(data_dir: Path, box: SecretBox | None = None, layer: str = "provision") -> Provision | None:
+    """The imported provisioning (or, with layer="local", the settings pane's store), or None. A secret that cannot be
+    decrypted (the data folder was copied from another PC or account) is left out, so it reads as missing, not wrong."""
+    target = folder(data_dir, layer)
     try:
         record = json.loads((target / "settings.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):

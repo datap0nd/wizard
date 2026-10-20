@@ -3,6 +3,62 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
+## 2026-10-20 (later) — Settings in the app, a model picker, an Update button, publishing the knowledge base
+
+The owner asked for:
+- the credentials editable in a settings pane;
+- a model picker, to use Gemini 3.1 Pro as well as 3.8 Flash;
+- an Update button that gets the latest release;
+- a way for Gemini 3.8 Flash on the work PC to create the knowledge-base repository properly.
+
+See the [decision addendum](decisions/2026-10-20-desktop-app.md) and the [owner guide](desktop.md).
+
+**What was added.**
+- **Settings pane** (`wizard_api/settings_pane.py`, `SettingsDialog.tsx`):
+  - Fields: Gemini (model, project, company domains), the knowledge base (repository, read-only token, branch, folder,
+    interval), the company database (server, port, database, read-only user, password, SSL) and the proxy.
+  - Each field shows its source: company file, this PC, `.env`, environment (locked) or default.
+  - Values go to a new "this PC" store (`data\settings`, DPAPI for secrets), between the company file and `.env`.
+    Saving a key `.env` had moves it out of `.env`.
+  - Secrets are write-only.
+  - Every save is validated by loading the settings again, and rolled back on error.
+  - **Test connection** for the knowledge base (one GitHub request with the proposed token) and the database (a
+    read-only session reporting the user).
+  - Changes other than the model restart the desktop service by itself, after a running question.
+  - Only the local Owner on their own install sees it: ⚙ in the panel, Settings in the sidebar, **Settings…** in the
+    tray.
+- **Model picker:** a chip in the panel header and the full app's top bar.
+  - The list is the models in the person's own Gemini quota answer (`/api/v1/models`). Any id can be typed in Settings.
+  - The model switches without a restart. Code Assist keeps one model per run.
+- **Update button:** Settings → Version and updates.
+  - `/api/v1/updates` reads the public release manifest and compares it with the installer's `BUILD.json` version
+    (CI now stamps it).
+  - **Update to 1.0.N** asks WizardBar to download, verify and install the release, as from the tray.
+  - In a browser it offers the download link.
+- **Publishing the knowledge base** (`wizard_documents/kb.py`, `.\docs.ps1 kb-publish`, `kb-check`, `provision`; work-PC
+  task 50):
+  - One commit through GitHub's Git Data API, because the work PC has no git.
+  - Only `knowledge/**/*.md`, `contracts/sources/*.json` and a README the first time are published.
+  - It validates first, refuses a public repository, uploads only changed blobs (same git blob ids), deletes notes
+    deleted locally, keeps other files, and offers a dry run.
+  - Its settings (`WIZARD_KB_PUBLISH_REPO`, `WIZARD_KB_PUBLISH_TOKEN`, `WIZARD_KB_READ_TOKEN`) are names the app never
+    reads, so they cannot break the work PC's own install, and provisioning refuses them.
+  - Task 50 walks Gemini CLI and the user through the steps: check the notes for errors and for anything that must not
+    reach every PC, create the repository and two tokens in the browser, dry run, publish after a yes, check the users'
+    token, then the Settings pane or a provisioning file. Gemini never sees a token: `private\` is in `.geminiignore`.
+
+**Tests.** `scripts/verify_all.sh --allow-blocked=live-parity,postgres,gemini-cli` in a Linux sandbox:
+- PASS: spec, secrets, contracts (four new endpoints), lint, types, python-tests (292 passed), evals-schema, web-types,
+  web-unit (14), web-dist and web-build.
+- BLOCKED: gemini-cli, postgres and live-parity.
+- e2e: the layer FAILs here because the local configuration launches Microsoft Edge, which the sandbox lacks. With the
+  sandbox's Chromium, all 16 browser tests pass.
+- New: `tests/unit/test_settings_pane.py` (25 tests) and `tests/unit/test_kb_publish.py` (9 tests, against a fake GitHub
+  that keeps a real tree).
+- The settings pane and the model picker were also driven in a browser against a throwaway install. The update check
+  read the real release manifest (1.0.4.0).
+- WizardBar compiles with warnings as errors. Its new message handling runs on Windows only and is untested.
+
 ## 2026-10-20 — Desktop app: always-on button, knowledge base from a private GitHub repository
 
 The owner wants Wizard always on: a button at the top of the screen that opens a prompt box. The knowledge base lives

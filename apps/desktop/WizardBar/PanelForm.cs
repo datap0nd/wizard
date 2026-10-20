@@ -29,6 +29,9 @@ namespace WizardBar
         public event Action<bool> BusyChanged;
         public event Action<string, bool> Finished;
         public event Action RetryRequested;
+        /// <summary>The page's Update button: install the newest release.</summary>
+        public event Action UpdateRequested;
+        private bool settingsPending;
 
         public PanelForm(Paths paths, BarSettings settings)
         {
@@ -94,6 +97,7 @@ namespace WizardBar
                 {
                     loaded = e.IsSuccess;
                     if (e.IsSuccess) notice.Visible = false;
+                    if (e.IsSuccess && settingsPending) { settingsPending = false; Post("{\"type\":\"open-settings\"}"); }
                 };
                 core.WebMessageReceived += OnMessage;
                 webReady = true;
@@ -138,6 +142,7 @@ namespace WizardBar
                 var message = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(e.WebMessageAsJson);
                 var type = message != null && message.TryGetValue("type", out var t) ? t as string : null;
                 if (type == "hide") HidePanel();
+                else if (type == "update") UpdateRequested?.Invoke();
                 else if (type == "busy") BusyChanged?.Invoke(message.TryGetValue("busy", out var b) && b is bool busy && busy);
                 else if (type == "finished")
                     Finished?.Invoke(message.TryGetValue("question", out var q) ? q as string ?? "" : "",
@@ -183,8 +188,19 @@ namespace WizardBar
             if (webReady)
             {
                 web.Focus();
-                try { web.CoreWebView2.PostWebMessageAsJson("{\"type\":\"focus\"}"); } catch (Exception) { }
+                Post("{\"type\":\"focus\"}");
             }
+        }
+
+        private void Post(string json)
+        {
+            try { web.CoreWebView2?.PostWebMessageAsJson(json); } catch (Exception error) { Log.Error("post to page", error); }
+        }
+
+        /// <summary>Open the page's settings pane (tray menu "Settings…"); waits for the page if it is still loading.</summary>
+        public void OpenSettings()
+        {
+            if (webReady && loaded) Post("{\"type\":\"open-settings\"}"); else settingsPending = true;
         }
 
         public void HidePanel()

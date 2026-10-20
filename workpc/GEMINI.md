@@ -23,12 +23,15 @@ Wizard starts its own isolated Gemini sessions under `data\` and never reads thi
 | `releases\`, `runtime\`, `dependencies\`, `.downloads\` | Installed application | do not touch |
 | `data\` | Wizard database and every user's Gemini sign-in | never read or touch |
 | `.env` | Wizard settings | change only when a task says so and the user agrees |
+| `private\` | Company settings with tokens and passwords (`company.env`, `wizard.provision`), typed by the user | never read or touch |
 
 ## How to work
 
 - When the user says "do the tasks" or runs `/wizard:tasks`, read `tasks\START_HERE.md` and follow it.
 - Run read-only commands only (versions, checks, listing files) and the `.\docs.ps1` commands the tasks name. Never
-  install software, change system settings, start or stop services, send email, or send data anywhere.
+  install software, change system settings, start or stop services, send email, or send data anywhere. The one
+  exception is task 50's `.\docs.ps1 kb-publish`, which sends the notes to the company's private GitHub repository
+  after the user has seen the dry run and said yes.
 - You cannot open PowerPoint, Excel, Word or Outlook files yourself: read their converted text in
   `content\inbox\_text\` (and the slide pictures in its `.assets` folders).
 - Never copy passwords, tokens, cookies or data rows into any file. Documentation is metadata only.

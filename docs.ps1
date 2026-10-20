@@ -8,10 +8,14 @@
 #   .\docs.ps1 extract                       convert everything in content\inbox to text (only new or changed files)
 #   .\docs.ps1 status | next [--limit 25] | topics | coverage
 #   .\docs.ps1 validate                      check content\ the way Wizard checks it at start-up
+#   .\docs.ps1 kb-publish [--dry-run]        publish content\knowledge and contracts to the private knowledge-base repo
+#   .\docs.ps1 kb-check                      check the read-only token users get can read that repo
+#   .\docs.ps1 provision <company.env> [--name N] [--out F]   make wizard.provision for the desktop app (task 50)
 #   .\docs.ps1 quiz-check <page.html>        check a quiz page before emailing it
 #   .\docs.ps1 quiz-answers [<file or folder>]   read answered quizzes (default: documents\quiz-answers)
-# Everything runs on this PC, without AI; only postgres-* and bdp-check reach a server, and only to read. Gemini CLI
-# does the reading and writing; this does the converting, counting and checking.
+# Everything runs on this PC, without AI. Only postgres-*, bdp-check and kb-* reach a server, and only kb-publish
+# writes (to the private knowledge-base repository). Gemini CLI does the reading and writing; this does the
+# converting, counting and checking.
 $ErrorActionPreference = 'Stop'
 $command = if ($args.Count) { [string]$args[0] } else { 'help' }
 $rest = @($args | Select-Object -Skip 1 | ForEach-Object { [string]$_ })
@@ -32,7 +36,8 @@ $quizzes = Join-Path $installDir 'documents\quiz-questions'
 $answers = Join-Path $installDir 'documents\quiz-answers'
 switch ($command) {
     'validate' { & $python (Join-Path $release 'scripts\validate_content.py') $content; exit $LASTEXITCODE }
-    { $_ -in @('extract', 'next', 'topics', 'coverage', 'outlook-export', 'postgres-check', 'postgres-catalog', 'bdp-check') } { $arguments = @($command, $content) + $rest; break }
+    'provision' { & $python (Join-Path $release 'scripts\make_provision.py') @rest; exit $LASTEXITCODE }
+    { $_ -in @('extract', 'next', 'topics', 'coverage', 'outlook-export', 'postgres-check', 'postgres-catalog', 'bdp-check', 'kb-publish', 'kb-check') } { $arguments = @($command, $content) + $rest; break }
     'status' { $arguments = @('status', $content, '--quizzes', $quizzes) + $rest; break }
     'quiz-check' { $arguments = @('quiz-check') + $rest + @('--content', $content); break }
     'quiz-answers' { if ($rest.Count -eq 0) { $rest = @($answers) }; $arguments = @('quiz-answers') + $rest + @('--quizzes', $quizzes); break }

@@ -46,6 +46,7 @@ namespace WizardBar
             tray.BalloonTipClicked += (s, e) => { if (balloonForUpdate) InstallUpdate(); else ShowPanel(); };
             panel.BusyChanged += value => { busy = value; Refresh(); };
             panel.Finished += Finished;
+            panel.UpdateRequested += async () => await UpdateNow();
             panel.VisibleChanged += (s, e) => { if (panel.Visible) { answered = false; Refresh(); } };
             panel.RetryRequested += () => backend.Restart();
             backend.StateChanged += () => ui.Post(_ => OnServiceState(), null);
@@ -84,6 +85,7 @@ namespace WizardBar
                 showButton,
                 startWithWindows,
                 new ToolStripSeparator(),
+                new ToolStripMenuItem("Settings…", null, (s, e) => { ShowPanel(); panel.OpenSettings(); }),
                 new ToolStripMenuItem("Import a settings file…", null, (s, e) => ImportProvision()),
                 update,
                 new ToolStripMenuItem("Open the log folder", null, (s, e) => PanelForm.OpenFolder(paths.Logs)),
@@ -229,7 +231,14 @@ namespace WizardBar
             await CheckForUpdate(false);
         }
 
-        private async Task CheckForUpdate(bool asked)
+        /// <summary>The page's Update button: check now and, when a newer release exists, install it (after asking).</summary>
+        private async Task UpdateNow()
+        {
+            if (pendingUpdate == null) await CheckForUpdate(true, announce: false);
+            if (pendingUpdate != null) InstallUpdate();
+        }
+
+        private async Task CheckForUpdate(bool asked, bool announce = true)
         {
             try
             {
@@ -240,7 +249,7 @@ namespace WizardBar
                 if (pendingUpdate != null)
                 {
                     update.Text = "Install update " + pendingUpdate.Version + "…";
-                    Balloon("Wizard update available", "Version " + pendingUpdate.Version + ". Click here, or choose Install update in the menu.", true);
+                    if (announce) Balloon("Wizard update available", "Version " + pendingUpdate.Version + ". Click here, or choose Install update in the menu.", true);
                 }
                 else if (asked) MessageBox.Show("Wizard " + Paths.Version + " is up to date.", "Wizard", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }

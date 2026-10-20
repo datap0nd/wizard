@@ -26,41 +26,48 @@ when the answer is ready. The decision behind it is
 | `%LOCALAPPDATA%\Programs\Wizard\bar` | WizardBar.exe, WebView2 libraries | replaced | removed |
 | `%LOCALAPPDATA%\Programs\Wizard\app` | Wizard's code, built web app, libraries | replaced | removed |
 | `%LOCALAPPDATA%\Programs\Wizard\runtime\python` | Embeddable Python 3.13 | replaced | removed |
-| `%LOCALAPPDATA%\Wizard` | `.env`, `data\` (conversations, Gemini sign-in, provisioning, knowledge base), `logs\`, WebView2 profile, `bar.json` | kept | kept |
+| `%LOCALAPPDATA%\Wizard` | `.env`, `data\` (conversations, Gemini sign-in, company file in `provision\`, Settings in `settings\`, knowledge base), `logs\`, WebView2 profile, `bar.json` | kept | kept |
 
 No admin rights are needed. Setup adds a Start-menu entry and, by default, a "start when I sign in" entry
 (`HKCU\...\Run`). The tray menu can turn that off.
 
 ## One-time setup (owner)
 
+The work PC's Gemini CLI does this with you: **task 50** (`/wizard:tasks 50` in `C:\Wizard`, after `.\update_app.ps1`).
+It checks the notes, has you create the repository and two tokens in the browser, publishes, checks the users'
+token and makes the provisioning file. You type the tokens into files yourself; Gemini never sees them. What it does:
+
 ### 1. The knowledge-base repository
 
-Create a **private** repository in the company's GitHub organisation (for example `acme/wizard-content`) from
-[`templates/content`](../templates/content/README.md). Use the same layout as `WIZARD_CONTENT_DIR`:
-`knowledge/<area>/<note>.md`, optionally `contracts/sources/<platform>.json`. Only you need access. Users never get a
-GitHub account or a link to it.
+A **private** repository in the company's GitHub organisation (for example `acme/wizard-content`), created **empty**.
+Users never get a GitHub account or a link to it.
 
-Every sync runs `scripts/validate_content.py`'s rules. A commit with errors (a note without front matter, something
-that looks like a credential) is not applied, and PCs keep the previous version. Validate before pushing:
+`.\docs.ps1 kb-publish` fills it from the work PC (no git needed: one commit through GitHub's API). It publishes only
+what Wizard reads, `content\knowledge\**\*.md` and `content\contracts\sources\*.json`, plus a README the first time:
+the inbox, digests, registers, quiz answers and stakeholder lists stay on the work PC, because every file in the
+repository reaches every PC. Before writing it runs Wizard's validation, refuses a public repository, uploads only
+changed files and deletes notes deleted locally. `--dry-run` shows the list first. Every sync on users' PCs runs the
+same validation again: a commit with errors is not applied, and PCs keep the previous version.
 
-```bash
-uv run python scripts/validate_content.py ../wizard-content
-```
+### 2. Two fine-grained tokens
 
-### 2. A read-only token
+GitHub → Settings → Developer settings → **Fine-grained personal access tokens**, both with Resource owner = the
+organisation and Repository access = **only** the knowledge-base repository:
+- **Publishing**, kept on the work PC: Contents **Read and write**. In `C:\Wizard\.env` as
+  `WIZARD_KB_PUBLISH_REPO=owner/name` and `WIZARD_KB_PUBLISH_TOKEN=...` (names only `docs.ps1` reads, so the work
+  PC's own Wizard is unaffected).
+- **Read-only**, for every user: Contents **Read-only**, nothing else. In `C:\Wizard\.env` as
+  `WIZARD_KB_READ_TOKEN=...` for `.\docs.ps1 kb-check`, and in the provisioning file as `WIZARD_KB_TOKEN`.
 
-GitHub → Settings → Developer settings → **Fine-grained personal access tokens** → Generate:
-- Resource owner: the organisation; Repository access: **only** `acme/wizard-content`.
-- Permissions: Repository → **Contents: Read-only** (Metadata read-only is added automatically). Nothing else.
-- Expiration: as long as the organisation allows. Note the date: when it expires, Wizard keeps its last copy and
-  "About Wizard" shows the GitHub error until PCs import a new file.
-
-If the organisation requires approval for fine-grained tokens, approve it under the organisation's settings.
+Expiration: as long as the organisation allows; note the dates. When the read-only token expires, Wizard keeps its last
+copy and shows the GitHub error (About Wizard, Settings → Test connection) until PCs get a new one. If the organisation
+requires approval for fine-grained tokens, an organisation owner approves them (until then GitHub answers 403).
 
 ### 3. The provisioning file
 
-Keep the company settings in a `KEY=value` file outside every Git repository (`company.env` and `*.provision` are
-git-ignored here, and `scan_secrets.py` refuses `.provision` files and GitHub tokens):
+Keep the company settings in a `KEY=value` file outside every Git repository: on the work PC,
+`C:\Wizard\private\company.env` (Gemini CLI does not read `private\`; `company.env` and `*.provision` are git-ignored
+here, and `scan_secrets.py` refuses `.provision` files and GitHub tokens):
 
 ```ini
 WIZARD_KB_REPO=acme/wizard-content
@@ -74,17 +81,48 @@ WIZARD_PG_PASSWORD=...
 WIZARD_PG_SSLMODE=prefer
 GOOGLE_CLOUD_PROJECT=your-gemini-project
 WIZARD_GOOGLE_DOMAINS=company.com
+WIZARD_GEMINI_MODEL=gemini-3.8-flash
 ```
 
-```bash
-uv run python scripts/make_provision.py company.env --name "ACME pilot" --out wizard.provision
+```powershell
+.\docs.ps1 provision private\company.env --name "ACME Wizard" --out private\wizard.provision
 ```
 
-Any `WIZARD_*` setting can go in, except the ones each PC decides (data folder, port, identity, content folder). Names
-ending in `_PASSWORD`, `_TOKEN`, `_SECRET` or `_KEY` are stored with Windows DPAPI on the PC.
+(From a development checkout: `uv run python scripts/make_provision.py company.env --name ... --out ...`.) Any
+`WIZARD_*` setting can go in, except the ones each PC decides (data folder, port, identity, content folder) and the
+publishing set-up. Names ending in `_PASSWORD`, `_TOKEN`, `_SECRET` or `_KEY` are stored with Windows DPAPI on the PC.
 
 The PostgreSQL account must be **read-only by its grants** (SELECT on the views Wizard may use, nothing else). Everyone
 who has the file can use it, also outside Wizard.
+
+## Settings, model and updates in the app
+
+The ⚙ button in the panel (or **Settings…** in the tray menu, or Settings in the full app's sidebar) opens the settings
+of Wizard on this PC:
+
+| Section | Settings | Test |
+|---|---|---|
+| Gemini | Model, Google Cloud project, company Google domains | — |
+| Knowledge base | Repository, read-only token, branch, folder, check interval | **Test connection**: can the token read the repository? |
+| Company database | Server, port, database, read-only user, password, SSL | **Test connection**: connects read-only and reports the user |
+| Network | Proxy | — |
+| Version and updates | The installed version | **Check for updates** / **Update to 1.0.N** |
+
+- **Where a value comes from** is shown next to each field: the company file, this PC (set here), the `.env` file,
+  or an environment variable (locked here). What you set here wins over the company file; "Use company value" clears
+  it again. Saving a key that `.env` also had moves it out of `.env`, so no password stays there in plain text.
+  Precedence: company file < this PC < `.env` < environment.
+- **Secrets** (token, password) are write-only: the page only shows "Saved (hidden)" and **Change**.
+- **Applying:** a new model applies to the next question, no restart. Other changes restart the service by itself
+  (after the running question, if any); the page waits and reconnects.
+- **Model picker:** the model chip in the panel's header (and the full app's top bar) lists the models your own Gemini
+  entitlement has quota for, from Google's quota answer for your account. "Another model or more settings…" opens
+  Settings, where any model id can be typed (for example `gemini-3.1-pro`). A run keeps the model it started with.
+- **Update:** Check for updates reads the public release manifest; **Update to 1.0.N** has WizardBar download it, check
+  size, SHA-256 and version, install it silently and start again. In a normal browser it offers the download instead.
+
+The settings pane exists only on a person's own install (desktop app or work-PC install), for the person at that PC:
+never on a server behind SSO.
 
 ## Giving Wizard to someone
 
@@ -103,12 +141,12 @@ Someone who already has Wizard can import a new file from the tray menu: **Impor
 
 - **Program:** every push to `main` builds a new `WizardSetup.exe` (version `1.0.<CI run>`) and publishes it to
   `desktop-continuous`. Wizard checks two minutes after start and every six hours. When a newer version exists, the tray
-  shows "Install update…". Wizard downloads it, checks its size, SHA-256 and version against the manifest, installs it
+  shows "Install update…"; Settings → Version and updates has the same as a button. Wizard downloads it, checks its size, SHA-256 and version against the manifest, installs it
   silently and starts again. It never downgrades.
-- **Knowledge:** push to the knowledge-base repository. PCs pick the change up within 30 minutes and switch to it after
+- **Knowledge:** `.\docs.ps1 kb-publish` from the work PC (task 50, step 10). PCs pick the change up within 30 minutes and switch to it after
   10 minutes without use, or at once with **Sync the knowledge base now**.
 - **Settings or credentials:** make a new `wizard.provision` and have people import it (or run setup again next to
-  it). It replaces the previous one.
+  it). It replaces the previous company file; what someone set in their own Settings still wins.
 
 ## The tray menu
 
@@ -119,6 +157,7 @@ Someone who already has Wizard can import a new file from the tray menu: **Impor
 | Sync the knowledge base now | Checks GitHub now and restarts the service on a new version |
 | Show the button at the top of the screen | Hide the tab (Ctrl+Alt+W and the tray still work) |
 | Start Wizard when I sign in | The `HKCU\...\Run` entry |
+| Settings… | Opens the panel's settings: model, knowledge base, database, proxy, version and updates |
 | Import a settings file… | A new `wizard.provision`; the service restarts and imports it |
 | Check for updates… / Install update… | See Updating |
 | Open the log folder | `%LOCALAPPDATA%\Wizard\logs`: `bar.log` (WizardBar), `wizard.log` (the service), `service-output.log` |

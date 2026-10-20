@@ -6,3 +6,6 @@ releases/
 dependencies/
 .downloads/
 *.pid
+private/
+*.provision
+company.env

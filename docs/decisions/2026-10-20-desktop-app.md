@@ -62,6 +62,25 @@ service.
 - Option 2 adds a second web runtime and a larger download for no gain.
 - A token broker gives per-user revocation, but it is a service to run. The owner chose a token in the app.
 
+**Addendum (same day): settings in the app, model picker, publishing from the work PC.**
+- The owner asked to edit the credentials in the app. A settings pane edits a second store, "this PC"
+  (`data\settings`, same format and DPAPI as the company file). Precedence is company file < this PC < `.env` <
+  environment.
+  - Saving a key that `.env` had removes it from `.env`, so a password does not stay there in plain text.
+  - Environment variables are shown but locked.
+  - Secrets are write-only.
+  - Each save is validated by loading the settings again, and rolled back on error.
+  - The pane exists only for the local Owner on a person's own install: `run.py --home`, fixture auth.
+- A model picker (the owner wants Gemini 3.1 Pro as well as 3.8 Flash) lists the models the person's own quota answer
+  covers. It switches the runtime's model without a restart, and each run keeps the model it started with.
+- An Update button in Settings asks WizardBar to install the newest release (the same checks as the tray). The
+  installer's `BUILD.json` carries the version it is compared with.
+- Task 50 and `.\docs.ps1 kb-publish` put the knowledge base in the repository from the work PC, which has no git.
+  - Only `knowledge/` and `contracts/sources/` are published: every file in the repository reaches every PC.
+  - The tool refuses a public repository and validates before writing.
+  - Its settings (`WIZARD_KB_PUBLISH_*`, `WIZARD_KB_READ_TOKEN`) are names the app never reads. They cannot switch the
+    work PC's own Wizard away from its `content\` folder, and they can never travel in a company file.
+
 **Consequences and residual risk.**
 - Anyone who uses a provisioned PC can recover the knowledge-base token, the synced notes and the PostgreSQL password:
   the app must read them, so they are on that PC. The owner accepted this.

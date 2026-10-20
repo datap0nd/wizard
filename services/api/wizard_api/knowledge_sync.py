@@ -168,6 +168,30 @@ def _clean(data_dir: Path, keep: set[str]) -> None:
             shutil.rmtree(entry, ignore_errors=True)
 
 
+def check(source: Source, *, proxy: str | None = None, timeout: float = 30.0,
+          transport: httpx.BaseTransport | None = None) -> Result:
+    """Can this token read the repository at this ref? One request, nothing downloaded or stored."""
+    url = f"{API}/repos/{source.repo}/commits/{source.ref}"
+    headers = {"Authorization": f"Bearer {source.token}", "Accept": "application/vnd.github.sha",
+               "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "Wizard-Knowledge-Sync"}
+    try:
+        if transport is not None:
+            http = httpx.Client(transport=transport, timeout=timeout)
+        else:
+            route, _ = outbound.proxy_for(url, proxy)
+            http = httpx.Client(timeout=timeout, verify=outbound.ssl_context(), proxy=route, trust_env=False)
+        with http:
+            response = http.get(url, headers=headers)
+    except httpx.HTTPError as error:
+        return Result("failed", outbound.explain(error, url, proxy))
+    if response.status_code != 200:
+        return Result("failed", _explain(response, source))
+    commit = response.text.strip()
+    if not COMMIT.match(commit):
+        return Result("failed", "GitHub did not return a commit id for the knowledge base.")
+    return Result("current", f"The token can read {source.repo}: {source.ref} is at commit {commit[:12]}.", commit)
+
+
 def sync(source: Source | None, data_dir: Path, *, proxy: str | None = None, timeout: float = 60.0,
          transport: httpx.BaseTransport | None = None) -> Result:
     """Bring the active snapshot up to date with the repository. Safe to call from several threads."""

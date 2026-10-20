@@ -13,6 +13,9 @@ Three tracks:
   when the status bar shows another one.
 - **40: the Big Data Portal (BDP).** Discovery before any connection is built: what BDP is, the engines behind its
   Superset SQL tool, and how Superset signs people in. Run it on its own with `/wizard:tasks 40`.
+- **50: the knowledge base in a private GitHub repository** that every user's Wizard desktop app reads, published from
+  this PC, plus the company settings file for users. Run it on its own with `/wizard:tasks 50` after the notes exist
+  (tasks 20-25).
 
 ## For every task
 
@@ -26,7 +29,8 @@ Three tracks:
 
 Stop and ask before changing `.env`, deleting anything, or running any command that is not read-only. The commands of
 `.\docs.ps1` (converting documents, exporting chosen Outlook folders, counting, checking) are the exception: they only
-read the user's files and mailbox and write inside `content\` and `documents\`.
+read the user's files and mailbox and write inside `content\` and `documents\`. `.\docs.ps1 kb-publish` (task 50) is
+the one command that writes outside this PC: run it without `--dry-run` only after the user said yes to the dry run.
 
 If `outbox\STATUS.md` exists but lacks a row of the table below, add the row (tasks are added by updates).
 
@@ -54,6 +58,7 @@ If `outbox\STATUS.md` exists but lacks a row of the table below, add the row (ta
 | 30 Expert quizzes | todo | | |
 | 31 Apply the stakeholders' answers | todo | | |
 | 40 Discover the Big Data Portal (BDP) | todo | | |
+| 50 Knowledge base in a private GitHub repository | todo | | |
 | 90 Feedback pack for the developer | todo | | |
 ```
 

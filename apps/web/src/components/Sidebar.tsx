@@ -1,5 +1,5 @@
 import {useMemo, useState} from 'react';
-import {Database, LogOut, MessagesSquare, MoreHorizontal, Pencil, Plus, ScrollText, Search, Trash2, UserRound} from 'lucide-react';
+import {Database, LogOut, MessagesSquare, MoreHorizontal, Pencil, Plus, ScrollText, Search, Settings, Trash2, UserRound} from 'lucide-react';
 import {cn} from '@/lib/utils';
 import {Button} from './ui/button';
 import {DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, Hint} from './ui/menu';
@@ -20,6 +20,8 @@ interface Props {
   busy: boolean;
   onLogout: () => void;
   onAsk: (text: string) => void;
+  /** Set on a person's own install: their settings, model and updates. */
+  onSettings?: () => void;
 }
 
 function group(iso: string): string {
@@ -29,7 +31,7 @@ function group(iso: string): string {
   return diff < day ? 'Today' : diff < 2 * day ? 'Yesterday' : diff < 7 * day ? 'Previous 7 days' : 'Earlier';
 }
 
-export function Sidebar({boot, conversations, currentId, onNew, onSelect, onRename, onDelete, onAccount, onLog, onLogout, onAsk, busy}: Props) {
+export function Sidebar({boot, conversations, currentId, onNew, onSelect, onRename, onDelete, onAccount, onLog, onLogout, onAsk, onSettings, busy}: Props) {
   const [tab, setTab] = useState<'chats' | 'sources'>('chats');
   const [query, setQuery] = useState('');
   const [renaming, setRenaming] = useState<{id: string; title: string} | null>(null);
@@ -113,6 +115,7 @@ export function Sidebar({boot, conversations, currentId, onNew, onSelect, onRena
         </div>
         <div className="flex">
           <Button variant="ghost" size="xs" className="flex-1 justify-start text-ink-3" onClick={onLogout}><LogOut />Sign out</Button>
+          {onSettings && <Button variant="ghost" size="xs" className="text-ink-3" onClick={onSettings} data-testid="settings-button"><Settings />Settings</Button>}
           {boot.diagnostics && <Button variant="ghost" size="xs" className="text-ink-3" onClick={onLog} data-testid="log-button"><ScrollText />Log</Button>}
         </div>
       </div>

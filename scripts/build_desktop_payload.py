@@ -67,7 +67,7 @@ def source_files() -> list[str]:
     return [f for f in files if not f.startswith(EXCLUDED) and f not in EXCLUDED_FILES and (ROOT / f).is_file()]
 
 
-def build(out: Path, cache: Path, commit: str | None) -> dict:
+def build(out: Path, cache: Path, commit: str | None, version: str | None = None) -> dict:
     out = out.resolve()
     for part in ("app", "runtime"):
         shutil.rmtree(out / part, ignore_errors=True)
@@ -100,7 +100,7 @@ def build(out: Path, cache: Path, commit: str | None) -> dict:
     from vendor_dependencies import vendor
     vendor(cache, cache / "store", out / "app" / "vendor", ROOT / "dependencies.lock.json")
 
-    record = {"commit": commit or "local", "built_at": datetime.now(UTC).isoformat(timespec="seconds"),
+    record = {"version": version, "commit": commit or "local", "built_at": datetime.now(UTC).isoformat(timespec="seconds"),
               "python": runtime["version"], "packages": len(dependencies["packages"]), "files": len(files)}
     (out / "app" / "BUILD.json").write_text(json.dumps(record, indent=2), encoding="utf-8")
     for required in ("app/run.py", "app/apps/web/dist/index.html", "app/fixtures/identities.json", "runtime/python/python.exe",
@@ -115,9 +115,10 @@ def main() -> int:
     parser.add_argument("--out", type=Path, default=ROOT / "artifacts" / "desktop" / "payload")
     parser.add_argument("--cache", type=Path, default=ROOT / "artifacts" / "desktop" / "downloads")
     parser.add_argument("--commit", default=None)
+    parser.add_argument("--version", default=None, help="the installer version (1.0.<run>.0); the Update check compares it")
     args = parser.parse_args()
     try:
-        record = build(args.out, args.cache, args.commit)
+        record = build(args.out, args.cache, args.commit, args.version)
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         print(f"Payload build failed: {error}", file=sys.stderr)
         return 1

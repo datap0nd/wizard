@@ -1,12 +1,13 @@
-import {ArrowRight, Maximize2, Plus, UserRound} from 'lucide-react';
+import {ArrowRight, Maximize2, Plus, Settings, UserRound} from 'lucide-react';
 import {cn} from '@/lib/utils';
 import {Button} from './ui/button';
 import {Hint} from './ui/menu';
 import type {Bootstrap} from '@/types';
 
 /** Top row of the compact view WizardBar shows under its button: title, new question, full window, account. */
-export function QuickHeader({boot, title, conversationId, synthetic, onNew, onAccount}: {
+export function QuickHeader({boot, title, conversationId, synthetic, onNew, onAccount, onSettings, modelPicker}: {
   boot: Bootstrap; title: string; conversationId: string | null; synthetic: boolean; onNew: () => void; onAccount: () => void;
+  onSettings?: () => void; modelPicker?: React.ReactNode;
 }) {
   const account = boot.gemini_account;
   const needsLink = !!account?.needs_link && !account.linked;
@@ -15,12 +16,14 @@ export function QuickHeader({boot, title, conversationId, synthetic, onNew, onAc
       <span className="grid size-6 shrink-0 place-items-center rounded-md bg-accent text-[12px] font-bold text-white" aria-hidden="true">W</span>
       <h2 className="mr-1 min-w-0 flex-1 truncate text-[13.5px] font-semibold" data-testid="conversation-title">{title}</h2>
       {synthetic && <span className="rounded-full border border-warn-line bg-warn-soft px-2 py-0.5 text-[11px] font-semibold text-warn" data-testid="synthetic-banner">SYNTHETIC</span>}
+      {modelPicker}
       <Hint text="New question"><Button variant="ghost" size="icon-sm" onClick={onNew} aria-label="New question" data-testid="new-chat"><Plus /></Button></Hint>
       <Hint text="Open in a full window">
         <a href={conversationId ? `/?c=${encodeURIComponent(conversationId)}` : '/'} target="_blank" rel="noopener noreferrer"
           aria-label="Open in a full window" data-testid="open-full"
           className="grid size-8 place-items-center rounded-md text-ink-2 hover:bg-surface hover:text-ink [&_svg]:size-4"><Maximize2 /></a>
       </Hint>
+      {onSettings && <Hint text="Settings and updates"><Button variant="ghost" size="icon-sm" onClick={onSettings} aria-label="Settings" data-testid="settings-button"><Settings /></Button></Hint>}
       <Hint text={needsLink ? 'Link your Gemini account' : 'Your account'}>
         <button type="button" onClick={onAccount} aria-label="Your account" data-testid="account-button"
           className="relative grid size-8 place-items-center rounded-md text-ink-2 hover:bg-surface hover:text-ink">

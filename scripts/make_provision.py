@@ -23,7 +23,7 @@ from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-for entry in ("services/api", "services/agent", "services/connectors", "services/checks", "services/documents"):
+for entry in ("services/api", "services/agent", "services/connectors", "services/checks", "services/documents", "vendor"):
     sys.path.insert(0, str(ROOT / entry))
 
 from wizard_api.config import read_env_file  # noqa: E402

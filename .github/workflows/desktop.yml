@@ -45,7 +45,8 @@ jobs:
           if ($version -ne "$env:WIZARD_DESKTOP_VERSION.0") { throw "WizardBar.exe has version $version" }
 
       - name: Assemble the payload (portable Python + locked libraries, SHA-256 checked)
-        run: python scripts/build_desktop_payload.py --out artifacts/desktop/payload --commit ${{ github.sha }}
+        shell: pwsh
+        run: python scripts/build_desktop_payload.py --out artifacts/desktop/payload --commit ${{ github.sha }} --version "$env:WIZARD_DESKTOP_VERSION.0"
 
       - name: Smoke-test the packaged service on Windows
         shell: pwsh
@@ -92,6 +93,8 @@ jobs:
           foreach ($file in @('bar\WizardBar.exe', 'app\run.py', 'runtime\python\python.exe', 'app\apps\web\dist\index.html')) {
             if (-not (Test-Path (Join-Path $app $file))) { throw "Not installed: $file" }
           }
+          $build = Get-Content (Join-Path $app 'app\BUILD.json') -Raw | ConvertFrom-Json
+          if ($build.version -ne "$env:WIZARD_DESKTOP_VERSION.0") { throw "BUILD.json says version $($build.version)" }
           & (Join-Path $app 'runtime\python\python.exe') (Join-Path $app 'app\run.py') --home (Join-Path $env:RUNNER_TEMP 'check-home') --check
           if ($LASTEXITCODE -ge 2) { throw "Installed Wizard failed its check" }
           $u = Start-Process (Join-Path $app 'unins000.exe') -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' -PassThru -Wait

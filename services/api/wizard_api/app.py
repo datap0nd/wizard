@@ -31,7 +31,7 @@ from wizard_connectors.entitlements import Identity, IdentityDirectory, SystemRi
 from wizard_connectors.paths import ROOT
 from wizard_connectors.tools import build_registry, build_services
 
-from . import __version__, knowledge_sync
+from . import __version__, knowledge_sync, settings_pane
 from .attachments import AttachmentError, public
 from .config import ConfigError, Settings, kb_source, load_settings
 from .outlook import DraftError, open_outlook_draft
@@ -118,6 +118,16 @@ class FeedbackBody(Body):
 class EmailDraftBody(Body):
     subject: str = Field(min_length=1, max_length=300)
     html: str = Field(min_length=1, max_length=3_000_000)
+
+
+class SettingsBody(Body):
+    # KEY -> new value; "" returns to the company value or the default; null keeps a secret unchanged.
+    values: dict[str, str | None] = Field(max_length=40)
+
+
+class SettingsTestBody(Body):
+    section: Literal["postgres", "knowledge"]
+    values: dict[str, str | None] = Field(default_factory=dict, max_length=40)
 
 
 class LinkCompleteBody(Body):
@@ -345,7 +355,8 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         modes = sorted({s.connector.data_mode for s in services.catalog.systems if identity.can_use_system(s.id)
                         and s.connector.status in ("SYNTHETIC_FIXTURE", "ROWS_VERIFIED")}
                        | ({"LIVE"} if services.postgres and identity.can_use_system("postgresql") else set()))
-        return {**base, "diagnostics": settings.diagnostics,
+        return {**base, "diagnostics": settings.diagnostics, "desktop": settings.desktop,
+                "settings_editable": identity.id == OWNER_ID and settings_pane.editable(settings),
                 "identity": {"id": identity.id, "name": identity.name, "email": identity.email, "role": identity.role},
                 "runtime": {"kind": runtime.kind, "label": runtime.label(), "model": runtime.model, **readiness},
                 "gemini_account": await account_status(identity), "data_modes": modes,
@@ -750,6 +761,97 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         store.delete_link(identity.id)
         store.audit(identity.id, "gemini:unlink")
         return await account_status(identity)
+
+    # Settings pane, model picker and updates (a person's own install only) ----------------------------------------------
+    def settings_owner(request: Request) -> Identity:
+        identity = me(request)
+        if identity.id != OWNER_ID or not settings_pane.editable(settings):
+            raise HTTPException(404, "Settings are changed on the PC where Wizard is installed, by the person who uses it.")
+        return identity
+
+    def settings_view() -> dict[str, Any]:
+        return {**settings_pane.describe(settings), "model": runtime.model, "runtime": runtime.kind,
+                "desktop": settings.desktop, "build": settings_pane.installed_build(), "version": __version__}
+
+    def apply_model(model: str) -> None:
+        """A new model applies from the next question: no restart."""
+        for target in {id(runtime): runtime, id(quota_client): quota_client}.values():
+            target.model = model
+        settings.model = model
+        quota_cache.clear()
+
+    def schedule_restart() -> str:
+        request_restart = getattr(app.state, "request_restart", None)
+        if request_restart is None:
+            return "manual"
+
+        async def when_idle() -> None:
+            await asyncio.sleep(1.0)  # let the response reach the page first
+            while manager.active:
+                await asyncio.sleep(3)
+            log.info("restarting to apply new settings")
+            request_restart()
+
+        app.state.pending_restart = asyncio.get_running_loop().create_task(when_idle())
+        return "after_run" if manager.active else "now"
+
+    @app.get("/api/v1/settings")
+    def get_settings(request: Request) -> dict[str, Any]:
+        settings_owner(request)
+        return settings_view()
+
+    @app.put("/api/v1/settings")
+    async def put_settings(request: Request, body: SettingsBody) -> dict[str, Any]:
+        identity = settings_owner(request)
+        try:
+            result = await asyncio.to_thread(settings_pane.save, settings, dict(body.values))
+        except settings_pane.PaneError as error:
+            store.audit(identity.id, "settings:update", outcome="refused", detail={"keys": sorted(body.values)})
+            raise HTTPException(error.status, str(error)) from None
+        changed = result["changed"]
+        store.audit(identity.id, "settings:update", detail={"keys": changed})
+        if "WIZARD_GEMINI_MODEL" in changed:
+            fresh = await asyncio.to_thread(load_settings, None, None, settings.home)
+            apply_model(fresh.model)
+        others = [k for k in changed if k != "WIZARD_GEMINI_MODEL"]
+        return {**settings_view(), "changed": changed, "apply": schedule_restart() if others else "none"}
+
+    @app.post("/api/v1/settings/test")
+    async def test_settings(request: Request, body: SettingsTestBody) -> dict[str, Any]:
+        settings_owner(request)
+        try:
+            if body.section == "postgres":
+                return await asyncio.to_thread(settings_pane.test_postgres, settings, dict(body.values))
+            return await asyncio.to_thread(settings_pane.test_knowledge, settings, dict(body.values))
+        except settings_pane.PaneError as error:
+            return {"ok": False, "message": str(error)}
+
+    @app.get("/api/v1/models")
+    async def models(request: Request) -> dict[str, Any]:
+        """The models this person's Gemini entitlement has quota for (Gemini CLI's own list), plus the current one."""
+        identity = me(request)
+        options: set[str] = {runtime.model}
+        reason = None
+        if runtime.kind != "replay":
+            try:
+                raw = await quota_client.quota(settings.user_home(identity.id), identity.id)
+                options |= {b["model_id"] for b in summarize_quota(raw, runtime.model)["buckets"] if b["model_id"]}
+            except AgentFailure as failure:
+                reason = failure.message
+        return {"current": runtime.model, "options": sorted(options), "reason": reason,
+                "editable": identity.id == OWNER_ID and settings_pane.editable(settings)}
+
+    update_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+
+    @app.get("/api/v1/updates")
+    async def updates(request: Request, refresh: bool = False) -> dict[str, Any]:
+        settings_owner(request)
+        cached = update_cache.get("latest")
+        if cached and not refresh and time.time() - cached[0] < 300:
+            return cached[1]
+        result = await asyncio.to_thread(settings_pane.check_update, settings)
+        update_cache["latest"] = (time.time(), result)
+        return result
 
     # Internal tool API for MCP shims -------------------------------------------------------------------------------------
     def internal_run(request: Request) -> Any:

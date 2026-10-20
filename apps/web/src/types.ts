@@ -50,6 +50,58 @@ export interface Bootstrap {
   diagnostics?: boolean;
   data_modes?: DataMode[];
   attachments?: {from_this_pc: boolean; max_mb: number};
+  /** The desktop app (WizardBar) runs this copy. */
+  desktop?: boolean;
+  /** The person at this PC may change its settings (their own install). */
+  settings_editable?: boolean;
+}
+
+export type SettingSource = 'environment' | 'env_file' | 'this_pc' | 'company' | 'default';
+
+export interface SettingField {
+  key: string;
+  label: string;
+  section: string;
+  help: string;
+  placeholder: string;
+  choices: string[];
+  secret: boolean;
+  source: SettingSource;
+  /** Never sent for a secret. */
+  value: string | null;
+  set: boolean;
+  /** The company file's value (true/false for a secret). */
+  company_value: string | boolean | null;
+  editable: boolean;
+}
+
+export interface SettingsView {
+  sections: {id: string; title: string; about: string}[];
+  fields: SettingField[];
+  company_file: {name: string | null; imported_at: string | null} | null;
+  restart: 'automatic' | 'manual';
+  model: string;
+  runtime: RuntimeKind;
+  desktop: boolean;
+  build: {version?: string; commit?: string; built_at?: string};
+  version: string;
+}
+
+export interface SettingsSaved extends SettingsView {
+  changed: string[];
+  /** How the change applies: now / after_run (the service restarts itself), manual (restart Wizard yourself), none. */
+  apply: 'now' | 'after_run' | 'manual' | 'none';
+}
+
+export interface ModelList {current: string; options: string[]; reason: string | null; editable: boolean}
+
+export interface UpdateInfo {
+  ok?: boolean;
+  installed: string | null;
+  latest?: string | null;
+  available?: boolean;
+  download: string;
+  message: string;
 }
 
 /** A file attached to a question: converted to text that Gemini reads with wizard_read_attachment. */

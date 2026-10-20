@@ -260,11 +260,12 @@ class CodeAssistRuntime:
         async with self._http() as http:
             token = await self._access_token(http, request)
             project = await self.resolve_project(http, token, request.user_id)
-            await emit("agent_session", {"session_id": request.run_id, "model": self.model, "project": project})
+            model = self.model  # the model picker may change self.model; a run keeps the one it started with
+            await emit("agent_session", {"session_id": request.run_id, "model": model, "project": project})
             declarations = [{"name": t["name"], "description": t["description"], "parameters": gemini_schema(t["inputSchema"])}
                             for t in tools.describe()]
             generation: dict[str, Any] = {}
-            thinking = thinking_config(self.model, self.thinking)
+            thinking = thinking_config(model, self.thinking)
             if thinking:
                 generation["thinkingConfig"] = thinking
             contents: list[dict[str, Any]] = [{"role": "user", "parts": [{"text": request.prompt}]}]
@@ -272,7 +273,7 @@ class CodeAssistRuntime:
             for _ in range(MAX_STEPS):
                 if cancelled():
                     raise AgentFailure("cancelled", "The run was cancelled.")
-                envelope = {"model": self.model, "project": project, "user_prompt_id": request.run_id, "request": {
+                envelope = {"model": model, "project": project, "user_prompt_id": request.run_id, "request": {
                     "contents": contents,
                     "systemInstruction": {"role": "user", "parts": [{"text": system_prompt()}]},
                     "tools": [{"functionDeclarations": declarations}],

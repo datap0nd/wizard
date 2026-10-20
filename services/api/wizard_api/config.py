@@ -108,6 +108,9 @@ class Settings:
     google_domains: list[str] = field(default_factory=list)
     # Names (never values) of what the provisioning file set, for readiness views.
     provision: dict[str, Any] = field(default_factory=dict)
+    # A work-PC or desktop install folder (run.py --home) and its .env: the settings pane edits only such installs.
+    home: Path | None = None
+    env_file: Path | None = None
 
     @property
     def internal_url(self) -> str:
@@ -154,11 +157,16 @@ def load_settings(env: dict[str, str] | None = None, env_file: Path | None = Non
         return (candidate if candidate.is_absolute() else base / candidate).resolve()
 
     data_dir = local(get("WIZARD_DATA_DIR", "data" if home else "var") or "var")
-    # Organisation settings from an imported provisioning file sit underneath the PC's own .env and environment.
+    # Organisation settings from an imported provisioning file, then this PC's choices from the settings pane, sit
+    # underneath the PC's own .env and environment.
     provisioned = provisioning.load(data_dir)
-    if provisioned:
-        merged = {**provisioned.values(), **{k: v for k, v in merged.items() if v not in (None, "")}}
+    chosen = provisioning.load(data_dir, layer="local")
+    stored = {**(provisioned.values() if provisioned else {}), **(chosen.values() if chosen else {})}
+    if stored:
+        merged = {**stored, **{k: v for k, v in merged.items() if v not in (None, "")}}
     settings = Settings(data_dir=data_dir)
+    settings.home = base if home else None
+    settings.env_file = env_file or base / ".env"
     settings.provision = provisioning.status(data_dir) if provisioned else {"imported": False}
     settings.host = get("WIZARD_HOST", settings.host) or settings.host
     settings.port = _int(get("WIZARD_PORT", "8770") or "8770", "WIZARD_PORT", 1, 65535)

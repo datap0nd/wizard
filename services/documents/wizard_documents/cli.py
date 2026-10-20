@@ -15,6 +15,9 @@
                                             materialized views -> inbox/postgres/<database>/ (+ inbox/_postgres/*.json)
   bdp-check <content> [--url <Superset address>]
                                             anonymous checks of the Big Data Portal's Superset -> inbox/bdp/superset-check.md
+  kb-publish <content> [--repo owner/name] [--dry-run]
+                                            knowledge/ and contracts/sources/ -> the private knowledge-base repository
+  kb-check <content> [--repo owner/name]   can the read-only token (the one users get) read that repository?
   quiz-check <page.html> [--content <content>]
   quiz-answers <answered page or folder> [--quizzes <folder>]
 """
@@ -23,9 +26,13 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import os
 import sys
 from pathlib import Path
 
+import httpx
+
+from wizard_agent import outbound
 from wizard_connectors.pg import read_env
 
 from . import bdp
@@ -167,6 +174,47 @@ def cmd_bdp_check(args: argparse.Namespace) -> int:
     return 1 if any(line.startswith("FAIL") for line in result.lines) else 0
 
 
+def cmd_kb(args: argparse.Namespace) -> int:
+    from . import kb
+    content = args.content.resolve()
+    env = {**read_env(args.env_file or content.parent / ".env"),
+           **{k: v for k, v in os.environ.items() if k.startswith("WIZARD_KB_") and v}}
+    # Not WIZARD_KB_REPO / WIZARD_KB_TOKEN: in this install's .env those would switch its own Wizard to the synced
+    # knowledge base, which cannot be combined with its content\ folder (WIZARD_CONTENT_DIR).
+    repo = args.repo or env.get("WIZARD_KB_PUBLISH_REPO")
+    if not repo or "/" not in repo:
+        print("Give the repository: --repo owner/name (or WIZARD_KB_PUBLISH_REPO=owner/name in .env)")
+        return 2
+    try:
+        if args.command == "kb-check":
+            token = env.get("WIZARD_KB_READ_TOKEN")
+            if not token:
+                print("FAIL  no WIZARD_KB_READ_TOKEN (the read-only token users get) in .env")
+                return 2
+            ok, text = kb.check_read(repo, token, args.branch or "main", proxy=env.get("WIZARD_PROXY"))
+            print(("PASS  " if ok else "FAIL  ") + text)
+            return 0 if ok else 1
+        token = env.get("WIZARD_KB_PUBLISH_TOKEN")
+        if not token:
+            print("FAIL  no WIZARD_KB_PUBLISH_TOKEN (Contents read and write on the repository) in .env or the environment")
+            return 2
+        outcome = kb.publish(content, repo, token, branch=args.branch, message=args.message, dry_run=args.dry_run,
+                             proxy=env.get("WIZARD_PROXY"))
+    except kb.PublishError as error:
+        print(f"FAIL  {error}")
+        return 1
+    except httpx.HTTPError as error:
+        print(f"FAIL  {outbound.explain(error, kb.API, env.get('WIZARD_PROXY'))}")
+        return 1
+    print("\n".join(outcome.lines))
+    for label, names in (("added", outcome.added), ("changed", outcome.changed), ("removed", outcome.removed)):
+        for name in names[:40]:
+            print(f"  {label:8} {name}")
+        if len(names) > 40:
+            print(f"  ... and {len(names) - 40} more {label}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="wizard_docs", description="Wizard documentation kit",
                                      formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__)
@@ -220,6 +268,16 @@ def main(argv: list[str] | None = None) -> int:
     check_bdp.add_argument("content", type=Path)
     check_bdp.add_argument("--url", help="Superset's address, e.g. copied from the SQL Lab tab (default: WIZARD_BDP_URL in .env)")
     check_bdp.add_argument("--env-file", type=Path, help="Wizard's .env (default: next to the content folder)")
+    for name in ("kb-publish", "kb-check"):
+        sub = commands.add_parser(name)
+        sub.add_argument("content", type=Path)
+        sub.add_argument("--repo", help="owner/name of the private knowledge-base repository (default: WIZARD_KB_PUBLISH_REPO "
+                                        "in .env)")
+        sub.add_argument("--branch", help="default: the repository's default branch (kb-check: main)")
+        sub.add_argument("--env-file", type=Path, help="Wizard's .env (default: next to the content folder)")
+        if name == "kb-publish":
+            sub.add_argument("--message", help="commit message")
+            sub.add_argument("--dry-run", action="store_true", help="show what would change; write nothing")
     quiz = commands.add_parser("quiz-check")
     quiz.add_argument("page", type=Path)
     quiz.add_argument("--content", type=Path)
@@ -245,6 +303,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_postgres(args)
         if args.command == "bdp-check":
             return cmd_bdp_check(args)
+        if args.command in ("kb-publish", "kb-check"):
+            return cmd_kb(args)
         if args.command == "status":
             print(status(args.content.resolve(), args.quizzes))
         elif args.command == "next":

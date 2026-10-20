@@ -11,7 +11,9 @@ import {Conversation} from './components/Conversation';
 import {EmptyState} from './components/EmptyState';
 import {EvidenceDrawer} from './components/EvidenceDrawer';
 import {LoginScreen} from './components/LoginScreen';
+import {ModelPicker} from './components/ModelPicker';
 import {QuickEmpty, QuickHeader} from './components/QuickPanel';
+import {SettingsDialog} from './components/SettingsDialog';
 import {Sidebar} from './components/Sidebar';
 import {onHost, toHost} from './host';
 import type {Attachment, Bootstrap, ConversationSummary, EvidenceSummary, LocalFile, RunEvent, RunView} from './types';
@@ -32,6 +34,7 @@ export function App({compact = false}: {compact?: boolean}) {
   const [logOpen, setLogOpen] = useState(false);
   const [files, setFiles] = useState<PendingFile[]>([]);
   const [localOpen, setLocalOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const streams = useRef(new Map<string, EventSource>());
   const [focusTick, setFocusTick] = useState(0);
   const questions = useRef(new Map<string, string>());
@@ -112,9 +115,12 @@ export function App({compact = false}: {compact?: boolean}) {
   useEffect(() => () => { streams.current.forEach(s => s.close()); }, []);
 
   const busy = runs.some(r => r.status === 'running' || r.status === 'queued');
-  const dialogOpen = !!drawer || accountOpen || logOpen || localOpen;
+  const dialogOpen = !!drawer || accountOpen || logOpen || localOpen || settingsOpen;
   useEffect(() => { toHost({type: 'busy', busy}); }, [busy]);
-  useEffect(() => onHost(message => { if (message.type === 'focus') setFocusTick(t => t + 1); }), []);
+  useEffect(() => onHost(message => {
+    if (message.type === 'focus') setFocusTick(t => t + 1);
+    if (message.type === 'open-settings') setSettingsOpen(true);
+  }), []);
   useEffect(() => {
     if (!compact) return;
     const keydown = (e: KeyboardEvent) => { if (e.key === 'Escape' && !dialogOpen && !e.defaultPrevented) toHost({type: 'hide'}); };
@@ -207,11 +213,15 @@ export function App({compact = false}: {compact?: boolean}) {
     <LocalFilesDialog open={localOpen} onClose={() => setLocalOpen(false)} onPick={addLocal} />
     <AccountDialog open={accountOpen} boot={boot} onClose={() => setAccountOpen(false)}
       onChanged={account => { setBoot(b => (b ? {...b, gemini_account: account} : b)); void loadBoot(); }} />
+    {boot.settings_editable && <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} onSaved={() => void loadBoot()} />}
   </>;
+  const modelPicker = boot.settings_editable && runtime.kind !== 'replay'
+    ? <ModelPicker model={runtime.model} onChanged={() => void loadBoot()} onMore={() => setSettingsOpen(true)} /> : null;
 
   if (compact) return (
     <div className="flex h-dvh w-screen flex-col overflow-hidden bg-page" data-testid="quick">
-      <QuickHeader boot={boot} title={title} conversationId={currentId} synthetic={synthetic} onNew={newChat} onAccount={() => setAccountOpen(true)} />
+      <QuickHeader boot={boot} title={title} conversationId={currentId} synthetic={synthetic} onNew={newChat} onAccount={() => setAccountOpen(true)}
+        modelPicker={modelPicker} onSettings={boot.settings_editable ? () => setSettingsOpen(true) : undefined} />
       {conversation(<QuickEmpty boot={boot} onAccount={() => setAccountOpen(true)} onPick={q => { if (!blocked) void ask(q); else setDraft(q); }} />)}
       {composer}
       {overlays}
@@ -223,13 +233,15 @@ export function App({compact = false}: {compact?: boolean}) {
       <Sidebar boot={boot} conversations={conversations} currentId={currentId} onNew={newChat}
         onSelect={id => void loadConversation(id)} onRename={(id, t) => void api.rename(id, t).then(refreshConversations)}
         onDelete={id => void api.remove(id).then(async () => { if (id === currentId) newChat(); await refreshConversations(); })}
-        busy={busy} onAccount={() => setAccountOpen(true)} onLog={() => setLogOpen(true)} onLogout={() => void api.logout().then(() => { localStorage.removeItem(LAST); void loadBoot(); })}
+        busy={busy} onAccount={() => setAccountOpen(true)} onLog={() => setLogOpen(true)}
+        onSettings={boot.settings_editable ? () => setSettingsOpen(true) : undefined} onLogout={() => void api.logout().then(() => { localStorage.removeItem(LAST); void loadBoot(); })}
         onAsk={text => setDraft(text)} />
       <main className="flex min-w-0 flex-1 flex-col">
         <div className="flex flex-wrap items-center gap-2 border-b border-line bg-canvas px-4 py-2.5 md:px-6">
           <h2 className="mr-2 truncate text-[14px] font-semibold" data-testid="conversation-title">{title}</h2>
           {runtime.kind === 'replay' && <RuntimeBadge kind={runtime.kind} label={runtime.label} />}
           {synthetic && <span className="inline-flex items-center gap-1 rounded-full border border-warn-line bg-warn-soft px-2 py-0.5 text-[11.5px] font-semibold text-warn" data-testid="synthetic-banner">SYNTHETIC DATA</span>}
+          {modelPicker && <span className="ml-auto">{modelPicker}</span>}
         </div>
         {conversation(<EmptyState suggestions={boot.suggestions} synthetic={synthetic} onPick={q => { if (!blocked) void ask(q); else setDraft(q); }} />)}
         {composer}
