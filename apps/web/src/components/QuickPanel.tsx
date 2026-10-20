@@ -8,9 +8,9 @@ import {WizardSprite} from './WizardSprite';
 import type {Bootstrap} from '@/types';
 
 /** Top row of the compact view WizardBar shows under its button: title, new question, full window, account. */
-export function QuickHeader({boot, title, conversationId, synthetic, onNew, onAccount, onSettings, modelPicker}: {
+export function QuickHeader({boot, title, conversationId, synthetic, onNew, onAccount, onSettings}: {
   boot: Bootstrap; title: string; conversationId: string | null; synthetic: boolean; onNew: () => void; onAccount: () => void;
-  onSettings?: () => void; modelPicker?: React.ReactNode;
+  onSettings?: () => void;
 }) {
   const account = boot.gemini_account;
   const needsLink = !!account?.needs_link && !account.linked;
@@ -19,7 +19,6 @@ export function QuickHeader({boot, title, conversationId, synthetic, onNew, onAc
       <img src={mark} alt="" className="size-6 shrink-0" />
       <h2 className="mr-1 min-w-0 flex-1 truncate text-[13.5px] font-semibold" data-testid="conversation-title">{title}</h2>
       {synthetic && <span className="rounded-full border border-warn-line bg-warn-soft px-2 py-0.5 text-[11px] font-semibold text-warn" data-testid="synthetic-banner">SYNTHETIC</span>}
-      {modelPicker}
       <Hint text="New question"><Button variant="ghost" size="icon-sm" onClick={onNew} aria-label="New question" data-testid="new-chat"><Plus /></Button></Hint>
       <Hint text="Open in a full window">
         <a href={conversationId ? `/?c=${encodeURIComponent(conversationId)}` : '/'} target="_blank" rel="noopener noreferrer"

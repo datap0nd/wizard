@@ -791,13 +791,6 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         return {**settings_pane.describe(settings), "model": runtime.model, "runtime": runtime.kind,
                 "desktop": settings.desktop, "build": settings_pane.installed_build(), "version": __version__}
 
-    def apply_model(model: str) -> None:
-        """A new model applies from the next question: no restart."""
-        for target in {id(runtime): runtime, id(quota_client): quota_client}.values():
-            target.model = model
-        settings.model = model
-        quota_cache.clear()
-
     def schedule_restart() -> str:
         request_restart = getattr(app.state, "request_restart", None)
         if request_restart is None:
@@ -828,14 +821,7 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
             raise HTTPException(error.status, str(error)) from None
         changed = result["changed"]
         store.audit(identity.id, "settings:update", detail={"keys": changed})
-        if {"WIZARD_GEMINI_MODEL", "WIZARD_GEMINI_FALLBACK_MODEL"} & set(changed):
-            fresh = await asyncio.to_thread(load_settings, None, None, settings.home)
-            apply_model(fresh.model)
-            settings.fallback_model = fresh.fallback_model
-            if isinstance(runtime, CodeAssistRuntime):
-                runtime.fallback_model = fresh.fallback_model
-        others = [k for k in changed if k not in ("WIZARD_GEMINI_MODEL", "WIZARD_GEMINI_FALLBACK_MODEL")]
-        return {**settings_view(), "changed": changed, "apply": schedule_restart() if others else "none"}
+        return {**settings_view(), "changed": changed, "apply": schedule_restart() if changed else "none"}
 
     @app.post("/api/v1/settings/test")
     async def test_settings(request: Request, body: SettingsTestBody) -> dict[str, Any]:
@@ -846,21 +832,6 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
             return await asyncio.to_thread(settings_pane.test_knowledge, settings, dict(body.values))
         except settings_pane.PaneError as error:
             return {"ok": False, "message": str(error)}
-
-    @app.get("/api/v1/models")
-    async def models(request: Request) -> dict[str, Any]:
-        """The models this person's Gemini entitlement has quota for (Gemini CLI's own list), plus the current one."""
-        identity = me(request)
-        options: set[str] = {runtime.model}
-        reason = None
-        if runtime.kind != "replay":
-            try:
-                raw = await quota_client.quota(settings.user_home(identity.id), identity.id)
-                options |= {b["model_id"] for b in summarize_quota(raw, runtime.model)["buckets"] if b["model_id"]}
-            except AgentFailure as failure:
-                reason = failure.message
-        return {"current": runtime.model, "options": sorted(options), "reason": reason,
-                "editable": identity.id == OWNER_ID and settings_pane.editable(settings)}
 
     update_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 

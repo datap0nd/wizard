@@ -1222,27 +1222,6 @@
         }
       }
     },
-    "/api/v1/models": {
-      "get": {
-        "summary": "Models",
-        "description": "The models this person's Gemini entitlement has quota for (Gemini CLI's own list), plus the current one.",
-        "operationId": "models_api_v1_models_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Models Api V1 Models Get"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/updates": {
       "get": {
         "summary": "Updates",

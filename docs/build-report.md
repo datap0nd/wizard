@@ -3,7 +3,25 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-20 (latest) — "Gemini is at capacity": telling Google's refusals apart, and a fallback model
+## 2026-10-20 (latest) — No model picker: Gemini 3.8 Flash for everyone
+
+The owner asked to remove the model picker again and default to Gemini 3.8 Flash.
+- **Removed:**
+  - the model chip in the panel's header and the full app's top bar (`ModelPicker.tsx`);
+  - the Model and Fallback model fields in Settings;
+  - `/api/v1/models`.
+- **Ignored:** a model or fallback saved with the picker in a PC's own settings (`data\settings`), so PCs that chose
+  Pro are back on `gemini-3.8-flash` after the update.
+- **Still possible:** the company file, `.env` or the environment can set `WIZARD_GEMINI_MODEL` and
+  `WIZARD_GEMINI_FALLBACK_MODEL`.
+- **Refusals:** Google's refusals are still read as below. With the default fallback being the same model, a capacity
+  problem ends the answer with Google's reason instead of switching.
+
+**Tests.** A new settings test saves Pro and "none" in this PC's layer the way the picker did. The PC then runs on
+`gemini-3.8-flash` with the default fallback, Settings offers no model fields and refuses them, `/api/v1/models` is
+gone, and the environment can still set a model. Python 314 passed, web 27 passed, `openapi.json` regenerated.
+
+## 2026-10-20 (late evening) — "Gemini is at capacity": telling Google's refusals apart, and a fallback model
 
 The owner reported many "Gemini is at capacity" lines. Wizard showed that text for every HTTP 429 from Google and
 retried the same model up to six times, for minutes. Google's 429s mean different things, and only one of them is
@@ -42,7 +60,7 @@ worth waiting for.
 One new web test: the stage shows the wait. Python 317 passed, web 27, plus spec, contracts, secrets, lint and types.
 Google's real refusals are not reproducible here; the cases follow Gemini CLI's own tests and Google's error format.
 
-## 2026-10-20 (latest) — The pixel wizard everywhere, a bigger stage, an animated button, files dropped on it
+## 2026-10-20 (evening) — The pixel wizard everywhere, a bigger stage, an animated button, files dropped on it
 
 The owner asked for:
 - a bigger, more animated stage;

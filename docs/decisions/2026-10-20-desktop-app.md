@@ -81,6 +81,11 @@ service.
   - Its settings (`WIZARD_KB_PUBLISH_*`, `WIZARD_KB_READ_TOKEN`) are names the app never reads. They cannot switch the
     work PC's own Wizard away from its `content\` folder, and they can never travel in a company file.
 
+**Addendum (same day): no model picker.** The owner asked to remove the model picker again and use Gemini 3.8 Flash. The
+chip and the model fields in Settings are gone, `/api/v1/models` with them, and a model saved with the picker on a PC is
+ignored. The company file, `.env` or the environment can still set `WIZARD_GEMINI_MODEL` and
+`WIZARD_GEMINI_FALLBACK_MODEL`.
+
 **Addendum (same day): files dropped on the button.** The owner asked that a file dropped on the Ask Wizard button be
 attached to the conversation.
 - **From this PC** reads only files in Downloads, Desktop and Documents. That limit keeps a page, or any local process

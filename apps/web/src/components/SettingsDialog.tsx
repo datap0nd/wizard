@@ -36,7 +36,6 @@ export function SettingsDialog({open, onClose, onSaved}: {open: boolean; onClose
   const [view, setView] = useState<SettingsView | null>(null);
   const [draft, setDraft] = useState<Draft>({});
   const [editingSecret, setEditingSecret] = useState<Record<string, boolean>>({});
-  const [models, setModels] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -47,7 +46,6 @@ export function SettingsDialog({open, onClose, onSaved}: {open: boolean; onClose
     if (!open) return;
     setDraft({}); setEditingSecret({}); setError(null); setNotice(null); setTests({});
     api.settings().then(setView).catch(e => setError(e instanceof Error ? e.message : 'Settings could not be read.'));
-    api.models().then(m => setModels(m.options)).catch(() => setModels([]));
     api.updates().then(setUpdate).catch(() => setUpdate(null));
   }, [open]);
 
@@ -99,27 +97,6 @@ export function SettingsDialog({open, onClose, onSaved}: {open: boolean; onClose
           <span className="flex h-9 flex-1 items-center gap-2 rounded-lg border border-line bg-surface px-3 text-sm text-ink-2"><KeyRound className="size-3.5" />Saved (hidden)</span>
           {f.editable && <Button size="sm" variant="outline" onClick={() => setEditingSecret(s => ({...s, [f.key]: true}))}>Change</Button>}
         </div>
-      );
-    }
-    if (f.key === 'WIZARD_GEMINI_MODEL') {
-      const options = Array.from(new Set([...models, view?.model ?? '', value(f)].filter(Boolean))).sort();
-      return (
-        <div className="flex gap-2">
-          <select value={value(f)} disabled={disabled} onChange={e => edit(f.key, e.target.value)} aria-label={f.label} className={common} data-testid="model-select">
-            {options.map(m => <option key={m} value={m}>{m}</option>)}
-          </select>
-          <input aria-label="Other model id" placeholder="other model id" disabled={disabled} className={cn(common, 'w-44')}
-            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); const v = e.currentTarget.value.trim(); if (v) { setModels(m => [...m, v]); edit(f.key, v); } } }} />
-        </div>
-      );
-    }
-    if (f.key === 'WIZARD_GEMINI_FALLBACK_MODEL') {
-      return (
-        <>
-          <input value={value(f)} placeholder={f.placeholder} disabled={disabled} aria-label={f.label} list="wizard-fallback-models"
-            autoComplete="off" spellCheck={false} onChange={e => edit(f.key, e.target.value)} className={common} data-testid={`setting-${f.key}`} />
-          <datalist id="wizard-fallback-models">{['none', ...models].map(m => <option key={m} value={m} />)}</datalist>
-        </>
       );
     }
     if (f.choices.length) {

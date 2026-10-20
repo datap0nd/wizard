@@ -12,7 +12,6 @@ import {DropZone} from './components/DropZone';
 import {EmptyState} from './components/EmptyState';
 import {EvidenceDrawer} from './components/EvidenceDrawer';
 import {LoginScreen} from './components/LoginScreen';
-import {ModelPicker} from './components/ModelPicker';
 import {QuickEmpty, QuickHeader} from './components/QuickPanel';
 import {SettingsDialog} from './components/SettingsDialog';
 import {SystemsContext} from './components/SystemsStage';
@@ -244,13 +243,11 @@ export function App({compact = false}: {compact?: boolean}) {
       onChanged={account => { setBoot(b => (b ? {...b, gemini_account: account} : b)); void loadBoot(); }} />
     {boot.settings_editable && <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} onSaved={() => void loadBoot()} />}
   </>;
-  const modelPicker = boot.settings_editable && runtime.kind !== 'replay'
-    ? <ModelPicker model={runtime.model} onChanged={() => void loadBoot()} onMore={() => setSettingsOpen(true)} /> : null;
 
   if (compact) return (
     <div className={cn('flex h-dvh w-screen flex-col overflow-hidden bg-page', entering && 'panel-enter')} data-testid="quick">
       <QuickHeader boot={boot} title={title} conversationId={currentId} synthetic={synthetic} onNew={newChat} onAccount={() => setAccountOpen(true)}
-        modelPicker={modelPicker} onSettings={boot.settings_editable ? () => setSettingsOpen(true) : undefined} />
+        onSettings={boot.settings_editable ? () => setSettingsOpen(true) : undefined} />
       {conversation(<QuickEmpty boot={boot} greeting={focusTick} onAccount={() => setAccountOpen(true)} onPick={q => { if (!blocked) void ask(q); else setDraft(q); }} />)}
       {composer}
       {overlays}
@@ -270,7 +267,6 @@ export function App({compact = false}: {compact?: boolean}) {
           <h2 className="mr-2 truncate text-[14px] font-semibold" data-testid="conversation-title">{title}</h2>
           {runtime.kind === 'replay' && <RuntimeBadge kind={runtime.kind} label={runtime.label} />}
           {synthetic && <span className="inline-flex items-center gap-1 rounded-full border border-warn-line bg-warn-soft px-2 py-0.5 text-[11.5px] font-semibold text-warn" data-testid="synthetic-banner">SYNTHETIC DATA</span>}
-          {modelPicker && <span className="ml-auto">{modelPicker}</span>}
         </div>
         {conversation(<EmptyState suggestions={boot.suggestions} synthetic={synthetic} onPick={q => { if (!blocked) void ask(q); else setDraft(q); }} />)}
         {composer}

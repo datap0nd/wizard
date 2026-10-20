@@ -67,7 +67,6 @@ def test_sources_are_shown_and_secrets_are_never_sent(tmp_path):
         assert has(field(view, "WIZARD_PG_HOST"), value="db.corp.example", source="company", editable=True)
         assert has(field(view, "WIZARD_PG_PASSWORD"), value=None, set=True, source="company", secret=True)
         assert field(view, "WIZARD_PG_DATABASE")["source"] == "env_file"
-        assert has(field(view, "WIZARD_GEMINI_MODEL"), value="gemini-3.8-flash", source="default")
         assert view["company_file"]["name"] == "ACME" and view["restart"] == "manual"
 
 
@@ -111,27 +110,20 @@ def test_an_invalid_change_is_rolled_back(tmp_path):
     assert provisioning.load(tmp_path / "data", layer="local") is None
 
 
-def test_the_model_changes_without_a_restart(tmp_path):
-    with TestClient(create_app(install(tmp_path))) as client:
+def test_everyone_is_on_the_default_model_and_a_picked_one_no_longer_applies(tmp_path):
+    """The in-app model picker was removed (owner, 20 Oct 2026): Gemini 3.8 Flash. A model saved with it is ignored."""
+    provisioning.update_local(tmp_path / "data", {"WIZARD_GEMINI_MODEL": "gemini-3.1-pro",
+                                                  "WIZARD_GEMINI_FALLBACK_MODEL": "none"})
+    settings = install(tmp_path)
+    assert (settings.model, settings.fallback_model) == ("gemini-3.8-flash", "gemini-3.8-flash")
+    with TestClient(create_app(settings)) as client:
         owner(client)
-        saved = put(client, {"WIZARD_GEMINI_MODEL": "gemini-3.1-pro"}).json()
-        assert saved["apply"] == "none" and saved["model"] == "gemini-3.1-pro"
-        assert client.get("/api/v1/bootstrap").json()["runtime"]["model"] == "gemini-3.1-pro"
-        assert client.get("/api/v1/models").json()["current"] == "gemini-3.1-pro"
-    assert load_settings(env={}, home=tmp_path).model == "gemini-3.1-pro", "kept after a restart"
-
-
-def test_the_fallback_model_changes_without_a_restart(tmp_path):
-    assert load_settings(env={}, home=tmp_path).fallback_model == "gemini-3.8-flash"
-    with TestClient(create_app(install(tmp_path))) as client:
-        owner(client)
-        runtime = client.app.state.manager.runtime
-        assert put(client, {"WIZARD_GEMINI_FALLBACK_MODEL": "gemini-3.1-flash"}).json()["apply"] == "none"
-        assert runtime.fallback_model == "gemini-3.1-flash"
-        assert put(client, {"WIZARD_GEMINI_FALLBACK_MODEL": "none"}).json()["apply"] == "none"
-        assert runtime.fallback_model is None
-        assert put(client, {"WIZARD_GEMINI_FALLBACK_MODEL": "Flash please"}).status_code == 400
-    assert load_settings(env={}, home=tmp_path).fallback_model is None, "kept after a restart"
+        keys = {f["key"] for f in client.get("/api/v1/settings").json()["fields"]}
+        assert not keys & {"WIZARD_GEMINI_MODEL", "WIZARD_GEMINI_FALLBACK_MODEL"}
+        assert put(client, {"WIZARD_GEMINI_MODEL": "gemini-3.1-pro"}).status_code == 400
+        assert client.get("/api/v1/models").status_code == 404
+        assert client.get("/api/v1/bootstrap").json()["runtime"]["model"] == "gemini-3.8-flash"
+    assert install(tmp_path, WIZARD_GEMINI_MODEL="gemini-3.1-flash").model == "gemini-3.1-flash", "the environment still can"
 
 
 def test_desktop_restarts_itself_to_apply_other_settings(tmp_path):
@@ -179,31 +171,6 @@ def test_connection_tests_use_the_proposed_values(tmp_path, monkeypatch):
         failed = test("postgres", {"WIZARD_PG_HOST": "127.0.0.1", "WIZARD_PG_PORT": "1", "WIZARD_PG_USER": "ro"})
         assert failed["ok"] is False and failed["message"].startswith("Could not connect")
     assert provisioning.load(tmp_path / "data", layer="local") is None, "a test saves nothing"
-
-
-def test_model_options_come_from_the_persons_own_quota(tmp_path):
-    def google(request: httpx.Request) -> httpx.Response:
-        url = str(request.url)
-        if "oauth2.googleapis.com/token" in url:
-            return httpx.Response(200, json={"access_token": "ya29.x", "refresh_token": "1//r", "expires_in": 3600})
-        if "userinfo" in url:
-            return httpx.Response(200, json={"email": "rafael@company.example"})
-        if url.endswith(":loadCodeAssist"):
-            return httpx.Response(200, json={"currentTier": {"id": "standard-tier"}, "cloudaicompanionProject": "p"})
-        if url.endswith(":retrieveUserQuota"):
-            return httpx.Response(200, json={"buckets": [{"modelId": "gemini-3.8-flash", "remainingFraction": 0.9},
-                                                         {"modelId": "gemini-3.1-pro", "remainingFraction": 0.5}]})
-        return httpx.Response(404)
-
-    # gemini-cli: the quota then goes through the separate Code Assist client that takes the fake transport.
-    settings = install(tmp_path, WIZARD_AGENT_RUNTIME="gemini-cli")
-    with TestClient(create_app(settings, google_transport=httpx.MockTransport(google))) as client:
-        owner(client)
-        assert client.get("/api/v1/models").json()["reason"], "not linked yet: only the current model, with the reason"
-        state = client.post("/api/v1/account/gemini/link", headers=HEADERS).json()["state"]
-        client.post("/api/v1/account/gemini/link/complete", json={"state": state, "code": "4/abc"}, headers=HEADERS)
-        listed = client.get("/api/v1/models").json()
-        assert listed["options"] == ["gemini-3.1-pro", "gemini-3.8-flash"] and listed["editable"]
 
 
 def test_update_check_compares_with_the_installed_build(tmp_path, monkeypatch):

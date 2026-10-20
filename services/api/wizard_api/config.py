@@ -18,6 +18,8 @@ from wizard_connectors.pg import settings_from as pg_settings
 from . import knowledge_sync, provisioning
 
 RUNTIMES = ("gemini-cli", "code-assist", "replay")
+# Saved by the in-app model picker, which was removed: ignored in this PC's settings layer.
+PICKER_KEYS = ("WIZARD_GEMINI_MODEL", "WIZARD_GEMINI_FALLBACK_MODEL")
 KB_REPO = re.compile(r"^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$")
 KB_REF = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_./-]{0,200}$")
 KB_PATH = re.compile(r"^[A-Za-z0-9_. /\\-]{1,200}$")
@@ -165,7 +167,10 @@ def load_settings(env: dict[str, str] | None = None, env_file: Path | None = Non
     # underneath the PC's own .env and environment.
     provisioned = provisioning.load(data_dir)
     chosen = provisioning.load(data_dir, layer="local")
-    stored = {**(provisioned.values() if provisioned else {}), **(chosen.values() if chosen else {})}
+    # The in-app model picker is gone (owner, 20 Oct 2026: Gemini 3.8 Flash for everyone). A model saved with it on
+    # this PC no longer applies; the company file, .env or the environment can still set one.
+    picked = {k: v for k, v in (chosen.values() if chosen else {}).items() if k not in PICKER_KEYS}
+    stored = {**(provisioned.values() if provisioned else {}), **picked}
     if stored:
         merged = {**stored, **{k: v for k, v in merged.items() if v not in (None, "")}}
     settings = Settings(data_dir=data_dir)

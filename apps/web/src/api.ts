@@ -1,4 +1,4 @@
-import type {Attachment, Bootstrap, ConversationSummary, Evidence, GeminiAccount, GeminiQuota, LocalFile, ModelList, Report, RunRecord, SettingsSaved, SettingsView, SourceCatalog, SourceSummary, UpdateInfo} from './types';
+import type {Attachment, Bootstrap, ConversationSummary, Evidence, GeminiAccount, GeminiQuota, LocalFile, Report, RunRecord, SettingsSaved, SettingsView, SourceCatalog, SourceSummary, UpdateInfo} from './types';
 
 export class ApiError extends Error {
   constructor(message: string, public status: number, public code?: string, public loginRequired = false) { super(message); }
@@ -60,7 +60,6 @@ export const api = {
   saveSettings: (values: Record<string, string | null>) => request<SettingsSaved>('/api/v1/settings', {method: 'PUT', body: {values}}),
   testSettings: (section: 'postgres' | 'knowledge', values: Record<string, string | null>) =>
     request<{ok: boolean; message: string}>('/api/v1/settings/test', {body: {section, values}}),
-  models: () => request<ModelList>('/api/v1/models'),
   updates: (refresh = false) => request<UpdateInfo>(`/api/v1/updates${refresh ? '?refresh=true' : ''}`),
   health: () => request<{status: string; version: string}>('/api/v1/health'),
 };

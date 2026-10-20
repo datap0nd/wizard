@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,8 +22,6 @@ from wizard_connectors.pg import settings_from as pg_settings
 
 from . import knowledge_sync, provisioning
 from .config import ConfigError, Settings, load_settings, read_env_file
-
-MODEL = re.compile(r"^[a-z0-9][a-z0-9.\-]{2,79}$")
 
 
 @dataclass(frozen=True)
@@ -48,10 +45,6 @@ SECTIONS = [
     ("network", "Network", "Only if Wizard cannot reach Google or GitHub on its own."),
 ]
 FIELDS = [
-    Field("WIZARD_GEMINI_MODEL", "Model", "gemini", "Takes effect on the next question.", "gemini-3.8-flash"),
-    Field("WIZARD_GEMINI_FALLBACK_MODEL", "Fallback model", "gemini",
-          "Answers instead when Google has no capacity for the model above or its quota is used up. none: no fallback.",
-          "gemini-3.8-flash"),
     Field("GOOGLE_CLOUD_PROJECT", "Google Cloud project", "gemini", "Your organisation's Gemini project, if it has one."),
     Field("WIZARD_GOOGLE_DOMAINS", "Company Google domains", "gemini", "Only these accounts may link, e.g. company.com.",
           "company.com"),
@@ -103,10 +96,6 @@ def describe(settings: Settings) -> dict[str, Any]:
     fields = []
     for f in FIELDS:
         source, value = next(((name, values[f.key]) for name, values in layers if f.key in values), ("default", ""))
-        if f.key == "WIZARD_GEMINI_MODEL" and source == "default":
-            value = settings.model
-        if f.key == "WIZARD_GEMINI_FALLBACK_MODEL" and source == "default":
-            value = settings.fallback_model or ""
         from_company = next((values.get(f.key) for name, values in layers if name == "company"), None)
         fields.append({"key": f.key, "label": f.label, "section": f.section, "help": f.help, "placeholder": f.placeholder,
                        "choices": list(f.choices), "secret": f.secret, "source": source,
@@ -133,8 +122,6 @@ def _clean(changes: dict[str, Any]) -> dict[str, str | None]:
         field = BY_KEY[key]
         if text and field.choices and text not in field.choices:
             raise PaneError(f"{field.label} must be one of {', '.join(field.choices)}")
-        if text and key in ("WIZARD_GEMINI_MODEL", "WIZARD_GEMINI_FALLBACK_MODEL") and not MODEL.match(text):
-            raise PaneError("The model name looks wrong: use the id Gemini shows, e.g. gemini-3.1-pro")
         cleaned[key] = text
     return cleaned
 

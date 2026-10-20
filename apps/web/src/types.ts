@@ -94,7 +94,6 @@ export interface SettingsSaved extends SettingsView {
   apply: 'now' | 'after_run' | 'manual' | 'none';
 }
 
-export interface ModelList {current: string; options: string[]; reason: string | null; editable: boolean}
 
 export interface UpdateInfo {
   ok?: boolean;

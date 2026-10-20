@@ -138,7 +138,7 @@ of Wizard on this PC:
 
 | Section | Settings | Test |
 |---|---|---|
-| Gemini | Model, fallback model, Google Cloud project, company Google domains | — |
+| Gemini | Google Cloud project, company Google domains | — |
 | Knowledge base | Repository, read-only token, branch, folder, check interval | **Test connection**: can the token read the repository? |
 | Company database | Name people see (default "AI Team Database"), server, port, database, read-only user, password, SSL | **Test connection**: connects read-only and reports the user |
 | Network | Proxy | — |
@@ -149,16 +149,17 @@ of Wizard on this PC:
   it again. Saving a key that `.env` also had moves it out of `.env`, so no password stays there in plain text.
   Precedence: company file < this PC < `.env` < environment.
 - **Secrets** (token, password) are write-only: the page only shows "Saved (hidden)" and **Change**.
-- **Applying:** a new model applies to the next question, no restart. Other changes restart the service by itself
-  (after the running question, if any); the page waits and reconnects.
-- **Model picker:** the model chip in the panel's header (and the full app's top bar) lists the models your own Gemini
-  entitlement has quota for, from Google's quota answer for your account. "Another model or more settings…" opens
-  Settings, where any model id can be typed (for example `gemini-3.1-pro`). A run keeps the model it started with.
+- **Applying:** changes restart the service by itself (after the running question, if any); the page waits and
+  reconnects.
+- **The model** is Gemini 3.8 Flash for everyone (`gemini-3.8-flash`). There is no model picker in the app: the owner
+  removed it on 20 October 2026, and a model chosen with it before no longer applies. Only the company file, `.env` or
+  the environment can set another (`WIZARD_GEMINI_MODEL`, and `WIZARD_GEMINI_FALLBACK_MODEL` for the fallback below).
 - **When Gemini says no.** Wizard reads Google's refusal the way Gemini CLI does, and the stage shows what it is doing:
   - *No capacity for the model* (Google's side, not your quota; common for Pro models at busy times): two quick tries,
-    then the rest of the answer comes from the **fallback model** (Settings, default `gemini-3.8-flash`; `none` turns
-    it off). The answer says so, and its report names the model that answered. For ten minutes, new questions start on
-    the fallback, and say so.
+    then the rest of the answer comes from the **fallback model** when one is set apart from the model
+    (`WIZARD_GEMINI_FALLBACK_MODEL`, default `gemini-3.8-flash`, the same as the default model, so normally none).
+    Otherwise the answer stops with Google's reason. After a switch the answer says so, its report names the model
+    that answered, and for ten minutes new questions start on the fallback.
   - *Your quota for the model is used up* (often the daily quota): no waiting. The answer continues on the fallback
     model, until Google's reset time.
   - *Per-minute limit* (Wizard asks Gemini once per step, so a long answer can reach it): Wizard waits as long as
@@ -229,7 +230,7 @@ Someone who already has Wizard can import a new file from the tray menu: **Impor
 | No tab, but the tray icon is there | The tab hides during full-screen apps and slide shows, or was turned off in the menu |
 | Ctrl+Alt+W does nothing | Another program owns it (`bar.log` says "taken by another program"); use the tab or the tray icon |
 | The panel is blank and mentions WebView2 | The Edge WebView2 runtime is missing; it ships with Windows 10/11 and Edge |
-| Many "Google has no capacity for …" lines, or answers from the fallback model | Google's capacity for that model (often a Pro model at busy times), not your quota. Pick a Flash model in the model chip, or wait. `logs\wizard.log` has Google's reason for each refusal |
+| "Google has no capacity for …" | Google's capacity for the model, not your quota: try again in a few minutes. The message quotes Google's reason, and `logs\wizard.log` has it for each refusal |
 | A dropped file shows "Could not read" | Point at the file in the panel for the reason (type, size, a protected file Office would not open). `bar.log` has drop errors |
 
 ## Building it yourself
