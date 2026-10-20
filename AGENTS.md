@@ -26,6 +26,8 @@ around a precomputed result is withdrawn. Its credential, entitlement, DLP and h
   desktop app reads with a read-only token, or in a local `content\` folder. Company settings and credentials reach a
   PC only in the provisioning file (`wizard.provision`), stored with DPAPI on import. See
   [docs/decisions/2026-10-20-desktop-app.md](docs/decisions/2026-10-20-desktop-app.md) and [docs/desktop.md](docs/desktop.md).
+- Ship every change (owner): merge it into `main`, push, and confirm the `desktop-continuous` release was published
+  for that commit. Steps in [CLAUDE.md](CLAUDE.md).
 - Work one numbered plan step or small ticket at a time ([docs/issue-board.md](docs/issue-board.md)). Name the files
   changed and commands run. Report passing, failing and BLOCKED tests honestly. Update
   [docs/build-report.md](docs/build-report.md) and the README "What runs today" table when behaviour changes.
