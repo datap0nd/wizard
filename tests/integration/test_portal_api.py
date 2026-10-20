@@ -70,8 +70,13 @@ def test_a_run_explores_the_portal_and_shows_each_step(portal_client: tuple[Test
     assert client.get(f"/api/v1/runs/{run['id']}/frames/../../wizard.sqlite3").status_code == 404
     assert client.get(f"/api/v1/runs/{run['id']}/frames/f999").status_code == 404
 
+    labels = [e["payload"]["label"] for e in events if e["type"] == "tool_started"]
+    assert labels == ["Opened the DEMO portal", "Opened the DEMO portal at /report/sell-in-monthly",
+                      "Read the table “Sell-in” on DEMO"]  # named from the page Wizard last saw
     finished = [e["payload"] for e in events if e["type"] == "tool_finished"]
     assert finished[0]["summary"].startswith("Reports home · ")
+    assert finished[-1]["trail"]["kind"] == "rows" and finished[-1]["trail"]["columns"][:2] == ["Market", "Model"]
+    assert finished[-1]["trail"]["open_url"].endswith("/report/sell-in-monthly")
     evidence = finished[-1]["evidence"]
     assert (evidence["system"], evidence["data_mode"], evidence["system_name"]) == ("portal", "LIVE", "DEMO (portal page)")
     detail = client.get(f"/api/v1/conversations/{run['conversation_id']}/evidence/{evidence['id']}").json()["evidence"]

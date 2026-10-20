@@ -6,6 +6,8 @@ import {badges, detailOf, stageModel, WIZARD, type ModuleStats, type StageModel}
 import {toolAnimation, wizardAnimation, wizardCaption} from '@/wizard';
 import type {WizardAnimation} from '@/wizardSheet';
 import {brand, SystemLogo} from './SystemLogo';
+import {PortalPreview} from './PortalPreview';
+import {TrailView} from './TrailView';
 import {WizardSprite} from './WizardSprite';
 import type {RunView, SystemInfo, TimelineItem} from '@/types';
 
@@ -143,7 +145,7 @@ function statLine(m: SystemInfo & {stats: ModuleStats}): string {
   return parts.join(' · ');
 }
 
-const VERBS: Record<string, string> = {database: 'Querying', reports: 'Reading', knowledge: 'Searching', files: 'Reading'};
+const VERBS: Record<string, string> = {database: 'Querying', reports: 'Reading', knowledge: 'Searching', files: 'Reading', portal: 'Browsing'};
 
 function Detail({item, className, onlyNew = false}: {item: TimelineItem; className?: string; onlyNew?: boolean}) {
   const detail = detailOf(item);
@@ -177,6 +179,7 @@ function Calls({module, onEvidence, onClose}: {module: SystemInfo & {stats: Modu
             </div>
             <Detail item={call} className="mt-1" />
             {call.summary && <p className={cn('mt-0.5 text-[12px]', call.state === 'error' ? 'text-danger' : 'text-ink-3')}>→ {call.summary}</p>}
+            {call.trail && <TrailView trail={call.trail} className="mt-1" />}
           </li>
         ))}
       </ol>
@@ -333,7 +336,7 @@ function Stage({run, model, onEvidence, finale}: {run: RunView; model: StageMode
               <SystemLogo id={activeModule?.id ?? WIZARD} name={activeModule?.name} size={26} className="stage-breathe mt-0.5" />
               <div className="min-w-0 flex-1">
                 <p className="text-[13px] font-medium text-ink">
-                  {activeModule ? <>{VERBS[activeModule.kind] ?? 'Reading'} <span style={{color: brand(activeModule.id).deep}}>{activeModule.name}</span></> : active.label}
+                  {activeModule ? <>{active.name?.startsWith('wizard_portal_') ? 'Browsing' : VERBS[activeModule.kind] ?? 'Reading'} <span style={{color: brand(activeModule.id).deep}}>{activeModule.name}</span></> : active.label}
                   <span className="stage-dots ml-0.5" aria-hidden="true" />
                 </p>
                 {activeModule && <p className="truncate text-[12.5px] text-ink-2">{active.label}</p>}
@@ -341,6 +344,7 @@ function Stage({run, model, onEvidence, finale}: {run: RunView; model: StageMode
                 {active.state !== 'running' && active.summary && (
                   <p className={cn('stage-pop mt-1 text-[12.5px] font-medium', active.state === 'error' ? 'text-danger' : 'text-ok')}>→ {active.summary}</p>
                 )}
+                {active.state !== 'running' && active.trail && <TrailView trail={active.trail} className="stage-pop mt-1.5" />}
               </div>
             </div>
           ) : (
@@ -461,6 +465,7 @@ export function SystemsStage({run, onEvidence}: {run: RunView; onEvidence: (id: 
         <div ref={stage} className="stage-enter overflow-hidden rounded-2xl border border-accent-line/70 bg-[radial-gradient(ellipse_at_center,rgb(58_92_214/0.10),transparent_70%),linear-gradient(to_bottom,var(--color-accent-soft),var(--color-canvas))] p-3"
           data-testid="stage">
           <Stage run={run} model={model} onEvidence={onEvidence} finale={finale} />
+          {run.frames.length > 0 && <div className="mt-2.5"><PortalPreview run={run} systems={systems} /></div>}
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <Totals model={model} running={running} />
             {!running && !finale && <button type="button" onClick={() => setOpen(false)} className="ml-auto text-[12px] font-medium text-accent hover:underline">Fold</button>}
@@ -471,6 +476,7 @@ export function SystemsStage({run, onEvidence}: {run: RunView; onEvidence: (id: 
   }
   const used = model.modules.filter(m => m.stats.calls.length);
   return (
+    <>
     <div className="stage-enter flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-line bg-surface/50 px-3 py-2" data-testid="journey">
       <div className="flex items-center gap-1.5">
         {used.map(m => (
@@ -491,5 +497,7 @@ export function SystemsStage({run, onEvidence}: {run: RunView; onEvidence: (id: 
         Show the journey<ChevronDown className="size-3.5" />
       </button>
     </div>
+    <PortalPreview run={run} systems={systems} />
+    </>
   );
 }

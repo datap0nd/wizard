@@ -1,4 +1,4 @@
-import type {Attachment, Bootstrap, ConversationSummary, Evidence, GeminiAccount, GeminiQuota, LocalFile, ModelList, Report, RunRecord, SettingsSaved, SettingsView, SourceCatalog, SourceSummary, UpdateInfo} from './types';
+import type {Attachment, Bootstrap, ConversationSummary, Evidence, GeminiAccount, GeminiQuota, LocalFile, ModelList, PortalState, Report, RunRecord, SettingsSaved, SettingsView, SourceCatalog, SourceSummary, UpdateInfo} from './types';
 
 export class ApiError extends Error {
   constructor(message: string, public status: number, public code?: string, public loginRequired = false) { super(message); }
@@ -52,6 +52,10 @@ export const api = {
   report: (id: string) => request<{report: Report}>(`/api/v1/reports/${encodeURIComponent(id)}`),
   sources: () => request<{sources: SourceSummary[]}>('/api/v1/sources'),
   catalog: (system: string) => request<SourceCatalog>(`/api/v1/sources/${encodeURIComponent(system)}/catalog`),
+  portals: () => request<{portals: PortalState[]; browser: string | null; visible?: boolean}>('/api/v1/portals'),
+  portalSignin: (id: string) => request<{ok: true; message: string}>(`/api/v1/portals/${encodeURIComponent(id)}/signin`, {body: {}}),
+  portalSigninDone: () => request<{ok: true}>('/api/v1/portals/signin/done', {body: {}}),
+  portalCheck: (id: string) => request<{portal: string; state: PortalState['state']; title?: string; detail?: string}>(`/api/v1/portals/${encodeURIComponent(id)}/check`, {body: {}}),
   account: () => request<GeminiAccount>('/api/v1/account/gemini'),
   linkStart: () => request<{authorize_url: string; state: string; instructions: string}>('/api/v1/account/gemini/link', {body: {}}),
   linkComplete: (state: string, code: string) => request<GeminiAccount>('/api/v1/account/gemini/link/complete', {body: {state, code}}),

@@ -3,9 +3,10 @@ import type {RunView, SystemInfo, TimelineItem} from './types';
 /** Wizard's own work (calculating, charts, checks, searching every catalog): shown on the Wizard orb itself. */
 export const WIZARD = 'wizard';
 
-/** Which system module a tool call belongs to, from the tool's name. */
-export function moduleOf(name: string | undefined): string {
+/** Which system module a tool call belongs to, from the tool's name (a portal step: the portal it browses). */
+export function moduleOf(name: string | undefined, args?: Record<string, unknown>): string {
   const tool = name ?? '';
+  if (tool.startsWith('wizard_portal_') && typeof args?.portal === 'string' && args.portal) return args.portal;
   if (tool === 'wizard_query_postgresql') return 'postgresql';
   if (/^wizard_(lookup_definitions|browse_knowledge|read_knowledge)$/.test(tool)) return 'knowledge';
   if (/^wizard_(read|query)_attachment$/.test(tool)) return 'attachment';
@@ -23,6 +24,13 @@ const squash = (text: string, limit: number) => {
 export function detailOf(item: TimelineItem): {text: string; code: boolean} | null {
   const args = item.args ?? {};
   if (typeof args.sql === 'string') return {text: squash(args.sql, 220), code: true};
+  if (item.name?.startsWith('wizard_portal_')) {
+    const last = item.frames?.[item.frames.length - 1];
+    if (last) return {text: last.action, code: false};
+    if (typeof args.path === 'string') return {text: args.path, code: false};
+    if (typeof args.text === 'string') return {text: `“${squash(args.text, 120)}”`, code: false};
+    return null;
+  }
   if (typeof args.query === 'string' && args.query) return {text: `“${squash(args.query, 120)}”`, code: false};
   if (Array.isArray(args.ids) && args.ids.length) return {text: args.ids.map(String).join(', '), code: false};
   const filters = Array.isArray(args.filters)
@@ -79,17 +87,18 @@ export function stageModel(run: RunView, systems: SystemInfo[]): StageModel {
   const tools = run.timeline.filter(t => t.kind === 'tool');
   const byModule = new Map<string, TimelineItem[]>();
   for (const tool of tools) {
-    const id = moduleOf(tool.name);
+    const id = moduleOf(tool.name, tool.args);
     byModule.set(id, [...(byModule.get(id) ?? []), tool]);
   }
   const listed = systems.filter(s => s.kind !== 'files' || byModule.has(s.id));
   const extra = Array.from(byModule.keys()).filter(id => id !== WIZARD && !listed.some(s => s.id === id))
     .map(id => {
       const named = byModule.get(id)!.find(c => c.evidence?.system_name)?.evidence?.system_name;
-      return {id, name: named ?? NAMES[id] ?? id.toUpperCase(), kind: id === 'postgresql' ? 'database' : id === 'knowledge'
-        ? 'knowledge' : id === 'attachment' ? 'files' : 'reports'} as SystemInfo;
+      const portal = byModule.get(id)!.some(c => c.name?.startsWith('wizard_portal_'));
+      return {id, name: portal ? id.toUpperCase() : named ?? NAMES[id] ?? id.toUpperCase(), kind: id === 'postgresql' ? 'database'
+        : id === 'knowledge' ? 'knowledge' : id === 'attachment' ? 'files' : portal ? 'portal' : 'reports'} as SystemInfo;
     });
-  const order = (s: SystemInfo) => ({database: 0, reports: 1, knowledge: 2, files: 3})[s.kind] ?? 4;
+  const order = (s: SystemInfo) => ({database: 0, reports: 1, portal: 1, knowledge: 2, files: 3})[s.kind] ?? 4;
   const modules = [...listed, ...extra].sort((a, b) => order(a) - order(b))
     .map(s => ({...s, stats: stats(s.id, byModule.get(s.id) ?? [])}));
   const active = [...tools].reverse().find(t => t.state === 'running') ?? null;

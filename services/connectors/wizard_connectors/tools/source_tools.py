@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import re
 from typing import Any, Literal
+from urllib.parse import quote
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -55,6 +56,15 @@ def _words(text: str) -> list[str]:
 
 def visible_reports(ctx: ToolContext, system_id: str | None = None) -> list[tuple[str, Report]]:
     return [(s, r) for s, r in ctx.services.catalog.reports(system_id) if ctx.identity.can_see_report(s, r.id)]
+
+
+def open_url(ctx: ToolContext, system_id: str, report_id: str) -> str | None:
+    """The report in its own platform, from the catalog's open_url_template ("https://.../{report_id}"), if it has one."""
+    contract = ctx.services.catalog.contracts.get(system_id)
+    template = contract.system.open_url_template if contract else None
+    if not template or not template.startswith("https://"):
+        return None
+    return template.replace("{report_id}", quote(report_id, safe=""))
 
 
 def report_summary(ctx: ToolContext, system_id: str, report: Report) -> dict[str, Any]:
@@ -119,6 +129,7 @@ def make_source_tools(system_id: str, system_name: str) -> list[ToolSpec]:
             "prompts": [p.model_dump() for p in report.prompts],
             "caveats": report.caveats, "refresh": report.refresh,
             "connector_status": contract.system.connector.status,
+            "open_url": open_url(ctx, system_id, report.id),
             "your_market_access": "all markets" if markets is None else sorted(markets),
             "how_to_query": (f"Call {system_id}_run_report with filters on dimensions; add group_by to aggregate."
                              if report.row_access == "ROWS" else "Navigation only: rows cannot be read through Wizard."),
@@ -145,7 +156,7 @@ def make_source_tools(system_id: str, system_name: str) -> list[ToolSpec]:
             "truncated": result.truncated, "as_of": result.as_of, "retrieved_at": ctx.services.now().isoformat(),
             "digest": result.digest, "warnings": result.warnings, "access_note": result.access_note,
             "caveats": report.caveats,
-            "locator": {"system": system_id, "report_id": report.id, "open_url": None},
+            "locator": {"system": system_id, "report_id": report.id, "open_url": open_url(ctx, system_id, report.id)},
         }
         evidence_id = ctx.recorder.add_evidence(evidence)
         return {

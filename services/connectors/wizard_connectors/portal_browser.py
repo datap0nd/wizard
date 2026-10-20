@@ -157,6 +157,7 @@ class _Session:
     pages: dict[str, Any] = field(default_factory=dict)
     refs: dict[str, dict[int, Any]] = field(default_factory=dict)  # portal -> element/table number -> frame
     tables: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    names: dict[str, dict[int, str]] = field(default_factory=dict)  # portal -> element/table number -> its name
     trail: dict[str, list[str]] = field(default_factory=dict)
     steps: dict[str, int] = field(default_factory=dict)
     state: dict[str, str] = field(default_factory=dict)
@@ -582,6 +583,16 @@ class PortalBrowser:
             return {"portal": portal.id, "state": state, "title": view["title"]}
         return dict(self._call(job))
 
+    def element_name(self, user_id: str, portal_id: str, ref: int | None, table: bool = False) -> str | None:
+        """What an element or table of the latest page view is called, for naming a step before it runs (no table
+        number: the largest table, which read_table picks)."""
+        session = self._sessions.get(user_id)
+        if session is None:
+            return None
+        if ref is None and table and session.tables.get(portal_id):
+            ref = max(session.tables[portal_id], key=lambda t: t.get("rows_drawn", 0))["ref"]
+        return (session.names.get(portal_id, {}).get(ref) if ref is not None else None) or None
+
     def status(self, user_id: str) -> list[dict[str, Any]]:
         session = self._sessions.get(user_id)
         signin_open = bool(session and session.signin is not None)
@@ -671,6 +682,7 @@ class PortalBrowser:
             start = data["next"]
         session.refs[portal.id] = refs
         session.tables[portal.id] = tables
+        session.names[portal.id] = {**{e["ref"]: e["name"] for e in elements}, **{t["ref"]: t["caption"] for t in tables}}
         return {"title": page.title(), "text": "\n---\n".join(texts), "elements": elements, "tables": tables,
                 "more_elements": more, "password_field": password, "scroll": scroll}
 

@@ -157,6 +157,8 @@ export interface Evidence extends EvidenceSummary {
   digest: string;
   caveats: string[];
   locator: {system: string; report_id: string; open_url: string | null};
+  /** Portal pages: which portal (system is "portal"). */
+  portal?: string;
   /** Attached files: the text Gemini read (no rows). */
   excerpt?: string;
 }
@@ -221,15 +223,48 @@ export interface TimelineItem {
   at?: string;
   /** The arguments Gemini called the tool with (the SQL, the search words, the report and filters). */
   args?: Record<string, unknown>;
+  /** What the step found, to follow the navigation: search results, a report and its prompts, the first rows. */
+  trail?: Trail;
+  /** Portal steps: the pictures of the page before and after the action. */
+  frames?: BrowserFrame[];
+}
+
+export type Trail =
+  | {kind: 'search'; results: {name: string; folder_path: string[]; row_access: string; report_id: string}[]}
+  | {kind: 'report'; name: string; folder_path: string[]; row_access: string; open_url: string | null; prompts: string[]; measures: string[]}
+  | {kind: 'rows'; name: string | null; columns: string[]; rows: (string | number | null)[][]; total_rows: number | null;
+     filters: {field: string; values: string[]}[]; open_url?: string | null};
+
+/** A picture of a portal page Wizard is exploring: what it was about to do (target outlined) or what it got. */
+export interface BrowserFrame {
+  callId: string;
+  frame: string;
+  portal: string;
+  phase: 'before' | 'after';
+  action: string;
+  url: string;
+  title: string;
+  target: {x: number; y: number; width: number; height: number} | null;
+  viewport: {width: number; height: number};
 }
 
 /** A system this person's Wizard can draw on, shown on the systems stage. */
 export interface SystemInfo {
   id: string;
   name: string;
-  kind: 'reports' | 'database' | 'knowledge' | 'files';
+  kind: 'reports' | 'database' | 'knowledge' | 'files' | 'portal';
   data_mode?: DataMode;
   notes?: number;
+  /** Gemini can also explore this system's web portal in Wizard's browser. */
+  portal?: boolean;
+}
+
+export interface PortalState {
+  id: string;
+  name: string;
+  host: string;
+  state: 'unknown' | 'ready' | 'signin_required' | 'signing_in' | 'unreachable' | 'error';
+  signin_open: boolean;
 }
 
 export interface RunView {
@@ -258,6 +293,8 @@ export interface RunView {
   lastSeq: number;
   /** Files sent with this question (F1, F2...). */
   attachments: Attachment[];
+  /** Every portal picture of the run, in order (the click preview). */
+  frames: BrowserFrame[];
   createdAt: string;
   /** Server time the agent started (run_started), the zero point for each step's start time. */
   startedAt: string | null;

@@ -1,11 +1,11 @@
-import type {RunEvent, RunRecord, RunView, TimelineItem} from './types';
+import type {BrowserFrame, RunEvent, RunRecord, RunView, TimelineItem} from './types';
 
 export const TERMINAL = new Set(['run_finished', 'run_failed']);
 
 export function emptyRun(id: string, conversationId: string, question: string, kind: 'ask' | 'check' = 'ask'): RunView {
   return {id, conversationId, kind, question, status: 'queued', runtime: 'replay', runtimeLabel: '', model: '', timeline: [],
     streamText: '', answer: null, visuals: [], evidence: [], check: null, checkStatus: 'NOT_CHECKED', checkSummary: null,
-    dataMode: null, reportId: null, error: null, warnings: [], lastSeq: 0, attachments: [], createdAt: new Date().toISOString(),
+    dataMode: null, reportId: null, error: null, warnings: [], lastSeq: 0, attachments: [], frames: [], createdAt: new Date().toISOString(),
     startedAt: null, finishedAt: null, parentRunId: null, diagnostics: []};
 }
 
@@ -34,7 +34,17 @@ export function applyEvent(run: RunView, event: RunEvent): RunView {
       return {...next,
         evidence: p.evidence ? [...next.evidence.filter(e => e.id !== p.evidence.id), p.evidence] : next.evidence,
         timeline: next.timeline.map(item => item.key === String(p.call_id) && item.kind === 'tool'
-          ? {...item, state: p.ok ? 'ok' : 'error', summary: String(p.summary ?? ''), evidence: p.evidence, durationMs: p.duration_ms} : item)};
+          ? {...item, state: p.ok ? 'ok' : 'error', summary: String(p.summary ?? ''), evidence: p.evidence, durationMs: p.duration_ms,
+             trail: p.trail ?? undefined} : item)};
+    case 'browser_frame': {
+      const frame: BrowserFrame = {callId: String(p.call_id), frame: String(p.frame), portal: String(p.portal), phase: p.phase,
+        action: String(p.action ?? ''), url: String(p.url ?? ''), title: String(p.title ?? ''), target: p.target ?? null,
+        viewport: p.viewport ?? {width: 1280, height: 800}};
+      if (!frame.frame) return next;
+      return {...next, frames: [...next.frames, frame],
+        timeline: next.timeline.map(item => item.key === frame.callId && item.kind === 'tool'
+          ? {...item, frames: [...(item.frames ?? []), frame]} : item)};
+    }
     case 'visual_added':
       return {...next, visuals: [...next.visuals.filter(v => v.id !== p.visual.id), p.visual]};
     case 'check_result':
@@ -67,6 +77,11 @@ export function fromRecord(record: RunRecord): RunView {
     attachments: record.attachments ?? [], finishedAt: record.finished_at};
 }
 
+/** How a source is named in summaries: a platform's id, or for a portal page the portal's name. */
+export function sourceName(evidence: {system: string; system_name?: string}): string {
+  return evidence.system === 'portal' ? (evidence.system_name ?? 'Portal').replace(/ \(portal page\)$/, '') : evidence.system.toUpperCase();
+}
+
 export function sourcesConsulted(run: RunView): string[] {
-  return Array.from(new Set(run.timeline.filter(t => t.kind === 'tool' && t.state === 'ok' && t.evidence).map(t => t.evidence!.system.toUpperCase())));
+  return Array.from(new Set(run.timeline.filter(t => t.kind === 'tool' && t.state === 'ok' && t.evidence).map(t => sourceName(t.evidence!))));
 }

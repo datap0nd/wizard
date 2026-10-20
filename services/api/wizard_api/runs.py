@@ -165,16 +165,20 @@ def portal_name(args: dict[str, Any], services: Services) -> str:
     return portal.name if portal else str(args.get("portal", "")).upper()
 
 
-def tool_label(name: str, args: dict[str, Any], services: Services) -> str:
+def tool_label(name: str, args: dict[str, Any], services: Services, user_id: str | None = None) -> str:
     if name.startswith("wizard_portal_"):
         where = portal_name(args, services)
         action = {"look": "Looked at the page", "scroll_down": "Scrolled down", "scroll_up": "Scrolled up",
                   "back": "Went back"}.get(str(args.get("action")), "Looked at the page")
+        target = args.get("element", args.get("table"))
+        named = services.portals.element_name(user_id or "", str(args.get("portal")), target if isinstance(target, int) else None,
+                                              table=name == "wizard_portal_read_table") if services.portals else None
         return {"wizard_portal_open": f"Opened the {where} portal" + (f" at {args['path']}" if args.get("path") else ""),
-                "wizard_portal_click": f"Clicked on {where}",
-                "wizard_portal_type": f"Typed “{str(args.get('text', ''))[:60]}” on {where}",
+                "wizard_portal_click": f"Clicked “{named[:60]}” on {where}" if named else f"Clicked on {where}",
+                "wizard_portal_type": f"Typed “{str(args.get('text', ''))[:60]}”" + (f" into “{named[:40]}”" if named else "")
+                                      + f" on {where}",
                 "wizard_portal_page": f"{action} on {where}",
-                "wizard_portal_read_table": f"Read a table on {where}"}.get(name, name)
+                "wizard_portal_read_table": f"Read the table “{named[:60]}” on {where}" if named else f"Read a table on {where}"}.get(name, name)
     system = name.split("_", 1)[0].upper()
     if name.endswith("_search_reports"):
         return f"Searched {system} reports for “{args.get('query', '')}”"
@@ -204,8 +208,8 @@ def tool_summary(name: str, outcome: ToolOutcome) -> str:
         return f"{outcome.error_code}: {outcome.error_message}"
     data = outcome.data
     if name.startswith("wizard_portal_") and "page_title" in data:
-        did = f"“{data['clicked']}” → " if data.get("clicked") else ""
-        return f"{did}{data['page_title'] or data.get('address', '')} · {len(data.get('elements', []))} controls" + (
+        controls = len(data.get("elements", []))
+        return f"{data['page_title'] or data.get('address', '')} · {controls} control{'' if controls == 1 else 's'}" + (
             f", {len(data['tables'])} table(s)" if data.get("tables") else "")
     if name == "wizard_portal_read_table" and "rows" in data:
         return f"{data['row_count']} rows from the page" + (" (more on the page)" if data.get("truncated") else "")
@@ -236,6 +240,35 @@ def tool_summary(name: str, outcome: ToolOutcome) -> str:
     if "report_id" in data:
         return str(data.get("name", ""))
     return "done"
+
+
+def _cell(value: Any) -> Any:
+    return value[:40] if isinstance(value, str) else value
+
+
+def tool_trail(name: str, outcome: ToolOutcome, args: dict[str, Any]) -> dict[str, Any] | None:
+    """What a step found, for the person to follow the navigation: the folders a search turned up, the report and its
+    prompts, the first rows read. A few items only; the evidence holds the rest."""
+    if not outcome.ok:
+        return None
+    data = outcome.data
+    if name.endswith("_search_reports") or name == "wizard_search_catalog":
+        return {"kind": "search", "results": [{"name": r.get("name"), "folder_path": r.get("folder_path", []),
+                                               "row_access": r.get("row_access"), "report_id": r.get("report_id")}
+                                              for r in data.get("results", [])[:5]]}
+    if name.endswith("_get_report_schema"):
+        return {"kind": "report", "name": data.get("name"), "folder_path": data.get("folder_path", []),
+                "row_access": data.get("row_access"), "open_url": data.get("open_url"),
+                "prompts": [p.get("label") for p in data.get("prompts", [])][:8],
+                "measures": [m.get("label") for m in data.get("measures", [])][:8]}
+    if "rows" in data and "columns" in data:
+        labels = data.get("column_labels") or [c.get("label", c.get("key")) if isinstance(c, dict) else str(c)
+                                               for c in data["columns"]]
+        source = data.get("source") or {}
+        return {"kind": "rows", "name": source.get("report_name") or source.get("page"), "columns": labels[:8],
+                "rows": [[_cell(v) for v in row[:8]] for row in data["rows"][:5]],
+                "total_rows": data.get("total_rows", data.get("row_count")), "filters": args.get("filters") or []}
+    return None
 
 
 def entitled_to(identity: Identity, evidence: dict[str, Any]) -> bool:
@@ -355,7 +388,7 @@ class RunManager:
         spec = self.registry.specs.get(name)
         encoded = json.dumps(args, default=str)
         shown = json.loads(encoded) if len(encoded) <= 4000 else {"truncated": True}
-        await self.emit(run, "tool_started", {"call_id": call_id, "name": name, "label": tool_label(name, args, self.services),
+        await self.emit(run, "tool_started", {"call_id": call_id, "name": name, "label": tool_label(name, args, self.services, run.identity.id),
                                               "category": spec.category if spec else "unknown", "arguments": shown})
         outcome = self._bound(run, name, args, spec.category if spec else None)
         if outcome is None:
@@ -378,11 +411,16 @@ class RunManager:
                                     "summary": tool_summary(name, outcome)}
         if not outcome.ok:
             finished["error_code"] = outcome.error_code
+        trail = tool_trail(name, outcome, args)
+        if trail:
+            finished["trail"] = trail
         if outcome.ok and "evidence_id" in outcome.data:
             evidence = self.store.evidence(run.conversation_id, outcome.data["evidence_id"])[0]
             finished["evidence"] = {k: evidence.get(k) for k in ("id", "system", "system_name", "report_id", "report_name",
                                                                   "data_mode", "as_of", "total_rows", "truncated",
-                                                                  "warnings", "access_note")}
+                                                                  "warnings", "access_note", "folder_path")}
+            if trail and evidence.get("locator", {}).get("open_url"):
+                trail["open_url"] = evidence["locator"]["open_url"]
         await self.emit(run, "tool_finished", finished)
         if outcome.ok and "visual_id" in outcome.data:
             visual = self.store.visuals(run.conversation_id, run.id)[-1]

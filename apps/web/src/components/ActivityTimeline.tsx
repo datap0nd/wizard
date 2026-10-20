@@ -1,7 +1,9 @@
 import {useState} from 'react';
-import {AlertTriangle, BookOpen, Calculator, ChartColumn, CheckCircle2, ChevronDown, Database, Loader2, MessageSquareText, Search, ShieldCheck, XCircle} from 'lucide-react';
+import {AlertTriangle, BookOpen, Calculator, ChartColumn, CheckCircle2, ChevronDown, Database, Globe, Loader2, MessageSquareText, MousePointerClick, Search, ShieldCheck, Table2, XCircle} from 'lucide-react';
 import {clock, spoken} from '@/format';
 import {cn} from '@/lib/utils';
+import {sourceName} from '@/runState';
+import {TrailView} from './TrailView';
 import type {RunView, TimelineItem} from '@/types';
 
 function icon(item: TimelineItem) {
@@ -9,6 +11,9 @@ function icon(item: TimelineItem) {
   if (item.kind === 'warning') return <AlertTriangle className="text-warn" />;
   if (item.kind === 'status') return <Loader2 />;
   const name = item.name ?? '';
+  if (name === 'wizard_portal_read_table') return <Table2 />;
+  if (name === 'wizard_portal_open') return <Globe />;
+  if (name.startsWith('wizard_portal_')) return <MousePointerClick />;
   if (name.endsWith('run_report')) return <Database />;
   if (name.includes('search') || name.includes('schema') || name.includes('list_sources')) return <Search />;
   if (name.includes('definitions')) return <BookOpen />;
@@ -47,7 +52,7 @@ export function ActivityTimeline({run, onEvidence}: {run: RunView; onEvidence: (
   const [open, setOpen] = useState<boolean | null>(null);
   const expanded = open ?? false;  // the systems stage above shows the run live; this is the step-by-step record
   const tools = run.timeline.filter(t => t.kind === 'tool');
-  const systems = Array.from(new Set(tools.filter(t => t.evidence).map(t => t.evidence!.system.toUpperCase())));
+  const systems = Array.from(new Set(tools.filter(t => t.evidence).map(t => sourceName(t.evidence!))));
   const summary = running ? (tools.length ? `Working · ${tools.length} step${tools.length === 1 ? '' : 's'} so far` : 'Starting')
     : `${tools.length} step${tools.length === 1 ? '' : 's'}${systems.length ? ` · consulted ${systems.join(', ')}` : ''}`;
   if (!run.timeline.length && !running) return null;
@@ -72,6 +77,7 @@ export function ActivityTimeline({run, onEvidence}: {run: RunView; onEvidence: (
                 {item.summary && <p className={cn('text-xs', item.state === 'error' ? 'text-danger' : 'text-ink-3')}>{item.summary}</p>}
                 {item.evidence?.access_note && <p className="text-xs text-warn">{item.evidence.access_note}</p>}
                 {item.evidence?.warnings?.map(w => <p key={w} className="text-xs text-warn">{w}</p>)}
+                {item.trail && <TrailView trail={item.trail} className="mt-1" />}
               </div>
               <Timing item={item} startedAt={run.startedAt} />
             </li>

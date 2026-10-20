@@ -1,12 +1,13 @@
 import {useEffect, useState} from 'react';
-import {ChevronRight, Database, FileText, Folder, LayoutDashboard, Lock} from 'lucide-react';
-import {api} from '@/api';
+import {ChevronRight, Database, ExternalLink, FileText, Folder, Globe, LayoutDashboard, Loader2, Lock, LogIn, RefreshCw} from 'lucide-react';
+import {api, ApiError} from '@/api';
 import {formatDate} from '@/format';
 import {cn} from '@/lib/utils';
 import {Button} from './ui/button';
 import {Dialog, DialogContent} from './ui/dialog';
 import {DataModeBadge, StatusPill} from './Badges';
-import type {CatalogReport, SourceCatalog, SourceSummary} from '@/types';
+import {SystemLogo} from './SystemLogo';
+import type {CatalogReport, PortalState, SourceCatalog, SourceSummary} from '@/types';
 
 function StatusChip({status}: {status: string}) {
   if (status === 'NAVIGATION_ONLY') return <StatusPill tone="muted"><Lock />Navigation only</StatusPill>;
@@ -47,6 +48,76 @@ function FolderNode({catalog, id, name, depth, onPick}: {catalog: SourceCatalog;
   );
 }
 
+const PORTAL_STATE: Record<PortalState['state'], {label: string; tone: 'ok' | 'warn' | 'danger' | 'muted' | 'accent'}> = {
+  ready: {label: 'Signed in', tone: 'ok'}, signin_required: {label: 'Sign-in needed', tone: 'warn'},
+  signing_in: {label: 'Signing in…', tone: 'accent'}, unknown: {label: 'Not checked yet', tone: 'muted'},
+  unreachable: {label: 'Unreachable', tone: 'danger'}, error: {label: 'Problem', tone: 'danger'},
+};
+
+/** The company portals Gemini may explore in Wizard's own browser. The person signs in to each one themselves, in a
+ *  window Wizard opens on its own browser profile; Wizard never sees or stores a password. */
+function Portals({onAsk}: {onAsk: (text: string) => void}) {
+  const [portals, setPortals] = useState<PortalState[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const load = () => api.portals().then(r => setPortals(r.portals)).catch(() => setPortals([]));
+  useEffect(() => { void load(); }, []);
+  if (!portals?.length) return null;
+  const signingIn = portals.some(p => p.signin_open);
+  async function act(id: string, action: () => Promise<unknown>, done?: string) {
+    setBusy(id); setMessage(null);
+    try { await action(); if (done) setMessage(done); } catch (e) { setMessage(e instanceof ApiError ? e.message : 'That did not work.'); }
+    finally { setBusy(null); void load(); }
+  }
+  return (
+    <div className="mb-2 rounded-lg border border-line bg-canvas p-2" data-testid="portals">
+      <p className="flex items-center gap-1.5 px-1 text-[12px] font-semibold uppercase tracking-wide text-ink-3"><Globe className="size-3.5" />Portals</p>
+      <ul className="mt-1 space-y-1">
+        {portals.map(portal => {
+          const state = PORTAL_STATE[portal.state] ?? PORTAL_STATE.unknown;
+          return (
+            <li key={portal.id} className="rounded-md px-1 py-1.5" data-testid="portal" data-state={portal.state}>
+              <div className="flex items-center gap-2">
+                <SystemLogo id={portal.id} name={portal.name} size={24} />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[13px] font-semibold">{portal.name}</span>
+                  <span className="block truncate text-[11px] text-ink-3">{portal.host}</span>
+                </span>
+                <StatusPill tone={state.tone}>{state.label}</StatusPill>
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-1.5 pl-8">
+                <Button size="sm" variant="outline" disabled={!!busy || signingIn} onClick={() => void act(portal.id, () => api.portalSignin(portal.id),
+                  `A ${portal.name} window opened. Sign in there, then press Done.`)}>
+                  {busy === portal.id ? <Loader2 className="animate-spin" /> : <LogIn />}Sign in
+                </Button>
+                <Button size="sm" variant="ghost" disabled={!!busy || signingIn} onClick={() => void act(portal.id, async () => {
+                  const result = await api.portalCheck(portal.id);
+                  setMessage(result.state === 'ready' ? `${portal.name} is ready: Wizard is signed in.` : result.state === 'signin_required'
+                    ? `${portal.name} needs you to sign in.` : `${portal.name}: ${result.detail ?? result.state}`);
+                })}><RefreshCw />Check</Button>
+                <Button size="sm" variant="ghost" onClick={() => onAsk(`On the ${portal.name} portal, `)}>Ask</Button>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      {signingIn && (
+        <div className="mt-1 flex items-center gap-2 rounded-md bg-accent-soft px-2 py-1.5 text-[12px] text-accent">
+          <span className="flex-1">Sign in in the window Wizard opened, then:</span>
+          <Button size="sm" variant="accent" onClick={() => void act('done', () => api.portalSigninDone(), 'Thanks. Wizard can now explore it for you.')}>Done</Button>
+        </div>
+      )}
+      {message && <p className="mt-1 px-1 text-[12px] text-ink-2" role="status">{message}</p>}
+    </div>
+  );
+}
+
+/** A report's own page in its platform, from the catalog's open_url_template ("https://.../{report_id}"). */
+export function reportUrl(template: string | null, reportId: string): string | null {
+  if (!template || !template.startsWith('https://')) return null;
+  return template.replaceAll('{report_id}', encodeURIComponent(reportId));
+}
+
 /** Browse what you may see: system → folder → report → prompts. Browsing a report and reading its rows are separate states. */
 export function SourceExplorer({onAsk}: {onAsk: (text: string) => void}) {
   const [sources, setSources] = useState<SourceSummary[] | null>(null);
@@ -60,9 +131,11 @@ export function SourceExplorer({onAsk}: {onAsk: (text: string) => void}) {
     if (!catalogs[system.id]) { const catalog = await api.catalog(system.id); setCatalogs(c => ({...c, [system.id]: catalog})); }
   }
   if (sources === null) return <p className="px-3 py-3 text-[13px] text-ink-3">Loading sources…</p>;
-  if (sources.length === 0) return <p className="px-3 py-3 text-[13px] text-ink-3">No sources are available to you yet. Ask the source owner for access.</p>;
+  if (sources.length === 0) return <div className="px-2 pb-3"><Portals onAsk={onAsk} /><p className="px-1 py-3 text-[13px] text-ink-3">No report catalogs are available to you yet. Ask the source owner for access.</p></div>;
+  const link = picked ? reportUrl(catalogs[picked.system.id]?.system.open_url_template ?? null, picked.report.id) : null;
   return (
     <div className="space-y-1 px-2 pb-3" data-testid="source-explorer">
+      <Portals onAsk={onAsk} />
       {sources.map(system => (
         <div key={system.id} className="rounded-lg">
           <button type="button" onClick={() => void toggle(system)} aria-expanded={open === system.id} data-testid="source-system"
@@ -95,7 +168,9 @@ export function SourceExplorer({onAsk}: {onAsk: (text: string) => void}) {
             </dl>
             <div className="flex flex-wrap gap-2 pt-1">
               <Button size="sm" variant="accent" disabled={picked.report.row_access !== 'ROWS'} onClick={() => { onAsk(`Using the "${picked.report.name}" report in ${picked.system.name}, `); setPicked(null); }}>Ask about this report</Button>
-              <Button size="sm" variant="outline" disabled title="No source link is configured for this platform yet">Open in {picked.system.name}</Button>
+              {link ? <a href={link} target="_blank" rel="noopener noreferrer" data-testid="open-in-platform"
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line px-3 text-[13px] font-medium text-ink-2 hover:bg-surface hover:text-ink [&_svg]:size-4"><ExternalLink />Open in {picked.system.name}</a>
+                : <Button size="sm" variant="outline" disabled title="No source link is configured for this platform yet">Open in {picked.system.name}</Button>}
             </div>
             {picked.report.row_access !== 'ROWS' && <p className="text-xs text-ink-3">Navigation only: Wizard can list this report but cannot read its numbers until a visualization is approved and parity-tested.</p>}
           </div>
