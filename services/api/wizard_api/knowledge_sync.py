@@ -120,8 +120,11 @@ def _explain(response: httpx.Response, source: Source) -> str:
         return (f"GitHub says {source.repo} or {source.ref} does not exist for this token (HTTP 404): the token must have "
                 "Contents: read on that repository.")
     if code == 403:
-        return ("GitHub refused the request (HTTP 403): the token needs SSO authorization for the organisation, or the "
-                "rate limit was reached.")
+        return ("GitHub refused the request (HTTP 403): the token awaits the organisation's approval or needs SSO "
+                "authorization, or the rate limit was reached.")
+    if code == 409:
+        return (f"The token works, but {source.repo} is empty: nothing has been published to it yet. Publish the notes "
+                "from the work PC first (task 50: .\\docs.ps1 kb-publish).")
     return f"GitHub answered HTTP {code} for the knowledge base."
 
 

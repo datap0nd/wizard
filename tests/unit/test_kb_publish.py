@@ -176,6 +176,9 @@ def test_the_read_check_uses_the_users_token(tmp_path):
     refused = httpx.MockTransport(lambda request: httpx.Response(401, json={"message": "Bad credentials"}))
     ok, text = kb.check_read("acme/kb", TOKEN, client=httpx.Client(transport=refused))
     assert not ok and "read-only token" in text
+    empty = httpx.MockTransport(lambda request: httpx.Response(409, json={"message": "Git Repository is empty."}))
+    ok, text = kb.check_read("acme/kb", TOKEN, client=httpx.Client(transport=empty))
+    assert not ok and "is empty" in text and "kb-publish" in text
 
 
 def test_the_command_reads_repo_and_tokens_from_env_and_never_prints_them(tmp_path, capsys, monkeypatch):

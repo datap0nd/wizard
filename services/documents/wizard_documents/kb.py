@@ -112,6 +112,8 @@ def explain(response: httpx.Response, repo: str) -> str:
                 "repository access includes it.")
     if code == 403:
         return f"GitHub refused the request (HTTP 403: {detail}): the token needs Contents read and write, and SSO approval."
+    if code == 409:
+        return f"{repo} is empty: nothing has been published to it yet. Run .\\docs.ps1 kb-publish first."
     return f"GitHub answered HTTP {code} ({detail})."
 
 
