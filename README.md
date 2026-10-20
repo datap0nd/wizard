@@ -93,9 +93,10 @@ Details, isolation findings and the decision checklist: [docs/gemini-runtime.md]
 scripts/verify_all.sh --allow-blocked=live-parity
 ```
 
-Layers: spec/fixtures, secret scan, published contracts, lint, types, Python unit/contract/integration/security tests,
-real-Gemini-CLI tests, eval-set schema, web types/unit/build, browser E2E, live parity. It fails closed: a layer that
-cannot run is BLOCKED and fails the run unless allowed by name. `python scripts/verify_spec.py` is the quick spec gate.
+Layers: `uv.lock` current with `pyproject.toml`, spec/fixtures, secret scan, published contracts, lint, types, Python
+unit/contract/integration/security tests, real-Gemini-CLI tests, eval-set schema, web types/unit/build, browser E2E,
+live parity. It fails closed: a layer that cannot run is BLOCKED and fails the run unless allowed by name.
+`python scripts/verify_spec.py` is the quick spec gate.
 
 The real-CLI tests need the pinned CLI: `npm --prefix .tools install @google/gemini-cli@0.62.0`
 (after `cd .tools && echo {"name":"wizard-dev-tools","private":true} > package.json`). Without it they report BLOCKED.

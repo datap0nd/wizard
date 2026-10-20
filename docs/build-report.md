@@ -3,7 +3,40 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-20 (latest) — Recurring extractions in Metronome, owned by its Wizard user; Metronome and Orchestra logos
+## 2026-10-20 (latest) — `uv.lock` back in step with `pyproject.toml`; a stale lock now fails CI
+
+`uv lock --check` failed: `uv.lock` had not been updated since `truststore`, so it lacked pywin32 (added for Office
+automation) and pg8000 (the driver behind `wizard_query_postgresql` and the catalog export), with pg8000's
+dependencies scramp, asn1crypto, python-dateutil and six. CI's `uv sync --frozen` installs the lock as written without
+comparing it to `pyproject.toml`, so CI started without pg8000. It stayed green only because `verify_all.sh` runs
+`uv run`, which re-locks and installs silently on the runner.
+
+- `uv lock` added exactly those six packages: pg8000 1.31.5, scramp 1.4.17, asn1crypto 1.5.1, python-dateutil
+  2.9.0.post0, six 1.17.0 and pywin32 312 (marker `sys_platform == 'win32'`). No other pin moved.
+- The desktop locks did not need regenerating. `dependencies.lock.json` is resolved by `lock_portable.py` from
+  `pyproject.toml`, not from `uv.lock`, and already pinned all six packages. Each of its 24 wheels has the same file
+  and SHA-256 as in `uv.lock`. `uv.lock` is not part of the desktop payload.
+- CI installs with `uv sync --locked`, which refuses a lock that is out of date with `pyproject.toml`.
+- `verify_all.sh` has a new first layer, `lock` (`uv lock --check`). It runs before any `uv run` can re-lock the
+  file. Without uv the layer reports BLOCKED.
+- `docs/deployment.md` builds with `uv sync --locked`. README and test plan list the new check.
+
+**Results.**
+- Before the fix, with the old lock: `uv sync --frozen` then `import pg8000` raised `ModuleNotFoundError`, and
+  `uv sync --locked` refused the lock.
+- After it: `uv lock --check` and `uv sync --locked` pass. Under `uv sync --frozen`,
+  `uv run --frozen python -m pytest tests` gives 354 passed, 20 skipped.
+- `verify_all.sh --allow-blocked=live-parity`, run as CI does (`CI=true`, a local PostgreSQL 16, Gemini CLI 0.62 in
+  `.tools`):
+  - lock, spec, secrets, contracts, lint and types: pass;
+  - Python: 354 passed, 5 skipped;
+  - real Gemini CLI: 4 passed;
+  - PostgreSQL 16 through pg8000: 10 passed;
+  - web unit: 32 passed; web types, web-dist and web build: pass;
+  - browser E2E: 16 passed;
+  - live-parity: BLOCKED, as allowed.
+
+## 2026-10-20 (Metronome) — Recurring extractions in Metronome, owned by its Wizard user; Metronome and Orchestra logos
 
 The owner asked for Metronome as a module: at the end of an answer, or in the question, a person can make an extraction
 recurring, and a Metronome Flow emails the table on that schedule. Every Flow belongs to a Metronome user named

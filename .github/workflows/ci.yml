@@ -45,8 +45,9 @@ jobs:
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
 
+      # --locked fails when uv.lock is out of date with pyproject.toml; --frozen would install the stale lock unchecked.
       - name: Python dependencies (locked)
-        run: uv sync --frozen
+        run: uv sync --locked
 
       - name: Web dependencies (locked) and browser
         run: |

@@ -21,7 +21,7 @@ desktop pilot and move to a managed host.
 ## Build
 
 ```powershell
-uv sync --frozen
+uv sync --locked                     # fails if uv.lock is out of date with pyproject.toml
 npm --prefix apps/web ci
 npm --prefix apps/web run build      # API serves apps/web/dist
 uv run python scripts/verify_spec.py

@@ -28,6 +28,12 @@ layer() {  # layer <name> <command...>; BLOCKED when output names a policy block
   fi
 }
 
+# First: any later `uv run` re-locks silently, which would hide a uv.lock that is out of date with pyproject.toml.
+if command -v uv >/dev/null 2>&1; then
+  layer lock        uv lock --check
+else
+  layer lock        echo "BLOCKED: uv is not installed, so uv.lock was not checked against pyproject.toml"
+fi
 layer spec          $PY scripts/verify_spec.py
 layer secrets       $PY scripts/scan_secrets.py
 layer contracts     $PY scripts/export_contracts.py --check
