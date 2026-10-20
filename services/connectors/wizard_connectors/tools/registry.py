@@ -2,7 +2,9 @@
 
 The registry is the only path from a model to a source. Every execution re-validates arguments, checks the caller's
 rights inside the handler, and returns data plus the evidence it recorded. There are no write, shell or URL tools; the
-one SQL tool runs Gemini's query in a read-only PostgreSQL transaction under a read-only account (postgres_query.py)."""
+one SQL tool runs Gemini's query in a read-only PostgreSQL transaction under a read-only account (postgres_query.py),
+and the portal tools browse only allowlisted company portals, read-only, under the person's own sign-in
+(portal_browser.py)."""
 from __future__ import annotations
 
 import builtins
@@ -20,6 +22,7 @@ from ..catalog import Catalog
 from ..entitlements import Identity
 from ..fixture_source import FixtureSource, SourceError
 from ..knowledge import KnowledgeBase
+from ..portal_browser import PortalBrowser
 from ..postgres_query import PostgresQuery
 
 MAX_RESULT_BYTES = 400_000
@@ -44,6 +47,8 @@ class Recorder(Protocol):
     def add_check(self, payload: dict[str, Any]) -> None: ...
     def attachments(self) -> list[dict[str, Any]]: ...
     def attachment(self, label: str) -> tuple[dict[str, Any], str] | None: ...
+    def add_frame(self, image: bytes) -> str: ...
+    def progress(self, kind: str, payload: dict[str, Any]) -> None: ...
 
 
 @dataclass
@@ -53,6 +58,7 @@ class Services:
     knowledge: KnowledgeBase
     postgres: PostgresQuery | None = None  # None: no PostgreSQL connection configured on this server
     postgres_name: str = "AI Team Database"  # what people see for it (WIZARD_PG_NAME)
+    portals: PortalBrowser | None = None  # None: no portals set up (WIZARD_PORTAL_<NAME>), or not this person's own PC
     now: Callable[[], datetime] = field(default=lambda: datetime.now(UTC))
 
 

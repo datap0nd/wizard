@@ -86,15 +86,18 @@ class ActiveRun:
     warnings: list[str] = field(default_factory=list)
     session: dict[str, Any] = field(default_factory=dict)
     stats: dict[str, Any] = field(default_factory=dict)
+    frames: int = 0  # portal screenshots taken (f1, f2...)
     task: asyncio.Task[None] | None = None
 
 
 class Recorder:
-    """Conversation-scoped evidence (E1, E2... stay valid across follow-ups) with run attribution, and the files attached
-    to the conversation (F1, F2...)."""
+    """Conversation-scoped evidence (E1, E2... stay valid across follow-ups) with run attribution, the files attached
+    to the conversation (F1, F2...), and the portal screenshots of one tool call, streamed to the person as it runs."""
 
-    def __init__(self, store: Store, run: ActiveRun, files: Attachments | None = None):
+    def __init__(self, store: Store, run: ActiveRun, files: Attachments | None = None, call_id: str | None = None,
+                 publish: Any = None, frames: Path | None = None):
         self.store, self.run, self.files = store, run, files
+        self.call_id, self.publish, self.frames = call_id, publish, frames
 
     def attachments(self) -> list[dict[str, Any]]:
         return [a for a in self.store.conversation_attachments(self.run.conversation_id) if a["user_id"] == self.run.identity.id]
@@ -126,6 +129,21 @@ class Recorder:
         self.store.add_check(self.run.id, payload)
         self.run.checks.append(payload)
 
+    def add_frame(self, image: bytes) -> str:
+        """Called from the tool's worker thread: the picture goes to disk, the event to the loop (progress)."""
+        if self.frames is None:
+            return ""
+        self.run.frames += 1
+        frame_id = f"f{self.run.frames}"
+        folder = self.frames / self.run.id
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / f"{frame_id}.jpg").write_bytes(image)
+        return frame_id
+
+    def progress(self, kind: str, payload: dict[str, Any]) -> None:
+        if self.publish is not None:
+            self.publish(kind, {"call_id": self.call_id, **payload})
+
 
 class Bridge:
     def __init__(self, manager: RunManager, run: ActiveRun):
@@ -142,7 +160,21 @@ class Bridge:
         return [{"id": e["id"], "report_id": e.get("report_id")} for e in self.manager.store.evidence(self.run.conversation_id)]
 
 
+def portal_name(args: dict[str, Any], services: Services) -> str:
+    portal = services.portals.portals.get(str(args.get("portal"))) if services.portals else None
+    return portal.name if portal else str(args.get("portal", "")).upper()
+
+
 def tool_label(name: str, args: dict[str, Any], services: Services) -> str:
+    if name.startswith("wizard_portal_"):
+        where = portal_name(args, services)
+        action = {"look": "Looked at the page", "scroll_down": "Scrolled down", "scroll_up": "Scrolled up",
+                  "back": "Went back"}.get(str(args.get("action")), "Looked at the page")
+        return {"wizard_portal_open": f"Opened the {where} portal" + (f" at {args['path']}" if args.get("path") else ""),
+                "wizard_portal_click": f"Clicked on {where}",
+                "wizard_portal_type": f"Typed “{str(args.get('text', ''))[:60]}” on {where}",
+                "wizard_portal_page": f"{action} on {where}",
+                "wizard_portal_read_table": f"Read a table on {where}"}.get(name, name)
     system = name.split("_", 1)[0].upper()
     if name.endswith("_search_reports"):
         return f"Searched {system} reports for “{args.get('query', '')}”"
@@ -171,6 +203,12 @@ def tool_summary(name: str, outcome: ToolOutcome) -> str:
     if not outcome.ok:
         return f"{outcome.error_code}: {outcome.error_message}"
     data = outcome.data
+    if name.startswith("wizard_portal_") and "page_title" in data:
+        did = f"“{data['clicked']}” → " if data.get("clicked") else ""
+        return f"{did}{data['page_title'] or data.get('address', '')} · {len(data.get('elements', []))} controls" + (
+            f", {len(data['tables'])} table(s)" if data.get("tables") else "")
+    if name == "wizard_portal_read_table" and "rows" in data:
+        return f"{data['row_count']} rows from the page" + (" (more on the page)" if data.get("truncated") else "")
     if name.endswith("_run_report"):
         extra = f" of {data['total_rows']}" if data.get("truncated") else ""
         as_of = f" · as of {str(data.get('as_of'))[:10]}" if data.get("as_of") else ""
@@ -204,6 +242,8 @@ def entitled_to(identity: Identity, evidence: dict[str, Any]) -> bool:
     system, report_id = evidence.get("system"), evidence.get("report_id")
     if system == "attachment":
         return True  # the user's own file in their own conversation (callers check the conversation owner)
+    if system == "portal":
+        return identity.can_use_system(f"portal-{evidence.get('portal')}")
     if not system or not report_id or not identity.can_see_report(system, report_id):
         return False
     allowed = identity.allowed_markets(system)
@@ -319,11 +359,17 @@ class RunManager:
                                               "category": spec.category if spec else "unknown", "arguments": shown})
         outcome = self._bound(run, name, args, spec.category if spec else None)
         if outcome is None:
-            context = ToolContext(identity=run.identity, run_id=run.id, recorder=Recorder(self.store, run, self.attachments),
-                                  services=self.services)
+            loop = asyncio.get_running_loop()
+
+            def publish(kind: str, payload: dict[str, Any]) -> None:  # from the tool's thread, in order, onto the loop
+                loop.call_soon_threadsafe(self._publish, run, kind, payload)
+
+            recorder = Recorder(self.store, run, self.attachments, call_id, publish, self.settings.data_dir / "frames")
+            context = ToolContext(identity=run.identity, run_id=run.id, recorder=recorder, services=self.services)
             outcome = await asyncio.to_thread(self.registry.execute, name, args, context)
         if spec and spec.category == "source":
-            self.store.audit(run.identity.id, f"tool:{name}", run_id=run.id, system=name.split("_", 1)[0],
+            self.store.audit(run.identity.id, f"tool:{name}", run_id=run.id,
+                             system=f"portal-{args.get('portal')}" if name.startswith("wizard_portal_") else name.split("_", 1)[0],
                              report_id=str(args.get("report_id")) if args.get("report_id") else None,
                              outcome="ok" if outcome.ok else str(outcome.error_code),
                              detail={"filters": [f.get("field") for f in args.get("filters", []) if isinstance(f, dict)],

@@ -196,6 +196,18 @@ def list_sources(ctx: ToolContext, _: NoArgs) -> dict[str, Any]:
                         "connector_status": "READ_ONLY_SQL", "data_mode": "LIVE", "your_market_access": "all markets",
                         "how_to_navigate": "wizard_browse_knowledge(area='datasets') → wizard_read_knowledge → "
                                            "wizard_query_postgresql"})
+    browser = ctx.services.portals
+    for portal in (browser.portals.values() if browser else []):
+        if not ctx.identity.can_use_system(f"portal-{portal.id}"):
+            continue
+        guide = guides.get(f"platform-{portal.id}")
+        systems.append({"system": portal.id, "kind": "portal", "name": f"{portal.name} portal",
+                        "description": f"The {portal.name} web portal itself, opened in Wizard's browser under your own "
+                                       "sign-in: every folder, report and dashboard you can see there, read from the page.",
+                        "connector_status": "BROWSER_READ", "data_mode": "LIVE",
+                        "platform_guide": f"wizard_lookup_definitions('{guide.title}')" if guide else None,
+                        "how_to_navigate": f"wizard_portal_open('{portal.id}') → wizard_portal_click / wizard_portal_type → "
+                                           "wizard_portal_read_table"})
     return {"sources": systems, "note": "Only sources and reports you are entitled to are listed."}
 
 
@@ -470,6 +482,8 @@ def check_my_data(ctx: ToolContext, args: CheckArgs) -> dict[str, Any]:
             if again.digest == original["digest"]:
                 return "UNCHANGED", "the query returns the same rows today"
             return "CHANGED", "the query now returns different rows than when the answer was prepared"
+        if original.get("system") == "portal":
+            return "UNAVAILABLE", "a table read from a portal page cannot be re-run automatically; open the page again"
         found = ctx.services.catalog.report(original["report_id"])
         if found is None or not ctx.identity.can_see_report(found[0], original["report_id"]):
             return "UNAVAILABLE", "the report is no longer available to you"

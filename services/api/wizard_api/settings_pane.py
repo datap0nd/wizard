@@ -45,6 +45,8 @@ SECTIONS = [
     ("gemini", "Gemini", "The model answers under your own Google sign-in."),
     ("knowledge", "Knowledge base", "The private GitHub repository Wizard reads its company notes from."),
     ("postgres", "Company database", "A read-only PostgreSQL account for Gemini's SQL questions."),
+    ("portals", "Portals", "Company portals Gemini may explore in Wizard's own browser, signed in as you. Read-only: "
+                           "nothing is saved, exported or sent."),
     ("network", "Network", "Only if Wizard cannot reach Google or GitHub on its own."),
 ]
 FIELDS = [
@@ -66,6 +68,15 @@ FIELDS = [
     Field("WIZARD_PG_PASSWORD", "Password", "postgres"),
     Field("WIZARD_PG_SSLMODE", "SSL", "postgres", "", "prefer",
           ("disable", "prefer", "require", "verify-ca", "verify-full")),
+    Field("WIZARD_PORTAL_GSCM", "GSCM address", "portals", "The page GSCM opens on (https://...).", "https://gscm.company.com/"),
+    Field("WIZARD_PORTAL_ASAP", "ASAP address", "portals", "The page ASAP opens on (https://...).",
+          "https://asap.company.com/MicroStrategyLibrary/"),
+    Field("WIZARD_PORTAL_BDP", "Big Data Portal address", "portals", "Superset's start page (https://...).",
+          "https://bdp.company.com/"),
+    Field("WIZARD_PORTAL_SIGNIN_HOSTS", "Company sign-in hosts", "portals",
+          "Only if a portal sends you to a sign-in page Wizard stops, e.g. sso.company.com (comma-separated).", ""),
+    Field("WIZARD_BROWSER", "Browser", "portals", "auto uses Microsoft Edge on Windows; off turns the portals off.", "auto",
+          ("auto", "msedge", "chrome", "off")),
     Field("WIZARD_PROXY", "Proxy", "network", "http://host:port, or direct. Empty: the Windows proxy settings.", ""),
 ]
 BY_KEY = {f.key: f for f in FIELDS}

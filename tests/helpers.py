@@ -1,8 +1,12 @@
 """Shared test helpers and constants."""
 from __future__ import annotations
 
+import glob
 import json
+import os
+import shutil
 import socket
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -55,6 +59,21 @@ class MemoryRecorder:
     def attachment(self, label: str) -> tuple[dict[str, Any], str] | None:
         return self.files.get(label)
 
+    def add_frame(self, image: bytes) -> str:
+        self.frames.append(image)
+        return f"f{len(self.frames)}"
+
+    def progress(self, kind: str, payload: dict[str, Any]) -> None:
+        self.events.append((kind, payload))
+
+    @property
+    def frames(self) -> list[bytes]:
+        return self.__dict__.setdefault("_frames", [])
+
+    @property
+    def events(self) -> list[tuple[str, dict[str, Any]]]:
+        return self.__dict__.setdefault("_events", [])
+
 
 def make_settings(tmp_path: Path, **overrides: str) -> Settings:
     env = {"WIZARD_DATA_DIR": str(tmp_path / "var"), "WIZARD_AGENT_RUNTIME": "replay", "WIZARD_ATTACHMENT_OFFICE": "never",
@@ -102,3 +121,21 @@ def free_port() -> int:
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         return int(sock.getsockname()[1])
+
+
+def find_browser() -> str | None:
+    """A Chromium-based browser for the portal-browser tests: WIZARD_TEST_BROWSER, Edge on Windows, else a Chromium that
+    Playwright installed (the web e2e tests' copy) or one on PATH. None: those tests report BLOCKED."""
+    if os.environ.get("WIZARD_TEST_BROWSER"):
+        return os.environ["WIZARD_TEST_BROWSER"]
+    if sys.platform == "win32":
+        return "msedge"
+    roots = [os.environ.get("PLAYWRIGHT_BROWSERS_PATH", ""), str(Path.home() / ".cache" / "ms-playwright"), "/opt/pw-browsers"]
+    for root in filter(None, roots):
+        found = sorted(glob.glob(os.path.join(root, "chromium-*", "chrome-linux*", "chrome")))
+        if found:
+            return found[-1]
+    for name in ("google-chrome", "chromium", "chromium-browser", "microsoft-edge"):
+        if shutil.which(name):
+            return shutil.which(name)
+    return None

@@ -215,4 +215,5 @@ def test_every_pane_field_is_a_setting_wizard_reads(key):
     import pathlib
     config = (pathlib.Path(__file__).resolve().parents[2] / "services" / "api" / "wizard_api" / "config.py").read_text(encoding="utf-8")
     pg = (pathlib.Path(__file__).resolve().parents[2] / "services" / "connectors" / "wizard_connectors" / "pg.py").read_text(encoding="utf-8")
-    assert f'"{key}"' in config or (key.startswith("WIZARD_PG_") and "WIZARD_PG_" in pg)
+    from wizard_api.config import PORTAL_KEY  # WIZARD_PORTAL_<NAME>: any portal, read by pattern
+    assert f'"{key}"' in config or (key.startswith("WIZARD_PG_") and "WIZARD_PG_" in pg) or PORTAL_KEY.match(key)

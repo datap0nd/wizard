@@ -33,9 +33,10 @@ layer secrets       $PY scripts/scan_secrets.py
 layer contracts     $PY scripts/export_contracts.py --check
 layer lint          $PY -m ruff check services tests scripts run.py wizard_mcp_shim.py
 layer types         $PY -m mypy --show-traceback
-layer python-tests  $PY -m pytest tests -m "not live and not gemini_cli and not postgres"
+layer python-tests  $PY -m pytest tests -m "not live and not gemini_cli and not postgres and not browser"
 layer gemini-cli    $PY -m pytest tests -m gemini_cli -rs
 layer postgres      $PY -m pytest tests -m postgres -rs
+layer portal-browser $PY -m pytest tests -m browser -rs
 layer evals-schema  $PY -m pytest tests/evals
 if [ ! -d apps/web/node_modules ]; then (cd apps/web && npm ci --no-audit --no-fund) >artifacts/verify/web-install.log 2>&1; fi
 layer web-types     npm --prefix apps/web run typecheck

@@ -14,6 +14,7 @@ from typing import Any
 from wizard_connectors.paths import FIXTURES, ROOT
 from wizard_connectors.pg import PgError, PgSettings
 from wizard_connectors.pg import settings_from as pg_settings
+from wizard_connectors.portal_browser import DEFAULT_SIGNIN_HOSTS, BrowserOptions, Portal
 
 from . import knowledge_sync, provisioning
 
@@ -22,6 +23,8 @@ KB_REPO = re.compile(r"^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$")
 KB_REF = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_./-]{0,200}$")
 KB_PATH = re.compile(r"^[A-Za-z0-9_. /\\-]{1,200}$")
 AUTH_MODES = ("fixture", "trusted-header")
+PORTAL_KEY = re.compile(r"^WIZARD_PORTAL_([A-Z][A-Z0-9]{1,30})$")
+HOST = re.compile(r"^(\*\.)?[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*(:[0-9]{1,5})?$")
 
 
 class ConfigError(ValueError):
@@ -106,6 +109,10 @@ class Settings:
     kb_path: str = ""
     kb_token: str | None = None
     kb_sync_minutes: int = 30
+    # Company portals Gemini may explore in Wizard's own browser (WIZARD_PORTAL_<NAME>=https://...; decision
+    # 2026-10-20-portal-browser). Only on the person's own PC: the browser profile holds their portal sign-in.
+    portals: list[Portal] = field(default_factory=list)
+    browser: BrowserOptions = field(default_factory=BrowserOptions)
     # Google accounts allowed to link for Gemini (company domains); empty: any account that matches the user's email rule.
     google_domains: list[str] = field(default_factory=list)
     # Names (never values) of what the provisioning file set, for readiness views.
@@ -271,12 +278,47 @@ def load_settings(env: dict[str, str] | None = None, env_file: Path | None = Non
         # The last validated snapshot; None until the first sync succeeds (create_app then loads no content at all,
         # never the synthetic examples).
         settings.content_dir = knowledge_sync.active_content(data_dir, kb_source(settings))
+    settings.portals, settings.browser = _portals(merged, settings)
     domains = get("WIZARD_GOOGLE_DOMAINS", "") or ""
     settings.google_domains = sorted({d.strip().lower().lstrip("@") for d in domains.split(",") if d.strip()})
     if settings.auth_mode == "trusted-header" and settings.runtime != "replay" and not settings.public_origin:
         raise ConfigError("WIZARD_PUBLIC_ORIGIN is required behind a corporate SSO proxy")
     settings.session_secret = _session_secret(data_dir)
     return settings
+
+
+def _hosts(value: str | None, name: str) -> list[str]:
+    hosts = [h.strip().lower() for h in (value or "").split(",") if h.strip()]
+    bad = [h for h in hosts if not HOST.match(h)]
+    if bad:
+        raise ConfigError(f"{name}: {', '.join(bad)} is not a host name (comma-separated, e.g. sso.company.com, *.company.com)")
+    return hosts
+
+
+def _portals(merged: dict[str, str], settings: Settings) -> tuple[list[Portal], BrowserOptions]:
+    """WIZARD_PORTAL_<NAME>=https://... (start page), WIZARD_PORTAL_<NAME>_HOSTS (more hosts the portal uses),
+    WIZARD_PORTAL_<NAME>_NAME (what people see), WIZARD_PORTAL_SIGNIN_HOSTS (the company sign-in pages), WIZARD_BROWSER
+    (auto, msedge, chrome, chromium, off or a browser's path) and WIZARD_BROWSER_VISIBLE."""
+    choice = (merged.get("WIZARD_BROWSER") or "auto").strip()
+    if choice.lower() == "off":
+        return [], BrowserOptions()
+    visible = _bool(merged.get("WIZARD_BROWSER_VISIBLE") or "false", "WIZARD_BROWSER_VISIBLE")
+    signin = (*DEFAULT_SIGNIN_HOSTS, *_hosts(merged.get("WIZARD_PORTAL_SIGNIN_HOSTS"), "WIZARD_PORTAL_SIGNIN_HOSTS"))
+    portals = []
+    for key, value in sorted(merged.items()):
+        match = PORTAL_KEY.match(key)
+        if not match or not value:
+            continue
+        name = match.group(1)
+        try:
+            portals.append(Portal.make(name.lower(), value.strip(), (merged.get(f"{key}_NAME") or "").strip()[:40] or name,
+                                       _hosts(merged.get(f"{key}_HOSTS"), f"{key}_HOSTS")))
+        except ValueError as error:
+            raise ConfigError(f"{key}: {error}") from None
+    if portals and settings.auth_mode == "trusted-header":
+        raise ConfigError("WIZARD_PORTAL_* needs Wizard on the person's own PC (the browser holds their portal sign-in); "
+                          "remove the portals from a shared server")
+    return portals, BrowserOptions(browser=choice, visible=visible, signin_hosts=signin)
 
 
 def kb_source(settings: Settings) -> knowledge_sync.Source | None:

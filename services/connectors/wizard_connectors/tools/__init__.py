@@ -8,8 +8,10 @@ from ..fixture_source import FixtureSource
 from ..knowledge import KnowledgeBase
 from ..paths import KNOWLEDGE, SOURCE_CONTRACTS, SYNTHETIC
 from ..pg import PgSettings
+from ..portal_browser import PortalBrowser
 from ..postgres_query import PostgresQuery
 from .core_tools import CORE_TOOLS
+from .portal_tools import PORTAL_TOOLS
 from .registry import Recorder, Services, ToolContext, ToolError, ToolOutcome, ToolRegistry, ToolSpec, flatten_schema
 from .source_tools import make_source_tools
 
@@ -18,16 +20,21 @@ __all__ = ["Recorder", "Services", "ToolContext", "ToolError", "ToolOutcome", "T
 
 
 def build_services(contracts: Path = SOURCE_CONTRACTS, fixtures: Path = SYNTHETIC, knowledge: Path = KNOWLEDGE,
-                   postgres: PgSettings | None = None, postgres_name: str = "AI Team Database") -> Services:
+                   postgres: PgSettings | None = None, postgres_name: str = "AI Team Database",
+                   portals: PortalBrowser | None = None) -> Services:
     catalog = Catalog.load(contracts)
     source = FixtureSource(catalog, fixtures)
     return Services(catalog=catalog, sources={s.id: source for s in catalog.systems}, knowledge=KnowledgeBase.load(knowledge),
-                    postgres=PostgresQuery(postgres) if postgres else None, postgres_name=postgres_name)
+                    postgres=PostgresQuery(postgres) if postgres else None, postgres_name=postgres_name,
+                    portals=portals if portals and portals.portals else None)
 
 
-def build_registry(services: Services) -> ToolRegistry:
+def build_registry(services: Services, portal_tools: bool | None = None) -> ToolRegistry:
+    """The portal tools are offered only where portals are set up (portal_tools=True lists them anyway, for contracts)."""
     specs: list[ToolSpec] = []
     for system in services.catalog.systems:
         specs.extend(make_source_tools(system.id, system.name))
     specs.extend(CORE_TOOLS)
+    if services.portals is not None if portal_tools is None else portal_tools:
+        specs.extend(PORTAL_TOOLS)
     return ToolRegistry(specs)

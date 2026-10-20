@@ -6,6 +6,8 @@ import hmac
 import ipaddress
 import json
 import logging
+import re
+import shutil
 import time
 from collections import deque
 from collections.abc import AsyncIterator
@@ -29,6 +31,7 @@ from wizard_agent.secret_box import SecretBox
 from wizard_connectors.content import errors, validate_content
 from wizard_connectors.entitlements import Identity, IdentityDirectory, SystemRights
 from wizard_connectors.paths import ROOT
+from wizard_connectors.portal_browser import PortalBrowser, PortalError
 from wizard_connectors.tools import build_registry, build_services
 
 from . import __version__, knowledge_sync, settings_pane
@@ -74,7 +77,8 @@ def capture_logs() -> None:
 PUBLIC_PATHS = {"/api/v1/health", "/api/v1/ready", "/api/v1/bootstrap", "/api/v1/session/login",
                 "/api/v1/session/logout", "/api/v1/session/identities"}
 TIMELINE_EVENTS = {"run_started", "status", "agent_session", "note", "tool_started", "tool_finished", "visual_added",
-                   "check_result", "warning", "run_failed", "run_finished"}
+                   "check_result", "warning", "run_failed", "run_finished", "browser_frame"}
+FRAME_ID = re.compile(r"^f[0-9]{1,5}$")
 TERMINAL = {"run_finished", "run_failed"}
 SUGGESTIONS = [
     {"story": "Executive", "question": "Which market gave us the best return on marketing investment last quarter — tie NERP "
@@ -174,6 +178,9 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
                google_transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
     settings = settings or load_settings()
     loaded_content = settings.content_dir
+    # Wizard's own browser for the company portals: one profile per person, in their own data folder.
+    portals = PortalBrowser(settings.portals, settings.browser,
+                            lambda user_id: settings.user_home(user_id) / "portal-browser") if settings.portals else None
     if settings.content_dir:
         problems = validate_content(settings.content_dir)
         for problem in problems:
@@ -183,14 +190,14 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
                               "scripts/validate_content.py on it. First: " + str(errors(problems)[0]))
         services = build_services(contracts=settings.content_dir / "contracts" / "sources",
                                   knowledge=settings.content_dir / "knowledge", postgres=settings.postgres,
-                                  postgres_name=settings.pg_name)
+                                  postgres_name=settings.pg_name, portals=portals)
     elif settings.kb_repo:
         # A knowledge base is configured but has never synced: load nothing rather than the synthetic examples.
         empty = settings.data_dir / "knowledge" / "none"
         services = build_services(contracts=empty / "contracts" / "sources", knowledge=empty / "knowledge",
-                                  postgres=settings.postgres, postgres_name=settings.pg_name)
+                                  postgres=settings.postgres, postgres_name=settings.pg_name, portals=portals)
     else:
-        services = build_services(postgres=settings.postgres, postgres_name=settings.pg_name)
+        services = build_services(postgres=settings.postgres, postgres_name=settings.pg_name, portals=portals)
     registry = build_registry(services)
     identities = IdentityDirectory.load(settings.identities_file)
     store = Store(settings.data_dir / "wizard.sqlite3")
@@ -201,10 +208,13 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         email = (linked["google_email"] if linked else settings.local_user_email) or ""
         owner = Identity(id=OWNER_ID, email=email.lower(), name=settings.local_user_name or "You", role="Owner (local test)",
                          entitlements={system: SystemRights(reports=["*"], markets=["*"]) for system in
-                                       [*(s.id for s in services.catalog.systems), *(["postgresql"] if services.postgres else [])]})
+                                       [*(s.id for s in services.catalog.systems), *(["postgresql"] if services.postgres else []),
+                                        *(f"portal-{p.id}" for p in settings.portals)]})
         others = [] if settings.desktop else [i for i in identities.all() if not owner.email or i.email != owner.email]
         identities = IdentityDirectory([owner, *others])
     interrupted = store.mark_interrupted()
+    frames_root = settings.data_dir / "frames"
+    _expire_frames(frames_root, settings.report_retention_days)
     secret_box = SecretBox()
     runtime = runtime or build_runtime(settings, secret_box, registry.scopes())
     manager = RunManager(settings, store, registry, services, runtime)
@@ -253,6 +263,8 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         for task in background:
             task.cancel()
         await manager.shutdown()
+        if portals:
+            await asyncio.to_thread(portals.close)
 
     app = FastAPI(title="Wizard", version=__version__, lifespan=lifespan, docs_url=None, redoc_url=None,
                   openapi_url="/api/v1/openapi.json")
@@ -355,6 +367,14 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
                                        for s in services.catalog.systems if identity.can_use_system(s.id)]
         if services.postgres and identity.can_use_system("postgresql"):
             found.append({"id": "postgresql", "name": services.postgres_name, "kind": "database", "data_mode": "LIVE"})
+        for portal in (services.portals.portals.values() if services.portals else []):
+            if not identity.can_use_system(f"portal-{portal.id}"):
+                continue
+            existing = next((s for s in found if s["id"] == portal.id), None)
+            if existing:
+                existing["portal"] = True
+            else:
+                found.append({"id": portal.id, "name": portal.name, "kind": "portal", "data_mode": "LIVE", "portal": True})
         if services.knowledge.notes:
             found.append({"id": "knowledge", "name": "Knowledge base", "kind": "knowledge", "notes": len(services.knowledge.notes)})
         found.append({"id": "attachment", "name": "Attached files", "kind": "files"})
@@ -446,8 +466,11 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
     @app.delete("/api/v1/conversations/{conversation_id}")
     def delete_conversation(request: Request, conversation_id: str) -> dict[str, Any]:
         identity = me(request)
+        runs = store.runs(conversation_id) if store.conversation(identity.id, conversation_id) else []
         if not store.delete_conversation(identity.id, conversation_id):
             raise HTTPException(404, "Conversation not found.")
+        for run in runs:
+            shutil.rmtree(frames_root / run["id"], ignore_errors=True)
         store.audit(identity.id, "conversation:delete", detail={"conversation_id": conversation_id})
         return {"ok": True}
 
@@ -540,6 +563,15 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         if not run:
             raise HTTPException(404, "Run not found.")
         return run_detail(identity, run)
+
+    @app.get("/api/v1/runs/{run_id}/frames/{frame_id}")
+    def run_frame(request: Request, run_id: str, frame_id: str) -> Response:
+        """A portal screenshot from this person's own run (the click preview)."""
+        run = store.run(me(request).id, run_id)
+        path = frames_root / run["id"] / f"{frame_id}.jpg" if run and FRAME_ID.match(frame_id) else None
+        if path is None or not path.is_file():
+            raise HTTPException(404, "Picture not found.")
+        return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=86400"})
 
     @app.post("/api/v1/runs/{run_id}/cancel")
     def cancel(request: Request, run_id: str) -> dict[str, Any]:
@@ -676,6 +708,53 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
                              "status": "NAVIGATION_ONLY" if r.row_access == "NAVIGATION_ONLY" else
                              ("ROWS_VERIFIED" if contract.system.connector.status == "ROWS_VERIFIED" else contract.system.connector.status)}
                             for r in visible]}
+
+    # Portals (Wizard's own browser) ---------------------------------------------------------------------------------------
+    def portal_browser(identity: Identity, portal_id: str | None = None) -> PortalBrowser:
+        if services.portals is None:
+            raise HTTPException(404, "No portals are set up on this Wizard.")
+        if portal_id is not None and (portal_id not in services.portals.portals
+                                      or not identity.can_use_system(f"portal-{portal_id}")):
+            raise HTTPException(404, "Portal not found.")
+        return services.portals
+
+    @app.get("/api/v1/portals")
+    def portal_list(request: Request) -> dict[str, Any]:
+        identity = me(request)
+        if services.portals is None:
+            return {"portals": [], "browser": None}
+        shown = [p for p in services.portals.status(identity.id) if identity.can_use_system(f"portal-{p['id']}")]
+        return {"portals": shown, "browser": settings.browser.browser, "visible": settings.browser.visible}
+
+    @app.post("/api/v1/portals/{portal_id}/signin")
+    async def portal_signin(request: Request, portal_id: str) -> dict[str, Any]:
+        identity = me(request)
+        browser = portal_browser(identity, portal_id)
+        if any(r.identity.id == identity.id for r in manager.active.values()):
+            raise HTTPException(409, "Wait for your question to finish before signing in to a portal.")
+        try:
+            await asyncio.to_thread(browser.start_signin, identity.id, portal_id)
+        except PortalError as error:
+            raise HTTPException(502, {"error": error.message, "code": error.code}) from None
+        store.audit(identity.id, "portal:signin", system=portal_id)
+        return {"ok": True, "message": "A browser window opened. Sign in there, then press Done."}
+
+    @app.post("/api/v1/portals/signin/done")
+    async def portal_signin_done(request: Request) -> dict[str, Any]:
+        identity = me(request)
+        await asyncio.to_thread(portal_browser(identity).finish_signin, identity.id)
+        return {"ok": True}
+
+    @app.post("/api/v1/portals/{portal_id}/check")
+    async def portal_check(request: Request, portal_id: str) -> dict[str, Any]:
+        identity = me(request)
+        browser = portal_browser(identity, portal_id)
+        if any(r.identity.id == identity.id for r in manager.active.values()):
+            raise HTTPException(409, "Wait for your question to finish before checking a portal.")
+        try:
+            return await asyncio.to_thread(browser.check, identity.id, portal_id)
+        except PortalError as error:
+            return {"portal": portal_id, "state": "error", "code": error.code, "detail": error.message}
 
     # Dev diagnostics -----------------------------------------------------------------------------------------------------
     @app.get("/api/v1/dev/log")
@@ -957,6 +1036,19 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
                             "<code>npm --prefix apps/web run build</code>, or use the Vite dev server.</p>")
 
     return app
+
+
+def _expire_frames(root: Path, days: int) -> None:
+    """Portal screenshots are kept as long as reports (WIZARD_REPORT_RETENTION_DAYS), then deleted."""
+    if not root.is_dir():
+        return
+    cutoff = time.time() - days * 86400
+    for folder in root.iterdir():
+        try:
+            if folder.is_dir() and folder.stat().st_mtime < cutoff:
+                shutil.rmtree(folder, ignore_errors=True)
+        except OSError:
+            continue
 
 
 def _secure(response: Response) -> Response:

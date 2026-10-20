@@ -16,6 +16,7 @@ dependencies = [
   # Read-only PostgreSQL catalog export for the documentation kit. Pure Python: Application Control has no driver DLL to
   # block (psycopg2's was blocked on a development PC).
   "pg8000>=1.31",
+  "playwright>=1.56",
 ]
 
 [dependency-groups]
@@ -49,6 +50,7 @@ markers = [
   "gemini_cli: runs the real Gemini CLI with fake model responses (needs WIZARD_GEMINI_CLI_JS or .tools)",
   "live: needs live corporate sources or a signed-in Gemini account; reported as BLOCKED when not configured",
   "postgres: needs a PostgreSQL test server (WIZARD_TEST_PG_*; CI runs one); reported as BLOCKED when not configured",
+  "browser: drives a real Chromium-based browser (Edge on Windows) through Playwright; reported as BLOCKED without one",
 ]
 addopts = "-q -p no:cacheprovider -p no:tmpdir"
 
