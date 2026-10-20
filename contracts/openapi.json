@@ -1222,6 +1222,66 @@
           }
         }
       }
+    },
+    "/internal/v1/desktop/status": {
+      "get": {
+        "summary": "Desktop Status",
+        "operationId": "desktop_status_internal_v1_desktop_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Desktop Status Internal V1 Desktop Status Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/desktop/sync": {
+      "post": {
+        "summary": "Desktop Sync",
+        "operationId": "desktop_sync_internal_v1_desktop_sync_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Desktop Sync Internal V1 Desktop Sync Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/desktop/stop": {
+      "post": {
+        "summary": "Desktop Stop",
+        "operationId": "desktop_stop_internal_v1_desktop_stop_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Desktop Stop Internal V1 Desktop Stop Post"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {

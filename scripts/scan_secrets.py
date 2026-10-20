@@ -17,12 +17,13 @@ PATTERNS = {
     "oauth_client_secret": re.compile(r"GOCSPX-[0-9A-Za-z_\-]{20,}"),
     "private_key": re.compile(r"-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----"),
     "github_token": re.compile(r"gh[pousr]_[0-9A-Za-z]{30,}"),
+    "github_fine_grained_token": re.compile(r"github_pat_[0-9A-Za-z_]{50,}"),
     "aws_key": re.compile(r"AKIA[0-9A-Z]{16}"),
     "password_assignment": re.compile(r"(?i)(password|passwd|pwd)\s*[:=]\s*['\"][^'\"\s]{6,}['\"]"),
     "mstr_auth_token": re.compile(r"X-MSTR-AuthToken:\s*[0-9a-z]{20,}"),
 }
 ALLOW = {("oauth_client_secret", "services/agent/wizard_agent/google_oauth.py")}
-BLOCKED_SUFFIXES = (".docx", ".xlsx", ".xls", ".pptx", ".pbix", ".parquet")
+BLOCKED_SUFFIXES = (".docx", ".xlsx", ".xls", ".pptx", ".pbix", ".parquet", ".provision")  # .provision: company credentials
 SKIP_DIRS = {".git", ".venv", "node_modules", ".tools", "var", "artifacts", "dist", "__pycache__", ".mypy_cache", ".ruff_cache"}
 
 

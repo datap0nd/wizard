@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- WizardBar: the always-on button at the top of the screen, its WebView2 panel, the tray icon and the supervisor of
+       Wizard's local service. Same toolchain as Scribble: .NET Framework 4.8 (in every Windows 10/11), WinForms, the
+       Edge WebView2 runtime (ships with Windows), installed per user by Inno Setup (installer/Wizard.iss). -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>10</LangVersion>
+    <Nullable>disable</Nullable>
+    <AssemblyName>WizardBar</AssemblyName>
+    <RootNamespace>WizardBar</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>..\assets\wizard.ico</ApplicationIcon>
+    <Prefer32Bit>false</Prefer32Bit>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Deterministic>true</Deterministic>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <Product>Wizard</Product>
+    <Company>Wizard</Company>
+    <Description>Wizard desktop assistant</Description>
+    <!-- CI stamps 1.0.<run number>.0 and the commit; the updater compares FileVersion with the release manifest. -->
+    <Version>1.0.0</Version>
+    <FileVersion>1.0.0.0</FileVersion>
+    <InformationalVersion>dev</InformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Web.Extensions" />
+    <EmbeddedResource Include="..\assets\wizard.ico" LogicalName="WizardBar.wizard.ico" />
+  </ItemGroup>
+</Project>

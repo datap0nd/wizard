@@ -11,12 +11,15 @@ import {Conversation} from './components/Conversation';
 import {EmptyState} from './components/EmptyState';
 import {EvidenceDrawer} from './components/EvidenceDrawer';
 import {LoginScreen} from './components/LoginScreen';
+import {QuickEmpty, QuickHeader} from './components/QuickPanel';
 import {Sidebar} from './components/Sidebar';
+import {onHost, toHost} from './host';
 import type {Attachment, Bootstrap, ConversationSummary, EvidenceSummary, LocalFile, RunEvent, RunView} from './types';
 
 const LAST = 'wizard-conversation';
 
-export function App() {
+/** `compact`: the view WizardBar shows in its panel under the button at the top of the screen (/quick). */
+export function App({compact = false}: {compact?: boolean}) {
   const [boot, setBoot] = useState<Bootstrap | null>(null);
   const [fatal, setFatal] = useState<string | null>(null);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
@@ -30,6 +33,8 @@ export function App() {
   const [files, setFiles] = useState<PendingFile[]>([]);
   const [localOpen, setLocalOpen] = useState(false);
   const streams = useRef(new Map<string, EventSource>());
+  const [focusTick, setFocusTick] = useState(0);
+  const questions = useRef(new Map<string, string>());
 
   const settle = useCallback((key: string, attempt: Promise<{attachment: Attachment}>) => {
     attempt.then(({attachment}) => setFiles(prev => prev.map(f => (f.key === key
@@ -71,6 +76,7 @@ export function App() {
       setRuns(prev => prev.map(r => (r.id === runId ? applyEvent(r, event) : r)));
       if (TERMINAL.has(event.type)) {
         source.close(); streams.current.delete(runId);
+        if (!parentId) toHost({type: 'finished', runId, question: questions.current.get(runId) ?? '', ok: event.type === 'run_finished'});
         void refreshConversations();
         if (parentId) void api.run(parentId).then(record => setRuns(prev => prev.map(r => (r.id === parentId ? {...fromRecord(record), timeline: r.timeline, check: r.check} : r)))).catch(() => undefined);
       }
@@ -88,6 +94,7 @@ export function App() {
     streams.current.forEach(s => s.close()); streams.current.clear();
     setCurrentId(id); localStorage.setItem(LAST, id);
     const views = data.runs.map(fromRecord);
+    views.forEach(v => questions.current.set(v.id, v.question));
     setRuns(views);
     for (const record of data.runs) if (record.active) follow(record.id, Math.max(0, ...record.events.map(e => e.seq)), record.parent_run_id);
   }, [follow]);
@@ -96,17 +103,30 @@ export function App() {
   useEffect(() => {
     if (!boot?.identity) return;
     void refreshConversations();
-    const last = localStorage.getItem(LAST);
+    // "Open in a full window" from the compact view links here with ?c=<conversation>.
+    const linked = new URLSearchParams(location.search).get('c');
+    if (linked) history.replaceState(null, '', location.pathname);
+    const last = linked ?? localStorage.getItem(LAST);
     if (last) void loadConversation(last).catch(() => localStorage.removeItem(LAST));
   }, [boot?.identity?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => { streams.current.forEach(s => s.close()); }, []);
 
   const busy = runs.some(r => r.status === 'running' || r.status === 'queued');
+  const dialogOpen = !!drawer || accountOpen || logOpen || localOpen;
+  useEffect(() => { toHost({type: 'busy', busy}); }, [busy]);
+  useEffect(() => onHost(message => { if (message.type === 'focus') setFocusTick(t => t + 1); }), []);
+  useEffect(() => {
+    if (!compact) return;
+    const keydown = (e: KeyboardEvent) => { if (e.key === 'Escape' && !dialogOpen && !e.defaultPrevented) toHost({type: 'hide'}); };
+    window.addEventListener('keydown', keydown);
+    return () => window.removeEventListener('keydown', keydown);
+  }, [compact, dialogOpen]);
   const ask = useCallback(async (question: string) => {
     setNotice(null);
     try {
       const ready = files.filter(f => f.state === 'ok' && f.attachment).map(f => f.attachment!.id);
       const started = await api.ask(question, currentId, ready);
+      questions.current.set(started.run_id, question);
       if (started.conversation_id !== currentId) { setCurrentId(started.conversation_id); localStorage.setItem(LAST, started.conversation_id); }
       setRuns(prev => [...(started.conversation_id === currentId ? prev : []),
         {...emptyRun(started.run_id, started.conversation_id, question), attachments: started.attachments ?? []}]);
@@ -165,7 +185,38 @@ export function App() {
   const runtime = boot.runtime!;
   const synthetic = (boot.data_modes ?? []).includes('SYNTHETIC');
   const blocked = runtime.ready ? null : runtime.reason ?? 'Gemini is not available.';
-  const title = conversations.find(c => c.id === currentId)?.title ?? 'New analysis';
+  const title = conversations.find(c => c.id === currentId)?.title ?? (compact ? 'Ask Wizard' : 'New analysis');
+  const conversation = (empty: React.ReactNode) => (
+    <Conversation runs={runs} busy={busy} empty={empty}
+      onEvidence={(run, id) => setDrawer({items: id ? allEvidence : run.evidence, focus: id})}
+      onCheck={run => void check(run)} onCancel={run => void api.cancel(run.id)} onRetry={run => void ask(run.question)}
+      onFeedback={(run, category) => void api.feedback(run.id, category).then(() => setNotice('Thanks — recorded in the evaluation log.'))}
+      onEmail={run => void email(run)} />
+  );
+  const composer = (
+    <div className={compact ? 'border-t border-line bg-canvas px-3 pb-2 pt-2.5' : 'border-t border-line bg-canvas px-4 pb-3 pt-3 md:px-6'}>
+      {notice && <p className="mx-auto mb-2 max-w-[820px] rounded-lg bg-surface px-3 py-2 text-[13px] text-ink-2" role="status">{notice}</p>}
+      <Composer busy={busy} draft={draft} onDraftChange={setDraft} onSubmit={ask} disabledReason={blocked} focusSignal={focusTick}
+        placeholder={compact ? 'Ask Wizard anything' : undefined}
+        files={files} onFiles={addFiles} onRemoveFile={removeFile} onLocal={boot.attachments?.from_this_pc ? () => setLocalOpen(true) : undefined} />
+    </div>
+  );
+  const overlays = <>
+    <EvidenceDrawer conversationId={currentId} open={!!drawer} focus={drawer?.focus ?? null} items={drawer?.items ?? []} onClose={() => setDrawer(null)} />
+    <LogDialog open={logOpen} onClose={() => setLogOpen(false)} />
+    <LocalFilesDialog open={localOpen} onClose={() => setLocalOpen(false)} onPick={addLocal} />
+    <AccountDialog open={accountOpen} boot={boot} onClose={() => setAccountOpen(false)}
+      onChanged={account => { setBoot(b => (b ? {...b, gemini_account: account} : b)); void loadBoot(); }} />
+  </>;
+
+  if (compact) return (
+    <div className="flex h-dvh w-screen flex-col overflow-hidden bg-page" data-testid="quick">
+      <QuickHeader boot={boot} title={title} conversationId={currentId} synthetic={synthetic} onNew={newChat} onAccount={() => setAccountOpen(true)} />
+      {conversation(<QuickEmpty boot={boot} onAccount={() => setAccountOpen(true)} onPick={q => { if (!blocked) void ask(q); else setDraft(q); }} />)}
+      {composer}
+      {overlays}
+    </div>
+  );
 
   return (
     <div className="flex h-dvh w-screen overflow-hidden bg-page">
@@ -180,23 +231,10 @@ export function App() {
           {runtime.kind === 'replay' && <RuntimeBadge kind={runtime.kind} label={runtime.label} />}
           {synthetic && <span className="inline-flex items-center gap-1 rounded-full border border-warn-line bg-warn-soft px-2 py-0.5 text-[11.5px] font-semibold text-warn" data-testid="synthetic-banner">SYNTHETIC DATA</span>}
         </div>
-        <Conversation runs={runs} busy={busy}
-          empty={<EmptyState suggestions={boot.suggestions} synthetic={synthetic} onPick={q => { if (!blocked) void ask(q); else setDraft(q); }} />}
-          onEvidence={(run, id) => setDrawer({items: id ? allEvidence : run.evidence, focus: id})}
-          onCheck={run => void check(run)} onCancel={run => void api.cancel(run.id)} onRetry={run => void ask(run.question)}
-          onFeedback={(run, category) => void api.feedback(run.id, category).then(() => setNotice('Thanks — recorded in the evaluation log.'))}
-          onEmail={run => void email(run)} />
-        <div className="border-t border-line bg-canvas px-4 pb-3 pt-3 md:px-6">
-          {notice && <p className="mx-auto mb-2 max-w-[820px] rounded-lg bg-surface px-3 py-2 text-[13px] text-ink-2" role="status">{notice}</p>}
-          <Composer busy={busy} draft={draft} onDraftChange={setDraft} onSubmit={ask} disabledReason={blocked}
-            files={files} onFiles={addFiles} onRemoveFile={removeFile} onLocal={boot.attachments?.from_this_pc ? () => setLocalOpen(true) : undefined} />
-        </div>
+        {conversation(<EmptyState suggestions={boot.suggestions} synthetic={synthetic} onPick={q => { if (!blocked) void ask(q); else setDraft(q); }} />)}
+        {composer}
       </main>
-      <EvidenceDrawer conversationId={currentId} open={!!drawer} focus={drawer?.focus ?? null} items={drawer?.items ?? []} onClose={() => setDrawer(null)} />
-      <LogDialog open={logOpen} onClose={() => setLogOpen(false)} />
-      <LocalFilesDialog open={localOpen} onClose={() => setLocalOpen(false)} onPick={addLocal} />
-      <AccountDialog open={accountOpen} boot={boot} onClose={() => setAccountOpen(false)}
-        onChanged={account => { setBoot(b => (b ? {...b, gemini_account: account} : b)); void loadBoot(); }} />
+      {overlays}
     </div>
   );
 }

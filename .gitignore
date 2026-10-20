@@ -6,6 +6,10 @@ artifacts/*
 .env.*
 !.env.example
 
+# Company provisioning files hold the knowledge-base token and the read-only database password (docs/desktop.md)
+*.provision
+company.env
+
 # Corporate material must never enter Git (exports, DOCX blocked by DLP, live rows)
 *.docx
 *.xlsx

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import ipaddress
 import json
 import logging
@@ -30,15 +31,16 @@ from wizard_connectors.entitlements import Identity, IdentityDirectory, SystemRi
 from wizard_connectors.paths import ROOT
 from wizard_connectors.tools import build_registry, build_services
 
-from . import __version__
+from . import __version__, knowledge_sync
 from .attachments import AttachmentError, public
-from .config import ConfigError, Settings, load_settings
+from .config import ConfigError, Settings, kb_source, load_settings
 from .outlook import DraftError, open_outlook_draft
 from .runs import Busy, RunManager, entitled_to
 from .security import REQUEST_HEADER, SECURITY_HEADERS, SESSION_COOKIE, session_token, verify
 from .store import Store
 
 OWNER_ID = "local-owner"
+KB_IDLE_RESTART_S = 600  # restart for a new knowledge base only after 10 minutes without a request from the user
 log = logging.getLogger("wizard.api")
 
 
@@ -155,6 +157,7 @@ def _is_loopback(host: str | None) -> bool:
 def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = None,
                google_transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
     settings = settings or load_settings()
+    loaded_content = settings.content_dir
     if settings.content_dir:
         problems = validate_content(settings.content_dir)
         for problem in problems:
@@ -164,6 +167,11 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
                               "scripts/validate_content.py on it. First: " + str(errors(problems)[0]))
         services = build_services(contracts=settings.content_dir / "contracts" / "sources",
                                   knowledge=settings.content_dir / "knowledge", postgres=settings.postgres)
+    elif settings.kb_repo:
+        # A knowledge base is configured but has never synced: load nothing rather than the synthetic examples.
+        empty = settings.data_dir / "knowledge" / "none"
+        services = build_services(contracts=empty / "contracts" / "sources", knowledge=empty / "knowledge",
+                                  postgres=settings.postgres)
     else:
         services = build_services(postgres=settings.postgres)
     registry = build_registry(services)
@@ -177,11 +185,39 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         owner = Identity(id=OWNER_ID, email=email.lower(), name=settings.local_user_name or "You", role="Owner (local test)",
                          entitlements={system: SystemRights(reports=["*"], markets=["*"]) for system in
                                        [*(s.id for s in services.catalog.systems), *(["postgresql"] if services.postgres else [])]})
-        identities = IdentityDirectory([owner, *[i for i in identities.all() if not owner.email or i.email != owner.email]])
+        others = [] if settings.desktop else [i for i in identities.all() if not owner.email or i.email != owner.email]
+        identities = IdentityDirectory([owner, *others])
     interrupted = store.mark_interrupted()
     secret_box = SecretBox()
     runtime = runtime or build_runtime(settings, secret_box, registry.scopes())
     manager = RunManager(settings, store, registry, services, runtime)
+    kb = kb_source(settings)
+    activity = {"last": time.monotonic()}
+
+    def knowledge_status() -> dict[str, Any]:
+        return knowledge_sync.status(settings.data_dir, kb, loaded_content)
+
+    def restart_if_idle(quiet_s: float) -> bool:
+        """Desktop app only: exit so WizardBar restarts the service on the newer knowledge base, when nobody is using it."""
+        request_restart = getattr(app.state, "request_restart", None)
+        if (request_restart is None or manager.active or time.monotonic() - activity["last"] < quiet_s
+                or not knowledge_status().get("restart_pending")):
+            return False
+        log.info("restarting to load the new knowledge-base version")
+        request_restart()
+        return True
+
+    async def sync_knowledge_forever() -> None:
+        while True:
+            await asyncio.sleep(settings.kb_sync_minutes * 60)
+            result = await asyncio.to_thread(knowledge_sync.sync, kb, settings.data_dir, proxy=settings.proxy)
+            if not result.ok:
+                log.warning("knowledge base: %s", result.message)
+            restart_if_idle(KB_IDLE_RESTART_S)
+
+    async def restart_when_idle() -> None:
+        while not restart_if_idle(KB_IDLE_RESTART_S):
+            await asyncio.sleep(60)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -191,7 +227,14 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
                      runtime.label(), settings.model, settings.data_dir, settings.proxy or "resolved per request")
         if interrupted:
             log.warning("%d run(s) were interrupted by a restart and marked failed", interrupted)
+        background = []
+        if kb and settings.desktop and settings.kb_sync_minutes:
+            background.append(asyncio.create_task(sync_knowledge_forever()))
+        if kb and settings.desktop:
+            background.append(asyncio.create_task(restart_when_idle()))
         yield
+        for task in background:
+            task.cancel()
         await manager.shutdown()
 
     app = FastAPI(title="Wizard", version=__version__, lifespan=lifespan, docs_url=None, redoc_url=None,
@@ -230,6 +273,8 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
             if request.headers.get(REQUEST_HEADER) != "1" or (origin and not same_origin(origin, request)):
                 return _secure(JSONResponse({"error": "Request blocked: missing Wizard request header or foreign origin."},
                                             status_code=403))
+        if path.startswith("/api/") and path not in ("/api/v1/health", "/api/v1/ready"):
+            activity["last"] = time.monotonic()
         request.state.identity = identity_of(request) if path.startswith("/api/") else None
         if path.startswith("/api/") and path not in PUBLIC_PATHS and request.state.identity is None:
             return _secure(JSONResponse({"error": "Sign in to use Wizard.", "login_required": True}, status_code=401))
@@ -259,8 +304,12 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
 
     @app.get("/api/v1/ready")
     async def ready() -> dict[str, Any]:
-        checks = {"store": True, "catalog": bool(services.catalog.systems), "runtime": runtime.kind,
-                  "content": str(settings.content_dir) if settings.content_dir else "synthetic (built-in)",
+        # Real content may hold knowledge notes only; the synthetic examples must always have platforms.
+        checks = {"store": True, "catalog": bool(services.catalog.systems) or bool(settings.content_dir or kb),
+                  "runtime": runtime.kind,
+                  "content": str(settings.content_dir) if settings.content_dir else
+                  ("knowledge base not synced yet" if kb else "synthetic (built-in)"),
+                  "knowledge_base": knowledge_status(), "provision": settings.provision,
                   "runtime_label": runtime.label(), "secret_store": secret_box.kind, "auth_mode": settings.auth_mode,
                   "frontend_built": (settings.web_dist / "index.html").is_file()}
         return {"ready": all(v for k, v in checks.items() if isinstance(v, bool) and k != "frontend_built"), "checks": checks}
@@ -285,7 +334,7 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
     async def bootstrap(request: Request) -> dict[str, Any]:
         identity: Identity | None = request.state.identity
         base: dict[str, Any] = {"version": __version__, "auth": {"mode": settings.auth_mode, "login_required": identity is None},
-                                "suggestions": SUGGESTIONS}
+                                "suggestions": [] if settings.content_dir or kb else SUGGESTIONS}
         if identity is None:
             return base
         store.touch_user(identity.id, identity.email, identity.name, identity.role)
@@ -642,6 +691,11 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         if not info["email"]:
             store.audit(identity.id, "gemini:link", outcome="no_email")
             raise HTTPException(400, "Google did not say which account signed in. Start the link again.")
+        domain = info["email"].rsplit("@", 1)[-1].lower()
+        if settings.google_domains and domain not in settings.google_domains:
+            store.audit(identity.id, "gemini:link", outcome="domain_not_allowed")
+            raise HTTPException(403, f"{info['email']} is not a company account. Sign in with your work Google account "
+                                     f"({', '.join('@' + d for d in settings.google_domains)}).")
         if identity.id == OWNER_ID:
             if info["email"].lower() != identity.email.lower():
                 identity = identity.model_copy(update={"email": info["email"].lower()})
@@ -720,6 +774,41 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
             return {"ok": False, "text": json.dumps({"error": {"code": "wrong_server", "message": f"{name} is not served here."}})}
         outcome = await manager.execute_tool(run.id, name, body.arguments)
         return {"ok": outcome.ok, "text": outcome.as_text()}
+
+    # Desktop control API for WizardBar ----------------------------------------------------------------------------------
+    def desktop_control(request: Request) -> None:
+        if not settings.control_token:
+            raise HTTPException(404, "Not available.")
+        if not _is_loopback(request.client.host if request.client else None):
+            raise HTTPException(403, "Desktop control is loopback only.")
+        if not hmac.compare_digest(request.headers.get("x-wizard-control", ""), settings.control_token):
+            raise HTTPException(401, "Invalid control token.")
+
+    @app.get("/internal/v1/desktop/status")
+    def desktop_status(request: Request) -> dict[str, Any]:
+        desktop_control(request)
+        return {"version": __version__, "runtime": runtime.kind, "active_runs": len(manager.active),
+                "knowledge_base": knowledge_status(), "provision": settings.provision,
+                "postgres": bool(services.postgres), "content": "knowledge base" if kb else
+                ("folder" if settings.content_dir else "synthetic")}
+
+    @app.post("/internal/v1/desktop/sync")
+    async def desktop_sync(request: Request) -> dict[str, Any]:
+        desktop_control(request)
+        result = await asyncio.to_thread(knowledge_sync.sync, kb, settings.data_dir, proxy=settings.proxy)
+        # Asked for by the person at this PC: restart now unless a question is running (then when it finishes).
+        restarting = result.ok and bool(knowledge_status().get("restart_pending")) and restart_if_idle(0)
+        return {"outcome": result.outcome, "message": result.message, "commit": result.commit, "restarting": restarting,
+                "knowledge_base": knowledge_status()}
+
+    @app.post("/internal/v1/desktop/stop")
+    def desktop_stop(request: Request) -> dict[str, Any]:
+        desktop_control(request)
+        request_stop = getattr(app.state, "request_stop", None)
+        if request_stop is None:
+            raise HTTPException(409, "This service was not started by the desktop app.")
+        request_stop()
+        return {"stopping": True}
 
     # Frontend ----------------------------------------------------------------------------------------------------------
     @app.get("/{path:path}", include_in_schema=False)

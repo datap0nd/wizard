@@ -9,6 +9,6 @@ const report = location.pathname.match(/^\/r\/([A-Za-z0-9_-]{4,64})\/?$/);
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <TooltipProvider delayDuration={250}>{report ? <ReportPage id={report[1]} /> : <App />}</TooltipProvider>
+    <TooltipProvider delayDuration={250}>{report ? <ReportPage id={report[1]} /> : <App compact={/^\/quick\/?$/.test(location.pathname)} />}</TooltipProvider>
   </StrictMode>,
 );

@@ -1,8 +1,9 @@
 # wizard-content (template)
 
-The real platform documentation and report catalogs Wizard's Gemini reads. **This folder becomes its own internal
-repository on the corporate Git server** (or an approved share). It must not be pushed to a personal GitHub account:
-report names, column names and platform notes are internal company metadata.
+The real platform documentation and report catalogs Wizard's Gemini reads. **This folder becomes its own private
+repository in the company's GitHub organisation** (or on the corporate Git server, or an approved share). It must not
+be pushed to a personal account or a public repository: report names, column names and platform notes are internal
+company metadata. The desktop app syncs it with a read-only token ([Wizard docs/desktop.md](https://github.com/datap0nd/wizard/blob/main/docs/desktop.md)).
 
 ```
 wizard-content/

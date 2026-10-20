@@ -31,6 +31,16 @@ dated web reports. Every number links to the rows it came from, and every answer
 | ASAP MicroStrategy Library REST client | Groundwork only, not validated against the tenant; ASAP stays NAVIGATION_ONLY for live use |
 | Real platform documentation | `WIZARD_CONTENT_DIR` loads an internal wizard-content repo (template in `templates/content/`, Gemini CLI authoring commands, validator); real reports are navigation-only (PostgreSQL is queried directly, above) | Working; no real content yet |
 | Corporate SSO | Trusted-header mode implemented for an SSO reverse proxy; not connected to a real IdP |
+| Desktop app (WizardBar) | An always-on **Ask Wizard** tab at the top of the screen, Ctrl+Alt+W, and a panel with the compact view (`/quick`) in WebView2. A tray menu, a notification when an answer arrives, and self-update. It runs and watches the local service (`run.py --desktop`, code-assist runtime). One per-user `WizardSetup.exe` (Inno Setup, like Scribble) with portable Python. CI builds it on Windows and publishes it to `desktop-continuous` on `main`. [docs/desktop.md](docs/desktop.md) | Service, `/quick` and installer tested (unit, browser, Windows CI smoke install); WizardBar compiles; its windows first run on a work PC |
+| Knowledge base from a private GitHub repository | `WIZARD_KB_REPO` + a read-only fine-grained token. Syncs at start-up and every 30 minutes with a conditional request, validates each commit before using it, keeps the previous version, and restarts onto a new one when idle. Users never see the repository | Tested against a fake GitHub; the real repository is first synced on a work PC |
+| Provisioning file | `wizard.provision` (made with `scripts/make_provision.py`) carries the company settings and credentials: the knowledge-base token, the read-only PostgreSQL account, the Gemini project, `WIZARD_GOOGLE_DOMAINS`. Imported once, with secrets kept by DPAPI; never in the public installer | Unit-tested |
+
+## Desktop app (for the people who ask questions)
+
+Run `WizardSetup.exe` from the [desktop-continuous release](https://github.com/datap0nd/wizard/releases/tag/desktop-continuous)
+with the company's `wizard.provision` in the same folder. No admin rights are needed. An **Ask Wizard** tab appears at
+the top of the screen, and Ctrl+Alt+W opens it from any app. Owner guide: knowledge-base repository, token,
+provisioning file, updates. See [docs/desktop.md](docs/desktop.md).
 
 ## Work PC (install, test, update)
 
@@ -88,7 +98,9 @@ The real-CLI tests need the pinned CLI: `npm --prefix .tools install @google/gem
 ## Layout
 
 ```
-apps/web/             React/TypeScript UI (Vite, Tailwind, Radix, ECharts) and Playwright E2E
+apps/web/             React/TypeScript UI (Vite, Tailwind, Radix, ECharts) and Playwright E2E; /quick is the desktop panel
+apps/desktop/         WizardBar (C#, .NET Framework 4.8, WebView2): the always-on button, panel, tray and updater
+installer/            Inno Setup script for WizardSetup.exe
 services/api/         FastAPI: sessions, run manager + SSE stream, reports, sources, Gemini account linking
 services/agent/       Gemini CLI runtime, Code Assist runtime, replay runtime, Google OAuth, prompts
 services/connectors/  Source contracts, entitlements, read-only tools, MCP stdio shim, ASAP Library REST client

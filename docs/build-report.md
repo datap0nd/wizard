@@ -3,6 +3,73 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
+## 2026-10-20 — Desktop app: always-on button, knowledge base from a private GitHub repository
+
+The owner wants Wizard always on: a button at the top of the screen that opens a prompt box. The knowledge base lives
+in a private enterprise GitHub repository that only the owner sees, each person signs in to Gemini with their own
+account, and a read-only PostgreSQL account and other company settings are stored in the app. The owner pointed to
+Scribble's installer as the model. See the [decision](decisions/2026-10-20-desktop-app.md) and the
+[owner guide](desktop.md).
+
+**What was added.**
+- **WizardBar** (`apps/desktop/WizardBar`, C# .NET Framework 4.8, WebView2 1.0.2903.40 as in Scribble):
+  - a per-pixel-alpha tab hanging from the top edge of the main screen; it never takes the focus, steps aside for
+    full-screen apps and slide shows, can be dragged, and shows starting, working, answered and stopped states;
+  - a borderless, resizable panel with `/quick`; only Wizard's own local pages load inside, other links open in the
+    browser, and Esc hides it;
+  - the tray menu, Ctrl+Alt+W, and a balloon when an answer arrives while hidden;
+  - supervision of `run.py --desktop`: restart on exit code 75, a back-off after crashes, a health watchdog, and
+    leftover-process clean-up;
+  - an updater from the `desktop-continuous` release that checks size, SHA-256 and version, and never downgrades.
+- **Installer and CI.**
+  - `installer/Wizard.iss` installs per user, with no admin rights, and picks up `wizard.provision` placed next to it.
+  - `scripts/build_desktop_payload.py` assembles the app code, the embeddable Python and the vendored wheels, from the
+    same SHA-256-locked archives `setup.ps1` uses.
+  - `.github/workflows/desktop.yml` (Windows) builds the bar and the payload, starts the packaged service, checks
+    `/quick` and the control API, builds `WizardSetup.exe`, installs it silently, runs `--check` and uninstalls it.
+    On `main` it publishes to `desktop-continuous`, and never over a newer build.
+- **Service.**
+  - `run.py --desktop` (`wizard_api/desktop.py`):
+    - adds missing `.env` defaults: code-assist, port 8771, diagnostics off;
+    - imports the provisioning file and syncs the knowledge base before serving;
+    - logs to `%LOCALAPPDATA%\Wizard\logs`, beside WizardBar's own log;
+    - signs in the local Owner only.
+  - `/internal/v1/desktop/{status,sync,stop}` need a per-launch token on loopback.
+  - `wizard_api/knowledge_sync.py` handles the private repository: a conditional commit check, the zipball,
+    path-checked unpacking, the same validation as `WIZARD_CONTENT_DIR`, an atomic switch, the previous version kept,
+    and errors explained.
+  - Background sync runs every 30 minutes, with a restart onto a new version after 10 idle minutes. With a knowledge
+    base configured, the synthetic catalog and demonstration questions are never shown.
+- **Provisioning** (`wizard_api/provisioning.py`, `scripts/make_provision.py`, `run.py --import-provision`):
+  - company settings sit under the PC's `.env`;
+  - `_PASSWORD`, `_TOKEN`, `_SECRET` and `_KEY` values go to the SecretBox (DPAPI on Windows);
+  - per-PC keys are refused;
+  - the plaintext file is deleted after the import.
+- `WIZARD_GOOGLE_DOMAINS` refuses a Gemini link from a non-company Google account.
+- **Web.**
+  - `/quick` is the compact view: header, conversation, composer, and the account prompt first.
+  - Messages go to the WebView2 host (busy, finished, hide), and the composer focuses when the panel opens.
+  - "Open in a full window" links to `/?c=<conversation>`.
+  - A single local Owner identity signs in without the picker.
+- **Guards.**
+  - `scan_secrets.py` flags fine-grained GitHub tokens and refuses `.provision` files.
+  - The content validator flags GitHub tokens.
+  - `.gitignore` excludes `*.provision` and `company.env`.
+
+**Tests.** `scripts/verify_all.sh --allow-blocked=live-parity,postgres,gemini-cli` in a Linux sandbox:
+- PASS: spec, secrets, contracts, lint, types, python-tests (257 passed), evals-schema, web-types, web-unit (14),
+  web-dist and web-build.
+- BLOCKED: gemini-cli and postgres (not installed in the sandbox), and live-parity.
+- e2e: the layer FAILs in the sandbox because Playwright 1.63 wants Chromium 1243 and the sandbox has 1194. Run with
+  the sandbox's Chromium (`launchOptions.executablePath`), all 16 browser tests pass, including the new compact-view
+  test on both viewports.
+- New: `tests/unit/test_desktop.py` (26 tests) covers provisioning, the sync against a fake GitHub, desktop start-up, a
+  real `run.py --desktop` process stopped through the control API, the domain rule, and the C#, installer, CI and
+  Python pieces naming the same files and codes.
+- WizardBar compiles with warnings as errors (`dotnet build`, .NET SDK 8 on Linux against the .NET Framework 4.8
+  reference assemblies). Its windows have not run yet: the first run is on a work PC. The Windows workflow runs on the
+  next push.
+
 ## 2026-10-12 — Big Data Portal: discovery task and `bdp-check`
 
 The owner wants the Big Data Portal (BDP) as another platform. BDP is not a report platform: people request access to

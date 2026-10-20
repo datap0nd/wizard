@@ -22,6 +22,10 @@ around a precomputed result is withdrawn. Its credential, entitlement, DLP and h
   part of the evidence. Never label it verified.
 - Run each Gemini request under the requesting user's own enterprise identity, with isolated per-user state
   (`GEMINI_CLI_HOME` + `GEMINI_FORCE_FILE_STORAGE=true`, or the per-user Code Assist token).
+- Keep company content (knowledge notes, report catalogs) in the owner's private enterprise GitHub repository, which the
+  desktop app reads with a read-only token, or in a local `content\` folder. Company settings and credentials reach a
+  PC only in the provisioning file (`wizard.provision`), stored with DPAPI on import. See
+  [docs/decisions/2026-10-20-desktop-app.md](docs/decisions/2026-10-20-desktop-app.md) and [docs/desktop.md](docs/desktop.md).
 - Work one numbered plan step or small ticket at a time ([docs/issue-board.md](docs/issue-board.md)). Name the files
   changed and commands run. Report passing, failing and BLOCKED tests honestly. Update
   [docs/build-report.md](docs/build-report.md) and the README "What runs today" table when behaviour changes.
@@ -38,8 +42,9 @@ around a precomputed result is withdrawn. Its credential, entitlement, DLP and h
   `wizard_query_postgresql` runs Gemini's own SELECT. It sends one statement as a subquery, in a READ ONLY
   transaction that is always rolled back, on a fresh connection closed after each call, under a read-only account.
   Keep all of those protections.
-- Commit corporate exports, live rows, credentials, tokens, cookies, `.env`, the DLP-blocked DOCX, raw model/source
-  logs, or owner reference answers. Live references live in the approved private location; CI sees safe IDs only.
+- Commit corporate exports, live rows, credentials, tokens, cookies, `.env`, `*.provision`, the DLP-blocked DOCX, raw
+  model/source logs, or owner reference answers. Live references live in the approved private location; CI sees safe
+  IDs only. Never build a password or token into WizardSetup.exe or a release: they are public.
 - Use copied browser cookies, TLS bypass, `/mstr` event URLs or a debugging browser as a production connector.
 - Present SYNTHETIC output as live, call a navigation-only report a data connection, upgrade an unchecked figure to
   checked, call an investment-efficiency proxy "ROI", or describe observed Smart Switch counts as all switchers.
@@ -54,7 +59,9 @@ scripts/verify_all.sh --allow-blocked=live-parity            # CI: it runs a Pos
 scripts/verify_all.sh --allow-blocked=live-parity,postgres   # locally, without a PostgreSQL test server
 ```
 
-If you change a tool or the API, run `uv run python scripts/export_contracts.py` and review the contract diff. If you
+If you change a tool or the API, run `uv run python scripts/export_contracts.py` and review the contract diff. If you change
+`apps/desktop`, run `dotnet build apps/desktop/WizardBar/WizardBar.csproj -c Release` (warnings are errors); the `desktop`
+workflow also builds, installs and smoke-tests WizardSetup.exe on Windows. If you
 change fixtures, run `scripts/fixture_reset.sh`; goldens are re-derived independently by `verify_spec.py`.
 
 Runtime notes for agents working in this repo on Windows work PCs: Application Control blocks some unsigned native

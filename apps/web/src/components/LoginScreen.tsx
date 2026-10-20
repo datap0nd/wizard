@@ -6,7 +6,14 @@ import {api} from '@/api';
 export function LoginScreen({mode, onLogin}: {mode: 'fixture' | 'trusted-header'; onLogin: () => void}) {
   const [identities, setIdentities] = useState<{id: string; name: string; role: string; email: string}[]>([]);
   const [notice, setNotice] = useState('');
-  useEffect(() => { if (mode === 'fixture') api.identities().then(r => { setIdentities(r.identities); setNotice(r.notice); }).catch(() => undefined); }, [mode]);
+  useEffect(() => {
+    if (mode !== 'fixture') return;
+    api.identities().then(async r => {
+      // The desktop app has one identity, the person at this PC: sign in without asking.
+      if (r.identities.length === 1 && r.identities[0].id === 'local-owner') { await api.login('local-owner'); onLogin(); return; }
+      setIdentities(r.identities); setNotice(r.notice);
+    }).catch(() => undefined);
+  }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div className="grid min-h-dvh place-items-center bg-page p-6">
       <div className="w-[min(520px,100%)] rounded-card border border-line bg-canvas p-8 shadow-card" data-testid="login">

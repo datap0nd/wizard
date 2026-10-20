@@ -137,3 +137,34 @@ test('Email opens an Outlook draft with the question, the answer, the time taken
   expect((await download).suggestedFilename()).toMatch(/^Wizard - Which market gave us the best return.*\.eml$/);
   await expect(page.getByRole('status').filter({hasText: 'downloaded instead'})).toBeVisible();
 });
+
+test('the compact desktop view answers and tells its Windows host what happened', async ({page}) => {
+  // WizardBar hosts /quick in WebView2: stand in for window.chrome.webview and record what the page sends.
+  await page.addInitScript(() => {
+    const sent: unknown[] = [];
+    const listeners: ((event: {data: unknown}) => void)[] = [];
+    Object.assign(window, {
+      __sent: sent,
+      __fromHost: (data: unknown) => listeners.forEach(listener => listener({data})),
+      chrome: {webview: {postMessage: (message: unknown) => sent.push(message),
+        addEventListener: (_: string, listener: (event: {data: unknown}) => void) => listeners.push(listener), removeEventListener: () => undefined}},
+    });
+  });
+  await signIn(page, 'u-ceo');
+  await page.goto('/quick');
+  await expect(page.getByTestId('quick-header')).toBeVisible();
+  await page.getByTestId('suggestion').filter({hasText: CEO}).click();
+  const card = page.getByTestId('run-card').first();
+  await expect(card).toHaveAttribute('data-status', 'succeeded', {timeout: 30_000});
+  await expect(card.getByTestId('answer')).toContainText('not proven ROI');
+  const sent = await page.evaluate(() => (window as unknown as {__sent: unknown[]}).__sent);
+  expect(sent).toContainEqual({type: 'busy', busy: true});
+  expect(sent).toContainEqual(expect.objectContaining({type: 'finished', ok: true, question: expect.stringMatching(CEO)}));
+  await page.keyboard.press('Escape');
+  await expect.poll(() => page.evaluate(() => (window as unknown as {__sent: unknown[]}).__sent.at(-1))).toEqual({type: 'hide'});
+  const full = await page.getByTestId('open-full').getAttribute('href');
+  expect(full).toMatch(/^\/\?c=/);
+  await page.goto(full!);
+  await expect(page.getByTestId('run-card').first().getByTestId('answer')).toContainText('not proven ROI');
+  await expect(page).toHaveURL(/\/$/);
+});

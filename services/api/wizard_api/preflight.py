@@ -148,7 +148,22 @@ def run_checks(settings: Settings) -> int:
     gemini_ok = True
     print("Wizard installation check", flush=True)
     _line("INFO", f"runtime {settings.runtime} | model {settings.model} | auth {settings.auth_mode} | port {settings.port}")
-    _line("INFO", f"data {settings.data_dir} | content {settings.content_dir or 'built-in SYNTHETIC examples'}")
+    content = settings.content_dir or ("none yet (knowledge base not synced)" if settings.kb_repo else "built-in SYNTHETIC examples")
+    _line("INFO", f"data {settings.data_dir} | content {content}")
+    if settings.provision.get("imported"):
+        unreadable = settings.provision.get("unreadable_secrets") or []
+        _line("WARN" if unreadable else "PASS",
+              f"provisioning {settings.provision.get('name') or ''} imported {settings.provision.get('imported_at')}"
+              + (f"; cannot decrypt {', '.join(map(str, unreadable))} on this account: import the file again" if unreadable else ""))
+    if settings.kb_repo:
+        from .config import kb_source
+        from .knowledge_sync import status as kb_status
+        kb = kb_status(settings.data_dir, kb_source(settings), settings.content_dir)
+        commit = str(kb.get("commit") or "")[:12] or "not synced"
+        _line("PASS" if kb.get("commit") and not kb.get("last_error") else "WARN",
+              f"knowledge base {settings.kb_repo}@{settings.kb_ref}: {commit}"
+              + (f" ({kb['last_error']})" if kb.get("last_error") else "")
+              + ("" if settings.kb_token else " - no WIZARD_KB_TOKEN"))
     if settings.html_reports_dir:
         count = sum(1 for p in settings.html_reports_dir.rglob("*") if p.suffix.lower() in (".html", ".htm") and p.is_file())
         _line("INFO", f"HTML reports {settings.html_reports_dir} ({count} HTML file{'' if count == 1 else 's'})")

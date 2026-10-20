@@ -25,6 +25,7 @@ SECRET_PATTERNS = {
     "Google refresh token": re.compile(r"1//0[0-9A-Za-z_\-]{30,}"),
     "OAuth client secret": re.compile(r"GOCSPX-[0-9A-Za-z_\-]{20,}"),
     "private key": re.compile(r"-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----"),
+    "GitHub token": re.compile(r"(gh[pousr]_[0-9A-Za-z]{30,}|github_pat_[0-9A-Za-z_]{50,})"),
     "password assignment": re.compile(r"(?i)(password|passwd|pwd)\s*[:=]\s*['\"][^'\"\s]{6,}['\"]"),
     "MicroStrategy auth token": re.compile(r"X-MSTR-AuthToken:\s*[0-9a-z]{20,}"),
 }

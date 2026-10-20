@@ -18,11 +18,13 @@ interface Props {
   /** Set when "From this PC" is available (local installs). */
   onLocal?: () => void;
   onRemoveFile?: (key: string) => void;
+  /** Focus the box again whenever this number changes (the desktop panel was shown). */
+  focusSignal?: number;
 }
 
 /** B2B composer: one rounded surface growing to six lines; Enter submits, Shift+Enter adds a line, IME-safe. Files
  * attached here are read by Wizard before the question is sent. */
-export function Composer({onSubmit, busy, draft, onDraftChange, placeholder, disabledReason, files = [], onFiles, onLocal, onRemoveFile}: Props) {
+export function Composer({onSubmit, busy, draft, onDraftChange, placeholder, disabledReason, files = [], onFiles, onLocal, onRemoveFile, focusSignal}: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const [composing, setComposing] = useState(false);
@@ -33,7 +35,7 @@ export function Composer({onSubmit, busy, draft, onDraftChange, placeholder, dis
     el.style.height = 'auto';
     el.style.height = Math.min(24 * 6 + 20, Math.max(44, el.scrollHeight)) + 'px';
   }, [draft]);
-  useEffect(() => { ref.current?.focus({preventScroll: true}); }, []);
+  useEffect(() => { ref.current?.focus({preventScroll: true}); }, [focusSignal]);
 
   async function submit() {
     const text = draft.trim();

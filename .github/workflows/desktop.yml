@@ -1,0 +1,149 @@
+# The desktop app: WizardBar (C#, WebView2) + the portable Python service, packaged by Inno Setup as WizardSetup.exe.
+# Every push and pull request builds and smoke-tests the installer on Windows. A push to main also publishes it to the
+# desktop-continuous release, where the in-app updater (WizardBar/Updater.cs) finds it. No credentials are involved:
+# company settings travel separately in wizard.provision (docs/desktop.md).
+name: desktop
+
+on:
+  pull_request:
+  push:
+    branches: [main, "claude/**"]  # claude/** : agent branches get the Windows build before any PR exists
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  installer:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Version
+        shell: pwsh
+        run: |
+          "WIZARD_DESKTOP_VERSION=1.0.${{ github.run_number }}" >> $env:GITHUB_ENV
+
+      - name: Build WizardBar
+        shell: pwsh
+        run: |
+          dotnet build apps/desktop/WizardBar/WizardBar.csproj -c Release `
+            "-p:Version=$env:WIZARD_DESKTOP_VERSION" "-p:FileVersion=$env:WIZARD_DESKTOP_VERSION.0" `
+            "-p:InformationalVersion=${{ github.sha }}" -o artifacts/desktop/payload/bar
+          if ($LASTEXITCODE -ne 0) { throw "WizardBar build failed" }
+          foreach ($file in @('WizardBar.exe', 'Microsoft.Web.WebView2.Core.dll', 'Microsoft.Web.WebView2.WinForms.dll',
+                              'runtimes/win-x64/native/WebView2Loader.dll')) {
+            if (-not (Test-Path "artifacts/desktop/payload/bar/$file")) { throw "Missing $file in the WizardBar build" }
+          }
+          $version = (Get-Item artifacts/desktop/payload/bar/WizardBar.exe).VersionInfo.FileVersion
+          if ($version -ne "$env:WIZARD_DESKTOP_VERSION.0") { throw "WizardBar.exe has version $version" }
+
+      - name: Assemble the payload (portable Python + locked libraries, SHA-256 checked)
+        run: python scripts/build_desktop_payload.py --out artifacts/desktop/payload --commit ${{ github.sha }}
+
+      - name: Smoke-test the packaged service on Windows
+        shell: pwsh
+        run: |
+          $python = Resolve-Path artifacts/desktop/payload/runtime/python/python.exe
+          $run = Resolve-Path artifacts/desktop/payload/app/run.py
+          $home_ = Join-Path $env:RUNNER_TEMP 'wizard-home'
+          $env:WIZARD_PORT = '8781'
+          $env:WIZARD_CONTROL_TOKEN = 'ci-control-token-0123456789abcdef0123456789'
+          $env:WIZARD_PROXY = 'direct'
+          $service = Start-Process -FilePath $python -ArgumentList "-X utf8 `"$run`" --home `"$home_`" --desktop" -PassThru -NoNewWindow
+          $ready = $false
+          for ($i = 0; $i -lt 120 -and -not $service.HasExited; $i++) {
+            try { if ((Invoke-WebRequest http://127.0.0.1:8781/api/v1/health -UseBasicParsing -TimeoutSec 2).StatusCode -eq 200) { $ready = $true; break } } catch { }
+            Start-Sleep -Milliseconds 500
+          }
+          if (-not $ready) { Get-Content (Join-Path $home_ 'logs/wizard.log') -ErrorAction SilentlyContinue; throw 'The packaged service did not start' }
+          $headers = @{ 'X-Wizard-Control' = $env:WIZARD_CONTROL_TOKEN; 'X-Wizard-Request' = '1' }
+          $status = Invoke-RestMethod http://127.0.0.1:8781/internal/v1/desktop/status -Headers $headers
+          if ($status.runtime -ne 'code-assist') { throw "Unexpected runtime $($status.runtime)" }
+          $page = Invoke-WebRequest http://127.0.0.1:8781/quick -UseBasicParsing
+          if ($page.Content -notmatch '<div id="root">') { throw 'The web app is not served' }
+          Invoke-RestMethod http://127.0.0.1:8781/internal/v1/desktop/stop -Method Post -Headers $headers -ContentType 'application/json' -Body '{}' | Out-Null
+          if (-not $service.WaitForExit(30000)) { $service.Kill(); throw 'The service did not stop when asked' }
+          Write-Host "Packaged service started, served /quick and stopped (exit $($service.ExitCode))."
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress --yes
+
+      - name: Build WizardSetup.exe
+        shell: pwsh
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$env:WIZARD_DESKTOP_VERSION" installer\Wizard.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed" }
+
+      - name: Smoke-test a silent install and uninstall
+        shell: pwsh
+        run: |
+          $setup = Resolve-Path artifacts/desktop/WizardSetup.exe
+          $p = Start-Process $setup -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /NOLAUNCH=1 /TASKS=""' -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "Setup exited with $($p.ExitCode)" }
+          $app = Join-Path $env:LOCALAPPDATA 'Programs\Wizard'
+          foreach ($file in @('bar\WizardBar.exe', 'app\run.py', 'runtime\python\python.exe', 'app\apps\web\dist\index.html')) {
+            if (-not (Test-Path (Join-Path $app $file))) { throw "Not installed: $file" }
+          }
+          & (Join-Path $app 'runtime\python\python.exe') (Join-Path $app 'app\run.py') --home (Join-Path $env:RUNNER_TEMP 'check-home') --check
+          if ($LASTEXITCODE -ge 2) { throw "Installed Wizard failed its check" }
+          $u = Start-Process (Join-Path $app 'unins000.exe') -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' -PassThru -Wait
+          if ($u.ExitCode -ne 0) { throw "Uninstall exited with $($u.ExitCode)" }
+          Write-Host 'Installed, checked and uninstalled.'
+
+      - name: Release manifest
+        shell: pwsh
+        run: |
+          $setup = Get-Item artifacts/desktop/WizardSetup.exe
+          $version = $setup.VersionInfo.FileVersion
+          if ($version -ne "$env:WIZARD_DESKTOP_VERSION.0") { throw "WizardSetup.exe has version $version" }
+          $manifest = [ordered]@{
+            version = $version; commit = '${{ github.sha }}'; installer = 'WizardSetup.exe'
+            installer_sha256 = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLowerInvariant(); size = $setup.Length
+          }
+          $manifest | ConvertTo-Json | Set-Content artifacts/desktop/wizard-desktop.json -Encoding utf8NoBOM
+          Get-Content artifacts/desktop/wizard-desktop.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WizardSetup
+          path: |
+            artifacts/desktop/WizardSetup.exe
+            artifacts/desktop/wizard-desktop.json
+          retention-days: 14
+
+  publish:
+    needs: installer
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency: desktop-publish
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: WizardSetup
+          path: dist
+      - name: Publish to the desktop-continuous release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release view desktop-continuous >/dev/null 2>&1 || gh release create desktop-continuous --latest=false \
+            --target "${{ github.sha }}" --title "Wizard desktop (continuous)" \
+            --notes "WizardSetup.exe from the newest main. Wizard's Update menu installs it; see docs/desktop.md."
+          # Never replace a newer build (two pushes in a row can finish out of order).
+          published=$(gh release download desktop-continuous -p wizard-desktop.json -O - 2>/dev/null || echo '{"version": "0"}')
+          if ! python3 -c 'import json, sys; v = lambda s: tuple(int(x) for x in json.loads(s)["version"].split("."))
+          sys.exit(0 if v(open("dist/wizard-desktop.json").read()) > v(sys.argv[1]) else 1)' "$published"; then
+            echo "The release already has a newer build; nothing published."; exit 0
+          fi
+          # Installer first, manifest last: an updater reading the new manifest then finds the matching installer.
+          gh release upload desktop-continuous dist/WizardSetup.exe --clobber
+          gh release upload desktop-continuous dist/wizard-desktop.json --clobber
