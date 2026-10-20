@@ -67,6 +67,17 @@ def run_title(kind: str, question: str) -> str:
     return KIND_TITLES.get(kind, question)
 
 
+SUMMARY_KEYS = ("id", "system", "system_name", "report_id", "report_name", "folder_path", "data_mode", "as_of",
+                "total_rows", "truncated", "warnings", "access_note", "run_id")
+
+
+def evidence_summary(evidence: dict[str, Any]) -> dict[str, Any]:
+    """One evidence item as the run card and the timeline show it; the drawer loads the rows. The SQL and the report's
+    folders let the card name the real source (the table a query read, the module a report sits in), so fourteen
+    queries on one table read as one source."""
+    return {**{k: evidence.get(k) for k in SUMMARY_KEYS}, "sql": (evidence.get("request") or {}).get("sql")}
+
+
 def public_schedule(schedule: dict[str, Any]) -> dict[str, Any]:
     """A recurring-extraction proposal as the page shows it (who asked is the viewer; never their user id)."""
     shown = {k: v for k, v in schedule.items() if k not in ("requested_by", "conversation_id")}
@@ -356,9 +367,7 @@ class RunManager:
             finished["error_code"] = outcome.error_code
         if outcome.ok and "evidence_id" in outcome.data:
             evidence = self.store.evidence(run.conversation_id, outcome.data["evidence_id"])[0]
-            finished["evidence"] = {k: evidence.get(k) for k in ("id", "system", "system_name", "report_id", "report_name",
-                                                                  "data_mode", "as_of", "total_rows", "truncated",
-                                                                  "warnings", "access_note")}
+            finished["evidence"] = evidence_summary(evidence)
         await self.emit(run, "tool_finished", finished)
         if outcome.ok and "visual_id" in outcome.data:
             visual = self.store.visuals(run.conversation_id, run.id)[-1]

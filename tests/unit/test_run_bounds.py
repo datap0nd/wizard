@@ -5,7 +5,7 @@ import time
 
 from tests.helpers import make_settings
 
-from wizard_api.runs import LOOP_STOP, REPEAT_LIMIT, ActiveRun, RunManager, call_signature, wrap_up_s
+from wizard_api.runs import LOOP_STOP, REPEAT_LIMIT, ActiveRun, RunManager, call_signature, evidence_summary, wrap_up_s
 
 
 def manager(tmp_path, **env: str) -> RunManager:
@@ -70,3 +70,13 @@ def test_signature_ignores_key_order_and_whitespace_only():
     assert call_signature("t", {"a": 1, "b": "x  y"}) == call_signature("t", {"b": "x y", "a": 1})
     assert call_signature("t", {"a": "X"}) != call_signature("t", {"a": "x"}), "case can matter inside SQL literals"
     assert call_signature("t", {}) != call_signature("u", {})
+
+
+def test_an_evidence_summary_carries_what_names_its_source():
+    # The run card groups evidence by the real source: the tables a query's SQL read, a report's module.
+    query = {"id": "E1", "system": "postgresql", "report_name": "SQL query on meto_db", "folder_path": [], "rows": [[1]],
+             "request": {"sql": "SELECT * FROM bi_reporting.sell_in_amt_mv", "database": "meto_db"}}
+    assert evidence_summary(query)["sql"] == "SELECT * FROM bi_reporting.sell_in_amt_mv"
+    assert "rows" not in evidence_summary(query) and "request" not in evidence_summary(query)
+    report = {"id": "E2", "system": "gscm", "report_name": "Sell in", "folder_path": ["Biz Plan"], "request": {"filters": []}}
+    assert evidence_summary(report)["sql"] is None and evidence_summary(report)["folder_path"] == ["Biz Plan"]

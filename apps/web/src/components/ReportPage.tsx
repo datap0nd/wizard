@@ -3,6 +3,7 @@ import {ArrowLeft, Printer} from 'lucide-react';
 import {api, ApiError} from '@/api';
 import {placedVisuals} from '@/citations';
 import {formatDate} from '@/format';
+import {sourceGroups, usesText} from '@/sources';
 import {AnswerMarkdown} from './AnswerMarkdown';
 import {CheckBadge, DataModeBadge, RuntimeBadge} from './Badges';
 import {EvidenceDrawer} from './EvidenceDrawer';
@@ -55,9 +56,10 @@ export function ReportPage({id}: {id: string}) {
         <section className="border-t border-line px-6 py-5 sm:px-8">
           <h2 className="text-sm font-semibold">Sources consulted</h2>
           <ul className="mt-2 space-y-1.5 text-[13px]">
-            {report.evidence.map(e => <li key={e.id} className="flex flex-wrap items-center gap-2">
-              <button type="button" onClick={() => open(e.id)} className="rounded bg-accent-soft px-1.5 text-[11px] font-semibold text-accent">{e.id}</button>
-              <span>{e.system.toUpperCase()} · {e.report_name}</span><span className="text-ink-3">as of {formatDate(e.as_of, true)} · {e.total_rows} rows</span>
+            {sourceGroups(report.evidence).map(s => <li key={s.key} className="flex flex-wrap items-center gap-2" data-testid="report-source">
+              <span>{[s.system, ...s.path].join(' › ')} · <span className={s.kind === 'table' ? 'font-mono text-[12.5px]' : undefined}>{s.name}</span></span>
+              {s.asOf && <span className="text-ink-3">as of {formatDate(s.asOf, true)}</span>}
+              <button type="button" onClick={() => open(s.ids[0])} className="rounded bg-accent-soft px-1.5 text-[11px] font-semibold text-accent">{usesText(s)}</button>
             </li>)}
             {report.evidence.length === 0 && <li className="text-ink-3">No source data was retrieved.</li>}
           </ul>

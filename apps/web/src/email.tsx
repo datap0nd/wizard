@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {citedEvidence, placedVisuals, prepareAnswer} from './citations';
 import {CHECK_TEXT, DATA_MODE_TEXT, formatDate, formatValue} from './format';
+import {sourceGroups} from './sources';
 import type {CheckStatus, DataMode, Evidence, EvidenceSummary, Visual} from './types';
 
 /** The Email button's message: the question, the answer, how long it took and the sources the answer rests on.
@@ -23,91 +24,13 @@ export interface EmailInput {
 export interface EmailDraft { subject: string; html: string }
 export interface SourceLine { system: string; name: string; ids: string[] }
 
-// A parenthesis after one of these words opens a subquery or a list, not a function call such as EXTRACT(... FROM ...).
-const NOT_CALLS = new Set(['as', 'in', 'exists', 'from', 'join', 'lateral', 'on', 'where', 'select', 'and', 'or', 'not',
-  'union', 'all', 'any', 'some', 'with', 'using', 'values', 'then', 'else', 'when', 'case', 'by', 'having', 'except',
-  'intersect', 'materialized', 'recursive']);
-const AFTER_TABLE = new Set(['where', 'join', 'inner', 'left', 'right', 'full', 'cross', 'natural', 'on', 'using', 'group',
-  'order', 'limit', 'offset', 'fetch', 'union', 'except', 'intersect', 'having', 'window', 'tablesample']);
-
-/** Tables and views a SELECT reads, as schema.name, for "which tables did it use". Read only for display: the query
- *  itself is in the evidence. CTE names and set-returning functions are left out. */
-export function sqlRelations(sql: string): string[] {
-  const text = sql.replace(/--[^\n]*/g, ' ').replace(/\/\*[\s\S]*?\*\//g, ' ')
-    .replace(/\$([A-Za-z_][A-Za-z0-9_]*)?\$[\s\S]*?\$\1\$/g, "''").replace(/'(?:[^']|'')*'/g, "''");
-  const tokens = text.match(/"(?:[^"]|"")*"|[A-Za-z_][A-Za-z0-9_$]*|\S/g) ?? [];
-  const isWord = (t?: string) => !!t && /^["A-Za-z_]/.test(t);
-  const lower = (t?: string) => (t ?? '').toLowerCase();
-  const plain = (t: string) => t.startsWith('"') ? t.slice(1, -1).replace(/""/g, '"') : t.toLowerCase();
-  const nameAt = (i: number): [string, number] | null => {
-    if (!isWord(tokens[i]) || NOT_CALLS.has(lower(tokens[i]))) return null;
-    const parts = [plain(tokens[i])];
-    let j = i + 1;
-    while (tokens[j] === '.' && isWord(tokens[j + 1])) { parts.push(plain(tokens[j + 1])); j += 2; }
-    return [parts.join('.'), j];
-  };
-  const closing = (open: number): number => {
-    for (let depth = 0, j = open; j < tokens.length; j++) {
-      depth += tokens[j] === '(' ? 1 : tokens[j] === ')' ? -1 : 0;
-      if (depth === 0) return j;
-    }
-    return tokens.length;
-  };
-  const ctes = new Set<string>();
-  tokens.forEach((t, i) => {
-    if (lower(t) !== 'as') return;
-    let j = i + 1;
-    if (lower(tokens[j]) === 'not') j++;
-    if (lower(tokens[j]) === 'materialized') j++;
-    if (tokens[j] !== '(') return;
-    let k = i - 1;
-    if (tokens[k] === ')') { while (k > 0 && tokens[k] !== '(') k--; k--; }  // name(col, ...) AS (
-    if (isWord(tokens[k])) ctes.add(plain(tokens[k]));
-  });
-  const found: string[] = [];
-  const calls: boolean[] = [];
-  for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i];
-    if (token === '(') { calls.push(isWord(tokens[i - 1]) && !NOT_CALLS.has(lower(tokens[i - 1]))); continue; }
-    if (token === ')') { calls.pop(); continue; }
-    const keyword = lower(token);
-    if ((keyword !== 'from' && keyword !== 'join') || calls[calls.length - 1]) continue;
-    let j = i + 1;
-    for (;;) {  // one FROM item, then more after a comma
-      while (['lateral', 'only'].includes(lower(tokens[j]))) j++;
-      const ref = nameAt(j);
-      if (ref) j = ref[1];
-      if (tokens[j] === '(') j = closing(j) + 1;  // a subquery (the walk reaches its own FROM) or generate_series(...)
-      else if (!ref) break;
-      else if (!ctes.has(ref[0]) && !found.includes(ref[0])) found.push(ref[0]);
-      if (lower(tokens[j]) === 'as') j++;
-      if (isWord(tokens[j]) && !AFTER_TABLE.has(lower(tokens[j]))) j++;  // alias
-      if (tokens[j] === '(') j = closing(j) + 1;  // alias column list
-      if (tokens[j] !== ',') break;
-      j++;
-    }
-  }
-  return found;
-}
-
-/** The sources the answer actually rests on (cited in the text or behind a visual), one line per table or report. */
+/** The sources the answer actually rests on (cited in the text or behind a visual), one line per table, report or file.
+ *  A report names its module (GSCM › Biz Plan). Lookups in the database catalog are not sources. */
 export function finalSources(answer: string, visuals: Visual[], evidence: (Evidence | EvidenceSummary)[]): SourceLine[] {
   const shown = new Set([...citedEvidence(answer), ...visuals.flatMap(v => v.evidence_ids)]);
   const used = evidence.filter(e => shown.has(e.id));
-  const lines = new Map<string, SourceLine>();
-  const add = (system: string, name: string, id: string) => {
-    const line = lines.get(`${system}\n${name}`) ?? {system, name, ids: []};
-    if (!line.ids.includes(id)) line.ids.push(id);
-    lines.set(`${system}\n${name}`, line);
-  };
-  for (const item of used.length ? used : evidence) {
-    const sql = 'request' in item ? item.request?.sql : undefined;
-    const tables = sql ? sqlRelations(sql) : [];
-    const system = item.system_name ?? item.system.toUpperCase();
-    if (tables.length) tables.forEach(table => add(system, table, item.id));
-    else add(system, item.report_name, item.id);
-  }
-  return [...lines.values()];
+  return sourceGroups(used.length ? used : evidence).filter(s => s.kind !== 'catalog')
+    .map(s => ({system: [s.system, ...s.path].join(' › '), name: s.name, ids: s.ids}));
 }
 
 export function tookWords(start: string, end: string | null): string | null {

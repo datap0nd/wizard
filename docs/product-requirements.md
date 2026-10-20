@@ -36,7 +36,9 @@ Unscripted follow-ups and the 30 draft evaluation prompts are in `tests/evals/ca
 - A chart or table when it helps (Gemini decides), with a Data view showing exact values.
 - Data mode (SYNTHETIC / DATED_APPROVED_SNAPSHOT / LIVE_VERIFIED), check status, freshness per source, and which
   sources were consulted, visible without opening anything.
-- **Show sources** (rows, filters, as-of) and **Check my data** (recompute and qualify) on every answer.
+- **Show sources** and **Check my data** (recompute and qualify) on every answer. Show sources lists the real sources
+  once each (a database table, a report in its system's module, an attached file), however often Gemini read them;
+  each opens to its queries, and each query to its SQL or filters, rows and as-of.
 - A dated report with a stable link that reopens only for its owner while their source rights still allow it.
 
 ## Decisions answers support

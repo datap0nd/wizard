@@ -180,18 +180,19 @@ of Wizard on this PC:
   (`gemini-3.1-pro-preview`) as the **fallback model**, as in Gemini CLI. There is no model picker in the app: the owner
   removed it on 20 October 2026, and a model chosen with it before no longer applies. Only the company file, `.env` or
   the environment can set others (`WIZARD_GEMINI_MODEL`, `WIZARD_GEMINI_FALLBACK_MODEL`; `none` turns the fallback off).
-- **When Gemini says no.** Wizard handles Google's refusal the way Gemini CLI does, and the stage shows what it is doing:
+- **When Gemini says no.** Wizard handles Google's refusal the way Gemini CLI does:
   - *No capacity for the model* (Google's side, not your quota): two quick tries (1 s, 3 s), then the rest of the
-    answer comes from the fallback, Pro. As with Gemini CLI's default, this is not an error: the stage notes the switch
-    and the answer's report names the model that answered. For ten minutes new questions start on Pro. If Pro has no
-    capacity either (or no fallback is set), Wizard waits it out: up to 10 tries, 5 to 30 s apart (about 4 minutes),
-    showing each wait. Only then does the answer stop with Google's reason.
+    answer comes from the fallback, Pro. As with Gemini CLI's default, this is silent: no message on the stage (the
+    owner did not want "Google has no capacity" on every question), and the answer's report names the model that
+    answered. For ten minutes new questions start on Pro, also silently. If Pro has no capacity either (or no fallback
+    is set), Wizard waits it out: up to 10 tries, 5 to 30 s apart (about 4 minutes), and the stage shows only "Gemini
+    is busy; trying again in …". Only if every try fails does the answer stop, with Google's reason.
   - *Your quota for the model is used up* (often the daily quota): no waiting. The answer continues on the fallback
     model, until Google's reset time.
   - *Per-minute limit* (Wizard asks Gemini once per step, so a long answer can reach it): Wizard waits as long as
     Google asks, then continues.
-  - The message quotes Google's own words (`Google said: "..."`), and `logs\wizard.log` records each refusal with
-    Google's reason (lines from `wizard.gemini`).
+  - A failure or a quota message quotes Google's own words (`Google said: "..."`), and `logs\wizard.log` records each
+    refusal and each switch of model with Google's reason (lines from `wizard.gemini`).
 - **Update:** Check for updates reads the public release manifest; **Update to 1.0.N** has WizardBar download it, check
   size, SHA-256 and version, install it silently and start again. In a normal browser it offers the download instead.
 

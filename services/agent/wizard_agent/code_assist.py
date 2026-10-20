@@ -10,8 +10,10 @@ Limits are read the way Gemini CLI reads them (packages/core/src/utils/googleQuo
 tell apart a model with no capacity on Google's side, a used-up (daily) quota, and a per-minute rate limit. A used-up
 quota is not waited for. When the chosen model cannot answer, the rest of the run continues on the fallback model, as
 Gemini CLI does (within Gemini 3, Flash and Pro stand in for each other). Like the CLI's default (errorVerbosity low),
-the switch is not an error: the stage notes it, and the run records the model that answered. With no other model to go
-to, Wizard waits for the model like a busy one: Google's capacity usually comes back within a minute or two."""
+a lack of capacity that Wizard handles is not shown: the quick tries and the switch go to the log only, and the run
+records the model that answered. With no other model to go to, Wizard waits for the model like a busy one (Google's
+capacity usually comes back within a minute or two), and the stage says only that Gemini is busy. The person reads
+"no capacity" only when an answer stops for it."""
 from __future__ import annotations
 
 import asyncio
@@ -331,18 +333,16 @@ class CodeAssistRuntime:
                         capacity_tries += 1
                         if capacity_tries > CAPACITY_RETRIES:
                             raise _Unavailable(limit)
-                        delay = limit.delay if limit.delay is not None else (1.0 if capacity_tries == 1 else 3.0)
-                        message = f"Google has no capacity for {model} right now; trying again in {delay:.0f} s."
-                    else:
-                        delay = retry_delay(limit.delay, attempt)
-                        if limit.kind == "capacity":
-                            message = f"Google has no capacity for {model} right now; trying again in {delay:.0f} s"
-                        elif limit.kind == "rate":
-                            message = f"Gemini's per-minute limit for {model} was reached; waiting {delay:.0f} s"
-                        else:
-                            message = f"Gemini is busy; trying again in {delay:.0f} s"
-                        message += f" (attempt {attempt + 1} of {MAX_RETRIES})."
-                    if attempt == 0:
+                        # Two quick tries before the fallback takes over: seconds, so the person is not told.
+                        await sleep(limit.delay if limit.delay is not None else (1.0 if capacity_tries == 1 else 3.0))
+                        continue
+                    delay = retry_delay(limit.delay, attempt)
+                    if limit.kind == "rate":
+                        message = f"Gemini's per-minute limit for {model} was reached; waiting {delay:.0f} s"
+                    else:  # no capacity on the last model reads like a busy server: the wait is what matters
+                        message = f"Gemini is busy; trying again in {delay:.0f} s"
+                    message += f" (attempt {attempt + 1} of {MAX_RETRIES})."
+                    if attempt == 0 and limit.kind != "capacity":
                         message += google_says(limit)
                     await emit("status", {"message": message})
                     await sleep(delay)
@@ -415,7 +415,7 @@ class CodeAssistRuntime:
             chosen = self.model  # the model picker may change self.model; a run keeps the one it started with
             model, rested = self._start_model()
             await emit("agent_session", {"session_id": request.run_id, "model": model, "project": project})
-            if rested:
+            if rested and rested.kind != "capacity":  # a used-up quota is the person's to know; Google's capacity is not
                 await emit("status", {"message": limit_message(rested, chosen, model).replace(" continues ", " answers ")})
             declarations = [{"name": t["name"], "description": t["description"], "parameters": gemini_schema(t["inputSchema"])}
                             for t in tools.describe()]
@@ -441,7 +441,9 @@ class CodeAssistRuntime:
                     if model == chosen:
                         rest = (unavailable.limit.delay or 3600) if unavailable.limit.kind == "quota" else CAPACITY_REST_S
                         self._resting[chosen] = (time.monotonic() + min(rest, 6 * 3600), unavailable.limit)
-                    await emit("status", {"message": limit_message(unavailable.limit, model, fallback)})
+                    log.info("Gemini continues with %s: %s", fallback, limit_message(unavailable.limit, model, fallback))
+                    if unavailable.limit.kind != "capacity":  # as Gemini CLI, a switch for capacity is silent
+                        await emit("status", {"message": limit_message(unavailable.limit, model, fallback)})
                     model = fallback
                     generation = self._generation(model)
                     _skip_signatures(contents)

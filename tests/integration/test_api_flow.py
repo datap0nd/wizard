@@ -31,6 +31,9 @@ def test_event_stream_mirrors_executed_tools(client):
     finished = [e["payload"] for e in events if e["type"] == "tool_finished"]
     assert started_calls == [f["call_id"] for f in finished] and len(finished) == 11
     assert {f["evidence"]["id"] for f in finished if "evidence" in f} == {"E1", "E2", "E3", "E4", "E5"}
+    # The card names the report's module (its folders) and, for a query, the tables its SQL read.
+    first = next(f["evidence"] for f in finished if "evidence" in f)
+    assert first["folder_path"] == ["Marketing"] and first["sql"] is None
     assert "note" in types and "visual_added" in types
     resumed = sse_events(client, started["run_id"], after=events[-3]["seq"])
     assert [e["seq"] for e in resumed] == [e["seq"] for e in events[-2:]]
@@ -44,6 +47,7 @@ def test_report_reopens_after_reload_and_conversation_restores(client):
     restored = conversation["runs"][0]
     assert restored["answer"] == run["answer"] and restored["visuals"][0]["id"] == "V1"
     assert [e["id"] for e in restored["evidence"]] == ["E1", "E2", "E3", "E4", "E5"]
+    assert restored["evidence"][0]["folder_path"] == ["Marketing"] and "sql" in restored["evidence"][0]
     assert any(e["type"] == "tool_finished" for e in restored["events"])
     evidence = client.get(f"/api/v1/conversations/{run['conversation_id']}/evidence/E1").json()["evidence"]
     assert evidence["report_id"] == "nerp-mkt-spend-quarterly" and evidence["rows"]

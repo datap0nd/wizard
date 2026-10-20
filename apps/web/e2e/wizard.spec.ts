@@ -134,7 +134,7 @@ test('Email opens an Outlook draft with the question, the answer, the time taken
   expect(sent[0].subject).toMatch(/^Wizard: Which market gave us the best return/);
   expect(sent[0].html).toContain('Answered by Wizard in');
   expect(sent[0].html).toContain('not proven ROI');
-  expect(sent[0].html).toMatch(/<b>NERP<\/b> [^<]+ <span[^>]*>\(E\d/);
+  expect(sent[0].html).toMatch(/<b>NERP › Marketing<\/b> [^<]+ <span[^>]*>\(E\d/);  // the report's module
   expect(sent[0].html).toContain('Synthetic data');
 
   await page.unroute('**/api/v1/runs/*/email');
