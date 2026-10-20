@@ -3,7 +3,34 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-20 (latest) — The systems stage: a visual view of what Wizard pulls from each system
+## 2026-10-20 (latest) — The knowledge base on the company's GitHub Enterprise Server
+
+The owner reported that Wizard could not reach the knowledge base. It called public GitHub (`api.github.com`), but the
+repository is on the company's GitHub Enterprise Server, whose API is at `https://<host>/api/v3`.
+
+**What changed.**
+- **`WIZARD_KB_API`** names the GitHub API the knowledge base lives on (`wizard_connectors/github.py`).
+  - Empty means github.com, as before.
+  - A GitHub Enterprise Server may be given as its host, its address or its API address. All three become
+    `https://<host>/api/v3`.
+  - Anything else stops start-up with a clear message: plain http, another path, or a user name in the address.
+- **Everything that talks to the repository uses it:** the desktop sync, Settings → Knowledge base → Test connection,
+  `docs.ps1 kb-publish` and `docs.ps1 kb-check`. The publish's commit link points to the same server.
+- **Visible:** Settings → Knowledge base has a new "GitHub server" field. The sync status reports the server, and
+  `run.py --check` names it in the knowledge-base line.
+- **No mix-ups:** a snapshot synced from one server is never used for another, even when both have the same
+  `owner/name`.
+- **A company setting:** it comes from the provisioning file, the Settings pane or `.env`. The host is not written into
+  the code, because the code and its releases are public. The app's own updates still come from the public release on
+  github.com.
+
+**Tests.** Python suite 299 passed (4 new: the sync, the publish and the Settings test against an enterprise
+server, and the WIZARD_KB_API forms that are accepted or refused). Web unit tests and the 16 browser tests pass. The
+spec, contracts, secrets, lint and types checks pass. The Gemini CLI layer is BLOCKED in this sandbox (the CLI is not
+installed); PostgreSQL and live parity are BLOCKED as usual. Not yet tried against the real server: the first sync
+on a work PC confirms it.
+
+## 2026-10-20 (evening) — The systems stage: a visual view of what Wizard pulls from each system
 
 The owner asked for a more visual, interactive and gamified view of a run. Each system should have its own logo and
 light up while Wizard checks data there, showing what it is searching. The PostgreSQL database should appear as

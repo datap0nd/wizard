@@ -147,8 +147,11 @@ def test_a_value_set_in_the_environment_cannot_be_changed_here(tmp_path, monkeyp
 
 
 def test_connection_tests_use_the_proposed_values(tmp_path, monkeypatch):
+    urls: list[str] = []
+
     def github(request: httpx.Request) -> httpx.Response:
         assert request.headers["authorization"] == f"Bearer {TOKEN}"
+        urls.append(str(request.url))
         return httpx.Response(200, text="c" * 40) if "acme/kb" in str(request.url) else httpx.Response(404)
 
     original = knowledge_sync.check
@@ -159,6 +162,11 @@ def test_connection_tests_use_the_proposed_values(tmp_path, monkeypatch):
                                                    headers=HEADERS).json()
         ok = test("knowledge", {"WIZARD_KB_REPO": "acme/kb", "WIZARD_KB_TOKEN": TOKEN})
         assert ok["ok"] and "cccccccccccc" in ok["message"]
+        assert urls[-1] == "https://api.github.com/repos/acme/kb/commits/main"
+        enterprise = test("knowledge", {"WIZARD_KB_API": "github.example.com", "WIZARD_KB_REPO": "acme/kb", "WIZARD_KB_TOKEN": TOKEN})
+        assert enterprise["ok"] and urls[-1] == "https://github.example.com/api/v3/repos/acme/kb/commits/main"
+        wrong = test("knowledge", {"WIZARD_KB_API": "http://github.example.com", "WIZARD_KB_REPO": "acme/kb", "WIZARD_KB_TOKEN": TOKEN})
+        assert not wrong["ok"] and wrong["message"].startswith("GitHub server must be") and len(urls) == 2
         assert "Contents: read" in test("knowledge", {"WIZARD_KB_REPO": "acme/other", "WIZARD_KB_TOKEN": TOKEN})["message"]
         assert test("knowledge", {"WIZARD_KB_REPO": "acme/kb"})["message"] == "Fill in the repository and the token."
         assert test("postgres", {})["message"] == "Fill in at least the server and the user."

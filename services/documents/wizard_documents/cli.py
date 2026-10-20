@@ -33,6 +33,7 @@ from pathlib import Path
 import httpx
 
 from wizard_agent import outbound
+from wizard_connectors.github import api_root
 from wizard_connectors.pg import read_env
 
 from . import bdp
@@ -185,13 +186,18 @@ def cmd_kb(args: argparse.Namespace) -> int:
     if not repo or "/" not in repo:
         print("Give the repository: --repo owner/name (or WIZARD_KB_PUBLISH_REPO=owner/name in .env)")
         return 2
+    try:  # WIZARD_KB_API is shared with this install's own Wizard: on its own it does not switch the sync on
+        api = api_root(env.get("WIZARD_KB_API"))
+    except ValueError as error:
+        print(f"FAIL  WIZARD_KB_API {error}")
+        return 2
     try:
         if args.command == "kb-check":
             token = env.get("WIZARD_KB_READ_TOKEN")
             if not token:
                 print("FAIL  no WIZARD_KB_READ_TOKEN (the read-only token users get) in .env")
                 return 2
-            ok, text = kb.check_read(repo, token, args.branch or "main", proxy=env.get("WIZARD_PROXY"))
+            ok, text = kb.check_read(repo, token, args.branch or "main", proxy=env.get("WIZARD_PROXY"), api=api)
             print(("PASS  " if ok else "FAIL  ") + text)
             return 0 if ok else 1
         token = env.get("WIZARD_KB_PUBLISH_TOKEN")
@@ -199,12 +205,12 @@ def cmd_kb(args: argparse.Namespace) -> int:
             print("FAIL  no WIZARD_KB_PUBLISH_TOKEN (Contents read and write on the repository) in .env or the environment")
             return 2
         outcome = kb.publish(content, repo, token, branch=args.branch, message=args.message, dry_run=args.dry_run,
-                             proxy=env.get("WIZARD_PROXY"))
+                             proxy=env.get("WIZARD_PROXY"), api=api)
     except kb.PublishError as error:
         print(f"FAIL  {error}")
         return 1
     except httpx.HTTPError as error:
-        print(f"FAIL  {outbound.explain(error, kb.API, env.get('WIZARD_PROXY'))}")
+        print(f"FAIL  {outbound.explain(error, api, env.get('WIZARD_PROXY'))}")
         return 1
     print("\n".join(outcome.lines))
     for label, names in (("added", outcome.added), ("changed", outcome.changed), ("removed", outcome.removed)):

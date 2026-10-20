@@ -20,7 +20,8 @@
    `try { (Invoke-WebRequest -Uri <url> -Method Head -UseBasicParsing -TimeoutSec 15).StatusCode } catch { if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { $_.Exception.Message } }`
    — any HTTP status number means reachable; a timeout or name error means blocked:
    `https://api.github.com`, `https://accounts.google.com`, `https://oauth2.googleapis.com`,
-   `https://codeassist.google.com`, `https://cloudcode-pa.googleapis.com`.
+   `https://codeassist.google.com`, `https://cloudcode-pa.googleapis.com`. If the knowledge base is on the company's
+   GitHub Enterprise Server, also test `https://<that host>/api/v3` and report it as "company GitHub".
 6. Ask the user which Gemini model the Gemini CLI status bar shows for this session, and whether their own Gemini CLI
    sign-in uses "Login with Google" (enterprise).
 

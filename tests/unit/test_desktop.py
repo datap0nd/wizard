@@ -17,7 +17,7 @@ from tests.helpers import HEADERS
 
 from wizard_api import desktop, knowledge_sync, provisioning
 from wizard_api.app import create_app
-from wizard_api.config import ConfigError, load_settings
+from wizard_api.config import ConfigError, kb_source, load_settings
 
 ROOT = Path(__file__).resolve().parents[2]
 TOKEN = "github_pat_" + "x" * 40
@@ -163,6 +163,29 @@ def test_sync_downloads_validates_and_then_only_checks(tmp_path):
     assert len(github.calls) == before + 1, "an unchanged repository costs one conditional request"
     state = knowledge_sync.read_state(tmp_path)
     assert TOKEN not in json.dumps(state)
+
+
+def test_sync_reads_from_the_companys_github_enterprise_server(tmp_path):
+    github = FakeGitHub("a" * 40, {"knowledge/company/overview.md": NOTE})
+    enterprise = knowledge_sync.Source("acme/wizard-content", "main", "", TOKEN, "https://github.example.com/api/v3")
+    assert knowledge_sync.sync(enterprise, tmp_path, transport=httpx.MockTransport(github)).outcome == "updated"
+    assert [c[1] for c in github.calls if "codeload" not in c[1]] == [
+        "https://github.example.com/api/v3/repos/acme/wizard-content/commits/main",
+        f"https://github.example.com/api/v3/repos/acme/wizard-content/zipball/{'a' * 40}"], "never api.github.com"
+    assert knowledge_sync.status(tmp_path, enterprise, None)["api"] == "https://github.example.com/api/v3"
+    assert knowledge_sync.active_content(tmp_path, enterprise) is not None
+    assert knowledge_sync.active_content(tmp_path, kb()) is None, "the same name on github.com is another repository"
+
+
+def test_the_github_server_comes_from_wizard_kb_api(tmp_path):
+    env = {"WIZARD_AGENT_RUNTIME": "code-assist", "WIZARD_KB_REPO": "acme/wizard-content", "WIZARD_KB_TOKEN": TOKEN}
+    assert kb_source(load_settings(env=env, home=tmp_path)).api == "https://api.github.com"
+    for given in ("github.example.com", "https://github.example.com", "https://GitHub.example.com/api/v3/"):
+        source = kb_source(load_settings(env={**env, "WIZARD_KB_API": given}, home=tmp_path))
+        assert source.api == "https://github.example.com/api/v3", given
+    for wrong in ("http://github.example.com/api/v3", "https://github.example.com/api/v4", "https://u:p@github.example.com"):
+        with pytest.raises(ConfigError, match="WIZARD_KB_API must be"):
+            load_settings(env={**env, "WIZARD_KB_API": wrong}, home=tmp_path)
 
 
 def test_an_invalid_commit_keeps_the_previous_version(tmp_path):

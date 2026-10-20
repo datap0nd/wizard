@@ -5,6 +5,7 @@
 `company.env` holds KEY=value lines, kept outside every Git repository (it has the knowledge-base token and the read-only
 PostgreSQL password), for example:
 
+  WIZARD_KB_API=https://github.example.com/api/v3   the company's GitHub Enterprise Server (leave out for github.com)
   WIZARD_KB_REPO=acme/wizard-content          the private knowledge-base repository
   WIZARD_KB_TOKEN=github_pat_...              fine-grained token: that repository only, Contents: read-only
   WIZARD_KB_PATH=                             folder inside the repository, if the content is not at its root
