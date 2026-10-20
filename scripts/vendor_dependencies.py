@@ -17,6 +17,9 @@ from zipfile import ZipFile
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# Pure Python; CPython 3.13 on Windows x64; any Python 3 on Windows x64 (Playwright, which bundles its own driver).
+WHEEL_TAGS = ("-none-any.whl", "-cp313-cp313-win_amd64.whl", "-py3-none-win_amd64.whl")
+
 
 def digest(path: Path) -> str:
     with path.open("rb") as stream:
@@ -85,8 +88,8 @@ def vendor(cache: Path, store: Path, target: Path, lock: Path) -> dict:
     counts = {"unpacked": 0, "reused": 0}
     for package in packages:
         filename = package["filename"]
-        if Path(filename).name != filename or not (filename.endswith("-none-any.whl") or filename.endswith("-cp313-cp313-win_amd64.whl")):
-            raise ValueError("Only pure-Python or CPython 3.13 Windows x64 wheels are allowed: " + filename)
+        if Path(filename).name != filename or not filename.endswith(WHEEL_TAGS):
+            raise ValueError("Only pure-Python, CPython 3.13 Windows x64 or any-Python 3 Windows x64 wheels are allowed: " + filename)
         cached = cached_package(store, package)
         if cached:
             counts["reused"] += 1

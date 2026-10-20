@@ -11,7 +11,7 @@ from urllib.parse import quote
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..catalog import Dimension, Measure, Report
-from ..fixture_source import Filter, Sort
+from ..fixture_source import Filter, Sort, SourceError
 from .registry import UNTRUSTED_NOTICE, ToolContext, ToolError, ToolSpec
 
 REPORT_ID = r"^[a-z0-9][a-z0-9-]{2,79}$"
@@ -65,6 +65,15 @@ def open_url(ctx: ToolContext, system_id: str, report_id: str) -> str | None:
     if not template or not template.startswith("https://"):
         return None
     return template.replace("{report_id}", quote(report_id, safe=""))
+
+
+def portal_hint(ctx: ToolContext, system_id: str) -> str:
+    """Where a navigation-only report can still be read: on its platform's portal, when that portal is set up for them."""
+    browser = ctx.services.portals
+    if not browser or system_id not in browser.portals or not ctx.identity.can_use_system(f"portal-{system_id}"):
+        return ""
+    return (f" Its portal is set up: find the report there with wizard_portal_open('{system_id}') and read the table "
+            "on the page (Live, not verified).")
 
 
 def report_summary(ctx: ToolContext, system_id: str, report: Report) -> dict[str, Any]:
@@ -132,19 +141,25 @@ def make_source_tools(system_id: str, system_name: str) -> list[ToolSpec]:
             "open_url": open_url(ctx, system_id, report.id),
             "your_market_access": "all markets" if markets is None else sorted(markets),
             "how_to_query": (f"Call {system_id}_run_report with filters on dimensions; add group_by to aggregate."
-                             if report.row_access == "ROWS" else "Navigation only: rows cannot be read through Wizard."),
+                             if report.row_access == "ROWS" else "Navigation only: rows cannot be read through the "
+                             "report tools." + portal_hint(ctx, system_id)),
         }
 
     def run_handler(ctx: ToolContext, args: RunArgs) -> dict[str, Any]:
         report = _resolve(ctx, system_id, args.report_id)
         contract = ctx.services.catalog.contracts[system_id]
-        result = ctx.services.sources[system_id].run(
-            report,
-            filters=[Filter(f.field, f.values) for f in args.filters],
-            group_by=args.group_by, measures=args.measures,
-            sort=[Sort(s.field, s.direction) for s in args.sort or []],
-            limit=args.limit, allowed_markets=ctx.identity.allowed_markets(system_id),
-        )
+        try:
+            result = ctx.services.sources[system_id].run(
+                report,
+                filters=[Filter(f.field, f.values) for f in args.filters],
+                group_by=args.group_by, measures=args.measures,
+                sort=[Sort(s.field, s.direction) for s in args.sort or []],
+                limit=args.limit, allowed_markets=ctx.identity.allowed_markets(system_id),
+            )
+        except SourceError as error:
+            if error.code == "navigation_only":
+                raise ToolError(error.code, error.message + portal_hint(ctx, system_id)) from None
+            raise
         request = {"filters": [f.model_dump() for f in args.filters], "group_by": args.group_by,
                    "measures": args.measures, "sort": [s.model_dump() for s in args.sort or []], "limit": args.limit}
         evidence = {

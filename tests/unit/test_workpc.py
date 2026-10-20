@@ -74,12 +74,13 @@ def test_vendor_dependencies_verifies_and_reuses_archives(tmp_path):
     cache, store = tmp_path / "cache", tmp_path / "store"
     cache.mkdir()
     packages = [_wheel(cache / "alpha-1.0-py3-none-any.whl", {"alpha/__init__.py": "A = 1\n"}),
-                _wheel(cache / "beta-1.0-cp313-cp313-win_amd64.whl", {"beta/__init__.py": "B = 2\n"})]
+                _wheel(cache / "beta-1.0-cp313-cp313-win_amd64.whl", {"beta/__init__.py": "B = 2\n"}),
+                _wheel(cache / "gamma-1.0-py3-none-win_amd64.whl", {"gamma/driver/node.exe": "MZ\n"})]
     lock = tmp_path / "dependencies.lock.json"
     lock.write_text(json.dumps({"format": 2, "packages": packages}), encoding="utf-8")
-    assert vendor(cache, store, tmp_path / "release" / "vendor", lock) == {"unpacked": 2, "reused": 0}
+    assert vendor(cache, store, tmp_path / "release" / "vendor", lock) == {"unpacked": 3, "reused": 0}
     assert (tmp_path / "release" / "vendor" / "alpha" / "__init__.py").read_text() == "A = 1\n"
-    assert vendor(cache, store, tmp_path / "release2" / "vendor", lock) == {"unpacked": 0, "reused": 2}
+    assert vendor(cache, store, tmp_path / "release2" / "vendor", lock) == {"unpacked": 0, "reused": 3}
     (cache / "alpha-1.0-py3-none-any.whl").write_bytes(b"tampered")
     shutil.rmtree(store)
     with pytest.raises(ValueError, match="invalid downloaded archive"):

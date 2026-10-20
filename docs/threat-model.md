@@ -30,6 +30,8 @@ processing region and data-classification approval are **OPEN** decisions for IT
 | Credential leakage | Tokens in logs or responses | Redaction of tokens in diagnostics; responses tested for secret patterns; secret scan in CI | Log retention policy (Step 15) |
 | Windows command injection | User text through `gemini.cmd` | CLI launched as `node gemini.js`; prompt via stdin | — |
 | Malicious dependency | Supply chain | Locked dependencies; no runtime downloads; minimal Python deps (no MCP SDK) | Dependency review in approved CI |
+| Portal browser misuse | A page's text tells Gemini to export a report, or a link leads to another site | Portal tools act only on allowlisted hosts; other pages are stopped before they load; save/delete/export/share/send controls, downloads, uploads, passwords and code editors are refused in the tool; page text is marked untrusted; each step is shown to the person as a screenshot; 60 steps per run ([decision](decisions/2026-10-20-portal-browser.md)) | Refusals work from control names: a write control with a reading name could be clicked; company policy on automated browsing is OPEN ([questions](it-questions.md)) |
+| Portal session theft | Another process uses the person's portal sign-in | The session lives in Wizard's own Edge profile in the person's data folder (Edge encrypts cookies with DPAPI), and its session cookies only in the Wizard service's memory; Edge is driven over a pipe, not a debugging port; nothing is copied from or to the everyday browser | Same-user malware can read any of the person's browser profiles, or the service's memory |
 | Repudiation | "I never queried that" | Audit log of source tool calls, report opens, link/unlink (no row values) | Audit export and review cadence (Step 15) |
 | Availability | Model or source outage | Clear failure states; interrupted runs closed on restart; concurrency caps | Monitoring/alerts (Step 15) |
 
@@ -37,3 +39,5 @@ processing region and data-classification approval are **OPEN** decisions for IT
 
 SYNTHETIC only in Git. Live rows are stored in evidence only within approved retention (default 30 days, configurable).
 Aggregated Smart Switch and app usage only. No corporate exports, DOCX or raw logs in the repository.
+Portal screenshots stay in the person's data folder, are served only to them, follow report retention and are deleted
+with their conversation.

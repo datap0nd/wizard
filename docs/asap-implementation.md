@@ -40,4 +40,10 @@ implemented until one is approved.
    report built on it be labelled LIVE_VERIFIED for those rows.
 
 Open with ASAP IT: supported login route (delegate vs SAML/OIDC), project id, Library base URL, rate limits, whether the
-service may hold an identity token per user, folder IDs for the catalog, and prompt answer formats.
+service may hold an identity token per user, folder IDs for the catalog, and prompt answer formats. The full list, with
+what each answer changes, is in [it-questions.md](it-questions.md); `.\docs.ps1 asap-check` (task 41) answers the base
+address, the sign-in route and whether Library REST answers from the PC.
+
+Until then Gemini can explore ASAP's pages in Wizard's own browser
+([decision](decisions/2026-10-20-portal-browser.md)): the same reports, read from the page under the person's sign-in,
+labelled Live (`BROWSER_READ`), never `ROWS_VERIFIED`.

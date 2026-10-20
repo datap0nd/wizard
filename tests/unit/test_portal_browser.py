@@ -245,6 +245,19 @@ def test_sign_in_pages_stop_the_step(portal: tuple[Site, PortalBrowser], frames:
 
 
 @browser_test
+def test_the_portal_session_survives_the_browser_closing(portal: tuple[Site, PortalBrowser], frames: list[Frame]) -> None:
+    _, browser = portal
+    browser.open("me", "run_g", "demo", "/session", frames.append)  # the portal sets a session cookie
+    assert browser.open("me", "run_g", "demo", "/members", frames.append)["page_title"] == "Members area"
+    session = browser._sessions["me"]
+    browser._call(lambda: browser._close_context(session))  # an idle close, or the sign-in window being closed
+    assert any(c["name"] == "sid" for c in session.cookies)
+    assert browser.open("me", "run_g", "demo", "/members", frames.append)["page_title"] == "Members area"
+    stranger = browser._session("someone-else")
+    assert not stranger.cookies, "one person's session never reaches another's browser"
+
+
+@browser_test
 def test_a_run_has_a_step_limit(portal: tuple[Site, PortalBrowser], frames: list[Frame], monkeypatch: pytest.MonkeyPatch) -> None:
     _, browser = portal
     monkeypatch.setattr(portal_browser, "MAX_STEPS", 2)
@@ -253,3 +266,21 @@ def test_a_run_has_a_step_limit(portal: tuple[Site, PortalBrowser], frames: list
     with pytest.raises(PortalError) as limit:
         browser.page_action("me", "run_f", "demo", "look", frames.append)
     assert limit.value.code == "step_limit"
+
+
+def test_a_navigation_only_report_points_to_its_portal(tmp_path: Path) -> None:
+    browser = PortalBrowser([Portal.make("asap", "https://asap.corp.example/")], BrowserOptions(), lambda u: tmp_path / u)
+    services = build_services(portals=browser)
+    registry = build_registry(services)
+    rights = SystemRights(reports=["*"], markets=["*"])
+    with_portal = Identity(id="o", email="o@x", name="O", role="Owner", entitlements={"asap": rights, "portal-asap": rights})
+    without = Identity(id="d", email="d@x", name="D", role="Director", entitlements={"asap": rights})
+
+    def call(identity: Identity, name: str) -> Any:
+        context = ToolContext(identity=identity, run_id="run_t", recorder=MemoryRecorder(), services=services)
+        return registry.execute(name, {"report_id": "asap-exec-dossier"}, context)
+    schema = call(with_portal, "asap_get_report_schema").data["how_to_query"]
+    assert schema.startswith("Navigation only") and "wizard_portal_open('asap')" in schema
+    refused = call(with_portal, "asap_run_report")
+    assert refused.error_code == "navigation_only" and "wizard_portal_open('asap')" in (refused.error_message or "")
+    assert "wizard_portal_open" not in call(without, "asap_get_report_schema").data["how_to_query"]

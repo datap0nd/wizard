@@ -96,8 +96,14 @@ class Site:
                     "/popup": lambda: page("Pop-up report", "<p>Opened in a new tab.</p>"),
                     "/login": lambda: page("Sign in", '<form><input name="user"><input type="password" name="pw"></form>'),
                 }
+                signed_in = "sid=demo" in (self.headers.get("Cookie") or "")
                 if url.path == "/private":
                     self.send(b"", 302, {"Location": "/login"})
+                elif url.path == "/session":  # a portal session in a session cookie (no expiry), as many portals keep it
+                    self.send(page("Signed in", "<p>Welcome.</p>"), 200, {"Set-Cookie": "sid=demo; Path=/"})
+                elif url.path == "/members":
+                    self.send(page("Members area", "<p>Only signed-in people see this.</p>") if signed_in else b"", 200 if signed_in
+                              else 302, {} if signed_in else {"Location": "/login"})
                 elif url.path in routes:
                     self.send(routes[url.path]())
                 elif url.path.startswith("/files/"):

@@ -13,6 +13,7 @@ from tests.helpers import CEO_QUESTION, ask, login
 from wizard_api.runs import ActiveRun
 from wizard_api.security import run_token
 from wizard_connectors.entitlements import IdentityDirectory
+from wizard_connectors.tools import build_registry
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACTS = ROOT / "contracts"
@@ -22,8 +23,9 @@ def load(name: str):
     return json.loads((CONTRACTS / name).read_text(encoding="utf-8"))
 
 
-def test_tool_catalog_matches_published_contract(registry):
+def test_tool_catalog_matches_published_contract(services):
     published = load("tool-catalog.json")
+    registry = build_registry(services, portal_tools=True)  # the catalog lists the portal tools, offered where set up
     assert published["tools"] == registry.describe(), "run scripts/export_contracts.py and review the diff"
 
 

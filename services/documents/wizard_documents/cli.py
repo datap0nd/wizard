@@ -35,7 +35,7 @@ import httpx
 from wizard_agent import outbound
 from wizard_connectors.pg import read_env
 
-from . import bdp
+from . import bdp, portal_check
 from .common import ConversionError, mask_contacts
 from .convert import Converter
 from .inbox import Inbox
@@ -174,6 +174,26 @@ def cmd_bdp_check(args: argparse.Namespace) -> int:
     return 1 if any(line.startswith("FAIL") for line in result.lines) else 0
 
 
+def cmd_portal_check(args: argparse.Namespace) -> int:
+    system = args.command.removesuffix("-check")
+    content = args.content.resolve()
+    env = read_env(args.env_file or content.parent / ".env")
+    address = args.url or env.get(f"WIZARD_PORTAL_{system.upper()}")
+    if not address:
+        print(f"Give the {system.upper()} address: {system}-check --url <the address of the browser tab where "
+              f"{system.upper()} is open>")
+        return 2
+    try:
+        result = portal_check.check(system, address, proxy=env.get("WIZARD_PROXY"))
+    except ValueError as error:
+        print(error)
+        return 2
+    path = portal_check.write(content, result)
+    print("\n".join(result.lines))
+    print(f"Written to {path.relative_to(content).as_posix()}. Next: run extract so it gets a source id.")
+    return 1 if any(line.startswith("FAIL") for line in result.lines) else 0
+
+
 def cmd_kb(args: argparse.Namespace) -> int:
     from . import kb
     content = args.content.resolve()
@@ -268,6 +288,12 @@ def main(argv: list[str] | None = None) -> int:
     check_bdp.add_argument("content", type=Path)
     check_bdp.add_argument("--url", help="Superset's address, e.g. copied from the SQL Lab tab (default: WIZARD_BDP_URL in .env)")
     check_bdp.add_argument("--env-file", type=Path, help="Wizard's .env (default: next to the content folder)")
+    for system in portal_check.SYSTEMS:
+        check_portal = commands.add_parser(f"{system}-check")
+        check_portal.add_argument("content", type=Path)
+        check_portal.add_argument("--url", help=f"the portal's address, copied from the browser (default: "
+                                                f"WIZARD_PORTAL_{system.upper()} in .env)")
+        check_portal.add_argument("--env-file", type=Path, help="Wizard's .env (default: next to the content folder)")
     for name in ("kb-publish", "kb-check"):
         sub = commands.add_parser(name)
         sub.add_argument("content", type=Path)
@@ -303,6 +329,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_postgres(args)
         if args.command == "bdp-check":
             return cmd_bdp_check(args)
+        if args.command in ("gscm-check", "asap-check"):
+            return cmd_portal_check(args)
         if args.command in ("kb-publish", "kb-check"):
             return cmd_kb(args)
         if args.command == "status":

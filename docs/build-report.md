@@ -3,7 +3,88 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-20 (latest) — The pixel wizard everywhere, a bigger stage, an animated button, files dropped on it
+## 2026-10-20 (latest) — Gemini explores GSCM, ASAP and BDP in Wizard's own browser, with a preview of every click
+
+The owner asked how Wizard could "actually navigate those portals", then: "Do all. I want wizard to really explore
+these pages and I want a preview of what it's clicking." Owner decision:
+[2026-10-20-portal-browser](decisions/2026-10-20-portal-browser.md) (AGENTS.md updated).
+
+**What changed.**
+- **Wizard's own browser** (`services/connectors/wizard_connectors/portal_browser.py`, `portal_page.js`). Playwright
+  drives the PC's Edge (`WIZARD_BROWSER=auto`) on a browser profile in the person's data folder, headless during
+  questions. Each step reads the page as numbered elements (links, buttons, fields, clickable `<div>`s, across frames),
+  visible text and tables.
+  - The boundary is in the tool: allowlisted hosts (others stopped before they load), no downloads, uploads, printing
+    or message boxes, pop-ups followed only on the portal.
+  - It refuses save/delete/export/share/send/subscribe/edit... controls and New/Create buttons, and never types into
+    passwords, code or SQL editors, or rich text.
+  - A sign-in page stops the step with instructions. Limits: 60 steps a run and a time limit on every step.
+- **Tools:** `wizard_portal_open`, `_click`, `_type`, `_page` (look, scroll, back) and `_read_table`. They are offered
+  only where `WIZARD_PORTAL_<NAME>` is set, and only to the local Owner. A table read from a page is LIVE evidence with
+  connector status `BROWSER_READ`, the page address, the pages that led to it, typed columns ("1,234" → 1234,
+  "(56)" → -56, "12.5%") and a warning when a grid drew fewer rows than it declares.
+  - `wizard_list_sources` lists the portals. A navigation-only catalog report now points to its portal when it is set up.
+- **Click preview.** Every step streams `browser_frame` events: a picture before the action, with the target's box,
+  and one after. They show on the systems stage as a browser frame: address bar, the target outlined with a pressing
+  pointer, a caption ("Clicking “Sell-in reports”"), a Live badge, a strip to step back and Back to live.
+  - After the answer it folds into "What Wizard saw on GSCM · N pictures".
+  - Pictures are served only to their owner (`/api/v1/runs/{id}/frames/{f}`), kept as long as reports and deleted with
+    the conversation.
+  - Steps are named after what they act on ("Clicked “Sell-in reports” on GSCM").
+- **Sign-in:** Sources → Portals lists each portal with its state, **Sign in** (a visible Edge window on Wizard's
+  profile; the person signs in, then presses Done) and **Check**. Session cookies stay in the service's memory, so the
+  sign-in carries over to the background browser and survives its idle close. Settings → Portals sets the GSCM, ASAP and BDP
+  addresses, the sign-in hosts and the browser.
+- **Navigation trail** for the catalog tools too: the folders a search found, the report and its prompts, the first
+  rows read, on the stage, in each system's call list and step by step.
+  - **Open in <platform>** links a report when its catalog has an `open_url_template` (`https://.../{report_id}`), and
+    evidence carries the link.
+- **Discovery:** `.\docs.ps1 gscm-check` / `asap-check` (`wizard_documents/portal_check.py`, work-PC task 41) read
+  each portal with anonymous GETs only:
+  - the platform (MicroStrategy, BusinessObjects, Power BI, Tableau, Oracle Analytics, Qlik, Cognos, Superset), from
+    pages, paths, headers and cookie names;
+  - the sign-in route;
+  - for MicroStrategy, Library REST `/api/status`.
+  - [it-questions.md](it-questions.md) lists what to ask IT security, ASAP IT, GSCM's IT VOC and the BDP team, and
+    what each answer changes.
+- **Dependencies:** `playwright` 1.64 (with greenlet and pyee) in `pyproject.toml`, `uv.lock` and the portable lock.
+  - `lock_portable.py` no longer drops Windows-only requirements (pywin32) when run on another OS, and keeps an
+    unchanged runtime lock instead of downloading the zip again.
+  - `vendor_dependencies.py` and the spec accept Playwright's `py3-none-win_amd64` wheel.
+  - The `desktop` workflow's new `portable-runtime` job publishes the release a new lock names
+    (`scripts/publish_portable.py`, exactly the locked archives, never replaced).
+
+**Tests.** `CI=true scripts/verify_all.sh --allow-blocked=live-parity,postgres,gemini-cli` in a Linux sandbox:
+- PASS: spec, secrets, contracts (tool catalog with the five portal tools, `openapi.json`, `browser_frame` in the event
+  schema), lint, types, web-types, web-unit, web-dist, web-build.
+- Python: 339 passed, 5 skipped. New tests cover:
+  - the refusal rules, typed table cells, the portal settings, and portal tools only where set up and entitled;
+  - a navigation-only report pointing to its portal;
+  - `gscm-check` / `asap-check` against simulated portals (only anonymous GETs to the portal's host, values left out);
+  - Playwright's wheel tag in the vendoring test.
+- **portal-browser (new layer): 9 passed** in the sandbox's Chromium (Playwright 1.64) against `tests/portal_site.py`:
+  - exploring folders, a clickable `<div>` list, a choice field, a search with Enter, a table and an ARIA grid;
+  - refusing export, download and the SQL editor (no POST ever reaches the server);
+  - stopping a link to another host before any request, following a pop-up on the portal, dismissing a message box;
+  - detecting the sign-in page and enforcing the step limit;
+  - a session-cookie sign-in surviving the background browser's restart (kept in memory, per person);
+  - a replayed whole run: pictures streamed between each call's start and finish, served only to their owner, LIVE
+    evidence, events valid against the schema, pictures deleted with the conversation.
+- Web unit: 32 passed (new: the preview's outline position, stepping back and Back to live, folding, the reducer, the
+  stage's portal module, the navigation trail).
+- e2e: 16 passed. The sandbox's Playwright for the web tests (1.63) looks for a newer Chromium build than the one
+  installed, so the first `verify_all` run failed at browser launch, before any test ran. It passed when pointed at the
+  installed Chromium.
+- BLOCKED as allowed: gemini-cli (not installed here), postgres (no test server here; CI runs one), live-parity.
+- Screenshots of a replayed run over the fake portal show:
+  - the live preview with the search field outlined and the pointer on it ("Typing “sell-in” into “Search reports”");
+  - the table outlined while it is read, the folded "What Wizard saw on GSCM · 10 pictures";
+  - the step-by-step record with the rows trail, the evidence drawer's "Open the page on the portal", and the Portals
+    panel ("Signed in", Sign in, Check, Ask).
+- Not run here: the real portals, Edge on a work PC, and corporate sign-in (work-PC task 41). The portable runtime
+  release for the new lock is published by CI on push.
+
+## 2026-10-20 — The pixel wizard everywhere, a bigger stage, an animated button, files dropped on it
 
 The owner asked for:
 - a bigger, more animated stage;

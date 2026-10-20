@@ -12,3 +12,4 @@ Evidence**. A decision that changes repository rules also updates [AGENTS.md](..
 - [2026-10-06 Gemini queries PostgreSQL with its own SQL; totals over attached spreadsheets](2026-10-06-live-postgresql.md)
 - [2026-10-12 The Big Data Portal: per-user access through Superset, discovery first](2026-10-12-bdp-superset.md)
 - [2026-10-20 Wizard as an always-on desktop app; knowledge base in a private GitHub repository](2026-10-20-desktop-app.md)
+- [2026-10-20 Gemini explores the company portals in Wizard's own browser, with a preview of every click](2026-10-20-portal-browser.md)

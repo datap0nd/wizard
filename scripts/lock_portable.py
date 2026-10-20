@@ -46,9 +46,17 @@ def pip(*args: str) -> None:
     subprocess.run([sys.executable, "-m", "pip", *args, "--disable-pip-version-check"], check=True, cwd=ROOT)
 
 
+def for_windows(requirement: str) -> str:
+    """pip evaluates environment markers on the machine it runs on, not the --platform target: a requirement marked for
+    Windows only (pywin32) would be dropped when the lock is made elsewhere. The lock is always for Windows."""
+    name, _, marker = requirement.partition(";")
+    return name.strip() if marker.strip().replace('"', "'") == "sys_platform == 'win32'" else requirement
+
+
 def resolve(upgrade: bool) -> list[tuple[str, str]]:
     """Pins for CPython 3.13 / Windows x64, resolved by pip for that target (not for this machine)."""
-    requirements = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["dependencies"]
+    requirements = [for_windows(r) for r in
+                    tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["dependencies"]]
     with tempfile.TemporaryDirectory() as scratch:
         constraints = Path(scratch) / "constraints.txt"
         current = ROOT / "dependencies.lock.json"
@@ -87,8 +95,15 @@ def main() -> int:
                          "sha256": sha256(wheel)})
 
     python_zip = WORK / PYTHON_ZIP
-    urllib.request.urlretrieve(PYTHON_URL, python_zip)  # noqa: S310 - fixed python.org URL
-    runtime = {"version": PYTHON_VERSION, "filename": PYTHON_ZIP, "url": PYTHON_URL, "sha256": sha256(python_zip)}
+    current = ROOT / "runtime.lock.json"
+    kept = json.loads(current.read_text(encoding="utf-8")) if current.is_file() else {}
+    if not args.publish and kept.get("url") == PYTHON_URL and kept.get("version") == PYTHON_VERSION:
+        runtime = kept  # the same embeddable Python: keep its pinned digest (publishing downloads and checks the zip)
+    else:
+        urllib.request.urlretrieve(PYTHON_URL, python_zip)  # noqa: S310 - fixed python.org URL
+        runtime = {"version": PYTHON_VERSION, "filename": PYTHON_ZIP, "url": PYTHON_URL, "sha256": sha256(python_zip)}
+        if kept.get("url") == PYTHON_URL and kept.get("sha256") not in (None, runtime["sha256"]):
+            raise SystemExit(f"{PYTHON_ZIP} from python.org does not match its pinned digest")
 
     dependencies = {"format": 2, "platform": "win_amd64", "python_tag": "cp313", "packages": packages}
     (ROOT / "runtime.lock.json").write_text(json.dumps(runtime, indent=2) + "\n", encoding="utf-8", newline="\n")

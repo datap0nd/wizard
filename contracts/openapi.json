@@ -651,6 +651,53 @@
         }
       }
     },
+    "/api/v1/runs/{run_id}/frames/{frame_id}": {
+      "get": {
+        "summary": "Run Frame",
+        "description": "A portal screenshot from this person's own run (the click preview).",
+        "operationId": "run_frame_api_v1_runs__run_id__frames__frame_id__get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "frame_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Frame Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/runs/{run_id}/cancel": {
       "post": {
         "summary": "Cancel",
@@ -947,6 +994,128 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Source Catalog Api V1 Sources  System Id  Catalog Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/portals": {
+      "get": {
+        "summary": "Portal List",
+        "operationId": "portal_list_api_v1_portals_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Portal List Api V1 Portals Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/portals/{portal_id}/signin": {
+      "post": {
+        "summary": "Portal Signin",
+        "operationId": "portal_signin_api_v1_portals__portal_id__signin_post",
+        "parameters": [
+          {
+            "name": "portal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Portal Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Portal Signin Api V1 Portals  Portal Id  Signin Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/portals/signin/done": {
+      "post": {
+        "summary": "Portal Signin Done",
+        "operationId": "portal_signin_done_api_v1_portals_signin_done_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Portal Signin Done Api V1 Portals Signin Done Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/portals/{portal_id}/check": {
+      "post": {
+        "summary": "Portal Check",
+        "operationId": "portal_check_api_v1_portals__portal_id__check_post",
+        "parameters": [
+          {
+            "name": "portal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Portal Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Portal Check Api V1 Portals  Portal Id  Check Post"
                 }
               }
             }

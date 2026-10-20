@@ -40,7 +40,10 @@ adding a catalog file, a platform guide and a live adapter for its API; the MCP 
    `wizard_lookup_definitions` finds the relevant part.
 
 Reports stay `NAVIGATION_ONLY` until a read path is approved and parity-tested. Gemini can still find them, tell the
-user they exist and suggest opening them, but cannot read their numbers.
+user they exist and suggest opening them. Where the portal itself is set up (`WIZARD_PORTAL_<NAME>`), Gemini can also
+open it in Wizard's own browser, signed in as the person, click through to the report and read the table on the page:
+Live figures, never verified, with each step shown to the person as a picture
+([decision](decisions/2026-10-20-portal-browser.md)). The catalog tells Gemini where to look; the portal shows it.
 
 PostgreSQL is different: it has no report entries. Gemini reads the dataset notes and queries the server directly
 with `wizard_query_postgresql`

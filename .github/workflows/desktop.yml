@@ -146,6 +146,24 @@ jobs:
           [Convert]::ToBase64String([IO.File]::ReadAllBytes("$PWD/artifacts/desktop/snapshot/button-100.png"))
           "----- end -----"
 
+  # setup.ps1 installs the portable Python and wheels from the release portable_assets.lock.json names. A push whose
+  # locks name a release that does not exist yet publishes it once, from exactly the locked archives (never replaced).
+  portable-runtime:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    concurrency: portable-runtime
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Publish the portable runtime release if it is missing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/publish_portable.py --repo "${{ github.repository }}" --target "${{ github.sha }}"
+
   publish:
     needs: installer
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'

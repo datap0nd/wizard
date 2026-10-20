@@ -8,6 +8,7 @@ import json
 from collections.abc import Iterator
 from pathlib import Path
 
+import jsonschema
 import pytest
 from fastapi.testclient import TestClient
 from tests.helpers import HEADERS, ask, find_browser, login, make_settings
@@ -64,6 +65,9 @@ def test_a_run_explores_the_portal_and_shows_each_step(portal_client: tuple[Test
     order = [(e["type"], e["payload"].get("call_id")) for e in events if e["type"] in ("tool_started", "browser_frame", "tool_finished")]
     assert order[:3] == [("tool_started", "c1"), ("browser_frame", "c1"), ("tool_finished", "c1")]
 
+    schema = json.loads((Path(__file__).resolve().parents[2] / "contracts" / "run-event.schema.json").read_text(encoding="utf-8"))
+    for event in client.app.state.store.events(run["id"]):  # type: ignore[attr-defined]
+        jsonschema.validate({k: event[k] for k in ("seq", "type", "ts", "payload")}, schema)
     picture = client.get(f"/api/v1/runs/{run['id']}/frames/{frames[0]['frame']}")
     assert picture.status_code == 200 and picture.headers["content-type"] == "image/jpeg"
     assert picture.content.startswith(b"\xff\xd8")

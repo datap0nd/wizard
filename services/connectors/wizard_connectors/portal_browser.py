@@ -12,6 +12,9 @@ The boundary is enforced here, not in Gemini's instructions:
 - a click on a control whose name says it changes or sends something (save, delete, export, share, subscribe...) is
   refused, and text goes only into plain text, search and select fields: never passwords, code editors or rich text;
 - every step has a time limit and a run takes at most MAX_STEPS steps.
+A portal's session usually lives in session cookies, which a browser drops when it closes. Wizard keeps its own
+browser's cookies in memory (never on disk) and gives them back whenever the background browser starts again: after the
+sign-in window, and after an idle close. They never come from, or go to, the person's everyday browser.
 Each step shows the person a screenshot with its target outlined (`show`), and returns the page's text and controls to
 Gemini as untrusted data."""
 from __future__ import annotations
@@ -164,6 +167,7 @@ class _Session:
     notices: list[str] = field(default_factory=list)
     popups: list[Any] = field(default_factory=list)
     loading: dict[int, int] = field(default_factory=dict)  # page -> navigation requests in flight in its main frame
+    cookies: list[dict[str, Any]] = field(default_factory=list)  # this browser's own session, kept in memory only
     last_used: float = 0.0
 
 
@@ -196,9 +200,12 @@ class PortalBrowser:
 
     def _work(self) -> None:
         while True:
-            try:
-                item = self._jobs.get(timeout=60)
+            signing_in = [s for s in self._sessions.values() if s.signin is not None]
+            try:  # while a sign-in window is open, its cookies are saved every few seconds (the person may close it)
+                item = self._jobs.get(timeout=2 if signing_in else 60)
             except queue.Empty:
+                for session in signing_in:
+                    self._keep_cookies(session, session.signin)
                 self._close_idle()
                 continue
             if item is None:
@@ -232,7 +239,16 @@ class PortalBrowser:
             if session.context is not None and now - session.last_used > IDLE_CLOSE_S:
                 self._close_context(session)
 
+    @staticmethod
+    def _keep_cookies(session: _Session, context: Any) -> None:
+        try:
+            session.cookies = list(context.cookies())
+        except Exception:  # noqa: BLE001, S110 - the window was closed; the last saved cookies stay
+            pass
+
     def _close_context(self, session: _Session) -> None:
+        if session.context is not None:
+            self._keep_cookies(session, session.context)
         context, session.context = session.context, None
         session.pages.clear()
         session.refs.clear()
@@ -311,6 +327,11 @@ class PortalBrowser:
                                                      f"{_short(error)}") from None
         context.set_default_timeout(ACTION_TIMEOUT_MS)
         context.set_default_navigation_timeout(NAVIGATION_TIMEOUT_MS)
+        if session.cookies:
+            try:
+                context.add_cookies(session.cookies)
+            except Exception as error:  # noqa: BLE001 - a stale cookie never stops the browser
+                log.info("portal cookies not restored: %s", _short(error))
         context.add_init_script("window.print = () => {};")
         context.route("**/*", lambda route, request: self._route(session, route, request))
         context.on("page", lambda page: self._new_page(session, page))
@@ -553,6 +574,7 @@ class PortalBrowser:
         def job() -> None:
             session = self._session(user_id)
             if session.signin is not None:
+                self._keep_cookies(session, session.signin)
                 try:
                     session.signin.close()
                 except Exception:  # noqa: BLE001, S110

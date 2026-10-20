@@ -160,6 +160,21 @@ of Wizard on this PC:
 The settings pane exists only on a person's own install (desktop app or work-PC install), for the person at that PC:
 never on a server behind SSO.
 
+## Portals (GSCM, ASAP, the Big Data Portal)
+
+Gemini can explore the company portals in Wizard's own browser and show each click
+([decision](decisions/2026-10-20-portal-browser.md)):
+1. **Settings → Portals:** the address each portal opens on (or `WIZARD_PORTAL_GSCM`, `_ASAP`, `_BDP` in the company
+   settings file). Wizard restarts by itself.
+2. **Sources → Portals → Sign in:** an Edge window opens on Wizard's own browser profile (not the person's everyday
+   one). They sign in as usual, then press **Done**. **Check** tells whether the session is still signed in.
+3. Ask, for example "On the GSCM portal, find the latest monthly sell-in report and tell me the top 3 models". The
+   stage shows each page Wizard opens, with the element it is about to click outlined.
+
+Read-only: Wizard refuses anything that saves, deletes, exports, shares or sends, never types a password, and stays on
+the portals' hosts. If a portal sends the browser to a company sign-in page that Wizard stops, add that host under
+Settings → Portals → Company sign-in hosts. `WIZARD_BROWSER=off` turns portals off.
+
 ## Giving Wizard to someone
 
 1. Download `WizardSetup.exe` from the

@@ -13,6 +13,8 @@ Three tracks:
   when the status bar shows another one.
 - **40: the Big Data Portal (BDP).** Discovery before any connection is built: what BDP is, the engines behind its
   Superset SQL tool, and how Superset signs people in. Run it on its own with `/wizard:tasks 40`.
+- **41: GSCM and ASAP as portals.** What each runs on and how it signs people in, then setting them up so Wizard's own
+  browser can explore them, signing in once, and one test question per portal. Run it with `/wizard:tasks 41`.
 - **50: the knowledge base in a private GitHub repository** that every user's Wizard desktop app reads, published from
   this PC, plus the company settings file for users. Run it on its own with `/wizard:tasks 50` after the notes exist
   (tasks 20-25).
@@ -58,6 +60,7 @@ If `outbox\STATUS.md` exists but lacks a row of the table below, add the row (ta
 | 30 Expert quizzes | todo | | |
 | 31 Apply the stakeholders' answers | todo | | |
 | 40 Discover the Big Data Portal (BDP) | todo | | |
+| 41 Discover GSCM and ASAP, and let Wizard explore them | todo | | |
 | 50 Knowledge base in a private GitHub repository | todo | | |
 | 90 Feedback pack for the developer | todo | | |
 ```

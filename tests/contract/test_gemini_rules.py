@@ -8,7 +8,7 @@ from wizard_agent.code_assist import gemini_schema
 from wizard_connectors.gemini_rules import function_problems
 from wizard_connectors.tools import build_registry, build_services
 
-TOOLS = build_registry(build_services()).describe()
+TOOLS = build_registry(build_services(), portal_tools=True).describe()
 
 
 @pytest.mark.parametrize("tool", TOOLS, ids=[t["name"] for t in TOOLS])
