@@ -160,6 +160,8 @@ def tool_label(name: str, args: dict[str, Any], services: Services) -> str:
             "wizard_browse_knowledge": f"Browsed the knowledge base{' · ' + str(args['area']) if args.get('area') else ''}",
             "wizard_read_knowledge": f"Read {', '.join(map(str, args.get('ids', [])))}",
             "wizard_read_attachment": f"Read attached file {args.get('file', '')}" + (f" · {args['part']}" if args.get("part") else ""),
+            "wizard_query_attachment": f"Queried attached file {args.get('file', '')}" + (f" · {args['sheet']}" if args.get("sheet") else ""),
+            "wizard_query_postgresql": f"Queried the {services.postgres_name}",
             "wizard_calculate": f"Calculated {str(args.get('expression', ''))[:80]}",
             "wizard_render_visual": f"Prepared a {args.get('kind', 'visual')}: {args.get('title', '')}",
             "wizard_check_my_data": f"Checked {len(args.get('claims', []))} figure(s) against the evidence"}.get(name, name)
@@ -175,6 +177,8 @@ def tool_summary(name: str, outcome: ToolOutcome) -> str:
         return f"{data.get('row_count', 0)}{extra} rows{as_of}"
     if "results" in data:
         return f"{len(data['results'])} report(s) found"
+    if "row_count" in data:
+        return f"{data['row_count']:,} row{'' if data['row_count'] == 1 else 's'}" + (" (more available)" if data.get("truncated") else "")
     if "definitions" in data:
         return ", ".join(d["title"] for d in data["definitions"]) or "no definition found"
     if "notes" in data:

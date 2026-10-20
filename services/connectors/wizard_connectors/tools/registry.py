@@ -52,6 +52,7 @@ class Services:
     sources: dict[str, FixtureSource]
     knowledge: KnowledgeBase
     postgres: PostgresQuery | None = None  # None: no PostgreSQL connection configured on this server
+    postgres_name: str = "AI Team Database"  # what people see for it (WIZARD_PG_NAME)
     now: Callable[[], datetime] = field(default=lambda: datetime.now(UTC))
 
 

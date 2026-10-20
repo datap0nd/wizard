@@ -45,7 +45,7 @@ function Timing({item, startedAt}: {item: TimelineItem; startedAt: string | null
 export function ActivityTimeline({run, onEvidence}: {run: RunView; onEvidence: (id: string) => void}) {
   const running = run.status === 'running' || run.status === 'queued';
   const [open, setOpen] = useState<boolean | null>(null);
-  const expanded = open ?? running;
+  const expanded = open ?? false;  // the systems stage above shows the run live; this is the step-by-step record
   const tools = run.timeline.filter(t => t.kind === 'tool');
   const systems = Array.from(new Set(tools.filter(t => t.evidence).map(t => t.evidence!.system.toUpperCase())));
   const summary = running ? (tools.length ? `Working · ${tools.length} step${tools.length === 1 ? '' : 's'} so far` : 'Starting')
@@ -56,7 +56,7 @@ export function ActivityTimeline({run, onEvidence}: {run: RunView; onEvidence: (
       <button type="button" onClick={() => setOpen(!expanded)} aria-expanded={expanded}
         className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] font-medium text-ink-2 hover:text-ink">
         {running ? <Loader2 className="size-4 animate-spin text-accent" /> : <ShieldCheck className="size-4 text-ink-3" />}
-        <span>What Wizard did</span><span className="font-normal text-ink-3">· {summary}</span>
+        <span>Step by step</span><span className="font-normal text-ink-3">· {summary}</span>
         <ChevronDown className={cn('ml-auto size-4 transition-transform', expanded && 'rotate-180')} />
       </button>
       {expanded && (

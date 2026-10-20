@@ -74,6 +74,8 @@ class Settings:
     attachment_office: str = "auto"  # "never": read only plain Office Open XML files, without starting Office (tests)
     # Read-only PostgreSQL account for wizard_query_postgresql (WIZARD_PG_* in .env, else the PG* variables); None = not set.
     postgres: PgSettings | None = None
+    # The name people see for that database in the app (the systems stage, sources, evidence).
+    pg_name: str = "AI Team Database"
     # Backstops against a runaway run, not a budget for a normal answer: Gemini may take its time and many calls. A run
     # is steered to answer by the loop and time checks in runs.py long before it is cut off.
     max_concurrent_runs: int = 8
@@ -237,6 +239,7 @@ def load_settings(env: dict[str, str] | None = None, env_file: Path | None = Non
                                         {k: v for k, v in source_env.items() if k.startswith("PG")})
     except PgError as error:
         raise ConfigError(f"PostgreSQL settings: {error}") from None
+    settings.pg_name = (get("WIZARD_PG_NAME", "AI Team Database") or "AI Team Database").strip()[:60]
     settings.max_concurrent_runs = _int(get("WIZARD_MAX_CONCURRENT_RUNS", "8") or "8", "WIZARD_MAX_CONCURRENT_RUNS", 1, 64)
     settings.run_timeout_s = _int(get("WIZARD_RUN_TIMEOUT_S", "1800") or "1800", "WIZARD_RUN_TIMEOUT_S", 10, 3600)
     settings.max_tool_calls = _int(get("WIZARD_MAX_TOOL_CALLS", "150") or "150", "WIZARD_MAX_TOOL_CALLS", 1, 500)

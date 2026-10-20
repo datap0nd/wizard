@@ -178,14 +178,15 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
             raise ConfigError(f"WIZARD_CONTENT_DIR {settings.content_dir} has {len(errors(problems))} error(s); run "
                               "scripts/validate_content.py on it. First: " + str(errors(problems)[0]))
         services = build_services(contracts=settings.content_dir / "contracts" / "sources",
-                                  knowledge=settings.content_dir / "knowledge", postgres=settings.postgres)
+                                  knowledge=settings.content_dir / "knowledge", postgres=settings.postgres,
+                                  postgres_name=settings.pg_name)
     elif settings.kb_repo:
         # A knowledge base is configured but has never synced: load nothing rather than the synthetic examples.
         empty = settings.data_dir / "knowledge" / "none"
         services = build_services(contracts=empty / "contracts" / "sources", knowledge=empty / "knowledge",
-                                  postgres=settings.postgres)
+                                  postgres=settings.postgres, postgres_name=settings.pg_name)
     else:
-        services = build_services(postgres=settings.postgres)
+        services = build_services(postgres=settings.postgres, postgres_name=settings.pg_name)
     registry = build_registry(services)
     identities = IdentityDirectory.load(settings.identities_file)
     store = Store(settings.data_dir / "wizard.sqlite3")
@@ -343,6 +344,18 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
                 ("gemini-cli (host sign-in)" if cli_present else None), "cli_credentials_present": cli_present,
                 "secret_store": secret_box.kind, "needs_link": runtime.kind != "replay"}
 
+    def systems_for(identity: Identity) -> list[dict[str, Any]]:
+        """The systems this person's Wizard can draw on, for the systems stage: report platforms, the database, the
+        knowledge base and attached files. Only what they may use."""
+        found: list[dict[str, Any]] = [{"id": s.id, "name": s.name, "kind": "reports", "data_mode": s.connector.data_mode}
+                                       for s in services.catalog.systems if identity.can_use_system(s.id)]
+        if services.postgres and identity.can_use_system("postgresql"):
+            found.append({"id": "postgresql", "name": services.postgres_name, "kind": "database", "data_mode": "LIVE"})
+        if services.knowledge.notes:
+            found.append({"id": "knowledge", "name": "Knowledge base", "kind": "knowledge", "notes": len(services.knowledge.notes)})
+        found.append({"id": "attachment", "name": "Attached files", "kind": "files"})
+        return found
+
     @app.get("/api/v1/bootstrap")
     async def bootstrap(request: Request) -> dict[str, Any]:
         identity: Identity | None = request.state.identity
@@ -360,7 +373,8 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
                 "identity": {"id": identity.id, "name": identity.name, "email": identity.email, "role": identity.role},
                 "runtime": {"kind": runtime.kind, "label": runtime.label(), "model": runtime.model, **readiness},
                 "gemini_account": await account_status(identity), "data_modes": modes,
-                "attachments": {"from_this_pc": manager.attachments.local_enabled(), "max_mb": settings.max_attachment_mb}}
+                "attachments": {"from_this_pc": manager.attachments.local_enabled(), "max_mb": settings.max_attachment_mb},
+                "systems": systems_for(identity)}
 
     # Session (fixture identities only) ---------------------------------------------------------------------------------
     @app.get("/api/v1/session/identities")

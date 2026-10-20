@@ -19,6 +19,13 @@ test('executive question streams real tool activity, cites evidence and reopens 
   await expect(card.getByTestId('data-mode')).toHaveAttribute('data-mode', 'SYNTHETIC');
   await expect(card.getByTestId('check-status')).toHaveAttribute('data-status', 'NOT_CHECKED');
   await expect(card.getByTestId('visual')).toHaveCount(1);
+  // The systems stage folds into a strip of the systems used; unfolded, NERP is done and its calls are listed.
+  await expect(card.getByTestId('journey-system').filter({hasText: 'NERP'})).toBeVisible();
+  await card.getByTestId('show-journey').click();
+  const nerp = card.locator('[data-testid=stage-node][data-system=nerp]');
+  await expect(nerp).toHaveAttribute('data-state', 'done');
+  await nerp.click();
+  await expect(card.getByTestId('stage-calls')).toContainText('Read NERP');
   await card.getByTestId('timeline').getByRole('button').first().click();
   await expect(card.getByTestId('timeline-item').filter({hasText: 'Read NERP'})).toHaveAttribute('data-state', 'ok');
 

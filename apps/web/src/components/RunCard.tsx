@@ -8,6 +8,7 @@ import {ActivityTimeline} from './ActivityTimeline';
 import {AnswerMarkdown} from './AnswerMarkdown';
 import {CheckBadge, DataModeBadge, RuntimeBadge} from './Badges';
 import {Diagnostics} from './Diagnostics';
+import {SystemsStage} from './SystemsStage';
 import {VisualBlock} from './VisualBlock';
 import type {RunView} from '@/types';
 
@@ -74,9 +75,9 @@ export const RunCard = memo(function RunCard({run, onEvidence, onCheck, onCancel
         {running ? <Elapsed since={run.createdAt} /> : took && <span className="ml-auto text-xs text-ink-3">{took}</span>}
       </header>
       <div className="space-y-4 px-5 py-4 sm:px-6">
+        <SystemsStage run={run} onEvidence={id => onEvidence(run, id)} />
         <ActivityTimeline run={run} onEvidence={id => onEvidence(run, id)} />
         {text && <AnswerMarkdown text={text} visuals={run.visuals} streaming={running} onEvidence={id => onEvidence(run, id)} />}
-        {!text && running && <p className="text-sm text-ink-3" role="status">Working on it…</p>}
         {loose.map(v => <VisualBlock key={v.id} visual={v} onEvidence={id => onEvidence(run, id)} />)}
         <CheckPanel run={run} />
         {run.warnings.length > 0 && run.status !== 'running' && (

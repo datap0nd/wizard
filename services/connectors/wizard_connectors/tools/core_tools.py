@@ -190,9 +190,9 @@ def list_sources(ctx: ToolContext, _: NoArgs) -> dict[str, Any]:
                         "platform_guide": f"wizard_lookup_definitions('{guide.title}')" if guide else None,
                         "how_to_navigate": f"{system.id}_search_reports → {system.id}_get_report_schema → {system.id}_run_report"})
     if ctx.services.postgres and _postgres_allowed(ctx):
-        systems.append({"system": "postgresql", "name": "PostgreSQL (company database)",
-                        "description": "The company's PostgreSQL server, read live with your own SQL. The dataset notes "
-                                       "describe its materialized views.",
+        systems.append({"system": "postgresql", "name": f"{ctx.services.postgres_name} (the company PostgreSQL database)",
+                        "description": f"The company's PostgreSQL server, which people call the {ctx.services.postgres_name}, "
+                                       "read live with your own SQL. The dataset notes describe its materialized views.",
                         "connector_status": "READ_ONLY_SQL", "data_mode": "LIVE", "your_market_access": "all markets",
                         "how_to_navigate": "wizard_browse_knowledge(area='datasets') → wizard_read_knowledge → "
                                            "wizard_query_postgresql"})
@@ -382,7 +382,7 @@ def query_postgresql(ctx: ToolContext, args: PostgresQueryArgs) -> dict[str, Any
                 "it."] if result.truncated else []
     request = {"sql": args.sql, "database": result.database, "max_rows": args.max_rows}
     evidence_id = ctx.recorder.add_evidence({
-        "tool": "wizard_query_postgresql", "system": "postgresql", "system_name": "PostgreSQL",
+        "tool": "wizard_query_postgresql", "system": "postgresql", "system_name": ctx.services.postgres_name,
         "report_id": f"sql-{result.digest[:12]}", "report_name": f"SQL query on {result.database}", "folder_path": [],
         "data_mode": "LIVE", "connector_status": "READ_ONLY_SQL", "request": request, "columns": result.columns,
         "rows": result.rows, "total_rows": len(result.rows), "truncated": result.truncated, "as_of": retrieved,

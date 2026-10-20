@@ -413,3 +413,26 @@ def test_page_polling_does_not_count_as_someone_using_wizard(tmp_path):
         client.get("/api/v1/account/gemini/quota")
         client.get("/api/v1/health")
         assert app.state.restart_if_idle(0.2) is True and asked == ["restart"], "the quota ring and probes are not use"
+
+
+def test_bootstrap_lists_the_systems_for_the_stage_with_the_database_display_name(tmp_path):
+    from wizard_api.runs import tool_label
+
+    settings = load_settings(env={"WIZARD_AGENT_RUNTIME": "code-assist", "WIZARD_PG_HOST": "db.example", "WIZARD_PG_USER": "ro",
+                                  "WIZARD_LOCAL_USER_NAME": "Rafael"}, home=tmp_path)
+    assert settings.pg_name == "AI Team Database"
+    with TestClient(create_app(settings)) as client:
+        client.post("/api/v1/session/login", json={"user_id": "local-owner"}, headers=HEADERS)
+        systems = {s["id"]: s for s in client.get("/api/v1/bootstrap").json()["systems"]}
+        assert {"asap", "gscm", "nerp", "postgresql", "knowledge", "attachment"} <= set(systems)
+        assert systems["postgresql"] == {"id": "postgresql", "name": "AI Team Database", "kind": "database", "data_mode": "LIVE"}
+        assert systems["knowledge"]["notes"] > 0
+        services = client.app.state.manager.services
+        assert tool_label("wizard_query_postgresql", {"sql": "select 1"}, services) == "Queried the AI Team Database"
+    renamed = load_settings(env={"WIZARD_AGENT_RUNTIME": "code-assist", "WIZARD_PG_HOST": "db.example", "WIZARD_PG_USER": "ro",
+                                 "WIZARD_PG_NAME": "Sales Data Hub"}, home=tmp_path)
+    with TestClient(create_app(renamed)) as client:
+        client.post("/api/v1/session/login", json={"user_id": "u-ceo"}, headers=HEADERS)
+        ids = [s["id"] for s in client.get("/api/v1/bootstrap").json()["systems"]]
+        assert "postgresql" not in ids, "only systems this person may use"
+        assert client.app.state.manager.services.postgres_name == "Sales Data Hub"

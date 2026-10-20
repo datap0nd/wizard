@@ -14,6 +14,7 @@ import {LoginScreen} from './components/LoginScreen';
 import {ModelPicker} from './components/ModelPicker';
 import {QuickEmpty, QuickHeader} from './components/QuickPanel';
 import {SettingsDialog} from './components/SettingsDialog';
+import {SystemsContext} from './components/SystemsStage';
 import {Sidebar} from './components/Sidebar';
 import {onHost, toHost} from './host';
 import type {Attachment, Bootstrap, ConversationSummary, EvidenceSummary, LocalFile, RunEvent, RunView} from './types';
@@ -193,11 +194,13 @@ export function App({compact = false}: {compact?: boolean}) {
   const blocked = runtime.ready ? null : runtime.reason ?? 'Gemini is not available.';
   const title = conversations.find(c => c.id === currentId)?.title ?? (compact ? 'Ask Wizard' : 'New analysis');
   const conversation = (empty: React.ReactNode) => (
-    <Conversation runs={runs} busy={busy} empty={empty}
-      onEvidence={(run, id) => setDrawer({items: id ? allEvidence : run.evidence, focus: id})}
-      onCheck={run => void check(run)} onCancel={run => void api.cancel(run.id)} onRetry={run => void ask(run.question)}
-      onFeedback={(run, category) => void api.feedback(run.id, category).then(() => setNotice('Thanks — recorded in the evaluation log.'))}
-      onEmail={run => void email(run)} />
+    <SystemsContext.Provider value={boot.systems ?? []}>
+      <Conversation runs={runs} busy={busy} empty={empty}
+        onEvidence={(run, id) => setDrawer({items: id ? allEvidence : run.evidence, focus: id})}
+        onCheck={run => void check(run)} onCancel={run => void api.cancel(run.id)} onRetry={run => void ask(run.question)}
+        onFeedback={(run, category) => void api.feedback(run.id, category).then(() => setNotice('Thanks — recorded in the evaluation log.'))}
+        onEmail={run => void email(run)} />
+    </SystemsContext.Provider>
   );
   const composer = (
     <div className={compact ? 'border-t border-line bg-canvas px-3 pb-2 pt-2.5' : 'border-t border-line bg-canvas px-4 pb-3 pt-3 md:px-6'}>

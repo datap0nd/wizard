@@ -18,11 +18,11 @@ __all__ = ["Recorder", "Services", "ToolContext", "ToolError", "ToolOutcome", "T
 
 
 def build_services(contracts: Path = SOURCE_CONTRACTS, fixtures: Path = SYNTHETIC, knowledge: Path = KNOWLEDGE,
-                   postgres: PgSettings | None = None) -> Services:
+                   postgres: PgSettings | None = None, postgres_name: str = "AI Team Database") -> Services:
     catalog = Catalog.load(contracts)
     source = FixtureSource(catalog, fixtures)
     return Services(catalog=catalog, sources={s.id: source for s in catalog.systems}, knowledge=KnowledgeBase.load(knowledge),
-                    postgres=PostgresQuery(postgres) if postgres else None)
+                    postgres=PostgresQuery(postgres) if postgres else None, postgres_name=postgres_name)
 
 
 def build_registry(services: Services) -> ToolRegistry:

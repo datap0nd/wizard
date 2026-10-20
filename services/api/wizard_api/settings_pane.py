@@ -58,6 +58,7 @@ FIELDS = [
     Field("WIZARD_KB_REF", "Branch", "knowledge", "", "main"),
     Field("WIZARD_KB_PATH", "Folder in the repository", "knowledge", "Leave empty when the notes are at the root.", ""),
     Field("WIZARD_KB_SYNC_MINUTES", "Check for changes every (minutes)", "knowledge", "0 checks only at start-up.", "30"),
+    Field("WIZARD_PG_NAME", "Name people see", "postgres", "Shown in the app and in answers' sources.", "AI Team Database"),
     Field("WIZARD_PG_HOST", "Server", "postgres", "", "db.company.example"),
     Field("WIZARD_PG_PORT", "Port", "postgres", "", "5432"),
     Field("WIZARD_PG_DATABASE", "Database", "postgres", "", "postgres"),

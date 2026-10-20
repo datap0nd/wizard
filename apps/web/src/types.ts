@@ -54,6 +54,7 @@ export interface Bootstrap {
   desktop?: boolean;
   /** The person at this PC may change its settings (their own install). */
   settings_editable?: boolean;
+  systems?: SystemInfo[];
 }
 
 export type SettingSource = 'environment' | 'env_file' | 'this_pc' | 'company' | 'default';
@@ -218,6 +219,17 @@ export interface TimelineItem {
   durationMs?: number;
   /** Server time the step started; with RunView.startedAt it shows where a run's time went. */
   at?: string;
+  /** The arguments Gemini called the tool with (the SQL, the search words, the report and filters). */
+  args?: Record<string, unknown>;
+}
+
+/** A system this person's Wizard can draw on, shown on the systems stage. */
+export interface SystemInfo {
+  id: string;
+  name: string;
+  kind: 'reports' | 'database' | 'knowledge' | 'files';
+  data_mode?: DataMode;
+  notes?: number;
 }
 
 export interface RunView {

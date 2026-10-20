@@ -27,7 +27,7 @@ export function applyEvent(run: RunView, event: RunEvent): RunView {
       return {...next, streamText: '', timeline: [...next.timeline, {key: `n${event.seq}`, kind: 'note', label: String(p.text)}]};
     case 'tool_started': {
       const item: TimelineItem = {key: String(p.call_id), kind: 'tool', label: String(p.label), state: 'running', name: p.name,
-        category: p.category, at: event.ts};
+        category: p.category, at: event.ts, args: p.arguments && typeof p.arguments === 'object' ? p.arguments : undefined};
       return {...next, timeline: [...next.timeline, item]};
     }
     case 'tool_finished':

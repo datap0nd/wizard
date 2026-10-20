@@ -3,6 +3,40 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
+## 2026-10-20 (latest) — The systems stage: a visual view of what Wizard pulls from each system
+
+The owner asked for a more visual, interactive and gamified view of a run. Each system should have its own logo and
+light up while Wizard checks data there, showing what it is searching. The PostgreSQL database should appear as
+"AI Team Database", and the knowledge base should be a module of its own.
+
+**What was added.**
+- **The stage** (`SystemsStage.tsx`, `stage.ts`, `SystemLogo.tsx`) at the top of every answer:
+  - The Wizard orb sits in the centre, with each system this person can use around it as a module with its own mark
+    and colour. Bootstrap's new `systems` list provides them: the report platforms, the AI Team Database, the
+    knowledge base, and attached files once used. A platform without a mark, such as BDP, gets a monogram.
+  - While Gemini reads from a system, its module pulses and an SVG beam streams particles into the orb.
+  - The caption names the system and the call, shows the actual SQL when there is one, then the result
+    ("→ 4 rows · as of 2026-10-01").
+  - Gemini's latest interim note shows below, and "Gemini is deciding the next step" shows between calls.
+  - A module stays lit for 2.2 s after a call, because most tools finish in milliseconds. A long query stays lit while
+    it runs. Stored runs never linger.
+  - Interactive: clicking a module lists its calls with the arguments, results, durations and evidence links.
+  - Counters (systems used, calls, rows, notes) count up.
+  - Badges only state facts about the finished run: cross-checked N systems, data + definitions, a deep dive of
+    1,000+ rows, checked.
+  - When the answer is done, the stage folds into a strip of the systems used, with their counts and badges, and
+    "Show the journey" opens it again.
+  - Narrow cards place the modules in a row under the orb. Reduced motion stops the animations and the particles.
+  - Only observed tool calls drive it (AGENTS.md: never invent steps). The step-by-step list stays below, folded.
+- **AI Team Database:** `WIZARD_PG_NAME` (default "AI Team Database", also in Settings) names PostgreSQL in the app,
+  the sources list and the evidence. Tool labels read "Queried the AI Team Database". SQL and attachment queries now
+  have proper labels and row-count summaries.
+
+**Tests.** Python suite 295 passed. Web unit tests: 20 passed, including the stage logic and a render of an active
+module with its SQL. The browser tests (16, with the sandbox's Chromium) now also unfold the journey and open NERP's
+calls. The spec, contracts, secrets, lint and types checks pass. Screenshots of a slowed replay show modules lighting
+and streaming in the full app and in the 720 px desktop panel.
+
 ## 2026-10-20 (later) — Settings in the app, a model picker, an Update button, publishing the knowledge base
 
 The owner asked for:

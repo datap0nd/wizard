@@ -104,7 +104,7 @@ of Wizard on this PC:
 |---|---|---|
 | Gemini | Model, Google Cloud project, company Google domains | — |
 | Knowledge base | Repository, read-only token, branch, folder, check interval | **Test connection**: can the token read the repository? |
-| Company database | Server, port, database, read-only user, password, SSL | **Test connection**: connects read-only and reports the user |
+| Company database | Name people see (default "AI Team Database"), server, port, database, read-only user, password, SSL | **Test connection**: connects read-only and reports the user |
 | Network | Proxy | — |
 | Version and updates | The installed version | **Check for updates** / **Update to 1.0.N** |
 
