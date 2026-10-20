@@ -37,13 +37,14 @@ All `.\docs.ps1` commands run in PowerShell in this folder. If your shell is cmd
    ask what to do: remove it, reword it, or keep it. Wait for the answer, make the changes, and run
    `.\docs.ps1 validate` again.
 3. **Create the repository (the user, in the browser).** Give these steps and wait:
-   1. On https://github.com click **+** (top right) → **New repository**, and choose the company organisation as the
+   1. On the company's GitHub Enterprise Server, https://github.sec.samsung.net (Wizard reads only from there, never
+      from github.com), click **+** (top right) → **New repository**, and choose the company organisation as the
       **Owner**. If the organisation is not offered, an organisation owner must create the repository and give the
       user write access.
    2. Name: `wizard-content` (or a name the user prefers). Visibility: **Private**. Leave "Add a README", .gitignore
       and licence **off**: the repository must start empty.
    3. Ask the user for the result as `owner/name`, for example `acme/wizard-content`.
-4. **Two tokens (the user, in the browser).** At https://github.com/settings/personal-access-tokens/new
+4. **Two tokens (the user, in the browser).** At https://github.sec.samsung.net/settings/personal-access-tokens/new
    (fine-grained tokens), make two, one at a time:
    1. **Publishing (stays on this PC):** name `Wizard publish (work PC)`; Resource owner: the company organisation;
       Repository access: **Only select repositories** → the new repository; Permissions → Repository permissions →

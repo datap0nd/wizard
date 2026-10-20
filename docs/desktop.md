@@ -42,6 +42,11 @@ token and makes the provisioning file. You type the tokens into files yourself; 
 A **private** repository in the company's GitHub organisation (for example `acme/wizard-content`), created **empty**.
 Users never get a GitHub account or a link to it.
 
+The repository is on the company's GitHub Enterprise Server, `https://github.sec.samsung.net`. Wizard calls its API
+(`https://github.sec.samsung.net/api/v3`) for the sync, Test connection, `kb-publish` and `kb-check`. The server is
+built in (`wizard_connectors/github.py`): no setting, provisioning file or `.env` value changes it, and Wizard never
+calls `api.github.com` for company content. Only the app's own updates come from the public release on github.com.
+
 `.\docs.ps1 kb-publish` fills it from the work PC (no git needed: one commit through GitHub's API). It publishes only
 what Wizard reads, `content\knowledge\**\*.md` and `content\contracts\sources\*.json`, plus a README the first time:
 the inbox, digests, registers, quiz answers and stakeholder lists stay on the work PC, because every file in the
