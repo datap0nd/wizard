@@ -95,3 +95,29 @@ def test_settings_a_query_changes_do_not_outlive_it(tool):
     assert query.run("SELECT current_setting('transaction_read_only') AS ro").rows == [["on"]]
     with pytest.raises(SourceError, match="does not exist"):
         query.run("SELECT * FROM sql_reporting.missing_view")
+
+
+def test_a_missing_view_names_similar_ones_and_the_database_that_has_it(tool):
+    query, admin = tool
+    with pytest.raises(SourceError) as error:
+        query.run("SELECT * FROM sql_reporting.sell_in_v")
+    assert 'relation "sql_reporting.sell_in_v" does not exist (SQLSTATE 42P01)' in error.value.message
+    assert f"similar name in database {query.settings.database}: sql_reporting.sell_in_mv" in error.value.message
+    pg8000 = pytest.importorskip("pg8000.native")
+    admin.run("DROP DATABASE IF EXISTS wizard_sql_other")
+    admin.run("CREATE DATABASE wizard_sql_other")
+    try:
+        other = pg8000.Connection(os.environ.get("WIZARD_TEST_PG_USER", "postgres"), host=HOST, database="wizard_sql_other",
+                                  port=int(os.environ.get("WIZARD_TEST_PG_PORT", "5432")),
+                                  password=os.environ.get("WIZARD_TEST_PG_PASSWORD"), ssl_context=False)
+        for statement in ["CREATE SCHEMA bi_reporting", "CREATE TABLE bi_reporting.global_lc_v (week integer)",
+                          "GRANT USAGE ON SCHEMA bi_reporting TO wizard_sql_writer",
+                          "GRANT SELECT ON bi_reporting.global_lc_v TO wizard_sql_writer"]:
+            other.run(statement)
+        other.close()
+        with pytest.raises(SourceError) as error:
+            query.run("SELECT * FROM bi_reporting.global_lc_v")
+        assert "Found bi_reporting.global_lc_v in database wizard_sql_other: set database to query it." in error.value.message
+        assert query.run("SELECT count(*) AS n FROM bi_reporting.global_lc_v", database="wizard_sql_other").rows == [[0]]
+    finally:
+        admin.run("DROP DATABASE wizard_sql_other WITH (FORCE)")

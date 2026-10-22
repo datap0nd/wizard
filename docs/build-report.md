@@ -3,7 +3,66 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-20 (latest) — Show sources lists real sources; no "Google has no capacity" on every question
+## 2026-10-22 (latest) — Flash and Pro stand in for each other both ways; a missing view says where to look; no sleep mid-answer
+
+The owner sent two photos of "Analyze S26 launch, create a full report on it" ("pretty much unusable"): 28 steps, and
+before nearly every step "Gemini is busy; trying again in 5 s … 11 s … 22 s … 33 s" (about a minute each). Two
+queries failed with `relation "bi_reporting.global_lc_v" does not exist` and `bi_reporting.mena_lc`, others returned 0
+rows, and the run ended with "Wizard could not finish this answer" after 59 minutes, its last step at 22:45.
+
+**What the photos show, and the causes found in the code.**
+- The waits carry no "Google said", so Google refused for capacity. That message only shows on the last model: the run
+  had left Flash for Pro (silently, after one refusal) and then waited on Pro at every step. Wizard never went back to
+  Flash in that run, and kept new questions on Pro for ten minutes.
+- Gemini asked for one tool per step, so each of the 28 steps paid the wait.
+- The dataset notes name views that this account's database does not have, and PostgreSQL's error gave Gemini nothing to
+  go on, so it guessed.
+- Nothing happened between 23 and 59 minutes, not even a wait: most likely the PC went to sleep while idle (the answer
+  ran unattended) and the run failed on waking. The failure's own text is not in the photos.
+
+**What changed.**
+- `code_assist.py`: the two models take over from each other in both directions. When the model a run is on refuses,
+  it gets Gemini CLI's two quick tries (1 s, 3 s, for capacity; none when Google asks for a longer wait), then the other
+  model takes the step and the run stays on it. So Pro hands back to Flash just as Flash hands over to Pro. Wizard waits ("Gemini is busy"), 5 to 30 s, only
+  when both have refused. After each wait it tries both again, for up to 10 rounds, and then fails, naming both models.
+  A model with a used-up quota is not gone back to until Google's reset. Capacity is no longer remembered between
+  questions: every question starts on Flash, at a cost of at most two quick tries. Each step logs its model, prompt
+  tokens and tool calls (`run … step N on …`), so the next slow answer shows where the time went.
+- `prompts/system.md`: every step is a round trip that a busy Gemini can make wait, so Gemini should ask for independent
+  notes and queries in the same step (Wizard already runs every call of a step) and prefer one query to many.
+- `postgres_query.py`: "relation … does not exist" now comes back with up to five readable tables or views with a similar
+  name in that database (the same name in another schema or with capitals first, quoted where SQL needs it), and up to
+  12 other databases on the server that have one by that name ("Found bi_reporting.global_lc_v in database dwh: set
+  database to query it."). Or it says that no relation has a similar name, so Gemini stops guessing. These are catalog
+  reads in a READ ONLY transaction that is rolled back. Another database gets its own connection, closed after one
+  lookup, and the search stops after 10 s. `pg.error_text` also passes on PostgreSQL's own hint ("Perhaps you meant to
+  reference the column …").
+- `awake.py`: while a question runs, Wizard asks Windows to keep the system awake (`SetThreadExecutionState`, as a
+  download does). The screen still turns off, and the lid or Sleep still sleeps. Elsewhere than Windows this does nothing.
+- Docs: `desktop.md` (refusals, the step log, sleep), `operations.md` (slow answers, missing views), README, and the
+  desktop decision record.
+
+**Not changed:** the dataset notes themselves (company content, outside this repository). The tool now names where each
+view really is, so the notes can be corrected.
+
+**Tests.**
+- Python, Code Assist: a run on Pro goes back to Flash after Pro's two quick tries, silently, with no wait. Both models
+  refusing gives one wait, then a try on each, and so on. Every round refused fails naming both. A quota-exhausted Flash
+  is not gone back to. A long wait Google asks for goes to the other model at once. The next question starts on
+  Flash. These fail on the previous code, except the quota one, which guards existing behaviour.
+- Python, PostgreSQL: a missing view lists similar names and the database that has it, under a fresh read-only
+  transaction, with every other connection rolled back and closed. A name with capitals comes back quoted. No match
+  says so. PostgreSQL's hint is passed on. Against a real PostgreSQL 16: a similar view in the same database, and a
+  second database holding the exact view, which the suggested `database` then reads.
+- Python, sleep: awake while any question runs and released after the last one; a refusal or an error never stops a
+  question. End to end, a replayed question takes the keep-awake when it starts and releases it when it ends.
+- `verify_all.sh --allow-blocked=live-parity`, run as CI does (`CI=true`, a local PostgreSQL 16, Gemini CLI 0.62 in
+  `.tools`): lock, spec, secrets, contracts (unchanged), lint, types, Python 364 passed and 5 skipped, real Gemini CLI 4,
+  PostgreSQL 16 through pg8000 11, web types, web unit 39, web-dist and web build all pass; live-parity BLOCKED, as
+  allowed. The e2e layer could not launch here: this Playwright wants a browser build that is not installed. The same
+  16 tests passed on the installed Chromium (`executablePath` override, not committed).
+
+## 2026-10-20 — Show sources lists real sources; no "Google has no capacity" on every question
 
 **Show sources.** The owner asked that the button show the sources actually used, "a file, a postgres table or a name of
 a report in one of these modules (like sell in biz plan GSCM)", not "Show sources (14)" for 14 queries on one table.

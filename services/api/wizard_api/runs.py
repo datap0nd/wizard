@@ -24,6 +24,7 @@ from wizard_connectors.entitlements import Identity
 from wizard_connectors.tools import Services, ToolContext, ToolOutcome, ToolRegistry
 
 from .attachments import Attachments
+from .awake import KeepAwake
 from .config import Settings
 from .security import run_token
 from .store import Store, new_id, now
@@ -253,6 +254,7 @@ class RunManager:
         self.active: dict[str, ActiveRun] = {}
         self._semaphore: asyncio.Semaphore | None = None
         self.attachments = Attachments(settings, store)
+        self.awake = KeepAwake()
 
     @property
     def semaphore(self) -> asyncio.Semaphore:
@@ -418,6 +420,10 @@ class RunManager:
         return turns
 
     async def _execute(self, run: ActiveRun) -> None:
+        with self.awake:  # a sleeping PC would stop the answer half-way: it stays awake until the run ends
+            await self._answer(run)
+
+    async def _answer(self, run: ActiveRun) -> None:
         try:
             async with self.semaphore:
                 self.store.update_run(run.id, status="running")

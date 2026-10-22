@@ -8,12 +8,17 @@ the server:
   transaction that is always rolled back, with statement and lock timeouts. The connection is then closed, so nothing a
   query sets or locks outlives the call;
 - at most MAX_ROWS rows come back to Gemini, which aggregates in SQL for anything larger.
+When a query names a table or view that does not exist, the error says where to look instead: readable relations with a
+similar name in that database, and the other databases on the server that have one by that name. A dataset note can
+name a view that was renamed or lives elsewhere, and guessing costs Gemini a step each time. These are catalog reads,
+under the same protections.
 Model-written SQL is sent exactly as written: pg8000's own placeholder parsing is bypassed. Building a statement from
 that text is the point of this module, hence ruff's S608 is waived for this file in pyproject.toml."""
 from __future__ import annotations
 
 import contextlib
 import datetime as dt
+import difflib
 import hashlib
 import json
 import re
@@ -24,13 +29,28 @@ from decimal import Decimal
 from typing import Any, Protocol
 
 from .fixture_source import SourceError
-from .pg import Pg8000Session, PgError, PgSettings, error_text
+from .pg import Pg8000Session, PgError, PgSettings, error_text, quote, sqlstate
 
 MAX_ROWS = 500
 STATEMENT_TIMEOUT = "60s"
 INTEGER_OIDS = {20, 21, 23}
 NUMBER_OIDS = {700, 701, 790, 1700}
 DOLLAR_TAG = re.compile(r"\$[A-Za-z_]?[A-Za-z0-9_]*\$")
+MISSING_RELATION = re.compile(r'relation "([^"]+)" does not exist')
+PLAIN_NAME = re.compile(r"[a-z_][a-z0-9_$]*")
+# Readable tables, views and materialized views, as schema and name; :relname / :schema narrow it to one name.
+RELATIONS = ("SELECT n.nspname AS schema, c.relname AS name FROM pg_catalog.pg_class c "
+             "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+             "WHERE c.relkind IN ('r', 'v', 'm', 'p', 'f') AND n.nspname NOT IN ('pg_catalog', 'information_schema') "
+             "AND n.nspname NOT LIKE 'pg\\_%' AND pg_catalog.has_schema_privilege(n.oid, 'USAGE') "
+             "AND pg_catalog.has_table_privilege(c.oid, 'SELECT')")
+NAMED = " AND lower(c.relname) = lower(:relname) AND (:schema = '' OR lower(n.nspname) = lower(:schema))"
+DATABASES = ("SELECT datname FROM pg_catalog.pg_database WHERE datallowconn AND NOT datistemplate "
+             "AND datname <> current_database() AND pg_catalog.has_database_privilege(datname, 'CONNECT') ORDER BY 1")
+MAX_RELATIONS = 20_000      # names compared for a missing relation
+MAX_SIMILAR = 5
+MAX_OTHER_DATABASES = 12
+SEARCH_SECONDS = 10.0       # the other databases are searched for at most this long
 
 
 def _code(sql: str) -> Iterator[tuple[int, str]]:
@@ -156,6 +176,9 @@ class PostgresQuery:
             if "syntax error" in message or "multiple commands" in message:
                 message += (". Send one query per call: SELECT ... or WITH ... SELECT ..., without other statements "
                             "(it runs as a subquery).")
+            missing = MISSING_RELATION.search(message) if sqlstate(error) == "42P01" else None
+            if missing:
+                message += self.where_is(session, database, missing.group(1))
             raise SourceError("query_failed", f"PostgreSQL could not run this query: {message}") from None
         finally:
             with contextlib.suppress(Exception):  # the connection is closed next either way
@@ -173,3 +196,64 @@ class PostgresQuery:
         digest = hashlib.sha256(json.dumps([names, out_rows], default=str, sort_keys=True).encode()).hexdigest()
         return QueryResult(database, out_columns, out_rows, len(rows) > max_rows,
                            int((time.perf_counter() - started) * 1000), digest)
+
+    def where_is(self, session: QuerySession, database: str, missing: str) -> str:
+        """For "relation ... does not exist": the readable relations with a similar name in this database, and the other
+        databases on the server that have a readable one by that name. Catalog reads only, each in a read-only
+        transaction that is rolled back; another database gets its own connection, closed after one lookup."""
+        schema, _, relname = missing.rpartition(".")
+        try:
+            session.rows("ROLLBACK")  # the failed query aborted the transaction
+            session.rows("START TRANSACTION READ ONLY")
+            names = [(str(r["schema"]), str(r["name"])) for r in session.rows(f"{RELATIONS} ORDER BY 1, 2 LIMIT {MAX_RELATIONS}")]
+            others = [str(r["datname"]) for r in session.rows(DATABASES)][:MAX_OTHER_DATABASES]
+        except Exception:  # noqa: BLE001 - the hint is a courtesy; the query's own error stands
+            return ""
+        similar = similar_relations(missing, names)
+        found: list[str] = []
+        deadline = time.monotonic() + SEARCH_SECONDS
+        for other in others:
+            if time.monotonic() > deadline:
+                break
+            try:
+                elsewhere = self.connect(self.settings, other)
+            except PgError:
+                continue
+            try:
+                with contextlib.suppress(Exception):  # a database this account cannot read is skipped
+                    elsewhere.rows("START TRANSACTION READ ONLY")
+                    rows = elsewhere.rows(f"{RELATIONS}{NAMED} ORDER BY 1, 2 LIMIT 3", relname=relname, schema=schema)
+                    found += [f"{sql_name(str(r['schema']), str(r['name']))} in database {other}" for r in rows]
+            finally:
+                with contextlib.suppress(Exception):
+                    elsewhere.rows("ROLLBACK")
+                elsewhere.close()
+        hints = []
+        if found:
+            hints.append(f"Found {'; '.join(found)}: set database to query it.")
+        if similar:
+            hints.append(f"Readable relations with a similar name in database {database}: {', '.join(similar)}.")
+        if not hints:
+            hints.append(f"No readable table or view in database {database}{' or the other databases' if others else ''} "
+                         "has a similar name; look in information_schema.tables rather than guessing.")
+        return ". " + " ".join(hints)
+
+
+def sql_name(schema: str, name: str) -> str:
+    """schema.name as it must be written in SQL: quoted only where PostgreSQL would otherwise fold or reject it."""
+    return ".".join(part if PLAIN_NAME.fullmatch(part) else quote(part) for part in (schema, name))
+
+
+def similar_relations(missing: str, names: list[tuple[str, str]]) -> list[str]:
+    """The relations closest to a missing name: the same name in another schema (or spelt with capitals) first, then
+    close spellings of the name (global_lc_v -> global_lc_v_weekly), in the same schema before others. Names are
+    compared without their schema, which would make every view of a schema look alike."""
+    schema, _, relname = missing.lower().rpartition(".")
+    scored: list[tuple[float, str]] = []
+    for found_schema, found_name in names:
+        alone = found_name.lower()
+        score = 2.0 if alone == relname else difflib.SequenceMatcher(None, relname, alone).ratio()
+        score += 0.05 if found_schema.lower() == schema else 0.0
+        if score >= 0.6:
+            scored.append((score, sql_name(found_schema, found_name)))
+    return [name for _, name in sorted(scored, key=lambda item: -item[0])[:MAX_SIMILAR]]

@@ -86,8 +86,14 @@ def error_text(error: BaseException) -> str:
     args = getattr(error, "args", ())
     if args and isinstance(args[0], dict):  # pg8000 DatabaseError: {'S': 'ERROR', 'C': '57014', 'M': 'canceling ...'}
         detail = args[0]
-        return f"{detail.get('M', 'database error')} (SQLSTATE {detail.get('C', '?')})"
+        hint = f". Hint: {detail['H']}" if detail.get("H") else ""  # e.g. 'Perhaps you meant to reference the column ...'
+        return f"{detail.get('M', 'database error')} (SQLSTATE {detail.get('C', '?')}){hint}"
     return " ".join(str(error).split())[:300] or type(error).__name__
+
+
+def sqlstate(error: BaseException) -> str | None:
+    args = getattr(error, "args", ())
+    return str(args[0].get("C")) if args and isinstance(args[0], dict) and args[0].get("C") else None
 
 
 def quote(name: str) -> str:

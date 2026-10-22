@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from tests.helpers import CEO_QUESTION, CONQUEST_QUESTION, HEADERS, PLANNER_QUESTION, ask, login, sse_events, wait_run
 
+from wizard_api.awake import ES_CONTINUOUS, ES_SYSTEM_REQUIRED, KeepAwake
 from wizard_api.outlook import DraftError
 
 
@@ -37,6 +38,16 @@ def test_event_stream_mirrors_executed_tools(client):
     assert "note" in types and "visual_added" in types
     resumed = sse_events(client, started["run_id"], after=events[-3]["seq"])
     assert [e["seq"] for e in resumed] == [e["seq"] for e in events[-2:]]
+
+
+def test_the_pc_stays_awake_while_a_question_runs(client):
+    manager = client.app.state.manager
+    calls: list[tuple[int, int]] = []
+    manager.awake = KeepAwake(lambda flags: calls.append((flags, len(manager.active))) or 1)
+    login(client, "u-ceo")
+    assert ask(client, CEO_QUESTION)["status"] == "succeeded"
+    assert calls == [(ES_CONTINUOUS | ES_SYSTEM_REQUIRED, 1), (ES_CONTINUOUS, 0)], "awake from its start until it has ended"
+    assert manager.awake.running == 0
 
 
 def test_report_reopens_after_reload_and_conversation_restores(client):
