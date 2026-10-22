@@ -216,10 +216,10 @@ def test_flash_without_capacity_hands_over_to_pro_like_gemini_cli(tmp_path, wait
     assert switched[1]["parts"][0]["thoughtSignature"] == "skip_thought_signature_validator"
     assert fake.requests[-1]["request"]["generationConfig"]["thinkingConfig"] == {"thinkingLevel": "HIGH"}
     assert [p["text"] for k, p in events if k == "text_delta"][-1] == "EG [E1]."
-    # The next question starts on Pro for a while, without saying "no capacity" again on every question.
+    # The next question starts on Flash again: Google's capacity comes and goes, and Pro is the slower model.
     events = run_and_collect(rt, req)
-    assert fake.models[-1] == "gemini-3.1-pro-preview" and len(fake.models) == 6
-    assert [p["model"] for k, p in events if k == "agent_session"] == ["gemini-3.1-pro-preview"]
+    assert fake.models[-1] == "gemini-3.8-flash" and len(fake.models) == 6
+    assert [p["model"] for k, p in events if k == "agent_session"] == ["gemini-3.8-flash"]
     assert not any(k in ("warning", "status") for k, _ in events)
 
 
@@ -279,13 +279,62 @@ def test_no_capacity_through_every_attempt_says_whose_side_it_is(tmp_path, waits
     assert len(fake.models) == code_assist.MAX_RETRIES and len(waits) == code_assist.MAX_RETRIES - 1, "no wait after the last"
 
 
-def test_a_fallback_model_without_capacity_is_waited_for(tmp_path, waits):
-    fake = FakeGoogle([[{"text": "ok"}]], refusals={"gemini-3.8-flash": [FLASH_CAPACITY] * 3,
-                                                     "gemini-3.1-pro-preview": [CAPACITY]})
-    rt, req = make(tmp_path, fake, fallback="gemini-3.1-pro-preview")
+PRO = "gemini-3.1-pro-preview"
+FLASH = "gemini-3.8-flash"
+
+
+def test_a_run_on_pro_goes_back_to_flash_when_pro_has_no_capacity(tmp_path, waits):
+    # The owner's 22 Oct run: Flash had no room once, the run moved to Pro, and then every step waited on Pro ("Gemini is
+    # busy" 3-4 times, about a minute per step). Now Pro's refusal hands the step back to Flash after two quick tries.
+    fake = FakeGoogle([
+        [{"functionCall": {"name": "nerp_run_report", "args": {"report_id": "r"}}, "thoughtSignature": "sig-pro"}],
+        [{"text": "EG [E1]."}],
+    ], refusals={FLASH: [FLASH_CAPACITY] * 3, PRO: [None] + [CAPACITY] * 3})
+    rt, req = make(tmp_path, fake, fallback=PRO)
     events = run_and_collect(rt, req)
-    assert fake.models == ["gemini-3.8-flash"] * 3 + ["gemini-3.1-pro-preview"] * 2
-    assert waits[:2] == [1.0, 3.0] and 5 <= waits[2] <= 6, "quick tries on Flash, then Pro, the last model, is waited for"
-    assert [p["text"] for k, p in events if k == "text_delta"] == ["ok"]
+    assert fake.models == [FLASH] * 3 + [PRO] + [PRO] * 3 + [FLASH]
+    assert waits == [1.0, 3.0, 1.0, 3.0], "quick tries only: no step waits while the other model can answer"
+    assert [p["model"] for k, p in events if k == "agent_session"] == [FLASH, PRO, FLASH]
+    assert not any(k in ("warning", "status") for k, _ in events), "silent, as Gemini CLI"
+    assert fake.requests[-1]["request"]["contents"][1]["parts"][0]["thoughtSignature"] == "skip_thought_signature_validator"
+    assert [p["text"] for k, p in events if k == "text_delta"] == ["EG [E1]."]
+
+
+def test_when_both_models_refuse_wizard_waits_and_tries_both_again(tmp_path, waits):
+    fake = FakeGoogle([[{"text": "ok"}]], refusals={FLASH: [FLASH_CAPACITY] * 4, PRO: [CAPACITY] * 4})
+    rt, req = make(tmp_path, fake, fallback=PRO)
+    events = run_and_collect(rt, req)
+    assert fake.models == [FLASH] * 3 + [PRO] * 4 + [FLASH] * 2, "after each wait, one more try on each model"
+    assert waits[:4] == [1.0, 3.0, 1.0, 3.0] and 5 <= waits[4] <= 6 and 10 <= waits[5] <= 12 and len(waits) == 6
     statuses = [p["message"] for k, p in events if k == "status"]
-    assert len(statuses) == 1 and statuses[0].startswith("Gemini is busy; trying again in "), "only the wait on Pro is shown"
+    assert [m.split(" (attempt")[1] for m in statuses] == [" 1 of 10).", " 2 of 10)."]
+    assert all(m.startswith("Gemini is busy; trying again in ") for m in statuses), "no capacity wording on the stage"
+    assert [p["text"] for k, p in events if k == "text_delta"] == ["ok"]
+
+
+def test_both_models_without_capacity_through_every_round_name_both(tmp_path, waits):
+    fake = FakeGoogle([[{"text": "ok"}]], refusals={FLASH: [FLASH_CAPACITY] * 50, PRO: [CAPACITY] * 50})
+    rt, req = make(tmp_path, fake, fallback=PRO)
+    with pytest.raises(AgentFailure) as error:
+        run_and_collect(rt, req)
+    assert error.value.code == "model_capacity"
+    assert error.value.message.startswith(f"Google has no capacity for {FLASH} or {PRO} right now. This is on Google's side")
+    assert len([w for w in waits if w >= 5]) == code_assist.MAX_RETRIES - 1, "no wait after the last round"
+
+
+def test_a_long_wait_google_asks_for_goes_to_the_other_model_at_once(tmp_path, waits):
+    later = google_error("MODEL_CAPACITY_EXHAUSTED", "No capacity available for model gemini-3.8-flash", delay="23s")
+    fake = FakeGoogle([[{"text": "ok"}]], refusals={FLASH: [later]})
+    rt, req = make(tmp_path, fake, fallback=PRO)
+    run_and_collect(rt, req)
+    assert fake.models == [FLASH, PRO] and waits == [], "no silent 23 s quick tries while Pro can answer"
+
+
+def test_a_model_whose_quota_is_used_up_is_not_gone_back_to(tmp_path, waits):
+    fake = FakeGoogle([[{"text": "ok"}]], refusals={FLASH: [google_error("QUOTA_EXHAUSTED", delay="7200s")], PRO: [CAPACITY]})
+    rt, req = make(tmp_path, fake, fallback=PRO)
+    events = run_and_collect(rt, req)
+    assert fake.models == [FLASH, PRO, PRO], "Pro is the only model left, so it is waited for, without quick tries"
+    assert len(waits) == 1 and 5 <= waits[0] <= 6
+    statuses = [p["message"] for k, p in events if k == "status"]
+    assert "quota for gemini-3.8-flash is used up" in statuses[0] and statuses[1].startswith("Gemini is busy; trying again")

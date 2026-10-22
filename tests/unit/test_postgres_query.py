@@ -91,6 +91,65 @@ def test_rows_are_capped_and_errors_are_explained():
         PostgresQuery(SETTINGS, connect=lambda s, d: FakeSession()).run(" ; ")
 
 
+class CatalogSession(FakeSession):
+    """A database whose catalog lists `relations` (schema, name) and, from the server, `databases`."""
+
+    def __init__(self, relations: list[tuple[str, str]], databases: list[str] | None = None, error: Exception | None = None):
+        super().__init__(error=error)
+        self.relations, self.databases, self.closed = relations, databases or [], False
+
+    def rows(self, sql: str, **params: Any) -> list[dict[str, Any]]:
+        self.statements.append(sql)
+        if "pg_database" in sql:
+            return [{"datname": d} for d in self.databases]
+        if "pg_class" in sql:
+            wanted = [(s, n) for s, n in self.relations if not params or (n.lower() == params["relname"].lower()
+                      and params["schema"].lower() in ("", s.lower()))]
+            return [{"schema": s, "name": n} for s, n in wanted]
+        return []
+
+
+MISSING = Exception({"S": "ERROR", "C": "42P01", "M": 'relation "bi_reporting.global_lc_v" does not exist'})
+
+
+def test_a_missing_relation_names_where_to_look_instead():
+    # The owner's 22 Oct run: the dataset notes named bi_reporting.global_lc_v and bi_reporting.mena_lc, PostgreSQL said
+    # they do not exist, and Gemini spent steps guessing.
+    here = CatalogSession([("bi_reporting", "global_lc_v_weekly"), ("bi_reporting", "Mena_LC"), ("sales", "orders")],
+                          databases=["dwh", "archive"], error=MISSING)
+    sessions = {"meto_db": here, "dwh": CatalogSession([("bi_reporting", "global_lc_v")]), "archive": CatalogSession([])}
+    with pytest.raises(SourceError) as error:
+        PostgresQuery(SETTINGS, connect=lambda s, d: sessions[d]).run("SELECT * FROM bi_reporting.global_lc_v")
+    message = error.value.message
+    assert error.value.code == "query_failed" and 'relation "bi_reporting.global_lc_v" does not exist (SQLSTATE 42P01)' in message
+    assert "Found bi_reporting.global_lc_v in database dwh: set database to query it." in message
+    assert "similar name in database meto_db: bi_reporting.global_lc_v_weekly." in message and "orders" not in message
+    assert here.statements[2:4] == ["ROLLBACK", "START TRANSACTION READ ONLY"], "a fresh read-only transaction"
+    assert here.statements[-1] == "ROLLBACK" and here.closed
+    for other in ("dwh", "archive"):
+        assert sessions[other].statements[0] == "START TRANSACTION READ ONLY" and sessions[other].statements[-1] == "ROLLBACK"
+        assert sessions[other].closed
+
+    capitals = CatalogSession([("bi_reporting", "Mena_LC")], error=Exception(
+        {"S": "ERROR", "C": "42P01", "M": 'relation "bi_reporting.mena_lc" does not exist'}))
+    with pytest.raises(SourceError) as error:
+        PostgresQuery(SETTINGS, connect=lambda s, d: capitals).run("SELECT * FROM bi_reporting.mena_lc")
+    assert 'similar name in database meto_db: bi_reporting."Mena_LC".' in error.value.message, "quoted, as SQL needs it"
+
+    nothing = CatalogSession([("sales", "orders")], error=MISSING)
+    with pytest.raises(SourceError) as error:
+        PostgresQuery(SETTINGS, connect=lambda s, d: nothing).run("SELECT * FROM bi_reporting.global_lc_v")
+    assert "No readable table or view in database meto_db has a similar name" in error.value.message
+
+
+def test_postgresql_hints_reach_gemini():
+    column = FakeSession(error=Exception({"S": "ERROR", "C": "42703", "M": 'column "unit" does not exist',
+                                          "H": 'Perhaps you meant to reference the column "s.units".'}))
+    with pytest.raises(SourceError) as error:
+        PostgresQuery(SETTINGS, connect=lambda s, d: column).run("SELECT unit FROM sql_reporting.sales s")
+    assert error.value.message.endswith('(SQLSTATE 42703). Hint: Perhaps you meant to reference the column "s.units".')
+
+
 def owner(markets: list[str] | None = None) -> Identity:
     rights = {"postgresql": SystemRights(reports=["*"], markets=markets or ["*"])}
     return Identity(id="o", email="o@corp.test", name="O", role="Owner", entitlements=rights)

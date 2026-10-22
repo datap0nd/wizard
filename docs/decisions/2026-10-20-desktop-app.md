@@ -92,6 +92,12 @@ Pro, Gemini 3.1 Pro preview. `WIZARD_GEMINI_FALLBACK_MODEL` now defaults to `gem
 tries the rest of the answer comes from Pro, and the switch is a status line, not a warning (Gemini CLI's default
 `errorVerbosity: low` shows no error either).
 
+**Addendum (22 October): both ways, and the PC stays awake.** The owner's "Analyze S26 launch" run waited about a
+minute on Pro before nearly every one of its 28 steps, then failed with no answer. The run had moved to Pro after Flash
+refused once and never went back. Now Pro hands back to Flash in the same way, silently, and every new question starts
+on Flash. Wizard waits only when both refuse. While a question runs, Wizard also keeps the PC from going to sleep when
+idle, since a sleeping PC stops the answer.
+
 **Addendum (same day): files dropped on the button.** The owner asked that a file dropped on the Ask Wizard button be
 attached to the conversation.
 - **From this PC** reads only files in Downloads, Desktop and Documents. That limit keeps a page, or any local process

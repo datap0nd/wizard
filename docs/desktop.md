@@ -181,18 +181,25 @@ of Wizard on this PC:
   removed it on 20 October 2026, and a model chosen with it before no longer applies. Only the company file, `.env` or
   the environment can set others (`WIZARD_GEMINI_MODEL`, `WIZARD_GEMINI_FALLBACK_MODEL`; `none` turns the fallback off).
 - **When Gemini says no.** Wizard handles Google's refusal the way Gemini CLI does:
-  - *No capacity for the model* (Google's side, not your quota): two quick tries (1 s, 3 s), then the rest of the
-    answer comes from the fallback, Pro. As with Gemini CLI's default, this is silent: no message on the stage (the
-    owner did not want "Google has no capacity" on every question), and the answer's report names the model that
-    answered. For ten minutes new questions start on Pro, also silently. If Pro has no capacity either (or no fallback
-    is set), Wizard waits it out: up to 10 tries, 5 to 30 s apart (about 4 minutes), and the stage shows only "Gemini
-    is busy; trying again in …". Only if every try fails does the answer stop, with Google's reason.
-  - *Your quota for the model is used up* (often the daily quota): no waiting. The answer continues on the fallback
-    model, until Google's reset time.
-  - *Per-minute limit* (Wizard asks Gemini once per step, so a long answer can reach it): Wizard waits as long as
-    Google asks, then continues.
+  - *No capacity for the model* (Google's side, not your quota): two quick tries (1 s, 3 s), then the other model takes
+    the step and the answer continues on it: Flash hands over to Pro, and Pro hands back to Flash. As with Gemini
+    CLI's default, this is silent: no message on the stage (the owner did not want "Google has no capacity" on every
+    question), and the answer's report names the model that answered. Every new question starts on Flash. Only when
+    both models refuse (or no fallback is set) does Wizard wait: 5 to 30 s, then one more try on each, for up to 10
+    rounds (about 4 minutes), and the stage shows only "Gemini is busy; trying again in …". Only if every round fails
+    does the answer stop, with Google's reason.
+  - *Your quota for the model is used up* (often the daily quota): no waiting. The answer continues on the other
+    model, and Wizard does not go back to the first one until Google's reset time.
+  - *Per-minute limit* (Wizard asks Gemini once per step, so a long answer can reach it): the other model takes the
+    step; if it refuses too, Wizard waits as long as Google asks, then continues.
+  - `logs\wizard.log` also records each step's model and size (`run … step 12 on gemini-3.8-flash: 48210 prompt
+    tokens, 3 tool call(s)`), so a slow answer shows whether the time went to waiting or to a growing conversation.
+  - Gemini is asked to request independent lookups and queries together, in one step, since every step is a round trip
+    that a busy Gemini can make wait.
   - A failure or a quota message quotes Google's own words (`Google said: "..."`), and `logs\wizard.log` records each
     refusal and each switch of model with Google's reason (lines from `wizard.gemini`).
+- **Sleep:** while a question runs, Wizard keeps the PC from going to sleep when idle (as a download does), so a long
+  answer is not stopped half-way. The screen still turns off; closing the lid or choosing Sleep still sleeps.
 - **Update:** Check for updates reads the public release manifest; **Update to 1.0.N** has WizardBar download it, check
   size, SHA-256 and version, install it silently and start again. In a normal browser it offers the download instead.
 
