@@ -45,7 +45,7 @@ export function Conversation({runs, empty, ...handlers}: Props) {
             <article key={run.id} className="flex flex-col gap-3" data-testid="turn">
               {run.kind !== 'check' && <div className="flex flex-col items-end gap-1.5">
                 <p className="max-w-[760px] whitespace-pre-wrap rounded-2xl bg-accent-soft px-4 py-2.5 text-[15px]" data-testid="user-turn">{run.question}</p>
-                <SentFiles files={run.attachments} />
+                <SentFiles files={run.attachments.filter(a => a.origin !== 'edited')} />
               </div>}
               <RunCard run={run} {...handlers} />
             </article>

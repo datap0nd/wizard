@@ -99,6 +99,8 @@ describe('the systems stage', () => {
     // Searching a report catalog is not reading the system (the owner, 23 Oct: "it's not actually going in").
     expect(verbOf(tool('t2', 'asap_search_reports', 'running'), 'reports').verb).toBe('Searching the catalog of');
     expect(verbOf(tool('t3', 'wizard_query_postgresql', 'running'), 'database').verb).toBe('Querying');
+    expect(moduleOf('wizard_edit_attachment')).toBe('attachment');
+    expect(verbOf(tool('t4', 'wizard_edit_attachment', 'running'), 'files').verb).toBe('Editing a copy in');
   });
 
   it('counts only systems something was read from as cross-checked', () => {

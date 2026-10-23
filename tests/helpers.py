@@ -63,6 +63,9 @@ class MemoryRecorder:
     def attachment(self, label: str) -> tuple[dict[str, Any], str] | None:
         return self.files.get(label)
 
+    def edit_attachment(self, label: str, operations: list[dict[str, Any]], name: str | None) -> dict[str, Any]:
+        raise NotImplementedError("edits run through the API's recorder (tests/unit/test_edit_attachment.py)")
+
 
 def make_settings(tmp_path: Path, **overrides: str) -> Settings:
     env = {"WIZARD_DATA_DIR": str(tmp_path / "var"), "WIZARD_AGENT_RUNTIME": "replay", "WIZARD_ATTACHMENT_OFFICE": "never",

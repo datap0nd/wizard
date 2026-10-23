@@ -721,6 +721,206 @@
       }
     },
     {
+      "name": "wizard_edit_attachment",
+      "description": "Change an attached Excel workbook and give the user the edited file: Wizard applies your operations (write values and formulas, insert or delete rows and columns, delete rows that meet a condition, sort, format, column widths, find and replace, add, rename or delete sheets, freeze panes, filters) to a copy, with Excel itself when it is on this PC, and the copy appears under your answer to download, as a new attached file you can read back. Use it whenever the user asks to change, fix, clean, add to or reformat a file they attached; never answer with code or steps for them to do it. The original is never changed.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "description": "The attached workbook's label, e.g. 'F1'. Edit an edited copy (e.g. 'F2') to continue from it (pattern ^F[0-9]{1,3}$)",
+            "type": "string"
+          },
+          "operations": {
+            "description": "The changes, applied in order.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "op": {
+                  "description": "set: write values from cell (top-left) down and right. clear: empty a range. insert_rows / delete_rows: at row, count rows. insert_columns / delete_columns: at column (letter), count. delete_rows_where: remove every row whose column meets condition/value (header_row is the header, default 1). sort: range by column (letter or header), descending, header. format: range with bold, italic, font_color, fill, number_format, align, wrap, border. column_width: columns ('B' or 'B:D') to width, or fitted when width is omitted. find_replace: find → replace in sheet or every sheet. add_sheet: name (after). rename_sheet: sheet → name. delete_sheet. freeze: panes above and left of cell. autofilter: filter buttons on range.",
+                  "enum": [
+                    "set",
+                    "clear",
+                    "insert_rows",
+                    "delete_rows",
+                    "insert_columns",
+                    "delete_columns",
+                    "delete_rows_where",
+                    "sort",
+                    "format",
+                    "column_width",
+                    "find_replace",
+                    "add_sheet",
+                    "rename_sheet",
+                    "delete_sheet",
+                    "freeze",
+                    "autofilter"
+                  ],
+                  "type": "string"
+                },
+                "sheet": {
+                  "description": "Sheet name as the workbook shows it (may be omitted when there is one sheet; for find_replace, omit for every sheet) (0-31 characters)",
+                  "type": "string"
+                },
+                "cell": {
+                  "description": "set: top-left cell, e.g. 'E1'. freeze: e.g. 'B2' (pattern ^\\$?[A-Za-z]{1,3}\\$?[0-9]{1,7}(:\\$?[A-Za-z]{1,3}\\$?[0-9]{1,7})?$)",
+                  "type": "string"
+                },
+                "range": {
+                  "description": "A1-style range, e.g. 'A1:F200' (pattern ^\\$?[A-Za-z]{1,3}\\$?[0-9]{1,7}(:\\$?[A-Za-z]{1,3}\\$?[0-9]{1,7})?$)",
+                  "type": "string"
+                },
+                "values": {
+                  "description": "set: rows of cells, e.g. [[\"Margin\"], [\"=C2-D2\"]]. Numbers as digits (1234.5), formulas start with =, dates as 2026-10-23, '' empties a cell, text that looks like a number starts with '.",
+                  "items": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "maxItems": 5000,
+                  "type": "array"
+                },
+                "row": {
+                  "description": "insert_rows / delete_rows: the first row.",
+                  "maximum": 1048576,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "column": {
+                  "description": "A column letter, or for delete_rows_where and sort the header text (0-120 characters)",
+                  "type": "string"
+                },
+                "count": {
+                  "description": "How many rows or columns (default 1).",
+                  "maximum": 100000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "condition": {
+                  "enum": [
+                    "equals",
+                    "not_equals",
+                    "contains",
+                    "not_contains",
+                    "empty",
+                    "not_empty",
+                    "greater",
+                    "less"
+                  ],
+                  "type": "string"
+                },
+                "value": {
+                  "description": "delete_rows_where: the value to compare with (0-500 characters)",
+                  "type": "string"
+                },
+                "header_row": {
+                  "description": "delete_rows_where: the header's row (default 1).",
+                  "maximum": 1000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "descending": {
+                  "type": "boolean"
+                },
+                "header": {
+                  "description": "sort: the range's first row is a header (default true).",
+                  "type": "boolean"
+                },
+                "bold": {
+                  "type": "boolean"
+                },
+                "italic": {
+                  "type": "boolean"
+                },
+                "font_color": {
+                  "description": "e.g. #C00000 (pattern ^#?[0-9A-Fa-f]{6}$)",
+                  "type": "string"
+                },
+                "fill": {
+                  "description": "Background, e.g. #FFF2CC (pattern ^#?[0-9A-Fa-f]{6}$)",
+                  "type": "string"
+                },
+                "number_format": {
+                  "description": "Excel number format, e.g. '#,##0.00', '0.0%', 'yyyy-mm-dd' (0-60 characters)",
+                  "type": "string"
+                },
+                "align": {
+                  "enum": [
+                    "left",
+                    "center",
+                    "right"
+                  ],
+                  "type": "string"
+                },
+                "wrap": {
+                  "type": "boolean"
+                },
+                "border": {
+                  "enum": [
+                    "thin",
+                    "none"
+                  ],
+                  "type": "string"
+                },
+                "columns": {
+                  "description": "column_width: 'B' or 'B:D' (pattern ^\\$?[A-Za-z]{1,3}(:\\$?[A-Za-z]{1,3})?$)",
+                  "type": "string"
+                },
+                "width": {
+                  "maximum": 255,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "find": {
+                  "type": "string",
+                  "description": "(0-500 characters)"
+                },
+                "replace": {
+                  "type": "string",
+                  "description": "(0-500 characters)"
+                },
+                "match_case": {
+                  "type": "boolean"
+                },
+                "whole_cell": {
+                  "type": "boolean"
+                },
+                "name": {
+                  "description": "add_sheet / rename_sheet: the new sheet name (0-31 characters)",
+                  "type": "string"
+                },
+                "after": {
+                  "description": "add_sheet: put the new sheet after this one (0-31 characters)",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "op"
+              ],
+              "type": "object"
+            },
+            "maxItems": 60,
+            "minItems": 1,
+            "type": "array"
+          },
+          "name": {
+            "description": "File name for the edited copy (default '<name> (edited)') (0-120 characters)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file",
+          "operations"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
       "name": "wizard_query_postgresql",
       "description": "Run one read-only SQL query on the company PostgreSQL server and get the rows back: joins, window functions, CTEs, any aggregation the question needs. The dataset notes describe its materialized views (what a row is, columns, units, refresh): find them with wizard_browse_knowledge (area 'datasets') or wizard_lookup_definitions and read them with wizard_read_knowledge. You can also inspect information_schema and pg_catalog. At most max_rows rows come back (truncated=true when there are more). Each call is live evidence to cite like [E3]; the user can see your SQL.",
       "inputSchema": {

@@ -3,7 +3,48 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-23 (latest) — Gemini reads ASAP, GSCM and the Big Data Portal live, in the person's own Wizard browser
+## 2026-10-23 (latest) — Wizard edits a copy of an attached workbook and hands it back
+
+The owner attached an Excel file and asked for changes; Gemini answered with "a pastable code block". They want Wizard
+to "edit the file and spit back an edited file". [Decision](decisions/2026-10-23-edited-attachments.md).
+
+**What changed.**
+- `wizard_documents/edit.py` (new): the operations and two engines.
+  - Operations: set, clear, insert and delete rows and columns, delete rows where, sort, format, column width, find
+    and replace, add, rename and delete sheets, freeze, autofilter.
+  - `ExcelBook` (Office COM): opens the original read-only, uses Excel's own Sort, Replace and AutoFit, and saves with
+    SaveAs in the same format.
+  - `OpenpyxlBook`: for .xlsx and .xlsm without Office. Conditions read Excel's saved values, and it warns about
+    charts and moved formulas.
+- `wizard_docs.py edit`: runs the edit in its own process.
+- `attachments.py`:
+  - `Attachments.edit` makes the copy, converts it, and binds it to the conversation as the next F label (origin
+    `edited`).
+  - One thread lock now serialises every Office job, conversion or edit; edits run from tool threads.
+- Tool `wizard_edit_attachment` (category present; 25 tools with portals configured). The run emits `file_made`.
+  `GET /api/v1/attachments/{id}/file` downloads, for the owner only (audited). The prompt has one line for the
+  failure the owner saw.
+- Web:
+  - The edited copy shows under the answer with **Download**.
+  - Edited copies are not shown as files the user sent.
+  - The stage puts edits on "Attached files" ("Editing a copy in").
+- openpyxl 3.1.5 and et-xmlfile are added to the dependencies and the portable locks.
+- Docs: AGENTS.md, README, decision record; contracts regenerated.
+
+**Tests.** `test_edit_attachment.py` (6):
+- value parsing;
+- every operation on a copy with openpyxl, with the original unchanged;
+- errors reported in words;
+- Excel through fake COM objects;
+- through the API: F2, read back, download, another user refused, `edit_failed`;
+- the tool's description.
+
+`verify_all.sh --allow-blocked=live-parity,postgres` with `CI=true`: every layer passes (Python 447 passed and 5 skipped,
+real Gemini CLI 4, portal-browser 9, web unit 55) except postgres and live-parity, BLOCKED as allowed. e2e cannot launch
+this sandbox's Chromium build; the same 16 e2e tests passed on the installed Chromium. Real Excel is first exercised on
+the work PC.
+
+## 2026-10-23 (later) — Gemini reads ASAP, GSCM and the Big Data Portal live, in the person's own Wizard browser
 
 The owner asked how to be sure Wizard reads the portals it says it reads: "I think it's not actually going in and
 exploring tables." It was not. The ASAP, GSCM and NERP report tools read synthetic fixtures, or refused with

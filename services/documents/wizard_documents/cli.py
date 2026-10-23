@@ -86,6 +86,18 @@ def cmd_convert(args: argparse.Namespace) -> int:
     return 0 if result["status"] != "failed" else 1
 
 
+def cmd_edit(args: argparse.Namespace) -> int:
+    """Wizard's attached-file editing: apply the operations in a JSON file to a copy of the workbook."""
+    from .edit import edit
+    try:
+        operations = json.loads(args.operations.read_text(encoding="utf-8"))
+        result: dict[str, object] = edit(args.file, operations, args.out, args.office)
+    except (ConversionError, OSError, ValueError) as error:
+        result = {"status": "failed", "note": str(error)[:600]}
+    print(json.dumps(result, ensure_ascii=False, default=str))
+    return 0 if result["status"] == "ok" else 1
+
+
 def cmd_extract(args: argparse.Namespace) -> int:
     content = args.content.resolve()
     if not (content / "inbox").is_dir():
@@ -235,6 +247,11 @@ def main(argv: list[str] | None = None) -> int:
         sub.add_argument("--slide-images", choices=("auto", "all", "none"), default="auto")
         sub.add_argument("--max-rows", type=int, default=1000)
         sub.add_argument("--keep-contacts", action="store_true", help="do not mask email addresses and phone numbers")
+    edit_parser = commands.add_parser("edit", help="apply operations (JSON) to a copy of a workbook")
+    edit_parser.add_argument("file", type=Path)
+    edit_parser.add_argument("--operations", type=Path, required=True)
+    edit_parser.add_argument("--out", type=Path, required=True)
+    edit_parser.add_argument("--office", choices=("auto", "always", "never"), default="auto")
     folders = commands.add_parser("outlook-folders")
     folders.add_argument("--depth", type=int, default=3)
     draft = commands.add_parser("outlook-draft")
@@ -293,6 +310,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_convert(args)
         if args.command == "extract":
             return cmd_extract(args)
+        if args.command == "edit":
+            return cmd_edit(args)
         if args.command == "outlook-folders":
             return cmd_outlook_folders(args)
         if args.command == "outlook-draft":
