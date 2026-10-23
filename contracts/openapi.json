@@ -1364,6 +1364,87 @@
         }
       }
     },
+    "/api/v1/portals": {
+      "get": {
+        "summary": "Portals Status",
+        "operationId": "portals_status_api_v1_portals_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Portals Status Api V1 Portals Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/portals/sign-in": {
+      "post": {
+        "summary": "Portals Sign In",
+        "description": "Opens a visible window of Wizard's browser on this PC, one tab per portal, for the person to sign in.",
+        "operationId": "portals_sign_in_api_v1_portals_sign_in_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Portals Sign In Api V1 Portals Sign In Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/portals/sign-in/done": {
+      "post": {
+        "summary": "Portals Signed In",
+        "operationId": "portals_signed_in_api_v1_portals_sign_in_done_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Portals Signed In Api V1 Portals Sign In Done Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/portals/check": {
+      "post": {
+        "summary": "Portals Check",
+        "operationId": "portals_check_api_v1_portals_check_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Portals Check Api V1 Portals Check Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/settings": {
       "get": {
         "summary": "Get Settings",

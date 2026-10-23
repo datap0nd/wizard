@@ -188,7 +188,19 @@ class Bridge:
         return [{"id": e["id"], "report_id": e.get("report_id")} for e in self.manager.store.evidence(self.run.conversation_id)]
 
 
+def portal_name(services: Services, system: Any) -> str:
+    portal = services.portals.settings.portal(str(system)) if services.portals else None
+    return portal.name if portal else str(system or "the portal").upper()
+
+
 def tool_label(name: str, args: dict[str, Any], services: Services) -> str:
+    if name == "portal_run":
+        what = args.get("title") or (f"saved script {args['script']}" if args.get("script") else "")
+        return f"Read {portal_name(services, args.get('system'))} in your browser" + (f": {what}" if what else "")
+    if name == "portal_guide":
+        return f"Read Wizard's guide to {portal_name(services, args.get('system'))}"
+    if name == "portal_save_script":
+        return f"Kept a {portal_name(services, args.get('system'))} script: {args.get('name', '')}"
     system = name.split("_", 1)[0].upper()
     if name.endswith("_search_reports"):
         return f"Searched {system} reports for “{args.get('query', '')}”"
@@ -220,6 +232,17 @@ def tool_summary(name: str, outcome: ToolOutcome) -> str:
     data = outcome.data
     if "schedule" in data:
         return f"{data['schedule']} waiting for your confirmation · {data['sends']}"
+    if name == "portal_run":
+        tables = [o for o in data.get("outputs", []) if "evidence_id" in o]
+        page = (data.get("page") or {}).get("title") or ""
+        text = (f"{len(tables)} table(s), {sum(o['total_rows'] for o in tables):,} rows" if tables
+                else f"on {page}" if page else "done")
+        return text + (f" · stopped: {data['stopped']['code']}" if data.get("stopped") else "") + (
+            f" · {len(data['refused'])} request(s) refused" if data.get("refused") else "")
+    if name == "portal_guide":
+        return f"{data.get('name')} guide · {len(data.get('saved_scripts', []))} saved script(s)"
+    if name == "portal_save_script":
+        return f"saved {data.get('saved')}"
     if name.endswith("_run_report"):
         extra = f" of {data['total_rows']}" if data.get("truncated") else ""
         as_of = f" · as of {str(data.get('as_of'))[:10]}" if data.get("as_of") else ""
@@ -378,7 +401,8 @@ class RunManager:
                                   services=self.services)
             outcome = await asyncio.to_thread(self.registry.execute, name, args, context)
         if spec and spec.category == "source":
-            self.store.audit(run.identity.id, f"tool:{name}", run_id=run.id, system=name.split("_", 1)[0],
+            self.store.audit(run.identity.id, f"tool:{name}", run_id=run.id,
+                             system=str(args.get("system")) if name.startswith("portal_") else name.split("_", 1)[0],
                              report_id=str(args.get("report_id")) if args.get("report_id") else None,
                              outcome="ok" if outcome.ok else str(outcome.error_code),
                              detail={"filters": [f.get("field") for f in args.get("filters", []) if isinstance(f, dict)],

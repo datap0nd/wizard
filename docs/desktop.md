@@ -26,7 +26,7 @@ question. A question keeps running while the panel is hidden, and a notification
 | `%LOCALAPPDATA%\Programs\Wizard\bar` | WizardBar.exe, WebView2 libraries | replaced | removed |
 | `%LOCALAPPDATA%\Programs\Wizard\app` | Wizard's code, built web app, libraries | replaced | removed |
 | `%LOCALAPPDATA%\Programs\Wizard\runtime\python` | Embeddable Python 3.13 | replaced | removed |
-| `%LOCALAPPDATA%\Wizard` | `.env`, `data\` (conversations, Gemini sign-in, company file in `provision\`, Settings in `settings\`, knowledge base), `logs\`, WebView2 profile, `bar.json`, `dropped\` (Outlook items dropped on the tab, kept a day) | kept | kept |
+| `%LOCALAPPDATA%\Wizard` | `.env`, `data\` (conversations, Gemini sign-in, company file in `provision\`, Settings in `settings\`, knowledge base, the Wizard browser's own Chrome/Edge profile and saved portal scripts in `users\<id>\portal-browser\`), `logs\`, WebView2 profile, `bar.json`, `dropped\` (Outlook items dropped on the tab, kept a day) | kept | kept |
 
 No admin rights are needed. Setup adds a Start-menu entry and, by default, a "start when I sign in" entry
 (`HKCU\...\Run`). The tray menu can turn that off.
@@ -170,6 +170,7 @@ of Wizard on this PC:
 | Gemini | Google Cloud project, company Google domains | — |
 | Knowledge base | Repository, read-only token, branch, folder, check interval | **Test connection**: can the token read the repository? |
 | Company database | Name people see (default "AI Team Database"), server, port, database, read-only user, password, SSL | **Test connection**: connects read-only and reports the user |
+| Portals | ASAP, GSCM and Big Data Portal addresses, browser (Chrome or Edge), other hosts the portals need | **Sign in to the portals** opens Wizard's own browser visibly, one tab per portal: sign in, then close it (or **Done**). **Check sign-in** opens each portal in the background and says whether it is signed in |
 | Network | Proxy | — |
 | Version and updates | The installed version | **Check for updates** / **Update to 1.0.N** |
 

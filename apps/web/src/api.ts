@@ -1,4 +1,4 @@
-import type {Attachment, Bootstrap, Cadence, ConversationSummary, Evidence, GeminiAccount, GeminiQuota, LocalFile, RecurringList, Report, RunRecord, Schedule, SettingsSaved, SettingsView, SourceCatalog, SourceSummary, UpdateInfo} from './types';
+import type {Attachment, Bootstrap, Cadence, ConversationSummary, Evidence, GeminiAccount, GeminiQuota, LocalFile, PortalCheck, PortalStatus, RecurringList, Report, RunRecord, Schedule, SettingsSaved, SettingsView, SourceCatalog, SourceSummary, UpdateInfo} from './types';
 
 export class ApiError extends Error {
   constructor(message: string, public status: number, public code?: string, public loginRequired = false) { super(message); }
@@ -90,6 +90,10 @@ export const api = {
   testSettings: (section: 'postgres' | 'knowledge' | 'metronome', values: Record<string, string | null>) =>
     request<{ok: boolean; message: string}>('/api/v1/settings/test', {body: {section, values}}),
   updates: (refresh = false) => request<UpdateInfo>(`/api/v1/updates${refresh ? '?refresh=true' : ''}`),
+  portals: () => request<PortalStatus>('/api/v1/portals'),
+  portalSignIn: () => request<PortalStatus>('/api/v1/portals/sign-in', {body: {}}),
+  portalSignedIn: () => request<PortalStatus>('/api/v1/portals/sign-in/done', {body: {}}),
+  portalCheck: () => request<PortalCheck>('/api/v1/portals/check', {body: {}}),
   health: () => request<{status: string; version: string}>('/api/v1/health'),
 };
 

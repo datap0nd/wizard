@@ -2,8 +2,10 @@
 
 The registry is the only path from a model to a source. Every execution re-validates arguments, checks the caller's
 rights inside the handler, and returns data plus the evidence it recorded. There are no write, shell or URL tools; the
-one SQL tool runs Gemini's query in a read-only PostgreSQL transaction under a read-only account (postgres_query.py), and
-the schedule tool only proposes a recurring extraction that the person creates in Metronome with a click (metronome.py)."""
+one SQL tool runs Gemini's query in a read-only PostgreSQL transaction under a read-only account (postgres_query.py), the
+schedule tool only proposes a recurring extraction that the person creates in Metronome with a click (metronome.py), and
+the portal tools run Gemini's browser scripts in the person's own signed-in browser, where every write, other host and
+forbidden click is refused (portals.py)."""
 from __future__ import annotations
 
 import builtins
@@ -22,6 +24,7 @@ from ..entitlements import Identity
 from ..fixture_source import FixtureSource, SourceError
 from ..knowledge import KnowledgeBase
 from ..metronome import MetronomeSettings
+from ..portal_browser import PortalBrowsers
 from ..postgres_query import PostgresQuery
 
 MAX_RESULT_BYTES = 400_000
@@ -58,6 +61,8 @@ class Services:
     postgres_name: str = "AI Team Database"  # what people see for it (WIZARD_PG_NAME)
     metronome: MetronomeSettings | None = None  # None: recurring extractions are not connected on this server
     mail_domains: list[str] = field(default_factory=list)  # company email domains (WIZARD_GOOGLE_DOMAINS)
+    # The company portals read in each person's own Wizard browser (desktop and work-PC installs); None = not set.
+    portals: PortalBrowsers | None = None
     now: Callable[[], datetime] = field(default=lambda: datetime.now(UTC))
 
 

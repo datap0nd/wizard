@@ -40,13 +40,25 @@ adding a catalog file, a platform guide and a live adapter for its API; the MCP 
    `wizard_lookup_definitions` finds the relevant part.
 
 Reports stay `NAVIGATION_ONLY` until a read path is approved and parity-tested. Gemini can still find them, tell the
-user they exist and suggest opening them, but cannot read their numbers.
+user they exist and suggest opening them, but cannot read their numbers through the report tools.
+
+## Live portal reads in the person's own browser
+
+ASAP, GSCM and the Big Data Portal are read live a different way: in the person's own **Wizard browser** (Chrome or
+Edge driven by Playwright, Wizard's own profile, signed in by the person once in a visible window). Gemini writes its
+own steps and page scripts with `portal_run` after reading `portal_guide`, which carries what Metronome learned driving
+each portal (`wizard_connectors/portal_guides/`, helpers in `portal_helpers.js`). It prefers the portals' own data
+requests (MicroStrategy menu and report requests, Nexacro SSV transactions, Superset's API) to clicking through
+screens, and keeps scripts that worked with `portal_save_script`. Writes, other hosts and forbidden clicks are refused
+inside the tool; evidence is `LIVE` / `BROWSER_SESSION`. Configure the addresses in Settings → Portals
+(`WIZARD_PORTAL_ASAP_URL`, `WIZARD_PORTAL_GSCM_URL`, `WIZARD_PORTAL_BDP_URL`).
+[Decision](decisions/2026-10-23-portal-browser.md).
 
 PostgreSQL is different: it has no report entries. Gemini reads the dataset notes and queries the server directly
 with `wizard_query_postgresql`
 ([documentation-guide.md](documentation-guide.md#postgresql-documentation-then-geminis-own-sql)).
 
 The Big Data Portal (BDP) follows the PostgreSQL route, not the report-catalog one: people request access to tables
-and query them with SQL in Superset. Wizard will query it through Superset under each person's own sign-in. Work-PC
-task 40 (`.\docs.ps1 bdp-check`) first finds out what that connection needs
-([decision](decisions/2026-10-12-bdp-superset.md)).
+and query them with SQL in Superset. Wizard queries it through Superset under each person's own sign-in, in the Wizard
+browser (`W.superset.sql`, one SELECT at a time). Work-PC task 40 (`.\docs.ps1 bdp-check`) finds out more about that
+connection ([decision](decisions/2026-10-12-bdp-superset.md)).

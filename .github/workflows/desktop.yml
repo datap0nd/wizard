@@ -63,6 +63,16 @@ jobs:
         shell: pwsh
         run: python scripts/build_desktop_payload.py --out artifacts/desktop/payload --commit ${{ github.sha }} --version "$env:WIZARD_DESKTOP_VERSION.0"
 
+      # The same checksum-verified archives, for the portable runtime release setup.ps1 installs from (published by the
+      # publish job when the locks name a release that does not exist yet, e.g. after a new dependency).
+      - uses: actions/upload-artifact@v4
+        with:
+          name: portable-runtime
+          path: |
+            artifacts/desktop/downloads/*.whl
+            artifacts/desktop/downloads/*.zip
+          retention-days: 3
+
       - name: Smoke-test the packaged service on Windows
         shell: pwsh
         run: |
@@ -154,6 +164,40 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            runtime.lock.json
+            dependencies.lock.json
+            portable_assets.lock.json
+          sparse-checkout-cone-mode: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: portable-runtime
+          path: portable
+      - name: Publish the portable runtime release when the locks name a new one
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tag=$(python3 -c 'import json; print(json.load(open("portable_assets.lock.json"))["release_tag"])')
+          if gh release view "$tag" >/dev/null 2>&1; then echo "Release $tag exists."; exit 0; fi
+          # Exactly the locked files, each with its locked SHA-256.
+          files=$(python3 - <<'PY'
+          import hashlib, json, pathlib, sys
+          items = [json.load(open("runtime.lock.json"))] + json.load(open("dependencies.lock.json"))["packages"]
+          for item in items:
+              path = pathlib.Path("portable") / item["filename"]
+              if path.name != item["filename"] or not path.is_file():
+                  sys.exit(f"missing {item['filename']}")
+              if hashlib.sha256(path.read_bytes()).hexdigest() != item["sha256"]:
+                  sys.exit(f"checksum mismatch for {item['filename']}")
+              print(path)
+          PY
+          )
+          gh release create "$tag" --latest=false --title "Portable runtime $tag" \
+            --notes "Portable Python and locked wheels for work-PC installs (setup.ps1). Do not delete." $files
+          echo "Published $tag."
       - uses: actions/download-artifact@v4
         with:
           name: WizardSetup

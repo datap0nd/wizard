@@ -16,6 +16,10 @@ dependencies = [
   # Read-only PostgreSQL catalog export for the documentation kit. Pure Python: Application Control has no driver DLL to
   # block (psycopg2's was blocked on a development PC).
   "pg8000>=1.31",
+  # Wizard's own browser for the company portals (ASAP, GSCM, BDP): Playwright drives the installed Google Chrome (or
+  # Edge) under the person's own sign-in, as the data-governance app's Flows do. The wheel carries its driver; no
+  # browser is downloaded. The same version as Metronome's Flows, whose driver already runs on the work PCs.
+  "playwright==1.62.0",
 ]
 
 [dependency-groups]
@@ -49,6 +53,7 @@ markers = [
   "gemini_cli: runs the real Gemini CLI with fake model responses (needs WIZARD_GEMINI_CLI_JS or .tools)",
   "live: needs live corporate sources or a signed-in Gemini account; reported as BLOCKED when not configured",
   "postgres: needs a PostgreSQL test server (WIZARD_TEST_PG_*; CI runs one); reported as BLOCKED when not configured",
+  "browser: drives a real Chromium or Chrome against a simulated portal (WIZARD_TEST_BROWSER or Playwright's cache); BLOCKED without one",
 ]
 addopts = "-q -p no:cacheprovider -p no:tmpdir"
 
