@@ -1,4 +1,4 @@
-import type {RunEvent, RunKind, RunRecord, RunView, Schedule, TimelineItem} from './types';
+import type {Attachment, RunEvent, RunKind, RunRecord, RunView, Schedule, TimelineItem} from './types';
 
 export const TERMINAL = new Set(['run_finished', 'run_failed']);
 
@@ -39,6 +39,8 @@ export function applyEvent(run: RunView, event: RunEvent): RunView {
       return {...next, visuals: [...next.visuals.filter(v => v.id !== p.visual.id), p.visual]};
     case 'schedule_proposed':
       return withSchedule(next, p.schedule as Schedule);
+    case 'file_made':
+      return {...next, attachments: [...next.attachments.filter(a => a.id !== p.attachment.id), p.attachment as Attachment]};
     case 'check_result':
       return {...next, check: {overall: p.overall, summary: p.summary, claims: p.claims ?? [], replays: p.replays ?? []}};
     case 'warning':

@@ -10,6 +10,7 @@ import {ActivityTimeline} from './ActivityTimeline';
 import {AnswerMarkdown} from './AnswerMarkdown';
 import {CheckBadge, DataModeBadge, RuntimeBadge} from './Badges';
 import {Diagnostics} from './Diagnostics';
+import {MadeFiles} from './Attachments';
 import {RecurringCard} from './RecurringCard';
 import {SystemsStage} from './SystemsStage';
 import {VisualBlock} from './VisualBlock';
@@ -124,6 +125,7 @@ export const RunCard = memo(function RunCard({run, onEvidence, onCheck, onCancel
         <ActivityTimeline run={run} onEvidence={id => onEvidence(run, id)} />
         {text && <AnswerMarkdown text={text} visuals={run.visuals} streaming={running} onEvidence={id => onEvidence(run, id)} />}
         {loose.map(v => <VisualBlock key={v.id} visual={v} onEvidence={id => onEvidence(run, id)} />)}
+        <MadeFiles files={run.attachments} />
         {run.schedules.map(schedule => <RecurringCard key={schedule.id} schedule={schedule}
           onCreate={s => onSchedule?.(run, s, 'create')} onDismiss={s => onSchedule?.(run, s, 'dismiss')} />)}
         <CheckPanel run={run} />

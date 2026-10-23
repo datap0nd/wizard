@@ -114,7 +114,8 @@ export interface Attachment {
   filename: string;
   kind: 'slides' | 'spreadsheet' | 'document' | 'email' | 'text';
   bytes: number;
-  origin: 'upload' | 'local';
+  /** edited: a copy Wizard made with wizard_edit_attachment, to download. */
+  origin: 'upload' | 'local' | 'edited';
   status: 'ok' | 'failed' | 'empty';
   method: string | null;
   chars: number;

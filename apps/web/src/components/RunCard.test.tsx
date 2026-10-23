@@ -302,3 +302,18 @@ describe('error details', () => {
     expect(screen.queryByTestId('error-details')).toBeNull();
   });
 });
+
+describe('files Wizard made', () => {
+  it('shows an edited copy under the answer with a download link', () => {
+    let run = emptyRun('run_e', 'cnv_e', 'Delete the closed rows and give me the file');
+    run = applyEvent(run, {seq: 1, type: 'file_made', ts: '2026-10-23T12:00:00Z', payload: {attachment: {
+      id: 'att_9', label: 'F2', filename: 'Sales (edited).xlsx', kind: 'spreadsheet', bytes: 9000, origin: 'edited', status: 'ok',
+      method: 'openpyxl', chars: 120, note: 'Edited copy of F1 (Sales.xlsx): Sales: deleted 2 row(s)', parts: 1,
+      created_at: '2026-10-23T12:00:00Z', run_id: 'run_e'}}});
+    render(card(run));
+    const link = screen.getByTestId('made-file-download') as HTMLAnchorElement;
+    expect(link.getAttribute('href')).toBe('/api/v1/attachments/att_9/file');
+    expect(link.getAttribute('download')).toBe('Sales (edited).xlsx');
+    expect(screen.getByTestId('made-files').textContent).toContain('deleted 2 row(s)');
+  });
+});

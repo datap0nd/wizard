@@ -10,7 +10,7 @@ export function moduleOf(name: string | undefined, args?: Record<string, unknown
   if (tool === 'wizard_query_postgresql') return 'postgresql';
   if (tool === 'wizard_schedule_brief') return 'metronome';
   if (/^wizard_(lookup_definitions|browse_knowledge|read_knowledge)$/.test(tool)) return 'knowledge';
-  if (/^wizard_(read|query)_attachment$/.test(tool)) return 'attachment';
+  if (/^wizard_(read|query|edit)_attachment$/.test(tool)) return 'attachment';
   const system = tool.match(/^([a-z0-9]+)_(search_reports|get_report_schema|run_report)$/);
   if (system) return system[1];
   return WIZARD;
@@ -114,6 +114,7 @@ export function verbOf(item: TimelineItem, kind: SystemInfo['kind'] | undefined)
   if (tool === 'portal_guide') return {verb: "Reading Wizard's guide to", suffix: ''};
   if (tool === 'portal_save_script') return {verb: 'Keeping a script for', suffix: ''};
   if (tool === 'portal_run') return {verb: 'Reading', suffix: ' in your browser'};
+  if (tool === 'wizard_edit_attachment') return {verb: 'Editing a copy in', suffix: ''};
   const verbs: Record<string, string> = {database: 'Querying', reports: 'Reading', portal: 'Reading', knowledge: 'Searching',
     files: 'Reading', schedules: 'Preparing a schedule in'};
   return {verb: verbs[kind ?? ''] ?? 'Reading', suffix: ''};

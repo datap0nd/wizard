@@ -528,6 +528,44 @@
         }
       }
     },
+    "/api/v1/attachments/{attachment_id}/file": {
+      "get": {
+        "summary": "Attachment File",
+        "description": "Download a file Wizard keeps: an edited copy (or an uploaded original). Only its owner can.",
+        "operationId": "attachment_file_api_v1_attachments__attachment_id__file_get",
+        "parameters": [
+          {
+            "name": "attachment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Attachment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/attachments/{attachment_id}": {
       "delete": {
         "summary": "Remove Attachment",

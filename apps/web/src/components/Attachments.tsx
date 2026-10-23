@@ -1,5 +1,5 @@
 import {useEffect, useState} from 'react';
-import {AlertTriangle, FileSpreadsheet, FileText, Loader2, Mail, Presentation, Search, X} from 'lucide-react';
+import {AlertTriangle, Download, FileSpreadsheet, FileText, Loader2, Mail, Presentation, Search, X} from 'lucide-react';
 import {api, ApiError} from '@/api';
 import {formatDate} from '@/format';
 import {cn} from '@/lib/utils';
@@ -70,6 +70,28 @@ export function SentFiles({files}: {files: Attachment[]}) {
             <span className="truncate">{file.filename}</span>
           </span>
         </Hint>
+      ))}
+    </div>
+  );
+}
+
+/** Files Wizard made in this answer (edited copies of attached workbooks), each to download. The original is unchanged. */
+export function MadeFiles({files}: {files: Attachment[]}) {
+  const made = files.filter(f => f.origin === 'edited');
+  if (!made.length) return null;
+  return (
+    <div className="space-y-2" data-testid="made-files">
+      {made.map(file => (
+        <div key={file.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-surface px-4 py-3">
+          <KindIcon kind={file.kind} />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[13.5px] font-medium text-ink">{file.filename}</p>
+            <p className="line-clamp-2 text-xs text-ink-3">{file.label} · {file.note ?? 'An edited copy; the original is unchanged.'}</p>
+          </div>
+          <a href={`/api/v1/attachments/${encodeURIComponent(file.id)}/file`} download={file.filename}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-accent px-3 text-[13px] font-medium text-white" data-testid="made-file-download">
+            <Download className="size-4" />Download</a>
+        </div>
       ))}
     </div>
   );

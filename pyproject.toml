@@ -20,6 +20,9 @@ dependencies = [
   # Edge) under the person's own sign-in, as the data-governance app's Flows do. The wheel carries its driver; no
   # browser is downloaded. The same version as Metronome's Flows, whose driver already runs on the work PCs.
   "playwright==1.62.0",
+  # Edits a copy of an attached workbook when Excel is not available (Excel itself edits it on the work PC). Pure
+  # Python; the same version Metronome's Flows use.
+  "openpyxl==3.1.5",
 ]
 
 [dependency-groups]

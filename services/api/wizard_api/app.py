@@ -44,6 +44,9 @@ from .security import REQUEST_HEADER, SECURITY_HEADERS, SESSION_COOKIE, session_
 from .store import Store
 
 OWNER_ID = "local-owner"
+DOWNLOAD_TYPES = {".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                  ".xlsm": "application/vnd.ms-excel.sheet.macroEnabled.12", ".xls": "application/vnd.ms-excel",
+                  ".xlsb": "application/vnd.ms-excel.sheet.binary.macroEnabled.12"}
 KB_IDLE_RESTART_S = 600  # restart for a new knowledge base only after 10 minutes without a request from the user
 # Requests a page or a probe makes on its own (the quota ring polls every 5 minutes): not a sign someone is using Wizard.
 BACKGROUND_PATHS = {"/api/v1/health", "/api/v1/ready", "/api/v1/account/gemini/quota"}
@@ -81,7 +84,7 @@ def capture_logs() -> None:
 PUBLIC_PATHS = {"/api/v1/health", "/api/v1/ready", "/api/v1/bootstrap", "/api/v1/session/login",
                 "/api/v1/session/logout", "/api/v1/session/identities"}
 TIMELINE_EVENTS = {"run_started", "status", "agent_session", "note", "tool_started", "tool_finished", "visual_added",
-                   "check_result", "schedule_proposed", "warning", "run_failed", "run_finished"}
+                   "check_result", "schedule_proposed", "file_made", "warning", "run_failed", "run_finished"}
 TERMINAL = {"run_finished", "run_failed"}
 SUGGESTIONS = [
     {"story": "Executive", "question": "Which market gave us the best return on marketing investment last quarter — tie NERP "
@@ -556,6 +559,18 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
             return {"attachment": await manager.attachments.attach_local(identity, body.path)}
         except AttachmentError as error:
             raise HTTPException(error.status, error.message) from None
+
+    @app.get("/api/v1/attachments/{attachment_id}/file")
+    def attachment_file(request: Request, attachment_id: str) -> FileResponse:
+        """Download a file Wizard keeps: an edited copy (or an uploaded original). Only its owner can."""
+        identity = me(request)
+        row = store.attachment(identity.id, attachment_id)
+        path = manager.attachments.original(row) if row and row.get("origin") != "local" else None
+        if row is None or path is None or not path.is_file():
+            raise HTTPException(404, "That file is not available.")
+        store.audit(identity.id, "attachment:download", detail={"attachment_id": attachment_id})
+        return FileResponse(path, filename=row["filename"], media_type=DOWNLOAD_TYPES.get(path.suffix.lower(),
+                                                                                         "application/octet-stream"))
 
     @app.delete("/api/v1/attachments/{attachment_id}")
     def remove_attachment(request: Request, attachment_id: str) -> dict[str, Any]:

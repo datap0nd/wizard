@@ -17,9 +17,11 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -38,6 +40,9 @@ KINDS = {"slides": (".pptx", ".pptm", ".ppsx", ".ppt"), "spreadsheet": (".xlsx",
 LOCAL_DAYS = 180
 LOCAL_LIMIT = 200
 GRANT_S = 600
+EDITABLE = (".xlsx", ".xlsm", ".xls", ".xlsb")
+# One Office job at a time (a conversion from the page, an edit from a tool thread): Office automation is not reentrant.
+OFFICE = threading.Lock()
 
 
 class AttachmentError(Exception):
@@ -63,14 +68,7 @@ class Attachments:
     def __init__(self, settings: Settings, store: Store):
         self.settings, self.store = settings, store
         self.root = settings.data_dir / "attachments"
-        self._lock: asyncio.Lock | None = None
         self.granted: dict[str, float] = {}
-
-    @property
-    def lock(self) -> asyncio.Lock:
-        if self._lock is None:
-            self._lock = asyncio.Lock()
-        return self._lock
 
     def folder(self, user_id: str, attachment_id: str) -> Path:
         return self.root / hashlib.sha256(user_id.encode("utf-8")).hexdigest()[:20] / attachment_id
@@ -162,23 +160,35 @@ class Attachments:
         return await self._convert(identity, attachment_id, path, folder, name, "local", str(path), modified)
 
     # Conversion ----------------------------------------------------------------------------------------------------------
+    def _docs(self, *arguments: str) -> dict[str, Any]:
+        """Run one documentation-kit command (convert, edit) in its own process, time-limited, one at a time, and return
+        its JSON result line."""
+        command = [sys.executable, str(ROOT / "scripts" / "wizard_docs.py"), *arguments]
+        with OFFICE:
+            try:
+                completed = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                                           timeout=self.settings.attachment_timeout_s)
+            except subprocess.TimeoutExpired:
+                return {"status": "failed", "note": f"Office did not finish within {self.settings.attachment_timeout_s} "
+                                                    "seconds (a dialog such as a password prompt may be open in Office)"}
+        lines = [line for line in (completed.stdout or "").splitlines() if line.startswith("{")]
+        return json.loads(lines[-1]) if lines else {
+            "status": "failed", "note": ((completed.stderr or "").strip().splitlines() or ["no output"])[-1][:300]}
+
     async def _convert(self, identity: Identity, attachment_id: str, source: Path, folder: Path, name: str, origin: str,
                        source_path: str | None, modified: str) -> dict[str, Any]:
+        row = await asyncio.to_thread(self._converted, identity, attachment_id, source, folder, name, origin, source_path,
+                                      modified)
+        self.store.add_attachment(row)
+        self.store.audit(identity.id, "attachment:add", outcome=str(row["status"]),
+                         detail={"attachment_id": attachment_id, "kind": row["kind"], "origin": origin, "bytes": row["bytes"]})
+        return public(row)
+
+    def _converted(self, identity: Identity, attachment_id: str, source: Path, folder: Path, name: str, origin: str,
+                   source_path: str | None, modified: str) -> dict[str, Any]:
         digest = hashlib.sha256(source.read_bytes()).hexdigest()
-        command = [sys.executable, str(ROOT / "scripts" / "wizard_docs.py"), "convert", str(source),
-                   "--out", str(folder / "converted"), "--json", "--slide-images", "none",
-                   "--office", self.settings.attachment_office, "--tables"]
-        async with self.lock:  # one Office conversion at a time
-            try:
-                completed = await asyncio.to_thread(subprocess.run, command, capture_output=True, text=True,
-                                                    encoding="utf-8", errors="replace",
-                                                    timeout=self.settings.attachment_timeout_s)
-                lines = [line for line in (completed.stdout or "").splitlines() if line.startswith("{")]
-                result: dict[str, Any] = json.loads(lines[-1]) if lines else {
-                    "status": "failed", "note": ((completed.stderr or "").strip().splitlines() or ["no output"])[-1][:300]}
-            except subprocess.TimeoutExpired:
-                result = {"status": "failed", "note": f"Office did not finish within {self.settings.attachment_timeout_s} "
-                                                      "seconds (a dialog such as a password prompt may be open in Office)"}
+        result = self._docs("convert", str(source), "--out", str(folder / "converted"), "--json", "--slide-images", "none",
+                            "--office", self.settings.attachment_office, "--tables")
         if origin == "upload" and result.get("status") == "failed" and "protected" in str(result.get("note", "")):
             result["note"] = str(result["note"]) + ". Protected files open only from their original place: use From this PC."
         row: dict[str, Any] = {"id": attachment_id, "user_id": identity.id, "conversation_id": None, "run_id": None, "label": None,
@@ -190,10 +200,52 @@ class Attachments:
                "source_path": source_path, "created_at": now()}
         if row["status"] == "empty":
             row["note"] = row["note"] or "No text could be read from this file."
-        self.store.add_attachment(row)
-        self.store.audit(identity.id, "attachment:add", outcome=str(row["status"]),
-                         detail={"attachment_id": attachment_id, "kind": row["kind"], "origin": origin, "bytes": row["bytes"]})
-        return public(row)
+        return row
+
+    # Edited copies -------------------------------------------------------------------------------------------------------
+    def original(self, row: dict[str, Any]) -> Path | None:
+        """The file itself: where it was read in place (From this PC), or the copy Wizard keeps."""
+        if row.get("source_path"):
+            return Path(row["source_path"])
+        return next(iter(sorted(Path(row["folder"]).glob("original.*"))), None)
+
+    def edit(self, identity: Identity, conversation_id: str, run_id: str, row: dict[str, Any],
+             operations: list[dict[str, Any]], name: str | None = None) -> dict[str, Any]:
+        """Apply Gemini's operations to a copy of an attached workbook. The copy becomes a new file in the conversation
+        (labelled like any attached file, read back like one) that the person downloads; the original is never written."""
+        suffix = Path(row["filename"]).suffix.lower()
+        if suffix not in EDITABLE:
+            raise AttachmentError(415, f"{row['filename']} is not an Excel workbook; Wizard edits .xlsx, .xlsm, .xls and "
+                                       ".xlsb files.")
+        source = self.original(row)
+        if source is None or not source.is_file():
+            raise AttachmentError(404, f"{row['filename']} is no longer where it was attached; attach it again.")
+        attachment_id = new_id("att")
+        folder = self.folder(identity.id, attachment_id)
+        folder.mkdir(parents=True, exist_ok=True)
+        output = folder / ("original" + suffix)
+        operations_file = folder / "operations.json"
+        operations_file.write_text(json.dumps(operations, ensure_ascii=False), encoding="utf-8")
+        result = self._docs("edit", str(source), "--operations", str(operations_file), "--out", str(output),
+                            "--office", self.settings.attachment_office)
+        if result.get("status") != "ok" or not output.is_file():
+            shutil.rmtree(folder, ignore_errors=True)
+            self.store.audit(identity.id, "attachment:edit", outcome="failed", detail={"from": row["id"]})
+            raise AttachmentError(422, f"The edit was not made: {result.get('note') or 'unknown reason'}.")
+        stem = re.sub(r'[\\/:*?"<>|]+', " ", name or f"{Path(row['filename']).stem} (edited)").strip()[:120] or "edited"
+        filename = stem if stem.lower().endswith(suffix) else stem + suffix
+        edited = self._converted(identity, attachment_id, output, folder, filename, "edited", None,
+                                 datetime.now(UTC).strftime("%Y-%m-%d"))
+        changes = [str(c) for c in result.get("changes") or []]
+        edited["note"] = (f"Edited copy of {row.get('label') or row['filename']} ({row['filename']}): "
+                          + "; ".join(changes))[:500]
+        self.store.add_attachment(edited)
+        bound = next(a for a in self.store.bind_attachments(identity.id, [attachment_id], conversation_id, run_id)
+                     if a["id"] == attachment_id)
+        self.store.audit(identity.id, "attachment:edit", detail={"from": row["id"], "to": attachment_id,
+                                                                  "operations": len(operations), "method": result.get("method")})
+        return {**public(bound), "changes": changes, "warnings": [str(w) for w in result.get("warnings") or []],
+                "method": result.get("method"), "sheets": result.get("sheets") or []}
 
     def remove(self, identity: Identity, attachment_id: str) -> bool:
         removed = self.store.delete_attachment(identity.id, attachment_id)

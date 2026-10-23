@@ -30,6 +30,16 @@ describe('run reducer', () => {
     expect(sourcesConsulted(run)).toEqual(['NERP']);
   });
 
+  it('adds a file Wizard made to the run, once, apart from the files the user attached', () => {
+    seq = 0;
+    const made = {id: 'att_2', label: 'F2', filename: 'Sales (edited).xlsx', kind: 'spreadsheet', bytes: 9000, origin: 'edited',
+      status: 'ok', method: 'openpyxl', chars: 120, note: 'Edited copy of F1', parts: 1, created_at: '2026-10-23T12:00:00Z', run_id: 'run_f'};
+    let run = emptyRun('run_f', 'cnv', 'Delete the closed rows');
+    run = applyEvent(run, ev('file_made', {attachment: made}));
+    run = applyEvent(run, ev('file_made', {attachment: made}));
+    expect(run.attachments.map(a => [a.label, a.origin])).toEqual([['F2', 'edited']]);
+  });
+
   it('ignores replayed events and marks running tools stopped on failure', () => {
     seq = 0;
     let run = emptyRun('run_2', 'cnv', 'q');

@@ -21,9 +21,10 @@ from wizard_agent.prompting import compose
 from wizard_agent.runtime import AgentFailure, AgentRequest, AgentRuntime, Turn, redact
 from wizard_connectors.attachment_tables import index as table_index
 from wizard_connectors.entitlements import Identity
-from wizard_connectors.tools import Services, ToolContext, ToolOutcome, ToolRegistry
+from wizard_connectors.tools import Services, ToolContext, ToolError, ToolOutcome, ToolRegistry
 
-from .attachments import Attachments
+from .attachments import AttachmentError, Attachments
+from .attachments import public as public_attachment
 from .awake import KeepAwake
 from .config import Settings
 from .security import run_token
@@ -128,6 +129,7 @@ class ActiveRun:
     last_status: str = ""  # the last status line the stage showed, for Error details
     waits: int = 0         # times Wizard waited for Gemini (not shown on the stage), for Error details
     waited_s: float = 0.0
+    files_made: list[str] = field(default_factory=list)  # edited copies made in this run, announced to the page
     task: asyncio.Task[None] | None = None
 
 
@@ -146,6 +148,18 @@ class Recorder:
         if row is None or self.files is None:
             return None
         return row, self.files.text(row)
+
+    def edit_attachment(self, label: str, operations: list[dict[str, Any]], name: str | None) -> dict[str, Any]:
+        row = next((a for a in self.attachments() if a["label"] == label), None)
+        if row is None or self.files is None:
+            labels = ", ".join(f"{a['label']} {a['filename']}" for a in self.attachments()) or "none"
+            raise ToolError("unknown_file", f"No attached file {label} in this conversation. Attached files: {labels}.")
+        try:
+            edited = self.files.edit(self.run.identity, self.run.conversation_id, self.run.id, row, operations, name)
+        except AttachmentError as error:
+            raise ToolError("edit_failed", error.message) from None
+        self.run.files_made.append(edited["id"])
+        return edited
 
     def add_evidence(self, payload: dict[str, Any]) -> str:
         evidence_id = self.store.add_evidence(self.run.conversation_id, self.run.id, self.run.identity.id, payload)
@@ -218,6 +232,7 @@ def tool_label(name: str, args: dict[str, Any], services: Services) -> str:
             "wizard_browse_knowledge": f"Browsed the knowledge base{' · ' + str(args['area']) if args.get('area') else ''}",
             "wizard_read_knowledge": f"Read {', '.join(map(str, args.get('ids', [])))}",
             "wizard_read_attachment": f"Read attached file {args.get('file', '')}" + (f" · {args['part']}" if args.get("part") else ""),
+            "wizard_edit_attachment": f"Edited a copy of {args.get('file', '')}: {len(args.get('operations', []))} change(s)",
             "wizard_query_attachment": f"Queried attached file {args.get('file', '')}" + (f" · {args['sheet']}" if args.get("sheet") else ""),
             "wizard_query_postgresql": f"Queried the {services.postgres_name}",
             "wizard_calculate": f"Calculated {str(args.get('expression', ''))[:80]}",
@@ -241,6 +256,8 @@ def tool_summary(name: str, outcome: ToolOutcome) -> str:
             f" · {len(data['refused'])} request(s) refused" if data.get("refused") else "")
     if name == "portal_guide":
         return f"{data.get('name')} guide · {len(data.get('saved_scripts', []))} saved script(s)"
+    if name == "wizard_edit_attachment":
+        return f"{data['file']} {data['name']} ready to download · {len(data['changes'])} change(s)"
     if name == "portal_save_script":
         return f"saved {data.get('saved')}"
     if name.endswith("_run_report"):
@@ -424,6 +441,10 @@ class RunManager:
         if outcome.ok and "schedule" in outcome.data:
             schedule = next(s for s in self.store.schedules(run.conversation_id, run.id) if s["label"] == outcome.data["schedule"])
             await self.emit(run, "schedule_proposed", {"schedule": public_schedule(schedule)})
+        if outcome.ok and name == "wizard_edit_attachment":
+            made = next((a for a in self.store.conversation_attachments(run.conversation_id) if a["id"] == outcome.data["attachment_id"]), None)
+            if made is not None:
+                await self.emit(run, "file_made", {"attachment": public_attachment(made)})
         if outcome.ok and name == "wizard_check_my_data":
             await self.emit(run, "check_result", {"overall": outcome.data["overall"], "summary": outcome.data["summary"],
                                                   "claims": outcome.data["claims"], "replays": outcome.data["replays"]})
