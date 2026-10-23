@@ -3,7 +3,33 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-23 (latest) — Error details on every failed answer; an empty Gemini turn is asked again; no more "session expired"
+## 2026-10-23 (latest, later) — No "Gemini is busy" on the stage
+
+The owner: "users dont need to see 'gemini is busy' message. they should just have wizard working through the data.
+they dont need to see that nothing's happening because gemini's busy."
+
+**What changed.**
+- `code_assist.py`: when both models refuse and Wizard waits (5 to 30 s a round, up to 10 rounds), it no longer sends a
+  status line ("Gemini is busy; trying again in 22 s (attempt 3 of 10)", or "Gemini's per-minute limit … waiting").
+  The stage keeps the wizard at work on the step it is on. The wait goes to `wizard.log` (`run … waiting 22 s for
+  Gemini (capacity for gemini-3.8-flash and gemini-3.1-pro-preview, round 3 of 10)`, after the `Gemini refused` line
+  with Google's reason) and to a `model_wait` event the page does not show.
+- `runs.py`: Error details of a failed answer adds "Waited for Gemini: 4 times, 1 min 52 s in all (both models busy or
+  rate-limited)", so a slow or timed-out answer still says where its time went.
+- Unchanged: a used-up quota that moves the answer to the other model is still said once ("Your Gemini quota for … is
+  used up. Wizard continues with …"); it is not a wait. An answer that stops because Google never had room still says so.
+- `contracts/run-event.schema.json`: `model_wait`. Docs: `desktop.md`, `operations.md`.
+
+**Tests.** Python, Code Assist: a busy Gemini, a per-minute limit, no capacity with no other model, both models
+refusing, and a used-up quota followed by a wait all run with no status line and no warning for the wait, and record
+each wait (reason, seconds, models, round); the quota is still told. These six fail on the previous code. Python,
+runs: Error details counts two waits as "2 times, 1 min 5 s in all". Web: a run waiting on Gemini shows no waiting
+line on the stage and nothing about Gemini being busy; a quota status line still shows.
+`verify_all.sh --allow-blocked=live-parity,postgres`: every layer passes (Python 375 passed and 5 skipped, real Gemini
+CLI 4, web unit 46) except postgres and live-parity, BLOCKED as allowed, and e2e, which could not launch Edge here; the
+same 16 e2e tests passed on the installed Chromium.
+
+## 2026-10-23 — Error details on every failed answer; an empty Gemini turn is asked again; no more "session expired"
 
 The owner reported two things. WizardBar said "Your session expired. Reload the page to sign in again", and the panel
 has no reload button, so Wizard had to be restarted. And an answer ended with "Wizard could not finish this answer.

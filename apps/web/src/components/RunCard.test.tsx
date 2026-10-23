@@ -108,15 +108,26 @@ describe('the wizard on the stage', () => {
     expect(screen.getByTestId('journey')).toBeTruthy();
   });
 
-  it('shows what Gemini is waiting on instead of "deciding"', () => {
+  it('keeps Wizard at work while Wizard waits for Gemini: no "Gemini is busy" (owner, 23 Oct)', () => {
     let seq = 0;
     const ev = (type: string, payload: Record<string, unknown>): RunEvent => ({seq: ++seq, type, ts: '2026-10-20T08:00:00Z', payload});
     let run = applyEvent(emptyRun('run_4', 'cnv_1', 'q'), ev('run_started', {runtime: 'code-assist', runtime_label: 'x', model: 'gemini-3.1-pro'}));
     run = applyEvent(run, ev('tool_started', {call_id: 'c1', name: 'nerp_run_report', label: 'Read NERP', category: 'source'}));
     run = applyEvent(run, ev('tool_finished', {call_id: 'c1', name: 'nerp_run_report', ok: true, duration_ms: 3, summary: '3 rows'}));
-    run = applyEvent(run, ev('status', {message: 'Gemini is busy; trying again in 10 s (attempt 2 of 10).'}));
+    run = applyEvent(run, ev('model_wait', {seconds: 10, reason: 'capacity', models: ['gemini-3.8-flash', 'gemini-3.1-pro'], round: 2}));
     render(card(run));
-    expect(screen.getByTestId('stage-waiting').textContent).toContain('Gemini is busy; trying again in 10 s');
+    expect(screen.queryByTestId('stage-waiting')).toBeNull();
+    expect(screen.getByTestId('systems-stage').textContent).not.toMatch(/busy|waiting/i);
+    expect(run.timeline.map(t => t.kind)).toEqual(['tool']);
+  });
+
+  it('still says when a used-up quota moved the answer to the other model', () => {
+    let seq = 0;
+    const ev = (type: string, payload: Record<string, unknown>): RunEvent => ({seq: ++seq, type, ts: '2026-10-20T08:00:00Z', payload});
+    let run = applyEvent(emptyRun('run_4', 'cnv_1', 'q'), ev('run_started', {runtime: 'code-assist', runtime_label: 'x', model: 'gemini-3.8-flash'}));
+    run = applyEvent(run, ev('status', {message: 'Your Gemini quota for gemini-3.8-flash is used up. Wizard continues with gemini-3.1-pro.'}));
+    render(card(run));
+    expect(screen.getByTestId('stage-waiting').textContent).toContain('quota for gemini-3.8-flash is used up');
   });
 
   it('has no finale for a run loaded already finished', () => {
