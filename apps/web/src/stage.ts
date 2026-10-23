@@ -7,7 +7,7 @@ export const WIZARD = 'wizard';
 export function moduleOf(name: string | undefined): string {
   const tool = name ?? '';
   if (tool === 'wizard_query_postgresql') return 'postgresql';
-  if (tool === 'wizard_schedule_extraction') return 'metronome';
+  if (tool === 'wizard_schedule_brief') return 'metronome';
   if (/^wizard_(lookup_definitions|browse_knowledge|read_knowledge)$/.test(tool)) return 'knowledge';
   if (/^wizard_(read|query)_attachment$/.test(tool)) return 'attachment';
   const system = tool.match(/^([a-z0-9]+)_(search_reports|get_report_schema|run_report)$/);

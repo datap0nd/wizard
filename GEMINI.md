@@ -8,7 +8,7 @@ Follow [AGENTS.md](AGENTS.md). In short:
 
 - Agent-first: improve tools, descriptions and definitions; do not script the analysis.
 - Tools are read-only and enforce rights/bounds inside the tool. No write, shell, SQL, URL or export tools, apart from
-  the owner's two exceptions in AGENTS.md (read-only SQL; recurring extractions the person confirms in Metronome).
+  the owner's two exceptions in AGENTS.md (read-only SQL; recurring briefs the person confirms in Metronome).
 - SYNTHETIC data only in Git. Never commit corporate data, credentials, tokens or `.env`.
 - Run `uv run python scripts/verify_spec.py` and `scripts/verify_all.sh --allow-blocked=live-parity` before proposing a
   change, and report BLOCKED layers honestly.

@@ -1,6 +1,8 @@
-"""Wizard's calls to Metronome: who Wizard's key is signed in as, and creating a recurring extraction the person confirmed.
+"""Wizard's calls to Metronome: who Wizard's key is signed in as, creating a recurring brief the person confirmed, the
+Recurring tab's status of each Flow, and turning a Flow off when the person deletes the brief.
 
-Only a person's click (POST /api/v1/schedules/{id}/create) and Settings' Test connection reach this module; no tool does.
+Only a person's action (Create in Metronome, the Recurring tab, Delete) and Settings' Test connection reach this module;
+no tool does. Wizard never deletes a Flow: Delete turns it off, and Metronome keeps it and its run history.
 Metronome has no API tokens: it knows a caller by the client key in X-Client-Key, bound to a person in its Users. Before
 every create Wizard checks that its key is signed in as the configured Wizard user and names that person as the Flow's
 owner, so a Flow never belongs to the person who asked. Metronome is on the office network and is reached directly,
@@ -83,7 +85,7 @@ class MetronomeClient:
         """Upload the extraction script and create the active Flow, owned by the Wizard user. Returns the Flow."""
         with self._client() as client:
             me = self.whoami(client)
-            script = metronome.extraction_script(schedule).encode("utf-8")
+            script = metronome.brief_script(schedule).encode("utf-8")
             try:
                 uploaded = client.post("/api/flows/transform-script", params={"target": "python"},
                                        files={"file": (metronome.script_filename(schedule), script, "text/x-python")})
@@ -109,9 +111,64 @@ class MetronomeClient:
         if response.status_code >= 400:
             raise MetronomeError(f"Metronome refused the Flow ({response.status_code}): {_detail(response)}")
         flow = response.json()
-        next_run = flow.get("next_run_at")
-        if isinstance(next_run, str) and next_run and not next_run.endswith("Z") and "+" not in next_run[10:]:
-            next_run += "Z"  # Metronome stores and returns naive UTC
         return {"id": flow.get("id"), "name": flow.get("name") or definition["name"],
                 "owner": flow.get("owner_name") or me["name"], "enabled": flow.get("enabled"),
-                "next_run_at": next_run, "url": f"{self.settings.url}/"}
+                "next_run_at": utc(flow.get("next_run_at")), "url": f"{self.settings.url}/"}
+
+    def status(self, flow_ids: list[int], runs: int = 5) -> dict[int, dict[str, Any]]:
+        """The Recurring tab's view of each Flow: on or off, the next and last run, and its latest runs with their
+        email. A Flow Metronome no longer has reads {"missing": True}."""
+        found: dict[int, dict[str, Any]] = {}
+        with self._client() as client:
+            for flow_id in flow_ids:
+                try:
+                    response = client.get(f"/api/flows/{int(flow_id)}")
+                except httpx.HTTPError as error:
+                    raise MetronomeError(f"Metronome is not reachable at {self.settings.url}: {error}") from None
+                if response.status_code == 404:
+                    found[flow_id] = {"missing": True}
+                    continue
+                if response.status_code >= 400:
+                    raise MetronomeError(f"Metronome answered {response.status_code} for Flow {flow_id}: "
+                                         f"{_detail(response)}")
+                flow = response.json()
+                listed = self._get(client, f"/api/flows/runs?flow_id={int(flow_id)}&limit={int(runs)}")
+                found[flow_id] = {
+                    "missing": False, "name": flow.get("name"), "enabled": bool(flow.get("enabled")),
+                    "owner": flow.get("owner_name"), "next_run_at": utc(flow.get("next_run_at")),
+                    "last_run_at": utc(flow.get("last_run_at")), "last_status": flow.get("last_status"),
+                    "last_error": _short(flow.get("last_error")),
+                    "runs": [{"id": run.get("id"), "status": run.get("status"), "trigger": run.get("trigger_type"),
+                              "at": utc(run.get("finished_at") or run.get("started_at") or run.get("created_at")),
+                              "error": _short(run.get("error")),
+                              "email": (run.get("email") or {}).get("status") if isinstance(run.get("email"), dict)
+                              else None}
+                             for run in listed if isinstance(run, dict)] if isinstance(listed, list) else [],
+                }
+        return found
+
+    def deactivate(self, flow_id: int) -> dict[str, Any]:
+        """Turn the Flow off in Metronome, as the Wizard user that owns it; Metronome keeps the Flow and its history.
+        A Flow Metronome no longer has is already gone: {"missing": True}."""
+        with self._client() as client:
+            self.whoami(client)
+            try:
+                response = client.patch(f"/api/flows/{int(flow_id)}/enabled", json={"enabled": False})
+            except httpx.HTTPError as error:
+                raise MetronomeError(f"Metronome is not reachable at {self.settings.url}: {error}") from None
+        if response.status_code == 404:
+            return {"missing": True, "enabled": False}
+        if response.status_code >= 400:
+            raise MetronomeError(f"Metronome refused to turn the Flow off ({response.status_code}): {_detail(response)}")
+        return {"missing": False, "enabled": bool(response.json().get("enabled"))}
+
+
+def utc(value: Any) -> str | None:
+    """Metronome stores and returns naive UTC; the page needs the zone."""
+    if not isinstance(value, str) or not value:
+        return None
+    return value if value.endswith("Z") or "+" in value[10:] else value + "Z"
+
+
+def _short(value: Any) -> str | None:
+    return str(value)[:300] if value else None

@@ -1,23 +1,32 @@
-"""Metronome: recurring extractions that Wizard sets up as Metronome Flows owned by Metronome's Wizard user.
+"""Metronome: recurring briefs that Wizard sets up as Metronome Flows owned by Metronome's Wizard user.
 
-Owner decision, 20 October 2026 (docs/decisions/2026-10-20-metronome-recurring-extractions.md). Gemini creates nothing:
-wizard_schedule_extraction checks and test-runs the query and proposes a schedule, and only the person's click on
-Create in Metronome reaches Metronome (wizard_api/metronome_client.py).
+Owner decisions, 20 and 23 October 2026 (docs/decisions/2026-10-20-metronome-recurring-extractions.md,
+docs/decisions/2026-10-23-recurring-briefs.md). Gemini creates nothing: wizard_schedule_brief checks and test-runs the
+brief's queries and proposes a schedule, and only the person's click on Create in Metronome reaches Metronome
+(wizard_api/metronome_client.py).
 
 This module holds what both sides need and never talks to the network: the connection settings, the schedule and
-recipient rules, the Flow definition Metronome's POST /api/flows accepts, and the extraction script. Metronome has no
-SQL-query source, so a Flow is a Python-script Flow ("Produce a file" mode) whose script Wizard generates: the query, its
-SHA-256 and a read-only runner. Metronome runs it with its own Python (psycopg2, openpyxl) and emails the Excel file.
+recipient rules, the Flow definition Metronome's POST /api/flows accepts, and the script. Metronome has no SQL-query
+source, so a Flow is a Python-script Flow ("Produce a file" mode) whose script Wizard generates: the brief, its SHA-256,
+a read-only runner and a copy of the email renderer (brief.py). Metronome runs it with its own Python (psycopg2,
+openpyxl, matplotlib), sends the body.html it writes into METRONOME_FLOW_EMAIL_DIR and attaches the Excel file.
 
-Few questions (owner, 20 October 2026): the file is always Excel, it goes to the person's own address unless they name
-others, and it is sent at 08:00 unless they give a time. Only how often is asked, and only when they have not said."""
+Few questions (owner, 20 October 2026): the Excel file is always attached, it goes to the person's own address unless
+they name others, and it is sent at 08:00 unless they give a time. Only how often is asked, and only when they have not
+said."""
 from __future__ import annotations
 
+import base64
+import datetime
 import hashlib
+import json
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
+
+from wizard_connectors import brief
 
 WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
 FREQUENCIES = ("daily", "weekly", "monthly")
@@ -159,11 +168,12 @@ def flow_name(schedule: dict[str, Any]) -> str:
 
 
 def script_filename(schedule: dict[str, Any]) -> str:
-    return f"wizard_extract_{schedule['ref']}.py"
+    return f"wizard_brief_{schedule['ref']}.py"
 
 
 def flow_definition(schedule: dict[str, Any], script_path: str, owner_person_id: int) -> dict[str, Any]:
-    """The body of Metronome's POST /api/flows: an active Python-script Flow that writes the Excel file and emails it."""
+    """The body of Metronome's POST /api/flows: an active Python-script Flow that writes the Excel file and the email,
+    which Metronome's Email step sends."""
     return {
         "name": flow_name(schedule),
         "source_type": "python",
@@ -186,29 +196,48 @@ def flow_definition(schedule: dict[str, Any], script_path: str, owner_person_id:
 
 
 # The script Metronome runs ---------------------------------------------------------------------------------------------
-SCRIPT = '''"""Wizard recurring extraction: {title}
+def brief_of(schedule: dict[str, Any]) -> dict[str, Any]:
+    """The brief a schedule carries. A proposal made before briefs (one query for an Excel file) becomes a brief with one
+    table section, so its Create still works."""
+    if schedule.get("brief"):
+        return schedule["brief"]
+    return {"title": schedule["title"], "intro": None, "period_sql": None, "database": schedule.get("database"),
+            "sections": [{"kind": "table", "title": schedule["title"], "subtitle": None, "sql": schedule["sql"],
+                          "columns": [], "max_rows": 10, "highlights": []}],
+            "cadence": schedule_text(schedule).removesuffix(f" ({TIMEZONE})"),
+            "requested_by": schedule["requested_by"]["name"], "created_on": str(schedule["created_at"])[:10]}
+
+
+SCRIPT_HEAD = '''"""Wizard recurring brief: {title}
 
 Set up by Wizard for {requester} on {created}, as Metronome Flow "{flow}" owned by Metronome's Wizard user.
-Metronome runs this script on the Flow's schedule and emails the Excel file it writes to --output.
+Metronome runs this script on the Flow's schedule. It runs the brief's queries, writes every row to the Excel file named
+by --output (one sheet per section) and, when Metronome gives it METRONOME_FLOW_EMAIL_DIR, writes the email there:
+body.html and its PNG charts. Metronome sends that email with the Excel file attached.
 
-It runs one query and changes nothing: the query runs as a subquery in a READ ONLY session and transaction that is
-rolled back, with statement and lock timeouts, and at most {max_rows:,} rows are written. It connects with the
-read-only account in WIZARD_EXTRACT_PGHOST/PGPORT/PGDATABASE/PGUSER/PGPASSWORD/PGSSLMODE when Metronome's .env sets
-them, otherwise with Metronome's PG* scanner account; never with DG_UPLOAD_PG*, the uploader. It refuses to run if the
-query below no longer matches the SHA-256 Wizard recorded. To change the query, ask Wizard for a new schedule.
+It changes nothing: each query runs as a subquery in a READ ONLY session and transaction that is rolled back, with
+statement and lock timeouts, and at most {max_rows:,} rows are kept per query. It connects with the read-only account
+in WIZARD_EXTRACT_PGHOST/PGPORT/PGDATABASE/PGUSER/PGPASSWORD/PGSSLMODE when Metronome's .env sets them, otherwise with
+Metronome's PG* scanner account; never with DG_UPLOAD_PG*, the uploader. It refuses to run if the brief below no longer
+matches the SHA-256 Wizard recorded. To change the brief, ask Wizard for a new one.
 """
 import argparse
 import datetime
 import decimal
 import hashlib
+import json
 import os
 import sys
 
-SQL = {sql!r}
-SQL_SHA256 = {digest!r}
-DATABASE = {database!r}
-TITLE = {sheet!r}
+BRIEF_JSON = {brief!r}
+BRIEF_SHA256 = {digest!r}
 MAX_ROWS = {max_rows}
+
+# The email renderer, copied verbatim from Wizard (services/connectors/wizard_connectors/brief.py) ----------------------
+'''
+
+SCRIPT_TAIL = '''
+# End of the copied renderer ---------------------------------------------------------------------------------------------
 
 
 def setting(name):
@@ -225,49 +254,96 @@ def cell(value):
     return str(value)
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Wizard recurring extraction")
-    parser.add_argument("--output", required=True)
-    output = parser.parse_args().output
-    if hashlib.sha256(SQL.encode("utf-8")).hexdigest() != SQL_SHA256:
-        sys.exit("The query in this script was changed after Wizard created it. Ask Wizard for a new schedule.")
+def run_queries(brief):
+    """Every section's columns and rows, and the period line, read in one read-only transaction."""
     host, user = setting("PGHOST"), setting("PGUSER")
     if not host or not user:
         sys.exit("No read-only database account: set WIZARD_EXTRACT_PGHOST and WIZARD_EXTRACT_PGUSER (or PGHOST and "
                  "PGUSER) in Metronome's .env.")
     import psycopg2
 
-    print("::stage::Running the query", flush=True)
     connection = psycopg2.connect(
-        host=host, port=int(setting("PGPORT") or 5432), dbname=DATABASE or setting("PGDATABASE") or "postgres",
+        host=host, port=int(setting("PGPORT") or 5432), dbname=brief.get("database") or setting("PGDATABASE") or "postgres",
         user=user, password=setting("PGPASSWORD"), sslmode=setting("PGSSLMODE") or "prefer", connect_timeout=30,
-        application_name="wizard-extract",
+        application_name="wizard-brief",
         options="-c default_transaction_read_only=on -c statement_timeout=900000 -c lock_timeout=2000")
+    results, period = [], None
     try:
         connection.set_session(readonly=True, autocommit=False)
         cursor = connection.cursor()
-        # The newlines keep a trailing -- comment from swallowing the closing parenthesis.
-        cursor.execute("SELECT * FROM (\\n" + SQL + "\\n) AS wizard_extract LIMIT " + str(MAX_ROWS + 1))
-        columns = [column[0] for column in cursor.description]
-        rows = cursor.fetchmany(MAX_ROWS + 1)
+
+        def query(sql):
+            # The newlines keep a trailing -- comment from swallowing the closing parenthesis.
+            cursor.execute("SELECT * FROM (\\n" + sql + "\\n) AS wizard_brief LIMIT " + str(MAX_ROWS + 1))
+            columns = [column[0] for column in cursor.description]
+            rows = [list(row) for row in cursor.fetchmany(MAX_ROWS + 1)]
+            if len(rows) > MAX_ROWS:
+                print("Only the first %d rows of a query were kept; it returns more." % MAX_ROWS, file=sys.stderr,
+                      flush=True)
+                rows = rows[:MAX_ROWS]
+            return {"columns": columns, "rows": rows}
+
+        for index, section in enumerate(brief["sections"]):
+            print("::stage::Running query %d of %d" % (index + 1, len(brief["sections"])), flush=True)
+            results.append(query(section["sql"]))
+        if brief.get("period_sql"):
+            found = query(brief["period_sql"])
+            period = found["rows"][0][0] if found["rows"] and found["rows"][0] else None
     finally:
         try:
             connection.rollback()
         finally:
             connection.close()
-    if len(rows) > MAX_ROWS:
-        print("Only the first %d rows were written; the query returns more." % MAX_ROWS, file=sys.stderr, flush=True)
-        rows = rows[:MAX_ROWS]
-    print("::stage::Writing %d rows" % len(rows), flush=True)
+    return results, period
+
+
+def write_excel(brief, results, output):
     from openpyxl import Workbook
 
     book = Workbook(write_only=True)
-    sheet = book.create_sheet(TITLE)
-    sheet.append(columns)
-    for row in rows:
-        sheet.append([cell(value) for value in row])
+    for name, section, result in zip(sheet_names(brief), brief["sections"], results):
+        sheet = book.create_sheet(name)
+        sheet.append([label_of(section, key) for key in result["columns"]])
+        for row in result["rows"]:
+            sheet.append([cell(value) for value in row])
     book.save(output)
-    print("Wrote %d rows." % len(rows), flush=True)
+
+
+def write_email(brief, results, period, folder):
+    os.makedirs(folder, exist_ok=True)  # Metronome names the folder; the script creates it
+    the_issue = issue(brief, results, period=period, read_at=datetime.datetime.now(datetime.timezone.utc))
+    images = {}
+    for entry in the_issue["sections"]:
+        if not entry.get("drawing"):
+            continue
+        name = "chart-%d.png" % (entry["index"] + 1)
+        try:
+            png(entry["drawing"], os.path.join(folder, name))
+        except ImportError:
+            print("matplotlib is not installed on this worker: the charts go in as tables.", file=sys.stderr, flush=True)
+            images = {}
+            break
+        images[entry["index"]] = "cid:" + name
+    with open(os.path.join(folder, "body.html"), "w", encoding="utf-8") as handle:
+        handle.write(render(brief, the_issue, images))
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Wizard recurring brief")
+    parser.add_argument("--output", required=True)
+    output = parser.parse_args().output
+    if hashlib.sha256(BRIEF_JSON.encode("utf-8")).hexdigest() != BRIEF_SHA256:
+        sys.exit("The brief in this script was changed after Wizard created it. Ask Wizard for a new one.")
+    brief = json.loads(BRIEF_JSON)
+    results, period = run_queries(brief)
+    print("::stage::Writing the Excel file", flush=True)
+    write_excel(brief, results, output)
+    folder = os.environ.get("METRONOME_FLOW_EMAIL_DIR")
+    if folder:
+        print("::stage::Writing the email", flush=True)
+        write_email(brief, results, period, folder)
+    total = sum(len(result["rows"]) for result in results)
+    print("Wrote %d rows in %d sheets." % (total, len(results)), flush=True)
 
 
 if __name__ == "__main__":
@@ -275,12 +351,40 @@ if __name__ == "__main__":
 '''
 
 
-def extraction_script(schedule: dict[str, Any]) -> str:
+def renderer_source() -> str:
+    """brief.py as Metronome runs it: Wizard's own file, which needs only the standard library (and matplotlib for the
+    PNG charts)."""
+    return Path(brief.__file__).read_text(encoding="utf-8")
+
+
+def brief_json(schedule: dict[str, Any]) -> str:
+    return json.dumps(brief_of(schedule), sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+
+
+def brief_script(schedule: dict[str, Any]) -> str:
     """The Python file Metronome runs for this schedule. Every value from the conversation enters the file only as a
-    Python string literal (repr) or inside the docstring after `safe_title`, never as code."""
-    sql = schedule["sql"]
-    return SCRIPT.format(
+    Python string literal (repr) or inside the docstring after `safe_title`, never as code; the renderer is Wizard's
+    own file, copied verbatim."""
+    text = brief_json(schedule)
+    head = SCRIPT_HEAD.format(
         title=safe_title(schedule["title"]), requester=safe_title(schedule["requested_by"]["name"]),
-        created=str(schedule["created_at"])[:10], flow=flow_name(schedule), sql=sql,
-        digest=hashlib.sha256(sql.encode("utf-8")).hexdigest(), database=schedule.get("database"),
-        sheet=safe_title(schedule["title"])[:31], max_rows=MAX_EXTRACT_ROWS)
+        created=str(schedule["created_at"])[:10], flow=flow_name(schedule), brief=text,
+        digest=hashlib.sha256(text.encode("utf-8")).hexdigest(), max_rows=MAX_EXTRACT_ROWS)
+    return head + renderer_source() + SCRIPT_TAIL
+
+
+def preview_html(schedule: dict[str, Any]) -> str:
+    """The email as it looked on the proposal's test run, with SVG charts in place of the PNGs Metronome draws."""
+    preview = schedule.get("preview") or {}
+    results = preview.get("results")
+    if results is None:  # a proposal made before briefs: one query, its first rows
+        results = [{"columns": preview.get("columns") or [], "rows": preview.get("rows") or []}]
+    stamp = preview.get("read_at") or schedule.get("created_at")
+    try:
+        read_at = datetime.datetime.fromisoformat(str(stamp))
+    except ValueError:
+        read_at = None
+    found = brief.issue(brief_of(schedule), results, period=preview.get("period"), read_at=read_at)
+    images = {entry["index"]: "data:image/svg+xml;base64," + base64.b64encode(brief.svg(entry["drawing"]).encode()).decode()
+              for entry in found["sections"] if entry.get("drawing")}
+    return brief.render(brief_of(schedule), found, images)

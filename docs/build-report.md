@@ -3,7 +3,60 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-23 (latest, later) — No "Gemini is busy" on the stage
+## 2026-10-23 (latest) — Recurring briefs: the analysis as a newsletter email; a Recurring tab synced with Metronome
+
+The owner tested a recurring Flow: creating it in Metronome worked, but "the file received sucked". They want the same
+analysis by email, with the charts, the data and what it says, "a little newsletter they decided to receive on a topic
+on a weekly basis", and a **Recurring** section in the sidebar. Their calls: the words come from rules over each run's
+rows, with no AI at send time ("A for now"); matplotlib is on the Metronome host ("already have"); the tab is synced
+with Metronome, and Delete turns the Flow off there rather than deleting it.
+[Decision](decisions/2026-10-23-recurring-briefs.md).
+
+**What changed.**
+- `wizard_connectors/brief.py` (new): the email renderer. It draws key-number tiles with their change, bar and line
+  charts (drawn once as shapes, saved as SVG for the preview and PNG on Metronome), tables, and the "what moved"
+  sentences from eleven rules (`change`, `largest`, `smallest`, `biggest_rise`, `biggest_fall`, `rose`, `fell`,
+  `above`, `below`, `record_high`, `record_low`). The email is 600 px, built from tables and inline styles in Wizard's
+  colours, with every value HTML-escaped. Standard library only, so the script can carry it.
+- `wizard_schedule_brief` replaces `wizard_schedule_extraction` (still 21 tools). Up to eight sections, each with its
+  own query. It test-runs every query as `LIVE` evidence, and it refuses columns a query does not return. The
+  proposal keeps the test rows for the preview.
+- `metronome.py`: the generated script carries the brief, its SHA-256 and a verbatim copy of `brief.py`. It runs every
+  query in one read-only transaction and writes one Excel sheet per section. When Metronome names
+  `METRONOME_FLOW_EMAIL_DIR`, it also writes `body.html` and the PNG charts there; without matplotlib the charts go in
+  as tables. A proposal from before briefs becomes a one-table brief. `preview_html` draws the card's preview.
+- `metronome_client.py`: `status` (Flow, next and last run, recent runs with their email) and `deactivate`
+  (`PATCH /api/flows/{id}/enabled`, after the Wizard-user check; never Metronome's delete).
+- API: `GET /api/v1/schedules/{id}/preview`, `GET /api/v1/recurring` (the person's created briefs, even after their
+  conversation is deleted, with Metronome's state; still listed with a note when Metronome is down), and
+  `POST /api/v1/recurring/{id}/delete` (the audit records `metronome:deactivate_flow`). A run carries row counts, not
+  the test rows.
+- Web: the card shows the email in a sandboxed frame (no scripts), loaded only when opened, and lists every query. A
+  **Recurring** tab sits beside Analyses and Sources when Metronome is connected. It shows Sent / Off in Metronome /
+  Last run failed / Not in Metronome. Its detail panel has the schedule, the recipients, recent runs, the email and
+  **Delete** with a confirmation.
+- Gemini: the system prompt and the Make recurring request now ask for a brief that mirrors the answer, with lead
+  rules for what matters most and no "why".
+- Metronome (`datap0nd/data_governance`, PR "Python Flows can write their own email body with inline images"): the last
+  script row gets `METRONOME_FLOW_EMAIL_DIR`. The Email step sends `body.html` with its `cid:` images inline and the
+  file attached, adds a footer, and falls back to the standard message, with the reason, when a body breaks a rule.
+- Docs: AGENTS.md (second exception), GEMINI.md, README, `desktop.md`, `threat-model.md`, decision record; contracts
+  regenerated.
+
+**Tests.** `test_brief.py` (7): formats, every rule, chart geometry and valid SVG, escaping, sheet names, the
+standard-library-only rule. `test_schedule_tool.py` (19): rights, 14 refusals before any query, the test runs as
+evidence, missing columns named, the proposal. `test_metronome.py` (23): the script with fake psycopg2, openpyxl and
+matplotlib (one read-only transaction, four queries, the sheets, the email and its charts, no matplotlib, an older
+Metronome, the row cap, a changed brief refused, values only as literals), and Flow status and turning off against
+the fake Metronome with its owner rule. `test_schedules_api.py` (7): the preview, the tab following Metronome, Delete
+only as Wizard. Web (51): the card's preview and queries, the tab, Delete after confirming, Metronome down. With real
+matplotlib 3.11.2 and openpyxl 3.1.5 in a scratch environment, the generated script wrote a four-sheet workbook and
+two PNG charts, and Metronome's own `script_body` accepted the email.
+`verify_all.sh --allow-blocked=live-parity,postgres`: every layer passes (Python 398 passed and 5 skipped, real Gemini
+CLI 4, web unit 51) except postgres and live-parity, BLOCKED as allowed, and e2e, which could not launch Edge here; the
+same 16 e2e tests passed on the installed Chromium.
+
+## 2026-10-23 (later) — No "Gemini is busy" on the stage
 
 The owner: "users dont need to see 'gemini is busy' message. they should just have wizard working through the data.
 they dont need to see that nothing's happening because gemini's busy."

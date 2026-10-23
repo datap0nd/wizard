@@ -46,10 +46,13 @@ around a precomputed result is withdrawn. Its credential, entitlement, DLP and h
   Keep all of those protections.
   The second exception, also an owner decision
   ([docs/decisions/2026-10-20-metronome-recurring-extractions.md](docs/decisions/2026-10-20-metronome-recurring-extractions.md)):
-  recurring extractions emailed by Metronome. `wizard_schedule_extraction` only checks and test-runs a query and
-  proposes a schedule. The person creates the Metronome Flow with a button, and the Flow always belongs to Metronome's
-  Wizard user, never to the person. Keep the click, the Wizard-user check before every create, company-domain
-  recipients, one read-only statement, and the generated script's read-only session.
+  recurring briefs emailed by Metronome
+  ([docs/decisions/2026-10-23-recurring-briefs.md](docs/decisions/2026-10-23-recurring-briefs.md)).
+  `wizard_schedule_brief` only checks and test-runs the brief's queries and proposes a schedule. The person creates the
+  Metronome Flow with a button, and the Flow always belongs to Metronome's Wizard user, never to the person. Delete in
+  the Recurring tab only turns the Flow off, by the person's click; Wizard never deletes a Flow. Keep the click, the
+  Wizard-user check before every create and turn-off, company-domain recipients, one read-only statement per query,
+  the generated script's read-only session, and the email renderer's standard-library-only rule.
 - Commit corporate exports, live rows, credentials, tokens, cookies, `.env`, `*.provision`, the DLP-blocked DOCX, raw
   model/source logs, or owner reference answers. Live references live in the approved private location; CI sees safe
   IDs only. Never build a password or token into WizardSetup.exe or a release: they are public.

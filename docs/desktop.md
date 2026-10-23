@@ -102,14 +102,16 @@ publishing set-up. Names ending in `_PASSWORD`, `_TOKEN`, `_SECRET` or `_KEY` ar
 The PostgreSQL account must be **read-only by its grants** (SELECT on the views Wizard may use, nothing else). Everyone
 who has the file can use it, also outside Wizard.
 
-### 4. Metronome, for recurring extractions (optional)
+### 4. Metronome, for recurring briefs (optional)
 
-People can have a table Wizard found emailed to them on a schedule: they press **Make recurring** under an answer, or ask
-for it, and press **Create in Metronome** on the card Wizard shows. It is always Excel, sent to their own address
-(their sign-in email without the `ax.` after the @) at 08:00 Dubai time unless they say otherwise; Gemini asks at most how
-often.
-Metronome then runs the query and emails the file. Every Flow belongs to Metronome's **Wizard** user, never to the person
-who asked ([decision](decisions/2026-10-20-metronome-recurring-extractions.md)).
+People can have an analysis Wizard did emailed to them on a schedule, as a short newsletter: key numbers, charts, what
+moved and tables, with an Excel file of every row attached. They press **Make recurring** under an answer, or ask for
+it, check the email on the card Wizard shows and press **Create in Metronome**. It goes to their own address (their
+sign-in email without the `ax.` after the @) at 08:00 Dubai time unless they say otherwise; Gemini asks at most how
+often. Metronome then runs the queries and sends the email. Every Flow belongs to Metronome's **Wizard** user, never to
+the person who asked ([decision](decisions/2026-10-20-metronome-recurring-extractions.md),
+[briefs](decisions/2026-10-23-recurring-briefs.md)). The sidebar's **Recurring** tab lists each person's briefs with
+Metronome's state; **Delete** there turns the Flow off in Metronome.
 
 1. In Metronome, on the host PC, open **Users** and add a user named `Wizard` (role BI). Give it the email that should
    receive Metronome's failure alerts for these Flows.
@@ -122,8 +124,10 @@ who asked ([decision](decisions/2026-10-20-metronome-recurring-extractions.md)).
 
 The query runs on Metronome's worker under Metronome's read-only `PG*` scanner account, or under a dedicated read-only
 account if Metronome's `.env` sets `WIZARD_EXTRACT_PGHOST`, `WIZARD_EXTRACT_PGUSER`, `WIZARD_EXTRACT_PGPASSWORD` (and
-`_PGPORT`, `_PGDATABASE`, `_PGSSLMODE`). Recipients must be in `WIZARD_GOOGLE_DOMAINS`. Pause or delete a Flow in
-Metronome's **Flows**.
+`_PGPORT`, `_PGDATABASE`, `_PGSSLMODE`). Recipients must be in `WIZARD_GOOGLE_DOMAINS`. The email needs a Metronome
+whose Email step accepts a script's own body (`METRONOME_FLOW_EMAIL_DIR`, October 2026) and matplotlib in the Python
+Metronome's worker uses; without matplotlib the charts go in as tables, and an older Metronome sends its standard
+message with the Excel file.
 
 ## The button and the panel
 

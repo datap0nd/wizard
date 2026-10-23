@@ -916,18 +916,249 @@
       }
     },
     {
-      "name": "wizard_schedule_extraction",
-      "description": "Propose a recurring extraction: Metronome runs a query on a schedule (daily, weekly or monthly) and emails the result as an Excel file, by default to the user's own address at 08:00 Dubai time. Use it when the user wants a table sent regularly, as soon as you know how often. It checks the schedule and the recipients, runs the query once as a test (live evidence to cite like [E3]) and shows the user a card. Nothing is scheduled until the user presses Create in Metronome; the Flow then belongs to Metronome's Wizard user.",
+      "name": "wizard_schedule_brief",
+      "description": "Propose a recurring brief: a short newsletter email Metronome sends on a schedule (daily, weekly or monthly), by default to the user's own address at 08:00 Dubai time, with an Excel file of every row attached. Mirror your answer: key numbers, charts and tables, each section with its own query whose dates move with CURRENT_DATE, plus 'what moved' rules that write sentences from each run's rows. Use it when the user wants an analysis sent regularly, as soon as you know how often. It checks the schedule and the recipients, runs every query once as a test (live evidence to cite like [E3]) and shows the user the email on a card. Nothing is scheduled until the user presses Create in Metronome; the Flow then belongs to Metronome's Wizard user.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "title": {
-            "description": "What the email holds, e.g. 'Weekly sell-out by market'. It names the Metronome Flow, the file and (by default) the subject (1-80 characters)",
+            "description": "The brief's name, e.g. 'Weekly sell-out by market'. It names the email, the Metronome Flow and the Excel file (1-80 characters)",
             "type": "string"
           },
-          "sql": {
-            "description": "The query to run at every send: usually the one behind the table in your answer, with fixed dates rewritten relative to CURRENT_DATE so each email covers the latest period. One SELECT or WITH ... SELECT, as for wizard_query_postgresql (1-20000 characters)",
+          "intro": {
+            "description": "One optional line under the title (0-200 characters)",
             "type": "string"
+          },
+          "period_sql": {
+            "description": "Optional query returning one text value that names the period each email covers, e.g. SELECT 'Week ' || to_char(CURRENT_DATE - 7, 'IW') AS period (0-5000 characters)",
+            "type": "string"
+          },
+          "sections": {
+            "description": "In reading order, mirroring your answer: usually key numbers first, then the charts and tables. Each section has its own query.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "kind": {
+                  "description": "numbers: key-number tiles from the first row of the query. chart: a bar or line chart. table: the first max_rows rows (the Excel file has them all).",
+                  "enum": [
+                    "numbers",
+                    "chart",
+                    "table"
+                  ],
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string",
+                  "description": "(0-80 characters)"
+                },
+                "subtitle": {
+                  "description": "e.g. 'Week 43 against week 42' (0-160 characters)",
+                  "type": "string"
+                },
+                "sql": {
+                  "description": "One SELECT or WITH ... SELECT returning exactly what this section shows, with dates relative to CURRENT_DATE so each run covers the latest period (1-20000 characters)",
+                  "type": "string"
+                },
+                "items": {
+                  "description": "numbers: one to four tiles.",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "label": {
+                        "description": "The tile's label, e.g. 'Units sold' (1-40 characters)",
+                        "type": "string"
+                      },
+                      "value": {
+                        "description": "Column with this period's value (first row of the section's query) (1-63 characters)",
+                        "type": "string"
+                      },
+                      "previous": {
+                        "description": "Column with the period it is compared with; the tile then shows the change, e.g. ▲ 5.3% (1-63 characters)",
+                        "type": "string"
+                      },
+                      "compare": {
+                        "description": "What the change is against, e.g. 'vs last week'. Default 'vs the previous period' (0-40 characters)",
+                        "type": "string"
+                      },
+                      "better": {
+                        "description": "'down' when a fall is good (costs, days of stock) (default \"up\")",
+                        "enum": [
+                          "up",
+                          "down"
+                        ],
+                        "type": "string"
+                      },
+                      "prefix": {
+                        "description": "e.g. 'AED ' or '$' (0-8 characters)",
+                        "type": "string"
+                      },
+                      "suffix": {
+                        "description": "e.g. '%' or ' units' (0-12 characters)",
+                        "type": "string"
+                      },
+                      "decimals": {
+                        "maximum": 4,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "compact": {
+                        "description": "Show 61.4M instead of 61,400,000 (default false)",
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "value"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 4,
+                  "type": "array"
+                },
+                "chart": {
+                  "description": "chart: bar (one row per category, best for markets or products) or line (one row per period, in order).",
+                  "enum": [
+                    "bar",
+                    "line"
+                  ],
+                  "type": "string"
+                },
+                "x": {
+                  "description": "chart: the category or period column (1-63 characters)",
+                  "type": "string"
+                },
+                "series": {
+                  "description": "chart: number columns. For a bar chart comparing periods, this period first, then the previous one.",
+                  "items": {
+                    "type": "string",
+                    "description": "(1-63 characters)"
+                  },
+                  "maxItems": 4,
+                  "type": "array"
+                },
+                "change": {
+                  "description": "bar chart with two series: show each row's percent change (default false)",
+                  "type": "boolean"
+                },
+                "better": {
+                  "enum": [
+                    "up",
+                    "down"
+                  ],
+                  "type": "string",
+                  "description": "(default \"up\")"
+                },
+                "columns": {
+                  "description": "Labels and number formats for the query's columns (charts and tables); unlisted columns keep their names.",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "description": "(1-63 characters)"
+                      },
+                      "label": {
+                        "description": "Header or legend name, e.g. 'Week 43' (0-40 characters)",
+                        "type": "string"
+                      },
+                      "prefix": {
+                        "type": "string",
+                        "description": "(0-8 characters)"
+                      },
+                      "suffix": {
+                        "type": "string",
+                        "description": "(0-12 characters)"
+                      },
+                      "decimals": {
+                        "maximum": 4,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "compact": {
+                        "type": "boolean",
+                        "description": "(default false)"
+                      }
+                    },
+                    "required": [
+                      "key"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 20,
+                  "type": "array"
+                },
+                "max_rows": {
+                  "description": "table: rows shown in the email (default 10)",
+                  "maximum": 25,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "highlights": {
+                  "description": "'What moved' sentences computed from this section's rows at every run.",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "rule": {
+                        "description": "change: 'Units rose 5.3% to 48,210, from 45,800' (first row). largest / smallest: the row with the highest or lowest value. biggest_rise / biggest_fall: the row with the largest percent change. rose / fell: which rows went up or down ('Kuwait was the only one down: -5.5%'). above / below: rows past a threshold. record_high / record_low: the last row of a series is the highest or lowest shown. A rule with nothing to say this time (nothing fell) writes nothing.",
+                        "enum": [
+                          "change",
+                          "largest",
+                          "smallest",
+                          "biggest_rise",
+                          "biggest_fall",
+                          "rose",
+                          "fell",
+                          "above",
+                          "below",
+                          "record_high",
+                          "record_low"
+                        ],
+                        "type": "string"
+                      },
+                      "value": {
+                        "description": "Column with this period's value (1-63 characters)",
+                        "type": "string"
+                      },
+                      "label": {
+                        "description": "Column naming each row, e.g. 'market'. Required except for change (1-63 characters)",
+                        "type": "string"
+                      },
+                      "previous": {
+                        "description": "Column with the previous period's value; required for change, biggest_rise, biggest_fall, rose and fell (1-63 characters)",
+                        "type": "string"
+                      },
+                      "threshold": {
+                        "description": "For above and below.",
+                        "type": "number"
+                      },
+                      "noun": {
+                        "description": "What the value counts, e.g. 'units' or 'sell-out' (0-30 characters)",
+                        "type": "string"
+                      },
+                      "lead": {
+                        "description": "Put the sentence in the 'In short' paragraph at the top instead of under its section. Lead with the two or three that matter most (default false)",
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "rule",
+                      "value"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 6,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "kind",
+                "sql"
+              ],
+              "type": "object"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "type": "array"
           },
           "database": {
             "description": "Database on the server; omit for the default one (pattern ^[A-Za-z0-9_.-]{1,63}$)",
@@ -985,7 +1216,7 @@
         },
         "required": [
           "title",
-          "sql",
+          "sections",
           "frequency"
         ],
         "type": "object"

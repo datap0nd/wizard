@@ -81,8 +81,13 @@ def evidence_summary(evidence: dict[str, Any]) -> dict[str, Any]:
 
 
 def public_schedule(schedule: dict[str, Any]) -> dict[str, Any]:
-    """A recurring-extraction proposal as the page shows it (who asked is the viewer; never their user id)."""
+    """A recurring brief as the page shows it (who asked is the viewer; never their user id). The test run's rows stay
+    on the server: the card loads the email preview on its own."""
     shown = {k: v for k, v in schedule.items() if k not in ("requested_by", "conversation_id")}
+    preview = schedule.get("preview") or {}
+    if "results" in preview:
+        shown["preview"] = {"period": preview.get("period"), "read_at": preview.get("read_at"),
+                            "rows": [len(result.get("rows") or []) for result in preview["results"]]}
     return {**shown, "requested_by": {"name": schedule.get("requested_by", {}).get("name")}}
 
 
@@ -205,7 +210,7 @@ def tool_label(name: str, args: dict[str, Any], services: Services) -> str:
             "wizard_query_postgresql": f"Queried the {services.postgres_name}",
             "wizard_calculate": f"Calculated {str(args.get('expression', ''))[:80]}",
             "wizard_render_visual": f"Prepared a {args.get('kind', 'visual')}: {args.get('title', '')}",
-            "wizard_schedule_extraction": f"Prepared a recurring email in Metronome: {args.get('title', '')}",
+            "wizard_schedule_brief": f"Prepared a recurring brief for Metronome: {args.get('title', '')}",
             "wizard_check_my_data": f"Checked {len(args.get('claims', []))} figure(s) against the evidence"}.get(name, name)
 
 
@@ -384,8 +389,9 @@ class RunManager:
             finished["error_code"] = outcome.error_code
         run.last_tool = f"{name} at {datetime.now().strftime('%H:%M:%S')}: " + (
             "ok" if outcome.ok else f"{outcome.error_code}: {outcome.error_message or ''}".strip(": "))
-        if outcome.ok and "evidence_id" in outcome.data:
-            evidence = self.store.evidence(run.conversation_id, outcome.data["evidence_id"])[0]
+        first = outcome.data.get("evidence_id") or (outcome.data.get("evidence_ids") or [None])[0] if outcome.ok else None
+        if first:  # a brief's test run reads several queries; the step shows its first
+            evidence = self.store.evidence(run.conversation_id, first)[0]
             finished["evidence"] = evidence_summary(evidence)
         await self.emit(run, "tool_finished", finished)
         if outcome.ok and "visual_id" in outcome.data:

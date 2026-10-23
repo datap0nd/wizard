@@ -190,15 +190,27 @@ export type RunKind = 'ask' | 'check' | 'recurring';
 /** The Make recurring menu's choices; null: Gemini asks how often. */
 export type Cadence = 'daily' | 'weekly' | 'monthly';
 
-/** A recurring extraction Gemini proposed (R1, R2...). Only the person's click creates it in Metronome, where the Flow
- *  belongs to Metronome's Wizard user. */
+/** What a brief section shows; the full spec lives on the server (wizard_connectors/brief.py). */
+export interface BriefSection {
+  kind: 'numbers' | 'chart' | 'table';
+  title: string | null;
+  subtitle: string | null;
+  sql: string;
+  chart: 'bar' | 'line' | null;
+}
+
+/** A recurring brief Gemini proposed (R1, R2...): a newsletter email Metronome sends on a schedule. Only the person's
+ *  click creates it in Metronome, where the Flow belongs to Metronome's Wizard user. A proposal made before briefs has
+ *  one `sql` and no `brief`. */
 export interface Schedule {
   id: string;
   label: string;
   run_id: string;
-  status: 'proposed' | 'creating' | 'created' | 'failed' | 'uncertain' | 'dismissed';
+  status: 'proposed' | 'creating' | 'created' | 'failed' | 'uncertain' | 'dismissed' | 'deleting' | 'deleted';
+  kind?: 'brief';
   title: string;
-  sql: string;
+  brief?: {title: string; intro: string | null; period_sql: string | null; sections: BriefSection[]};
+  sql?: string;
   database: string | null;
   recipients: string[];
   frequency: 'daily' | 'weekly' | 'monthly';
@@ -208,14 +220,32 @@ export interface Schedule {
   file_format: 'xlsx';
   subject: string | null;
   schedule_text: string;
-  evidence_id: string;
+  evidence_id?: string;
+  evidence_ids?: string[];
   metronome_user: string;
   requested_by: {name: string | null};
   created_at: string;
-  preview: {columns: string[]; rows: (string | number | null)[][]; rows_in_test: number; more: boolean};
+  /** A brief's test run (period, read time, rows per section); a proposal from before briefs kept its first rows. */
+  preview: {period?: string | null; read_at?: string | null; rows?: unknown[]; columns?: string[]; rows_in_test?: number; more?: boolean};
   flow: {id: number | null; name: string; owner: string; enabled: boolean | null; next_run_at: string | null; url: string} | null;
   error: string | null;
 }
+
+/** A Flow as Metronome reports it to the Recurring tab. */
+export interface MetronomeFlow {
+  missing: boolean;
+  name?: string;
+  enabled?: boolean;
+  owner?: string | null;
+  next_run_at?: string | null;
+  last_run_at?: string | null;
+  last_status?: string | null;
+  last_error?: string | null;
+  runs?: {id: number; status: string; trigger: string | null; at: string | null; error: string | null; email: string | null}[];
+}
+
+export interface RecurringItem extends Schedule { metronome: MetronomeFlow | null }
+export interface RecurringList { items: RecurringItem[]; sync: {ok: boolean; message: string | null} }
 
 export interface RunRecord {
   id: string;

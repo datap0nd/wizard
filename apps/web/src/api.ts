@@ -1,4 +1,4 @@
-import type {Attachment, Bootstrap, Cadence, ConversationSummary, Evidence, GeminiAccount, GeminiQuota, LocalFile, Report, RunRecord, Schedule, SettingsSaved, SettingsView, SourceCatalog, SourceSummary, UpdateInfo} from './types';
+import type {Attachment, Bootstrap, Cadence, ConversationSummary, Evidence, GeminiAccount, GeminiQuota, LocalFile, RecurringList, Report, RunRecord, Schedule, SettingsSaved, SettingsView, SourceCatalog, SourceSummary, UpdateInfo} from './types';
 
 export class ApiError extends Error {
   constructor(message: string, public status: number, public code?: string, public loginRequired = false) { super(message); }
@@ -71,6 +71,9 @@ export const api = {
   recurring: (runId: string, cadence: Cadence | null) => request<{run_id: string; conversation_id: string; question: string}>(`/api/v1/runs/${encodeURIComponent(runId)}/recurring`, {body: {cadence}}),
   createSchedule: (id: string) => request<{schedule: Schedule}>(`/api/v1/schedules/${encodeURIComponent(id)}/create`, {body: {}}),
   dismissSchedule: (id: string) => request<{schedule: Schedule}>(`/api/v1/schedules/${encodeURIComponent(id)}/dismiss`, {body: {}}),
+  schedulePreview: (id: string) => request<{html: string}>(`/api/v1/schedules/${encodeURIComponent(id)}/preview`),
+  recurringList: () => request<RecurringList>('/api/v1/recurring'),
+  deleteRecurring: (id: string) => request<{deleted: boolean; flow_id: number | null; missing: boolean}>(`/api/v1/recurring/${encodeURIComponent(id)}/delete`, {body: {}}),
   cancel: (runId: string) => request<{cancelled: boolean}>(`/api/v1/runs/${encodeURIComponent(runId)}/cancel`, {body: {}}),
   emailDraft: (runId: string, subject: string, html: string) => request<{ok: true}>(`/api/v1/runs/${encodeURIComponent(runId)}/email`, {body: {subject, html}}),
   feedback: (runId: string, category: string, note = '') => request<{ok: true}>(`/api/v1/runs/${encodeURIComponent(runId)}/feedback`, {body: {category, note}}),

@@ -1,6 +1,7 @@
-"""Recurring extractions end to end, with a scripted model and a fake Metronome: the proposal streams as a card, only the
-person's click creates the Flow (as Metronome's Wizard user, once), failures can be retried, an uncertain outcome is
-never resent, other people cannot touch it, Make recurring starts a follow-up, and Settings tests the connection."""
+"""Recurring briefs end to end, with a scripted model and a fake Metronome: the proposal streams as a card with the email
+it will send, only the person's click creates the Flow (as Metronome's Wizard user, once), failures can be retried, an
+uncertain outcome is never resent, other people cannot touch it, the Recurring tab shows Metronome's state and Delete
+turns the Flow off, Make recurring starts a follow-up, and Settings tests the connection."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -9,8 +10,8 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 from tests.helpers import HEADERS, WIZARD_KEY, FakeMetronome, ask, login, wait_run
-from tests.unit.test_postgres_query import SETTINGS, FakeSession
-from tests.unit.test_schedule_tool import ARGS
+from tests.unit.test_postgres_query import SETTINGS
+from tests.unit.test_schedule_tool import ARGS, BriefSession
 
 from wizard_agent.prompting import RECURRING_REQUEST, RECURRING_UNCHOSEN
 from wizard_agent.replay import ReplayRuntime
@@ -28,7 +29,7 @@ class Scripted(ReplayRuntime):
         Scripted.prompts.append(request.prompt)
         await emit("agent_session", {"session_id": request.run_id, "model": "scripted"})
         if "schedule" in request.question:
-            ok, text = await tools.call("wizard_schedule_extraction", ARGS)
+            ok, text = await tools.call("wizard_schedule_brief", ARGS)
             assert ok, text
             await emit("text_delta", {"text": "Here is the schedule [R1]: confirm it on the card. [E1]"})
         else:
@@ -45,7 +46,7 @@ def app(tmp_path: Path):
     fake = FakeMetronome()
     with TestClient(create_app(settings, runtime=Scripted(settings.transcripts_dir, 0),
                                metronome_transport=fake.transport())) as client:
-        client.app.state.manager.services.postgres = PostgresQuery(SETTINGS, connect=lambda s, d: FakeSession())
+        client.app.state.manager.services.postgres = PostgresQuery(SETTINGS, connect=lambda s, d: BriefSession())
         login(client, "local-owner")
         yield client, fake
 
@@ -112,6 +113,60 @@ def test_other_people_cannot_see_or_create_it(app):
     assert create(client, schedule["id"]).status_code == 404
     assert client.get("/api/v1/bootstrap").json()["metronome"]["enabled"] is False, "no PostgreSQL right, no schedules"
     assert not fake.calls
+
+
+def test_the_card_shows_the_email_it_will_send(app):
+    client, _ = app
+    schedule = proposed(client)
+    assert schedule["kind"] == "brief" and schedule["preview"]["period"] == "Week 43"
+    assert schedule["preview"]["rows"] == [1, 3, 1], "the run carries row counts; the rows stay on the server"
+    page = client.get(f"/api/v1/schedules/{schedule['id']}/preview").json()["html"]
+    assert page.startswith("<!DOCTYPE html>") and "Weekly sell-out by market" in page
+    assert "Sell-out rose 5.3% to 48,210, from 45,800." in page and 'src="data:image/svg+xml;base64,' in page
+    login(client, "u-ceo")
+    assert client.get(f"/api/v1/schedules/{schedule['id']}/preview").status_code == 404
+
+
+def test_the_recurring_tab_follows_metronome_and_delete_turns_the_flow_off(app):
+    client, fake = app
+    assert client.get("/api/v1/recurring").json() == {"items": [], "sync": {"ok": True, "message": None}}
+    schedule = proposed(client)
+    assert client.get("/api/v1/recurring").json()["items"] == [], "a proposal is not recurring yet"
+    create(client, schedule["id"])
+    fake.run(41)
+    listed = client.get("/api/v1/recurring").json()
+    [item] = listed["items"]
+    assert listed["sync"]["ok"] and item["id"] == schedule["id"] and item["title"] == "Weekly sell-out by market"
+    assert item["metronome"]["enabled"] is True and item["metronome"]["runs"][0]["email"] == "submitted"
+    fake.flows[0]["enabled"] = False  # someone turned it off in Metronome
+    assert client.get("/api/v1/recurring").json()["items"][0]["metronome"]["enabled"] is False
+    fake.fail_sync = True
+    down = client.get("/api/v1/recurring").json()
+    assert down["sync"]["ok"] is False and "not reachable" in down["sync"]["message"]
+    assert down["items"][0]["metronome"] is None, "the list still shows what Wizard knows"
+    fake.fail_sync = False
+    fake.flows[0]["enabled"] = True
+    run = client.get(f"/api/v1/runs/{schedule['run_id']}").json()
+    # The conversation can go; the Flow keeps running, so the brief stays in the tab.
+    assert client.delete(f"/api/v1/conversations/{run['conversation_id']}", headers=HEADERS).status_code == 200
+    assert [i["id"] for i in client.get("/api/v1/recurring").json()["items"]] == [schedule["id"]]
+    login(client, "u-ceo")
+    assert client.post(f"/api/v1/recurring/{schedule['id']}/delete", headers=HEADERS).status_code == 404
+    assert client.get("/api/v1/recurring").json()["items"] == []
+    login(client, "local-owner")
+    fake.keys[WIZARD_KEY] = 1  # Wizard's key now signed in as someone else: Metronome must not be touched
+    refused = client.post(f"/api/v1/recurring/{schedule['id']}/delete", headers=HEADERS)
+    assert refused.status_code == 502 and "as Rafael, not Wizard" in refused.json()["error"]
+    assert fake.flows[0]["enabled"] is True and client.get("/api/v1/recurring").json()["items"][0]["error"]
+    fake.keys[WIZARD_KEY] = 7
+    deleted = client.post(f"/api/v1/recurring/{schedule['id']}/delete", headers=HEADERS).json()
+    assert deleted == {"deleted": True, "flow_id": 41, "missing": False}
+    assert fake.flows[0]["enabled"] is False and len(fake.flows) == 1, "Metronome keeps the Flow, turned off"
+    assert client.get("/api/v1/recurring").json()["items"] == []
+    assert client.post(f"/api/v1/recurring/{schedule['id']}/delete", headers=HEADERS).status_code == 404
+    assert client.app.state.store.owned_schedule("local-owner", schedule["id"])["status"] == "deleted"
+    audit = client.app.state.store.audit_entries()
+    assert [a["outcome"] for a in audit if a["action"] == "metronome:deactivate_flow"] == ["ok", "failed"]
 
 
 def test_make_recurring_asks_nothing_when_the_menu_says_how_often(app):

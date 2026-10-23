@@ -1,6 +1,7 @@
-"""Recurring extractions in Metronome without Metronome: the settings, schedule and recipient rules, the Flow Wizard asks
-for, the client against a fake Metronome with its real ownership rules, the generated script run with a fake database
-driver, and the one-time link script against a local HTTP server."""
+"""Recurring briefs in Metronome without Metronome: the settings, schedule and recipient rules, the Flow Wizard asks for,
+the client against a fake Metronome with its real ownership rules (create, status, turning a Flow off), the generated
+script run with fake database, Excel and matplotlib modules, and the one-time link script against a local HTTP
+server."""
 from __future__ import annotations
 
 import datetime as dt
@@ -104,8 +105,8 @@ def test_the_client_creates_the_flow_as_the_wizard_user():
     created = fake.flows[0]
     assert created["owner_person_id"] == 7 and created["owner_name"] == "Wizard"
     [(path, script)] = fake.scripts.items()
-    assert created["python_scripts"] == [path] and path.endswith("wizard_extract_a1b2c3d4.py")
-    assert schedule()["sql"] in script, "the query travels inside the script as written"
+    assert created["python_scripts"] == [path] and path.endswith("wizard_brief_a1b2c3d4.py")
+    assert repr(metronome.brief_json(schedule())) in script, "the brief travels inside the script as a literal"
 
 
 @pytest.mark.parametrize(("key", "message"), [("wizard-" + "x" * 40, "not signed in"), ("rafael-" + "x" * 40, "as Rafael")])
@@ -140,22 +141,66 @@ def test_check_names_the_user_and_an_unreachable_metronome():
     assert found["ok"] is False and "not reachable" in found["message"]
 
 
-# The generated script, run as Metronome runs it, with fake psycopg2 and openpyxl modules --------------------------------
+def test_status_reads_each_flow_and_its_latest_runs():
+    fake = FakeMetronome()
+    client = MetronomeClient(SETTINGS, fake.transport())
+    client.create(schedule())
+    fake.run(41, "failed", email=None, error="relation bi_reporting.sell_out does not exist")
+    fake.run(41)
+    found = client.status([41, 99], runs=5)
+    assert found[99] == {"missing": True}
+    flow = found[41]
+    assert flow["enabled"] is True and flow["owner"] == "Wizard" and flow["next_run_at"] == "2026-10-26T04:00:00Z"
+    assert flow["last_status"] == "succeeded" and flow["last_run_at"] == "2026-10-26T04:01:10Z"
+    assert [(r["status"], r["email"]) for r in flow["runs"]] == [("succeeded", "submitted"), ("failed", None)]
+    assert flow["runs"][1]["error"].startswith("relation") and "run_folder" not in flow["runs"][0]
+    fake.fail_sync = True
+    with pytest.raises(MetronomeError, match="not reachable"):
+        client.status([41])
+
+
+def test_delete_only_turns_the_flow_off_and_only_as_wizard():
+    fake = FakeMetronome()
+    client = MetronomeClient(SETTINGS, fake.transport())
+    client.create(schedule())
+    assert client.deactivate(41) == {"missing": False, "enabled": False}
+    assert fake.flows[0]["enabled"] is False and len(fake.flows) == 1, "Metronome keeps the Flow"
+    assert fake.calls[-2:] == ["GET /api/me", "PATCH /api/flows/41/enabled"] and not any("DELETE" in c for c in fake.calls)
+    assert client.deactivate(99) == {"missing": True, "enabled": False}
+    fake.keys["rafael-" + "x" * 40] = 1
+    other = MetronomeClient(MetronomeSettings(SETTINGS.url, "rafael-" + "x" * 40, "Wizard"), fake.transport())
+    with pytest.raises(MetronomeError, match="as Rafael"):
+        other.deactivate(41)
+    fake.flows[0]["owner_person_id"] = 1
+    with pytest.raises(MetronomeError, match="refused to turn the Flow off .403"):
+        client.deactivate(41)
+
+
+# The generated script, run as Metronome runs it, with fake psycopg2, openpyxl and matplotlib modules -------------------
 FAKE_PSYCOPG2 = '''
 import datetime, decimal, json, os
 LOG = os.environ["FAKE_PG_LOG"]
-ROWS = int(os.environ.get("FAKE_PG_ROWS", "2"))
+ROWS = int(os.environ.get("FAKE_PG_ROWS", "0"))
+# What each query returns, found by the comment at its end.
+ANSWERS = {
+    "-- numbers": ([("units",), ("units_prev",)], [(decimal.Decimal("48210"), 45800)]),
+    "-- markets": ([("market",), ("units",), ("units_prev",)],
+                   [("UAE", 18420, 16980), ("Kuwait", 5310, 5620), ("Qatar", 4180, 3720)]),
+    "-- weeks": ([("week",), ("at",)], [(datetime.date(2026, 10, 12),
+                                        datetime.datetime(2026, 10, 12, 8, tzinfo=datetime.timezone.utc))]),
+    "-- period": ([("period",)], [("Week 43",)]),
+}
 def log(event, **data):
     with open(LOG, "a", encoding="utf-8") as handle:
         handle.write(json.dumps({"event": event, **data}, default=str) + "\\n")
 class Cursor:
-    description = [("market",), ("units",), ("week",), ("at",)]
     def execute(self, sql):
         log("execute", sql=sql)
+        self.description, self.rows = next(v for k, v in ANSWERS.items() if k in sql)
+        if ROWS:
+            self.rows = self.rows[:1] * ROWS
     def fetchmany(self, size):
-        rows = [("EG", decimal.Decimal("12.5"), datetime.date(2026, 10, 12),
-                 datetime.datetime(2026, 10, 12, 8, tzinfo=datetime.timezone.utc))] * ROWS
-        return rows[:size]
+        return self.rows[:size]
 class Connection:
     def set_session(self, **options):
         log("set_session", **options)
@@ -184,32 +229,89 @@ class Workbook:
         self.sheets.append(Sheet(title))
         return self.sheets[-1]
     def save(self, path):
-        sheet = self.sheets[0]
         with open(path, "w", encoding="utf-8") as handle:
-            json.dump({"title": sheet.title, "rows": [[repr(v) for v in row] for row in sheet.rows]}, handle)
+            json.dump([{"title": s.title, "rows": [[repr(v) for v in row] for row in s.rows]} for s in self.sheets], handle)
+'''
+# Enough of matplotlib for brief.png: it records the drawing and writes a stand-in PNG.
+FAKE_MATPLOTLIB = '''
+rcParams = {}
+def use(backend):
+    assert backend == "Agg"
+'''
+FAKE_PYPLOT = '''
+class Axes:
+    def __init__(self):
+        self.calls = []
+    def __getattr__(self, name):
+        return lambda *args, **kwargs: self.calls.append(name)
+class Figure:
+    def add_axes(self, box):
+        self.axes = Axes()
+        return self.axes
+    def savefig(self, path, dpi, facecolor):
+        assert dpi == 200 and "text" in self.axes.calls and "add_patch" in self.axes.calls
+        with open(path, "wb") as handle:
+            handle.write(b"\\x89PNG fake")
+def figure(figsize, dpi):
+    return Figure()
+def close(figure):
+    pass
+'''
+FAKE_PATCHES = '''
+def Circle(*args, **kwargs): return ("circle", args)
+def FancyBboxPatch(*args, **kwargs): return ("rect", args)
+def Polygon(*args, **kwargs): return ("polygon", args)
 '''
 
 
-def run_script(tmp_path: Path, text: str, output: str, **env: str) -> tuple[subprocess.CompletedProcess[str], list[dict]]:
+def brief_schedule(**overrides: Any) -> dict[str, Any]:
+    the_brief = {
+        "title": "Weekly sell-out by market", "intro": None, "database": "analytics",
+        "period_sql": "SELECT 'Week 43' AS period -- period", "cadence": "Every Monday at 08:00",
+        "requested_by": "Rafael", "created_on": "20 Oct 2026",
+        "sections": [
+            {"kind": "numbers", "title": None, "subtitle": None, "sql": "SELECT units, units_prev FROM s -- numbers",
+             "items": [{"label": "Units sold", "value": "units", "previous": "units_prev"}], "columns": [],
+             "highlights": [{"rule": "change", "value": "units", "previous": "units_prev", "noun": "sell-out",
+                             "lead": True}]},
+            {"kind": "chart", "title": "Units by market", "subtitle": None, "chart": "bar", "x": "market",
+             "series": ["units", "units_prev"], "change": True, "sql": "SELECT market, units, units_prev FROM m -- markets",
+             "columns": [{"key": "units", "label": "This week"}], "highlights": [
+                 {"rule": "fell", "label": "market", "value": "units", "previous": "units_prev"}]},
+            {"kind": "table", "title": "Weeks", "subtitle": None, "sql": "SELECT week, at FROM w -- weeks",
+             "columns": [], "max_rows": 10, "highlights": []},
+        ]}
+    return schedule(kind="brief", brief=the_brief, **overrides)
+
+
+def run_script(tmp_path: Path, text: str, output: str, *, plots: bool = True, email: bool = True,
+               **env: str) -> tuple[subprocess.CompletedProcess[str], list[dict]]:
     fakes = tmp_path / "fakes"
-    (fakes / "psycopg2").mkdir(parents=True, exist_ok=True)
-    (fakes / "psycopg2" / "__init__.py").write_text(FAKE_PSYCOPG2, encoding="utf-8")
-    (fakes / "openpyxl").mkdir(exist_ok=True)
-    (fakes / "openpyxl" / "__init__.py").write_text(FAKE_OPENPYXL, encoding="utf-8")
-    script = tmp_path / "wizard_extract.py"
+    for name, source in (("psycopg2", FAKE_PSYCOPG2), ("openpyxl", FAKE_OPENPYXL)):
+        (fakes / name).mkdir(parents=True, exist_ok=True)
+        (fakes / name / "__init__.py").write_text(source, encoding="utf-8")
+    (fakes / "matplotlib").mkdir(parents=True, exist_ok=True)
+    (fakes / "matplotlib" / "__init__.py").write_text(
+        FAKE_MATPLOTLIB if plots else "raise ImportError('No module named matplotlib')\n", encoding="utf-8")
+    (fakes / "matplotlib" / "pyplot.py").write_text(FAKE_PYPLOT, encoding="utf-8")
+    (fakes / "matplotlib" / "patches.py").write_text(FAKE_PATCHES, encoding="utf-8")
+    script = tmp_path / "wizard_brief.py"
     script.write_text(text, encoding="utf-8")
     log = tmp_path / "pg.log"
     log.unlink(missing_ok=True)
-    clean = {k: v for k, v in os.environ.items() if not k.startswith(("PG", "WIZARD_EXTRACT_", "DG_"))}
-    done = subprocess.run([sys.executable, str(script), "--output", str(tmp_path / output)], capture_output=True, text=True,
-                          env={**clean, "PYTHONPATH": str(fakes), "FAKE_PG_LOG": str(log), **env}, timeout=120, check=False)
+    folder = tmp_path / "email"  # Metronome names it; the script creates it
+    clean = {k: v for k, v in os.environ.items() if not k.startswith(("PG", "WIZARD_EXTRACT_", "DG_", "METRONOME_"))}
+    extra = {"METRONOME_FLOW_EMAIL_DIR": str(folder)} if email else {}
+    done = subprocess.run([sys.executable, str(script), "--output", str(tmp_path / output)],
+                          capture_output=True, text=True, timeout=120, check=False,
+                          env={**clean, "PYTHONPATH": str(fakes), "FAKE_PG_LOG": str(log), **extra, **env})
     events = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()] if log.exists() else []
     return done, events
 
 
-def test_the_script_runs_one_read_only_query_and_writes_excel(tmp_path):
-    text = metronome.extraction_script(schedule(database="analytics"))
-    compile(text, "wizard_extract.py", "exec")
+def test_the_script_runs_every_query_read_only_and_writes_excel_and_the_email(tmp_path):
+    text = metronome.brief_script(brief_schedule())
+    compile(text, "wizard_brief.py", "exec")
     done, events = run_script(tmp_path, text, "out.xlsx", PGHOST="db.corp", PGUSER="scanner", PGPASSWORD="pw",
                               DG_UPLOAD_PGUSER="uploader", WIZARD_EXTRACT_PGUSER="wizard_ro")
     assert done.returncode == 0, done.stderr
@@ -218,33 +320,71 @@ def test_the_script_runs_one_read_only_query_and_writes_excel(tmp_path):
     assert connect["host"] == "db.corp" and connect["dbname"] == "analytics" and connect["password"] == "pw"
     assert "default_transaction_read_only=on" in connect["options"] and "statement_timeout" in connect["options"]
     assert events[1] == {"event": "set_session", "readonly": True, "autocommit": False}
-    wrapped = f"SELECT * FROM (\n{schedule()['sql']}\n) AS wizard_extract LIMIT 100001"  # noqa: S608 - the expected text
-    assert events[2]["sql"] == wrapped
-    assert [e["event"] for e in events[3:]] == ["rollback", "close"]
+    sent = [e["sql"] for e in events if e["event"] == "execute"]
+    assert sent[0] == "SELECT * FROM (\nSELECT units, units_prev FROM s -- numbers\n) AS wizard_brief LIMIT 100001"
+    assert len(sent) == 4 and sent[-1].startswith("SELECT * FROM (\nSELECT 'Week 43'"), "three sections, then the period"
+    assert [e["event"] for e in events[-2:]] == ["rollback", "close"] and sum(e["event"] == "connect" for e in events) == 1
     book = json.loads((tmp_path / "out.xlsx").read_text(encoding="utf-8"))
-    assert book["title"] == "Weekly sell-out by market" and len(book["rows"]) == 3
-    assert book["rows"][0] == ["'market'", "'units'", "'week'", "'at'"]
-    assert book["rows"][1] == ["'EG'", "Decimal('12.5')", "datetime.date(2026, 10, 12)",
-                               "datetime.datetime(2026, 10, 12, 8, 0)"], "Excel gets plain values, without a time zone"
+    assert [sheet["title"] for sheet in book] == ["Section 1", "Units by market", "Weeks"]
+    assert book[1]["rows"][0] == ["'Market'", "'This week'", "'Units prev'"] and len(book[1]["rows"]) == 4
+    assert book[2]["rows"][1] == ["datetime.date(2026, 10, 12)", "datetime.datetime(2026, 10, 12, 8, 0)"], \
+        "Excel gets plain values, without a time zone"
+    body = (tmp_path / "email" / "body.html").read_text(encoding="utf-8")
+    assert "Weekly sell-out by market" in body and "Week 43 · data read" in body
+    assert "Sell-out rose 5.3% to 48,210, from 45,800." in body and "Kuwait was the only one down" in body
+    assert 'src="cid:chart-2.png"' in body and (tmp_path / "email" / "chart-2.png").read_bytes().startswith(b"\x89PNG")
+    assert "Wrote 5 rows in 3 sheets." in done.stdout
+
+
+def test_without_matplotlib_or_an_email_folder_the_file_still_goes(tmp_path):
+    text = metronome.brief_script(brief_schedule())
+    done, _ = run_script(tmp_path, text, "out.xlsx", plots=False, PGHOST="db.corp", PGUSER="scanner")
+    assert done.returncode == 0, done.stderr
+    assert "matplotlib is not installed on this worker" in done.stderr
+    body = (tmp_path / "email" / "body.html").read_text(encoding="utf-8")
+    assert "cid:" not in body and ">Kuwait<" in body, "the chart goes in as its table"
+    done, _ = run_script(tmp_path / "plain", text, "out.xlsx", email=False, PGHOST="db.corp", PGUSER="scanner")
+    assert done.returncode == 0 and not (tmp_path / "plain" / "email" / "body.html").exists()
+    assert (tmp_path / "plain" / "out.xlsx").exists(), "an older Metronome gets the Excel file as before"
 
 
 def test_the_script_caps_rows(tmp_path):
-    text = metronome.extraction_script(schedule(title='Sell-out """ injected'))
-    assert text.startswith('"""Wizard recurring extraction: Sell-out injected\n'), "a title cannot close the docstring"
-    done, _ = run_script(tmp_path, text, "out.xlsx", PGHOST="db.corp", PGUSER="scanner", FAKE_PG_ROWS="100001")
+    text = metronome.brief_script(brief_schedule(title='Sell-out """ injected'))
+    assert text.startswith('"""Wizard recurring brief: Sell-out injected\n'), "a title cannot close the docstring"
+    done, _ = run_script(tmp_path, text, "out.xlsx", email=False, PGHOST="db.corp", PGUSER="scanner",
+                         FAKE_PG_ROWS="100001")
     assert done.returncode == 0, done.stderr
-    assert "Only the first 100000 rows" in done.stderr
+    assert "Only the first 100000 rows of a query were kept" in done.stderr
     book = json.loads((tmp_path / "out.xlsx").read_text(encoding="utf-8"))
-    assert book["title"] == "Sell-out injected" and len(book["rows"]) == 100_001
+    assert len(book[1]["rows"]) == 100_001, "a header and 100,000 rows"
 
 
-def test_the_script_refuses_a_changed_query_and_a_missing_account(tmp_path):
-    text = metronome.extraction_script(schedule())
-    changed = text.replace("GROUP BY 1", "GROUP BY 1 UNION SELECT usename, 1 FROM pg_user", 1)
+def test_the_script_refuses_a_changed_brief_and_a_missing_account(tmp_path):
+    text = metronome.brief_script(brief_schedule())
+    changed = text.replace("FROM m -- markets", "FROM m UNION SELECT usename, 1, 1 FROM pg_user -- markets", 1)
+    assert changed != text
     done, events = run_script(tmp_path, changed, "out.xlsx", PGHOST="db.corp", PGUSER="scanner")
     assert done.returncode == 1 and "changed after Wizard created it" in done.stderr and not events
     done, events = run_script(tmp_path, text, "out.xlsx", DG_UPLOAD_PGHOST="db.corp", DG_UPLOAD_PGUSER="uploader")
     assert done.returncode == 1 and "No read-only database account" in done.stderr and not events
+
+
+def test_a_proposal_from_before_briefs_still_runs(tmp_path):
+    old = schedule()
+    assert metronome.brief_of(old)["sections"][0]["sql"] == old["sql"]
+    assert metronome.brief_of(old)["cadence"] == "Every Monday at 08:00"
+    assert 'id="' not in metronome.preview_html({**old, "preview": {"columns": ["market"], "rows": [["EG"]]}})
+    assert ">EG<" in metronome.preview_html({**old, "preview": {"columns": ["market"], "rows": [["EG"]]}})
+
+
+def test_the_preview_is_the_email_with_svg_charts():
+    page = metronome.preview_html({**brief_schedule(), "preview": {
+        "results": [{"columns": ["units", "units_prev"], "rows": [[48210, 45800]]},
+                    {"columns": ["market", "units", "units_prev"], "rows": [["UAE", 18420, 16980], ["Kuwait", 5310, 5620]]},
+                    {"columns": ["week", "at"], "rows": []}],
+        "period": "Week 43", "read_at": "2026-10-23T05:00:00+00:00"}})
+    assert 'src="data:image/svg+xml;base64,' in page and "data read 23 Oct 2026, 09:00 Dubai time" in page
+    assert "Sell-out rose 5.3%" in page and "No rows this time." in page
 
 
 # The link script ---------------------------------------------------------------------------------------------------------
@@ -300,10 +440,12 @@ def test_the_link_script_explains_what_is_missing(metronome_server):
 
 
 def test_values_reach_the_script_only_as_literals():
-    hostile = schedule(sql="SELECT '\"\"\"; import os; os.system(\"x\") #' AS s", database="db'); import os #")
-    text = metronome.extraction_script(hostile)
+    hostile = brief_schedule(title='x"""; import os #')
+    hostile["brief"]["sections"][2]["sql"] = "SELECT '\"\"\"; import os; os.system(\"x\") #' AS s -- weeks"
+    hostile["brief"]["database"] = "db'); import os #"
+    text = metronome.brief_script(hostile)
     namespace: dict[str, Any] = {"__name__": "not_main"}
     exec(compile(text, "s.py", "exec"), namespace)  # noqa: S102 - the point: running it defines only literals and functions
-    assert namespace["SQL"] == hostile["sql"] and namespace["DATABASE"] == hostile["database"]
-    assert namespace["MAX_ROWS"] == metronome.MAX_EXTRACT_ROWS
+    assert json.loads(namespace["BRIEF_JSON"]) == hostile["brief"] and namespace["MAX_ROWS"] == metronome.MAX_EXTRACT_ROWS
     assert namespace["cell"](dt.datetime(2026, 1, 1, tzinfo=dt.UTC)).tzinfo is None and namespace["cell"](Decimal(1)) == 1
+    assert metronome.renderer_source() in text, "the renderer is Wizard's own file, verbatim"

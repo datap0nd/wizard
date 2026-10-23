@@ -1,11 +1,12 @@
 import {useMemo, useState} from 'react';
-import {Database, LogOut, MessagesSquare, MoreHorizontal, Pencil, Plus, ScrollText, Search, Settings, Trash2, UserRound} from 'lucide-react';
+import {CalendarClock, Database, LogOut, MessagesSquare, MoreHorizontal, Pencil, Plus, ScrollText, Search, Settings, Trash2, UserRound} from 'lucide-react';
 import {cn} from '@/lib/utils';
 import {Button} from './ui/button';
 import {DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, Hint} from './ui/menu';
 import {QuotaRing} from './QuotaRing';
 import mark from '@/assets/wizard-mark.svg';
 import {SourceExplorer} from './SourceExplorer';
+import {RecurringPanel} from './RecurringPanel';
 import type {Bootstrap, ConversationSummary} from '@/types';
 
 interface Props {
@@ -33,7 +34,8 @@ function group(iso: string): string {
 }
 
 export function Sidebar({boot, conversations, currentId, onNew, onSelect, onRename, onDelete, onAccount, onLog, onLogout, onAsk, onSettings, busy}: Props) {
-  const [tab, setTab] = useState<'chats' | 'sources'>('chats');
+  const [tab, setTab] = useState<'chats' | 'recurring' | 'sources'>('chats');
+  const recurring = !!boot.metronome?.enabled;
   const [query, setQuery] = useState('');
   const [renaming, setRenaming] = useState<{id: string; title: string} | null>(null);
   const groups = useMemo(() => {
@@ -53,14 +55,15 @@ export function Sidebar({boot, conversations, currentId, onNew, onSelect, onRena
         <span className="flex items-center gap-2 pl-1 text-[15px] font-semibold tracking-tight"><img src={mark} alt="" className="size-6" />Wizard</span>
         <Hint text="New analysis"><Button variant="ghost" size="icon-sm" className="ml-auto" onClick={onNew} aria-label="New analysis" data-testid="new-chat"><Plus /></Button></Hint>
       </div>
-      <div role="tablist" aria-label="Sidebar" className="mx-3 mb-2 grid grid-cols-2 rounded-lg bg-surface-2 p-1">
-        {([['chats', 'Analyses', <MessagesSquare key="c" />], ['sources', 'Sources', <Database key="s" />]] as const).map(([key, label, icon]) => (
+      <div role="tablist" aria-label="Sidebar" className={cn('mx-3 mb-2 grid rounded-lg bg-surface-2 p-1', recurring ? 'grid-cols-3' : 'grid-cols-2')}>
+        {([['chats', 'Analyses', <MessagesSquare key="c" />], ...(recurring ? [['recurring', 'Recurring', <CalendarClock key="r" />] as const] : []),
+          ['sources', 'Sources', <Database key="s" />]] as const).map(([key, label, icon]) => (
           <button key={key} role="tab" type="button" aria-selected={tab === key} onClick={() => setTab(key)} data-testid={`tab-${key}`}
-            className={cn('inline-flex items-center justify-center gap-1.5 rounded-md py-1 text-[13px] font-medium [&_svg]:size-3.5', tab === key ? 'bg-canvas text-accent shadow-sm' : 'text-ink-2 hover:text-ink')}>{icon}{label}</button>
+            className={cn('inline-flex items-center justify-center rounded-md py-1 text-[13px] font-medium [&_svg]:size-3.5', recurring ? 'gap-1' : 'gap-1.5', tab === key ? 'bg-canvas text-accent shadow-sm' : 'text-ink-2 hover:text-ink')}>{icon}{label}</button>
         ))}
       </div>
       <div className="flex-1 overflow-y-auto scroll-thin">
-        {tab === 'sources' ? <SourceExplorer onAsk={onAsk} /> : <>
+        {tab === 'sources' ? <SourceExplorer onAsk={onAsk} /> : tab === 'recurring' ? <RecurringPanel /> : <>
           <div className="px-3 pb-2">
             <label className="relative block">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden="true" />
