@@ -198,7 +198,7 @@ describe('recurring emails', () => {
     const run = answered();
     const {rerender} = render(withHandlers(run, {onRecurring, canRecur: true}));
     fireEvent.keyDown(screen.getByTestId('make-recurring'), {key: 'Enter'});
-    expect(screen.getByRole('menu').textContent).toContain('Emailed to you as Excel at 08:00 (Dubai)');
+    expect(screen.getByRole('menu').textContent).toContain('Emailed to you at 08:00 (Dubai), Excel attached');
     fireEvent.click(screen.getByTestId('recurring-weekly'));
     expect(onRecurring).toHaveBeenCalledWith(run, 'weekly');
     fireEvent.keyDown(screen.getByTestId('make-recurring'), {key: 'Enter'});
@@ -221,10 +221,11 @@ describe('recurring emails', () => {
     expect(shown.dataset.status).toBe('proposed');
     expect(shown.textContent).toContain('Every Monday at 08:00 (Dubai time)');
     expect(shown.textContent).toContain('rafael@corp.test, cfo@corp.test');
-    expect(shown.textContent).toContain('Weekly sell-out by market <date>.xlsx (Excel)');
+    expect(shown.textContent).toContain('Weekly sell-out by market <date>.xlsx (Excel, every row)');
     expect(shown.textContent).toContain('Metronome user Wizard');
     expect(shown.textContent).toContain('Nothing is scheduled until you create it.');
-    expect(screen.getByTestId('recurring-sql').textContent).toBe(SCHEDULE.sql);
+    expect(screen.getByTestId('recurring-sql').textContent).toContain(SCHEDULE.sql!);
+    expect(screen.queryByTestId('email-preview')).toBeNull();
     fireEvent.click(screen.getByTestId('recurring-create'));
     expect(onSchedule).toHaveBeenCalledWith(run, SCHEDULE, 'create');
     fireEvent.click(screen.getByTestId('recurring-dismiss'));
@@ -238,6 +239,7 @@ describe('recurring emails', () => {
     expect(screen.getByTestId('recurring-status').textContent).toBe('Scheduled');
     expect(screen.getByTestId('recurring-actions').textContent).toContain('Created in Metronome as Flow #41');
     expect(screen.getByTestId('recurring-actions').textContent).toContain('owned by Wizard');
+    expect(screen.getByTestId('recurring-actions').textContent).toContain('Find it under Recurring in the sidebar.');
     expect(screen.queryByTestId('recurring-create')).toBeNull();
     rerender(withHandlers(answered({schedules: [{...SCHEDULE, status: 'uncertain', error: 'Metronome did not answer.'}]})));
     expect(screen.getByRole('alert').textContent).toContain('Metronome did not answer.');

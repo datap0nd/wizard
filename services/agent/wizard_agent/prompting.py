@@ -20,10 +20,12 @@ CHECK_REQUEST = (
     "updated answer: what matched, what you corrected, and what you could not verify."
 )
 RECURRING_REQUEST = (
-    "The user pressed Make this recurring under your previous answer: Metronome should email them that table as an Excel "
-    "file on a schedule. It goes to their own address at 08:00 Dubai time unless they said otherwise, so never ask about "
-    "the format, the recipients or the time. Call wizard_schedule_extraction with the query behind that table, its fixed "
-    "dates rewritten relative to CURRENT_DATE. If the answer has no database query to repeat, say so instead."
+    "The user pressed Make this recurring under your previous answer: Metronome should email them that analysis on a "
+    "schedule, as a short newsletter with the key numbers, charts and tables of your answer and an Excel file attached. "
+    "It goes to their own address at 08:00 Dubai time unless they said otherwise, so never ask about the format, the "
+    "recipients or the time. Call wizard_schedule_brief with one section per key-number group, chart and table of the "
+    "answer, each with its own query whose fixed dates are rewritten relative to CURRENT_DATE, and 'what moved' rules "
+    "for the conclusions you drew. If the answer has no database query to repeat, say so instead."
 )
 RECURRING_CHOSEN = " They chose {choice}: call the tool now, without asking anything."
 RECURRING_UNCHOSEN = (" They did not say how often: ask only that, in one short line (every day, every week on which "

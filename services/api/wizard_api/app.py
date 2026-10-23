@@ -27,6 +27,7 @@ from wizard_agent.prompting import recurring_question
 from wizard_agent.replay import ReplayRuntime
 from wizard_agent.runtime import AgentFailure, AgentRuntime
 from wizard_agent.secret_box import SecretBox
+from wizard_connectors import metronome
 from wizard_connectors.content import errors, validate_content
 from wizard_connectors.entitlements import Identity, IdentityDirectory, SystemRights
 from wizard_connectors.paths import ROOT
@@ -623,6 +624,67 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         if not store.move_schedule(schedule_id, "dismissed", ("proposed", "failed")):
             raise HTTPException(409, "Only a recurring extraction that was not created can be dismissed.")
         return {"schedule": public_schedule(store.schedule(identity.id, schedule_id) or {})}
+
+    @app.get("/api/v1/schedules/{schedule_id}/preview")
+    def schedule_preview(request: Request, schedule_id: str) -> dict[str, Any]:
+        """The email as it looked on the brief's test run, for the card and the Recurring tab."""
+        identity = me(request)
+        schedule = store.owned_schedule(identity.id, schedule_id)
+        if not schedule:
+            raise HTTPException(404, "Recurring brief not found.")
+        return {"html": metronome.preview_html(schedule)}
+
+    @app.get("/api/v1/recurring")
+    async def recurring(request: Request) -> dict[str, Any]:
+        """The Recurring tab: the person's briefs in Metronome, each with Metronome's own state (on or off, next and
+        last runs). When Metronome cannot be reached the list still shows, with what Wizard last knew."""
+        identity = me(request)
+        found = store.recurring(identity.id)
+        ids = [int(s["flow"]["id"]) for s in found if s.get("flow") and s["flow"].get("id") is not None]
+        live: dict[int, dict[str, Any]] = {}
+        sync: dict[str, Any] = {"ok": True, "message": None}
+        if not settings.metronome:
+            sync = {"ok": False, "message": "This Wizard is not connected to Metronome."}
+        elif ids:
+            try:
+                live = await asyncio.to_thread(MetronomeClient(settings.metronome, metronome_transport).status, ids)
+            except MetronomeError as error:
+                sync = {"ok": False, "message": error.message}
+        items = []
+        for schedule in found:
+            flow_id = (schedule.get("flow") or {}).get("id")
+            items.append({**public_schedule(schedule), "metronome": live.get(int(flow_id)) if flow_id is not None else None})
+        return {"items": items, "sync": sync}
+
+    @app.post("/api/v1/recurring/{schedule_id}/delete")
+    async def delete_recurring(request: Request, schedule_id: str) -> dict[str, Any]:
+        """Delete a brief: Metronome turns its Flow off and keeps it with its run history (owner, 23 October 2026). Only
+        the Wizard user that owns the Flow, or Metronome's host PC, can delete a Flow there."""
+        identity = me(request)
+        schedule = store.owned_schedule(identity.id, schedule_id)
+        if not schedule or schedule["status"] not in ("created", "deleting"):
+            raise HTTPException(404, "Recurring brief not found.")
+        if not settings.metronome:
+            raise HTTPException(409, "Wizard is not connected to Metronome, so it cannot turn the Flow off.")
+        if not store.move_schedule(schedule_id, "deleting", ("created",)):
+            raise HTTPException(409, "This brief is already being deleted.")
+        flow_id = (schedule.get("flow") or {}).get("id")
+        try:
+            if flow_id is None:
+                raise MetronomeError("Wizard does not know this brief's Flow in Metronome; turn it off in Metronome's "
+                                     "Flows.")
+            outcome = await asyncio.to_thread(MetronomeClient(settings.metronome, metronome_transport).deactivate,
+                                              int(flow_id))
+        except MetronomeError as error:
+            store.move_schedule(schedule_id, "created", ("deleting",), error=error.message)
+            store.audit(identity.id, "metronome:deactivate_flow", run_id=schedule["run_id"], system="metronome",
+                        outcome="failed", detail={"schedule": schedule["label"], "flow_id": flow_id})
+            raise HTTPException(502, error.message) from None
+        flow = {**(schedule.get("flow") or {}), "enabled": False}
+        store.move_schedule(schedule_id, "deleted", ("deleting",), flow=flow)
+        store.audit(identity.id, "metronome:deactivate_flow", run_id=schedule["run_id"], system="metronome",
+                    detail={"schedule": schedule["label"], "flow_id": flow_id, "missing": outcome.get("missing")})
+        return {"deleted": True, "flow_id": flow_id, "missing": bool(outcome.get("missing"))}
 
     @app.get("/api/v1/runs/{run_id}")
     def get_run(request: Request, run_id: str) -> dict[str, Any]:

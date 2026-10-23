@@ -205,7 +205,7 @@ class Store:
     def checks(self, run_id: str) -> list[dict[str, Any]]:
         return [json.loads(r["payload"]) for r in self._q("SELECT payload FROM checks WHERE run_id=? ORDER BY seq", (run_id,))]
 
-    # Recurring extractions: proposed by Gemini, created in Metronome only by the person's click -------------------------
+    # Recurring briefs: proposed by Gemini, created in Metronome only by the person's click ------------------------------
     @staticmethod
     def _schedule(row: sqlite3.Row) -> dict[str, Any]:
         return {**json.loads(row["payload"]), "id": row["id"], "label": row["label"], "run_id": row["run_id"],
@@ -233,6 +233,17 @@ class Store:
         rows = self._q("SELECT s.* FROM schedules s JOIN conversations c ON c.id=s.conversation_id "
                        "WHERE s.id=? AND s.user_id=? AND c.deleted_at IS NULL", (schedule_id, user_id))
         return self._schedule(rows[0]) if rows else None
+
+    def owned_schedule(self, user_id: str, schedule_id: str) -> dict[str, Any] | None:
+        """A schedule of this user's even when its conversation was deleted: its Flow keeps running in Metronome."""
+        rows = self._q("SELECT * FROM schedules WHERE id=? AND user_id=?", (schedule_id, user_id))
+        return self._schedule(rows[0]) if rows else None
+
+    def recurring(self, user_id: str) -> list[dict[str, Any]]:
+        """The Recurring tab: this user's briefs that reached Metronome and were not deleted, newest first."""
+        rows = self._q("SELECT * FROM schedules WHERE user_id=? AND status IN ('created','deleting') "
+                       "ORDER BY created_at DESC", (user_id,))
+        return [self._schedule(r) for r in rows]
 
     def move_schedule(self, schedule_id: str, status: str, expect: tuple[str, ...], *, flow: dict[str, Any] | None = None,
                       error: str | None = None) -> bool:

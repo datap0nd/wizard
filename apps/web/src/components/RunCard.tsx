@@ -169,7 +169,7 @@ export const RunCard = memo(function RunCard({run, onEvidence, onCheck, onCancel
               <Button variant="ghost" size="sm" disabled={busy} data-testid="make-recurring"><CalendarClock />Make recurring</Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start">
-              <DropdownMenuLabel>Emailed to you as Excel at 08:00 (Dubai)</DropdownMenuLabel>
+              <DropdownMenuLabel>Emailed to you at 08:00 (Dubai), Excel attached</DropdownMenuLabel>
               {CADENCES.map(([cadence, label]) => (
                 <DropdownMenuItem key={label} onSelect={() => onRecurring(run, cadence)} data-testid={`recurring-${cadence ?? 'other'}`}>{label}</DropdownMenuItem>
               ))}

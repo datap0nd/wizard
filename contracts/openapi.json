@@ -745,6 +745,111 @@
         }
       }
     },
+    "/api/v1/schedules/{schedule_id}/preview": {
+      "get": {
+        "summary": "Schedule Preview",
+        "description": "The email as it looked on the brief's test run, for the card and the Recurring tab.",
+        "operationId": "schedule_preview_api_v1_schedules__schedule_id__preview_get",
+        "parameters": [
+          {
+            "name": "schedule_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Schedule Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Schedule Preview Api V1 Schedules  Schedule Id  Preview Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/recurring": {
+      "get": {
+        "summary": "Recurring",
+        "description": "The Recurring tab: the person's briefs in Metronome, each with Metronome's own state (on or off, next and\nlast runs). When Metronome cannot be reached the list still shows, with what Wizard last knew.",
+        "operationId": "recurring_api_v1_recurring_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Recurring Api V1 Recurring Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/recurring/{schedule_id}/delete": {
+      "post": {
+        "summary": "Delete Recurring",
+        "description": "Delete a brief: Metronome turns its Flow off and keeps it with its run history (owner, 23 October 2026). Only\nthe Wizard user that owns the Flow, or Metronome's host PC, can delete a Flow there.",
+        "operationId": "delete_recurring_api_v1_recurring__schedule_id__delete_post",
+        "parameters": [
+          {
+            "name": "schedule_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Schedule Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Delete Recurring Api V1 Recurring  Schedule Id  Delete Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/runs/{run_id}": {
       "get": {
         "summary": "Get Run",

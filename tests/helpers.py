@@ -127,6 +127,8 @@ class FakeMetronome:
         self.flows: list[dict[str, Any]] = []
         self.calls: list[str] = []
         self.fail_create: int | str | None = None  # a status code, "timeout", or "garbage" (not JSON)
+        self.fail_sync = False  # Metronome down for reads
+        self.runs: list[dict[str, Any]] = []
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         path, key = request.url.path, request.headers.get("x-client-key")
@@ -164,10 +166,40 @@ class FakeMetronome:
             if body.get("owner_person_id") not in (None, person):
                 return httpx.Response(403, json={"detail": "Only the host PC can create a Flow for someone else."})
             flow = {**body, "id": len(self.flows) + 41, "owner_person_id": person, "owner_name": self.people[person],
-                    "next_run_at": "2026-10-26T04:00:00"}
+                    "next_run_at": "2026-10-26T04:00:00", "last_run_at": None, "last_status": None, "last_error": None}
             self.flows.append(flow)
             return httpx.Response(200, json=flow)
+        if self.fail_sync and request.method == "GET" and path.startswith("/api/flows"):
+            raise httpx.ConnectError("connection refused", request=request)
+        if request.method == "GET" and path == "/api/flows/runs":
+            flow_id = int(request.url.params["flow_id"])
+            limit = int(request.url.params.get("limit", "100"))
+            return httpx.Response(200, json=[run for run in reversed(self.runs) if run["flow_id"] == flow_id][:limit])
+        found = re.fullmatch(r"/api/flows/(\d+)(/enabled)?", path)
+        flow = next((f for f in self.flows if found and f["id"] == int(found.group(1))), None)
+        if found and flow is None:
+            return httpx.Response(404, json={"detail": "Flow not found."})
+        if found and request.method == "GET" and not found.group(2):
+            return httpx.Response(200, json=flow)
+        if found and request.method == "PATCH" and found.group(2):
+            # require_flow_edit: only the Flow's owner (or the host PC) may change it.
+            if person != flow["owner_person_id"]:
+                return httpx.Response(403, json={"detail": f"This Flow belongs to {flow['owner_name']}."})
+            flow["enabled"] = bool(json.loads(request.content)["enabled"])
+            flow["next_run_at"] = "2026-10-26T04:00:00" if flow["enabled"] else None
+            return httpx.Response(200, json=flow)
         return httpx.Response(404, json={"detail": "Not Found"})
+
+    def run(self, flow_id: int, status: str = "succeeded", email: str | None = "submitted", **fields: Any) -> dict:
+        """Record a run of a Flow the way Metronome's Run history lists it."""
+        run = {"id": len(self.runs) + 900, "flow_id": flow_id, "status": status, "trigger_type": "schedule",
+               "created_at": "2026-10-26T04:00:00", "started_at": "2026-10-26T04:00:05",
+               "finished_at": "2026-10-26T04:01:10", "error": None, "run_folder": "C:\\private\\#900",
+               "email": {"status": email, "label": "submitted by Outlook"} if email else None, **fields}
+        self.runs.append(run)
+        flow = next(f for f in self.flows if f["id"] == flow_id)
+        flow.update(last_run_at=run["finished_at"], last_status=status, last_error=run["error"])
+        return run
 
     def transport(self) -> httpx.MockTransport:
         return httpx.MockTransport(self.handler)
