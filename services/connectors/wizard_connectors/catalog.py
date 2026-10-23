@@ -4,10 +4,12 @@ The contract is what a source owner approves (Step 04): it limits which fields a
 row access and data mode are separate fields, so browsing a report is never confused with reading verified rows."""
 from __future__ import annotations
 
+import copy
 import json
+import logging
 from functools import cached_property
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -16,6 +18,27 @@ Aggregation = Literal["sum", "sum_same_currency", "last", "none"]
 DataMode = Literal["SYNTHETIC", "DATED_APPROVED_SNAPSHOT", "LIVE_VERIFIED"]
 ConnectorStatus = Literal["SYNTHETIC_FIXTURE", "NAVIGATION_ONLY", "ROWS_VERIFIED", "BLOCKED"]
 RowAccess = Literal["ROWS", "NAVIGATION_ONLY"]
+READABLE = ("ROWS_VERIFIED", "SYNTHETIC_FIXTURE")  # statuses only a parity-tested adapter (or the fixtures) may carry
+
+log = logging.getLogger("wizard.catalog")
+
+
+def navigation_only(data: Any) -> Any:
+    """A report catalog from real content with every claim of readable rows taken back: its connector and reports become
+    navigation only and no report points at a data file. Real content describes reports; it cannot make one readable."""
+    if not isinstance(data, dict):
+        return data
+    data = copy.deepcopy(data)
+    connector = (data.get("system") or {}).get("connector")
+    if isinstance(connector, dict) and connector.get("status") in READABLE:
+        connector["status"] = "NAVIGATION_ONLY"
+    for report in data.get("reports") or []:
+        if isinstance(report, dict):
+            if report.get("row_access") == "ROWS":
+                report["row_access"] = "NAVIGATION_ONLY"
+            if "file" in report:
+                report["file"] = None
+    return data
 
 
 class Strict(BaseModel):
@@ -121,9 +144,22 @@ class Catalog:
         self.contracts = {c.system.id: c for c in contracts}
 
     @classmethod
-    def load(cls, directory: Path) -> Catalog:
-        contracts = [SourceContract.model_validate(json.loads(path.read_text(encoding="utf-8")))
-                     for path in sorted(directory.glob("*.json"))]
+    def load(cls, directory: Path, real: bool = False, skip: frozenset[str] = frozenset()) -> Catalog:
+        """Every report catalog in `directory`. Real content (a knowledge base or content folder) can only describe
+        reports: whatever it claims, its systems and reports load as navigation only, and a file that cannot be read is
+        skipped with a warning instead of stopping Wizard."""
+        contracts = []
+        for path in sorted(directory.glob("*.json")):
+            if path.name in skip:
+                log.warning("report catalog %s left out: it has errors (see the content warnings)", path.name)
+                continue
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                contracts.append(SourceContract.model_validate(navigation_only(data) if real else data))
+            except (ValueError, OSError) as error:
+                if not real:
+                    raise
+                log.warning("report catalog %s skipped: %s", path.name, str(error).splitlines()[0][:300])
         return cls(contracts)
 
     @property

@@ -57,13 +57,15 @@ def messages(root: Path) -> list[str]:
     return [p.message for p in errors(validate_content(root))]
 
 
+def warnings(root: Path) -> list[str]:
+    return [p.message for p in validate_content(root) if p.level == "warning"]
+
+
 def test_a_reviewed_navigation_only_catalog_is_valid(tmp_path):
     assert messages(content(tmp_path)) == []
 
 
 @pytest.mark.parametrize("override, expected", [
-    ({"row_access": "ROWS"}, "needs an approved live adapter"),
-    ({"file": "asap/rows.csv"}, "file must be null"),
     ({"id": "gscm-sell-out"}, "must start with 'asap-'"),
     ({"folder": "nowhere"}, "unknown folder"),
     ({"measures": [{"key": "share_pct", "label": "Share", "type": "percent", "unit": "%", "aggregation": "sum"}]}, "must not be summed"),
@@ -77,11 +79,19 @@ def test_report_rules(tmp_path, override, expected):
 def test_system_rules(tmp_path):
     synthetic = catalog()
     synthetic["system"]["connector"]["data_mode"] = "SYNTHETIC"
-    assert any("SYNTHETIC belongs" in m for m in messages(content(tmp_path / "a", synthetic)))
+    assert any("SYNTHETIC belongs" in m for m in warnings(content(tmp_path / "a", synthetic)))
     verified = catalog()
     verified["system"]["connector"]["status"] = "ROWS_VERIFIED"
-    assert any("not allowed for real content" in m for m in messages(content(tmp_path / "b", verified)))
+    assert any("not allowed for real content" in m and "loads as NAVIGATION_ONLY" in m
+               for m in warnings(content(tmp_path / "b", verified)))
     assert any("must match system id" in m for m in messages(content(tmp_path / "c", catalog(), name="bi")))
+
+
+@pytest.mark.parametrize("override, expected", [({"row_access": "ROWS"}, "loads as NAVIGATION_ONLY"),
+                                                ({"file": "asap/rows.csv"}, "file must be null")])
+def test_claims_of_readable_rows_are_warnings_not_errors(tmp_path, override, expected):
+    root = content(tmp_path, catalog(**override))
+    assert messages(root) == [] and any(expected in m for m in warnings(root))
 
 
 def test_secrets_front_matter_and_stray_data_are_rejected(tmp_path):
@@ -119,11 +129,25 @@ def test_wizard_loads_real_content_as_navigation_only(tmp_path):
     assert [s.name for s in registry.list("nerp")] == [], "synthetic platforms are not mixed into real content"
 
 
-def test_invalid_content_stops_start_up(tmp_path):
-    root = content(tmp_path / "bad", catalog(row_access="ROWS"))
-    with pytest.raises(ConfigError) as error:
-        create_app(make_settings(tmp_path, WIZARD_CONTENT_DIR=str(root), WIZARD_AGENT_RUNTIME="code-assist"))
-    assert "validate_content.py" in str(error.value)
+def test_content_never_stops_start_up_and_never_unlocks_rows(tmp_path):
+    # The owner, 23 Oct 2026: Wizard stopped on start-up because a catalog said ROWS_VERIFIED. It now starts; the
+    # catalog loads as navigation only, and files with errors are left out and logged.
+    verified = catalog(row_access="ROWS", file="asap/rows.csv")
+    verified["system"]["connector"]["status"] = "ROWS_VERIFIED"
+    root = content(tmp_path / "bad", verified)
+    (root / "contracts" / "sources" / "gscm.json").write_text("{ not json", encoding="utf-8")
+    (root / "knowledge" / "platforms" / "broken.md").write_text("no front matter here", encoding="utf-8")
+    (root / "knowledge" / "platforms" / "leaky.md").write_text(GUIDE.replace("platform-asap", "platform-leaky")
+                                                                + "\npassword = 'hunter22secret'\n", encoding="utf-8")
+    app = create_app(make_settings(tmp_path, WIZARD_CONTENT_DIR=str(root), WIZARD_AGENT_RUNTIME="code-assist"))
+    services = app.state.manager.services
+    asap = services.catalog.contracts["asap"]
+    assert asap.system.connector.status == "NAVIGATION_ONLY"
+    assert all(r.row_access == "NAVIGATION_ONLY" and r.file is None for r in asap.reports)
+    assert "gscm" not in services.catalog.contracts, "a catalog that is not JSON is left out"
+    ids = {n.id for n in services.knowledge.notes}
+    assert "platform-asap" in ids and "platform-leaky" not in ids, "a note holding a credential is left out"
+    app.state.store.db.close()
 
 
 def test_replay_cannot_use_real_content(tmp_path):

@@ -36,7 +36,7 @@ from wizard_connectors.tools import build_registry, build_services
 
 from . import __version__, knowledge_sync, settings_pane
 from .attachments import AttachmentError, public
-from .config import ConfigError, Settings, kb_source, load_settings
+from .config import Settings, kb_source, load_settings
 from .metronome_client import MetronomeClient, MetronomeError
 from .outlook import DraftError, open_outlook_draft
 from .runs import Busy, RunManager, entitled_to, evidence_summary, public_schedule
@@ -191,15 +191,17 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
     settings = settings or load_settings()
     loaded_content = settings.content_dir
     if settings.content_dir:
+        # Company content never stops Wizard: a file with an error is left out (and logged), and catalogs load as
+        # navigation only whatever they claim (owner, 23 Oct 2026: Wizard stopped on a catalog marked ROWS_VERIFIED).
         problems = validate_content(settings.content_dir)
         for problem in problems:
-            log.warning("content: %s", problem)
-        if errors(problems):
-            raise ConfigError(f"WIZARD_CONTENT_DIR {settings.content_dir} has {len(errors(problems))} error(s); run "
-                              "scripts/validate_content.py on it. First: " + str(errors(problems)[0]))
+            (log.error if problem.level == "error" else log.warning)("content: %s", problem)
+        left_out = frozenset(p.where.split(" › ")[0] for p in errors(problems))
+        if left_out:
+            log.error("content: %d file(s) left out for errors: %s", len(left_out), ", ".join(sorted(left_out))[:500])
         services = build_services(contracts=settings.content_dir / "contracts" / "sources",
                                   knowledge=settings.content_dir / "knowledge", postgres=settings.postgres,
-                                  postgres_name=settings.pg_name)
+                                  postgres_name=settings.pg_name, real_content=True, skip=left_out)
     elif settings.kb_repo:
         # A knowledge base is configured but has never synced: load nothing rather than the synthetic examples.
         empty = settings.data_dir / "knowledge" / "none"
@@ -261,8 +263,10 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         if settings.diagnostics:
             capture_logs()
-            log.info("Wizard %s started: runtime %s (%s), model %s, data %s, proxy %s", __version__, runtime.kind,
-                     runtime.label(), settings.model, settings.data_dir, settings.proxy or "resolved per request")
+            build = settings_pane.installed_build()
+            log.info("Wizard %s (build %s, commit %s, code in %s) started: runtime %s (%s), model %s, data %s, proxy %s",
+                     __version__, build.get("version") or "development", str(build.get("commit") or "")[:12] or "-", ROOT,
+                     runtime.kind, runtime.label(), settings.model, settings.data_dir, settings.proxy or "resolved per request")
         if interrupted:
             log.warning("%d run(s) were interrupted by a restart and marked failed", interrupted)
         background = []

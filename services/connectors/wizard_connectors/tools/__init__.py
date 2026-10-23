@@ -20,10 +20,13 @@ __all__ = ["Recorder", "Services", "ToolContext", "ToolError", "ToolOutcome", "T
 
 
 def build_services(contracts: Path = SOURCE_CONTRACTS, fixtures: Path = SYNTHETIC, knowledge: Path = KNOWLEDGE,
-                   postgres: PgSettings | None = None, postgres_name: str = "AI Team Database") -> Services:
-    catalog = Catalog.load(contracts)
+                   postgres: PgSettings | None = None, postgres_name: str = "AI Team Database",
+                   real_content: bool = False, skip: frozenset[str] = frozenset()) -> Services:
+    """real_content: the catalogs come from a knowledge base or content folder, so they load as navigation only. skip:
+    files of that content (paths such as contracts/sources/asap.json or knowledge/x/y.md) left out for their errors."""
+    catalog = Catalog.load(contracts, real=real_content, skip=frozenset(Path(p).name for p in skip if p.startswith("contracts/")))
     source = FixtureSource(catalog, fixtures)
-    return Services(catalog=catalog, sources={s.id: source for s in catalog.systems}, knowledge=KnowledgeBase.load(knowledge),
+    return Services(catalog=catalog, sources={s.id: source for s in catalog.systems}, knowledge=KnowledgeBase.load(knowledge, skip=frozenset(p for p in skip if p.startswith("knowledge/"))),
                     postgres=PostgresQuery(postgres) if postgres else None, postgres_name=postgres_name)
 
 

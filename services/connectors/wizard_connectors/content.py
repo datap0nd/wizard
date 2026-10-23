@@ -1,11 +1,12 @@
 """Validate an external content folder (the internal wizard-content repository) before Wizard loads it.
 
 Layout: <dir>/contracts/sources/<platform>.json (report catalogs) and optionally <dir>/knowledge/**/*.md (platform
-guides and definitions). Used by `scripts/validate_content.py` and by the API at start-up (WIZARD_CONTENT_DIR): any
-error stops the service with a readable message instead of serving a half-valid catalog.
+guides and definitions). Used by `scripts/validate_content.py`, by the knowledge-base sync (a commit with errors is not
+applied) and by the API at start-up, where a file with an error is left out and logged rather than stopping Wizard.
 
 Real content may only describe reports; it cannot make a report readable. Until a live adapter and a signed parity
-check exist, every report must be NAVIGATION_ONLY with no fixture file, and no system may claim ROWS_VERIFIED."""
+check exist, a system or report that claims readable rows (ROWS_VERIFIED, ROWS, a data file) is a warning and loads as
+navigation only (catalog.navigation_only), so a catalog edit can neither unlock rows nor stop Wizard."""
 from __future__ import annotations
 
 import json
@@ -84,11 +85,11 @@ def validate_content(root: Path) -> list[Problem]:
         if path.stem != system.id:
             problems.append(Problem("error", where, f"file name must match system id '{system.id}'"))
         if system.connector.status in ("ROWS_VERIFIED", "SYNTHETIC_FIXTURE") and system.id not in LIVE_ADAPTERS:
-            problems.append(Problem("error", where, f"connector status {system.connector.status} is not allowed for real "
-                                                    "content: no approved live adapter exists for this system yet "
-                                                    "(use NAVIGATION_ONLY)"))
+            problems.append(Problem("warning", where, f"connector status {system.connector.status} is not allowed for real "
+                                                      "content (no approved live adapter exists for this system yet): it "
+                                                      "loads as NAVIGATION_ONLY. Live reads go through the portal browser."))
         if system.connector.data_mode == "SYNTHETIC":
-            problems.append(Problem("error", where, "data_mode SYNTHETIC belongs in the Wizard repo, not in real content"))
+            problems.append(Problem("warning", where, "data_mode SYNTHETIC belongs in the Wizard repo, not in real content"))
         folders = {f.id for f in contract.folders}
         for folder in contract.folders:
             if folder.parent and folder.parent not in folders:
@@ -103,10 +104,11 @@ def validate_content(root: Path) -> list[Problem]:
             if report.folder not in folders:
                 problems.append(Problem("error", label, f"unknown folder '{report.folder}'"))
             if report.row_access == "ROWS" and system.id not in LIVE_ADAPTERS:
-                problems.append(Problem("error", label, "row_access ROWS needs an approved live adapter and signed parity; "
-                                                        "keep it NAVIGATION_ONLY"))
+                problems.append(Problem("warning", label, "row_access ROWS needs an approved live adapter and signed "
+                                                          "parity: it loads as NAVIGATION_ONLY"))
             if report.file is not None:
-                problems.append(Problem("error", label, "file must be null: real content never points at data files"))
+                problems.append(Problem("warning", label, "file must be null (real content never points at data files): "
+                                                          "it is ignored"))
             for measure in report.measures:
                 if measure.type in ("currency", "percent") and not measure.unit:
                     problems.append(Problem("error", label, f"measure {measure.key} needs a unit"))

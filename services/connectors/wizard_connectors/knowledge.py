@@ -8,6 +8,7 @@ and summary, so a long note returns the part that matches instead of its whole b
 templates/content/schema/knowledge-standard.md."""
 from __future__ import annotations
 
+import logging
 import math
 import re
 from collections import Counter
@@ -203,8 +204,20 @@ class KnowledgeBase:
         self._field_idf = {t: math.log(1 + (count - df + 0.5) / (df + 0.5)) for t, df in field_df.items()}
 
     @classmethod
-    def load(cls, directory: Path) -> KnowledgeBase:
-        notes = [parse_note(p, directory.parent) for p in sorted(directory.rglob("*.md")) if p.name != "README.md"]
+    def load(cls, directory: Path, skip: frozenset[str] = frozenset()) -> KnowledgeBase:
+        """Every note under `directory`; a note that cannot be read (no front matter, no id) is skipped with a warning,
+        so one broken note never stops Wizard."""
+        notes = []
+        for path in sorted(directory.rglob("*.md")):
+            if path.name == "README.md":
+                continue
+            if path.relative_to(directory.parent).as_posix() in skip:
+                logging.getLogger("wizard.knowledge").warning("knowledge note %s left out: it has errors", path.name)
+                continue
+            try:
+                notes.append(parse_note(path, directory.parent))
+            except (ValueError, KeyError, OSError) as error:
+                logging.getLogger("wizard.knowledge").warning("knowledge note %s skipped: %s", path.name, error)
         areas = {}
         for readme in sorted(directory.glob("*/README.md")):
             parsed = front_matter(readme.read_text(encoding="utf-8-sig"))
