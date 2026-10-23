@@ -29,7 +29,7 @@ from typing import Any
 
 from . import outbound
 from .prompting import system_prompt
-from .runtime import AgentFailure, AgentRequest, Emit, RuntimeKind, ToolBridge
+from .runtime import AgentFailure, AgentRequest, Emit, RuntimeKind, ToolBridge, redact
 from .stream_json import map_event, parse_line
 
 PROMPT_FLAG_TEXT = "Respond to the request above as Wizard."
@@ -404,13 +404,6 @@ def _error_report(stderr: deque[str]) -> dict[str, Any] | None:
                 return {"message": str(error.get("message", ""))[:4000], "stack": str(error.get("stack", ""))[:4000]}
             return {"error": str(error)[:4000]}
     return None
-
-
-def redact(text: str, *secrets: str) -> str:
-    for secret in secrets:
-        if secret:
-            text = text.replace(secret, "[redacted]")
-    return re.sub(r"(ya29\.[A-Za-z0-9_\-]+|1//[A-Za-z0-9_\-]{20,}|AIza[0-9A-Za-z_\-]{30,})", "[redacted]", text)
 
 
 def kill_tree(pid: int) -> None:

@@ -248,3 +248,44 @@ describe('system logos', () => {
     expect(orchestra.querySelector('path')!.getAttribute('d')).toContain('M11.1 4.1v14.6');
   });
 });
+
+describe('error details', () => {
+  let seq = 0;
+  const ev = (type: string, payload: Record<string, unknown>): RunEvent => ({seq: ++seq, type, ts: '2026-10-23T08:00:00Z', payload});
+  const failed = (payload: Record<string, unknown>) => applyEvent(
+    applyEvent(emptyRun('run_9', 'cnv_1', 'Analyze S26 launch'), ev('run_started', {runtime: 'code-assist', runtime_label: 'Gemini Code Assist API · m', model: 'gemini-3.8-flash'})),
+    ev('run_failed', {code: 'empty_answer', status: 'failed', message: 'Gemini sent back an empty turn 4 times in a row.', ...payload}));
+
+  it('shows exactly why an answer failed, as the server recorded it, and copies it with the question', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.assign(navigator, {clipboard: {writeText}});
+    render(card(failed({details: {'Error code': 'empty_answer', "Google's finish reason": 'Gemini wrote a tool call that could not be read (MALFORMED_FUNCTION_CALL)',
+      'Tries': 'gemini-3.8-flash ×2, gemini-3.1-pro-preview ×2'}})));
+    expect(screen.getByTestId('run-error').textContent).toContain('Gemini sent back an empty turn 4 times in a row.');
+    expect(screen.queryByTestId('error-details-panel')).toBeNull();
+    fireEvent.click(screen.getByTestId('error-details'));
+    const panel = screen.getByTestId('error-details-panel');
+    expect(panel.textContent).toContain("Google's finish reason");
+    expect(panel.textContent).toContain('(MALFORMED_FUNCTION_CALL)');
+    expect(panel.textContent).toContain('gemini-3.8-flash ×2, gemini-3.1-pro-preview ×2');
+    await act(async () => { fireEvent.click(screen.getByRole('button', {name: /Copy details/})); });
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('Question: Analyze S26 launch\nWizard could not finish this answer: Gemini sent back'));
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining("Google's finish reason: Gemini wrote a tool call that could not be read"));
+    expect(screen.getByRole('button', {name: /Copied/})).toBeTruthy();
+  });
+
+  it('still says what it knows for a run that failed before details were recorded', () => {
+    render(card(failed({})));
+    fireEvent.click(screen.getByTestId('error-details'));
+    const panel = screen.getByTestId('error-details-panel').textContent ?? '';
+    expect(panel).toContain('Error code');
+    expect(panel).toContain('empty_answer');
+    expect(panel).toContain('gemini-3.8-flash');
+    expect(panel).toContain('run_9');
+  });
+
+  it('is not offered for a cancelled run', () => {
+    render(card(failed({status: 'cancelled', code: 'cancelled', message: 'The run was cancelled.'})));
+    expect(screen.queryByTestId('error-details')).toBeNull();
+  });
+});

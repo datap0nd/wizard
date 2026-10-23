@@ -1,8 +1,9 @@
 import {memo, useEffect, useState} from 'react';
-import {AlertTriangle, CalendarClock, ExternalLink, Flag, Link2, ListTree, Mail, RotateCcw, ShieldCheck, Square} from 'lucide-react';
+import {AlertTriangle, CalendarClock, ChevronDown, Copy, ExternalLink, Flag, Info, Link2, ListTree, Mail, RotateCcw, ShieldCheck, Square} from 'lucide-react';
 import {placedVisuals} from '@/citations';
 import {sourceCount, sourceGroups} from '@/sources';
 import {clock, duration} from '@/format';
+import {errorDetails} from '@/runState';
 import {Button} from './ui/button';
 import {DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger, Hint} from './ui/menu';
 import {ActivityTimeline} from './ActivityTimeline';
@@ -72,6 +73,33 @@ function CheckPanel({run}: {run: RunView}) {
   );
 }
 
+/** Why the answer failed, in full: Google's own reason and words, what Gemini sent back, the last tool call and where
+ * the run had got to. Copy puts it all on the clipboard with the question, to send to whoever helps. */
+function ErrorDetails({run}: {run: RunView}) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const rows = Object.entries(errorDetails(run));
+  const text = [`Question: ${run.question}`, `Wizard could not finish this answer: ${run.error?.message ?? ''}`, '',
+    ...rows.map(([label, value]) => `${label}: ${value}`)].join('\n');
+  return <>
+    <Button variant="ghost" size="sm" className="text-danger hover:bg-canvas/70 hover:text-danger" onClick={() => setOpen(o => !o)}
+      aria-expanded={open} data-testid="error-details"><Info />Error details<ChevronDown className={open ? 'rotate-180' : ''} /></Button>
+    {open && (
+      <div className="min-w-0 basis-full rounded-lg border border-danger-line bg-canvas px-3 py-2.5 text-ink-2" data-testid="error-details-panel">
+        <dl className="grid gap-y-1.5 text-[12.5px] sm:grid-cols-[minmax(0,11rem)_minmax(0,1fr)] sm:gap-x-3 sm:gap-y-1">
+          {rows.map(([label, value]) => <div key={label} className="sm:contents">
+            <dt className="text-[11.5px] text-ink-3 sm:text-[12.5px]">{label}</dt>
+            <dd className="whitespace-pre-wrap font-mono text-[12px] text-ink [overflow-wrap:anywhere]">{value}</dd>
+          </div>)}
+        </dl>
+        <Button variant="outline" size="xs" className="mt-2.5" onClick={() => void navigator.clipboard?.writeText(text).then(() => setCopied(true))}>
+          <Copy />{copied ? 'Copied' : 'Copy details'}
+        </Button>
+      </div>
+    )}
+  </>;
+}
+
 export const RunCard = memo(function RunCard({run, onEvidence, onCheck, onCancel, onRetry, onFeedback, onEmail, onRecurring, onSchedule,
   canRecur = false, busy}: Props) {
   const running = run.status === 'running' || run.status === 'queued';
@@ -108,7 +136,10 @@ export const RunCard = memo(function RunCard({run, onEvidence, onCheck, onCancel
           <div className="rounded-xl border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger" role="alert" data-testid="run-error" data-code={run.error.code}>
             <p className="font-medium">{run.status === 'cancelled' ? 'Cancelled' : 'Wizard could not finish this answer'}</p>
             <p className="mt-1">{run.error.message}{run.diagnostics.length > 0 && ' Details are under Diagnostics below.'}</p>
-            {run.status !== 'cancelled' && <Button variant="outline" size="sm" className="mt-2" onClick={() => onRetry(run)} disabled={busy}><RotateCcw />Ask again</Button>}
+            {run.status !== 'cancelled' && <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <Button variant="outline" size="sm" onClick={() => onRetry(run)} disabled={busy}><RotateCcw />Ask again</Button>
+              <ErrorDetails run={run} />
+            </div>}
           </div>
         )}
       </div>

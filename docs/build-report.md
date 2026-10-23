@@ -3,7 +3,73 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-22 (latest) — Flash and Pro stand in for each other both ways; a missing view says where to look; no sleep mid-answer
+## 2026-10-23 (latest) — Error details on every failed answer; an empty Gemini turn is asked again; no more "session expired"
+
+The owner reported two things. WizardBar said "Your session expired. Reload the page to sign in again", and the panel
+has no reload button, so Wizard had to be restarted. And an answer ended with "Wizard could not finish this answer.
+Gemini finished without an answer." ("This can't happen, we need a little 'error details' button where I see exactly
+why").
+
+**Causes found in the code.**
+- The session cookie lasted 12 hours from sign-in and was never renewed. WizardBar keeps the page open for days, so
+  every request after 12 hours got "Sign in to use Wizard", and the only advice was to reload.
+- On the Code Assist route (the desktop's), a model turn with neither text nor a tool call ended the run as if Gemini
+  had finished. Gemini 3 sends such turns (an empty text part carrying a thought signature) after a tool call, and for a
+  tool call it wrote but Google could not read (`MALFORMED_FUNCTION_CALL`). Gemini CLI calls this an invalid stream and
+  asks again; Wizard did not, and it never read Google's `finishReason`, so nothing could say why.
+- With `WIZARD_DIAGNOSTICS=false` (the desktop default) a failed answer showed only its one-line message.
+
+**What changed.**
+- `app.py`: a session in use is signed again once it is an hour old (any API request, the quota ring's polling
+  included), so an open Wizard stays signed in. It still lapses 12 hours after the page last reached Wizard; sign-out
+  is never undone by a renewal, and a lapsed cookie is not revived.
+- `api.ts`, `App.tsx`: when a request finds the session lapsed (a PC asleep overnight), the page signs in again as the
+  same person (fixture sign-in, as the desktop app does at start) and sends the request once more, one renewal for
+  every request waiting on it. A live answer whose stream was refused is followed again. Where the page cannot sign in
+  by itself (company SSO), it shows sign-in instead of a dead-end message.
+- `code_assist.py`: each turn keeps Google's `finishReason`, `finishMessage`, `promptFeedback.blockReason`, blocked
+  safety categories and `modelVersion`. A turn with neither text nor a tool call is asked again, silently: the same
+  model once more, then the other model twice (Flash ×2, Pro ×2). If every try is empty, the answer stops with Google's
+  reason in words ("Gemini wrote a tool call that could not be read (MALFORMED_FUNCTION_CALL)"); if Gemini wrote a
+  message earlier in the answer, that message is shown instead, with a warning, as before. A request Google blocked
+  (`blockReason`) is not asked again. The old "Gemini returned neither text nor a tool call" failure is the same case.
+- Every failure now carries details (`AgentFailure.details`): Google's reply to an HTTP error (`HTTP 400: The input
+  token count … (INVALID_ARGUMENT)`), Google's refusal kind, message, suggested wait and the models and rounds tried,
+  the network error, or the exception and the line it came from. `runs.py` adds where the run had got to: model,
+  connection, time, tool calls, the last tool call and how it ended, the last status line, run id and build. They go
+  out on the `run_failed` event (`contracts/run-event.schema.json`), redacted, never the prompt, the answer or
+  reasoning.
+- `RunCard.tsx`: **Error details** next to **Ask again** opens them, label by label (stacked in the narrow WizardBar
+  panel, two columns in a full window), with **Copy details** (with the question). A run that failed before this
+  change, or under a restart, shows what the card knows.
+- Docs: `desktop.md` (empty turns, Error details, staying signed in, troubleshooting), `operations.md` (`empty_answer`,
+  `model_blocked`), README.
+
+**Tests.**
+- Python, Code Assist: an empty turn is asked again on the same model with the same conversation and the answer
+  continues, silently; empty turns on both models fail after Flash ×2 and Pro ×2 with Google's finish reason, message,
+  parts, step, tries, tokens and model version; no finish reason says the stream was cut; a blocked request is not
+  asked again; a 400 keeps Google's words; running out of capacity keeps Google's message and the rounds. The first
+  fails on the previous code (the run stopped after the empty turn).
+- Python, runs: a failed answer's `run_failed` event carries the runtime's details first, then model, connection, tool
+  calls, last tool call, last status and run id, with an access token redacted; an empty last turn after a message
+  shows that message; an internal error names the exception and the line.
+- Python, sessions: a session over an hour old is signed again for 12 hours; a fresh one is not; sign-out stays
+  signed out; a lapsed one stays lapsed (fails on the previous code).
+- Web: Error details shows the server's details and copies them with the question; an older failed run shows what the
+  card knows; a cancelled run has none. A lapsed session is renewed once for two requests at the same time and both are
+  sent again; one that cannot be renewed shows sign-in; under SSO nothing is retried.
+- In a browser (Chromium, the e2e server): with the page open, the session cookie was deleted and a question asked; it
+  was answered with no message and the cookie was set again. Error details was screenshot at 460 px (the WizardBar
+  panel) and 1280 px, inside its box with no overflow.
+- `verify_all.sh --allow-blocked=live-parity,postgres`: lock, spec, secrets, contracts, lint, types, Python 375 passed
+  and 5 skipped, evals, web types, web unit 45, web-dist and web build pass; postgres and live-parity BLOCKED, as
+  allowed (no PostgreSQL test server here; CI runs one). The real Gemini CLI layer, BLOCKED on the first run because
+  the CLI was not installed, passed (4) after `npm --prefix .tools install @google/gemini-cli@0.62.0`. The e2e layer
+  could not launch Edge here; the same 16 tests passed on the installed Chromium (`executablePath` override, not
+  committed).
+
+## 2026-10-22 — Flash and Pro stand in for each other both ways; a missing view says where to look; no sleep mid-answer
 
 The owner sent two photos of "Analyze S26 launch, create a full report on it" ("pretty much unusable"): 28 steps, and
 before nearly every step "Gemini is busy; trying again in 5 s … 11 s … 22 s … 33 s" (about a minute each). Two

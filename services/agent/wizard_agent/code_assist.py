@@ -14,7 +14,11 @@ It goes both ways: a run that moved to Pro goes back to Flash when Pro refuses. 
 low), a lack of capacity that Wizard handles is not shown: the quick tries and the switches go to the log only, and the
 run records the model that answered. Only when both models have refused (or there is no other) does Wizard wait, like
 for a busy server (Google's capacity usually comes back within a minute or two), and the stage says only that Gemini is
-busy. The person reads "no capacity" only when an answer stops for it."""
+busy. The person reads "no capacity" only when an answer stops for it.
+
+A turn with neither text nor a tool call is what Gemini CLI calls an invalid stream, and it asks again. Wizard asks the
+same model once more, then the other model twice, before it gives up; then the failure carries what Google sent back
+(its finish reason and message, the parts, the tokens) for the run card's Error details."""
 from __future__ import annotations
 
 import asyncio
@@ -23,7 +27,7 @@ import logging
 import random
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
@@ -43,6 +47,22 @@ CAPACITY_RETRIES = 2         # quick tries before leaving a model Google has no 
 QUICK_TRY_S = 3.0            # the longest quick try; a longer wait Google asks for goes to the other model instead
 MAX_RETRYABLE_DELAY_S = 300  # a longer suggested wait means the quota will not come back within the run
 RETRY_STATUSES = (429, 499, 500, 502, 503, 504)
+EMPTY_TRIES = 2              # tries per model for a turn with neither text nor a tool call (Gemini CLI asks again once)
+# Google's finishReason for a turn that ended, in words (google.genai FinishReason).
+FINISH_REASONS = {
+    "STOP": "a normal stop, with nothing written",
+    "MAX_TOKENS": "the output limit was reached, spent on thinking, before anything was written",
+    "SAFETY": "Google's safety filter withheld the reply",
+    "RECITATION": "Google withheld the reply because it repeated published text",
+    "LANGUAGE": "the reply was in a language Gemini does not support",
+    "BLOCKLIST": "Google withheld the reply because it contained a blocked term",
+    "PROHIBITED_CONTENT": "Google withheld the reply as prohibited content",
+    "SPII": "Google withheld the reply because it contained sensitive personal information",
+    "MALFORMED_FUNCTION_CALL": "Gemini wrote a tool call that could not be read",
+    "UNEXPECTED_TOOL_CALL": "Gemini asked for a tool it was not offered",
+    "TOO_MANY_TOOL_CALLS": "Gemini asked for too many tools in one turn",
+    "OTHER": "none given",
+}
 log = logging.getLogger("wizard.gemini")
 sleep = asyncio.sleep  # one place to wait, so tests need not
 KEEP_SCHEMA_KEYS = ("description", "enum", "required", "minItems", "maxItems", "minimum", "maximum")
@@ -90,6 +110,22 @@ class Limit:
     kind: Literal["capacity", "quota", "rate", "busy"]
     delay: float | None  # Google's suggested wait, in seconds
     detail: str          # Google's own message, for the log
+    status: int = 0      # the HTTP status Google answered with
+
+
+@dataclass
+class Reply:
+    """One model turn as Google sent it: the parts kept for the conversation, the tool calls, token usage and why the
+    turn ended (finishReason, finishMessage, promptFeedback's blockReason...)."""
+    parts: list[dict[str, Any]] = field(default_factory=list)
+    calls: list[dict[str, Any]] = field(default_factory=list)
+    usage: dict[str, Any] = field(default_factory=dict)
+    finish: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def empty(self) -> bool:
+        """Neither words nor a tool call: nothing to show and nothing to do."""
+        return not self.calls and not any(str(p.get("text") or "").strip() for p in self.parts)
 
 
 def _seconds(text: str) -> float | None:
@@ -128,16 +164,31 @@ def classify_limit(status: int, body: str) -> Limit:
     lower = message.lower()
     if reason in ("MODEL_CAPACITY_EXHAUSTED", "MODEL_CAPACITY_EXCEEDED") or re.search(
             r"exhausted your capacity|capacity exceeded|model_capacity_exhausted|no capacity available", lower):
-        return Limit("capacity", delay, message)
+        return Limit("capacity", delay, message, status)
     if status not in (429, 499, 503) and not delay:
-        return Limit("busy", None, message)  # a server error: try again
+        return Limit("busy", None, message, status)  # a server error: try again
     if (re.search(r"limit:\s*0(?!\d|\.\d)", lower) or reason in ("QUOTA_EXHAUSTED", "INSUFFICIENT_G1_CREDITS_BALANCE")
             or any("PerDay" in q or "Daily" in q for q in quota_ids) or (delay or 0) > MAX_RETRYABLE_DELAY_S
             or (reason == "RATE_LIMIT_EXCEEDED" and delay is None)):
-        return Limit("quota", delay, message)
+        return Limit("quota", delay, message, status)
     if reason == "RATE_LIMIT_EXCEEDED" or any("PerMinute" in q for q in quota_ids):
-        return Limit("rate", delay if delay is not None else 60.0, message)
-    return Limit("busy", delay, message)
+        return Limit("rate", delay if delay is not None else 60.0, message, status)
+    return Limit("busy", delay, message, status)
+
+
+def google_message(status: int, body: str) -> str:
+    """Google's own words from an error response, for Error details: its message and status, else the body itself."""
+    try:
+        data: Any = json.loads(body)
+    except json.JSONDecodeError:
+        data = None
+    if isinstance(data, list):
+        data = data[0] if data else None
+    error = data.get("error") if isinstance(data, dict) else None
+    text = str(error.get("message") or "") if isinstance(error, dict) else ""
+    if text and isinstance(error, dict) and error.get("status"):
+        text += f" ({error['status']})"
+    return f"HTTP {status}: " + (" ".join((text or body).split())[:1000] or "no message")
 
 
 def retry_delay(hint: float | None, attempt: int) -> float:
@@ -176,6 +227,61 @@ def limit_message(limit: Limit, model: str, fallback: str | None = None) -> str:
         text = (f"Gemini kept refusing requests for {model} ({'per-minute limit' if limit.kind == 'rate' else 'busy'})."
                 + (then or " Try again in a few minutes."))
     return text + google_says(limit)
+
+
+LIMIT_KINDS = {"capacity": "no capacity for the model on Google's side", "quota": "your quota is used up",
+               "rate": "per-minute limit reached", "busy": "Google's server was busy or failed"}
+
+
+def limit_details(limit: Limit, tried: list[str], rounds: int | None = None) -> dict[str, str]:
+    """Error details for a model Google would not let answer."""
+    details = {"Google's refusal": f"{LIMIT_KINDS[limit.kind]} (HTTP {limit.status or '?'})",
+               "Google's message": limit.detail or "none", "Models tried": ", ".join(tried)}
+    if limit.delay:
+        details["Google's suggested wait"] = f"{limit.delay:.0f} s"
+    if rounds is not None:
+        details["Rounds"] = f"{rounds} of {MAX_RETRIES}, waiting between them"
+    return details
+
+
+def finish_words(finish: dict[str, str]) -> str:
+    reason = finish.get("finishReason")
+    if not reason:
+        return "none: the reply ended without a finish reason (the stream was cut off)"
+    return f"{FINISH_REASONS.get(reason, 'not one Wizard knows')} ({reason})"
+
+
+def describe_parts(parts: list[dict[str, Any]]) -> str:
+    """What a turn held, without its content: 'text (0 characters) + thoughtSignature'."""
+    if not parts:
+        return "nothing: no text, no tool call"
+    shown = []
+    for part in parts:
+        keys = [f"text ({len(str(part.get('text') or '').strip())} characters)" if key == "text" else key for key in part]
+        shown.append(" + ".join(keys) or "an empty part")
+    return "; ".join(shown)
+
+
+def turn_details(reply: Reply, step: int, tool_calls: int, tries: list[str]) -> dict[str, str]:
+    """Error details for a turn that ended with nothing: Google's reason and words, what the turn held, the tokens."""
+    finish, usage = reply.finish, reply.usage
+    details = {"Google's finish reason": finish_words(finish)}
+    if finish.get("finishMessage"):
+        details["Google's message"] = finish["finishMessage"][:1000]
+    if finish.get("blockReason"):
+        details["Google blocked the request"] = finish["blockReason"] + (f": {finish['blockReasonMessage']}"
+                                                                         if finish.get("blockReasonMessage") else "")
+    if finish.get("blockedCategories"):
+        details["Safety categories"] = finish["blockedCategories"]
+    details["What Gemini sent back"] = describe_parts(reply.parts)
+    details["Step"] = f"{step} (after {tool_calls} tool call{'s' if tool_calls != 1 else ''})"
+    details["Tries"] = ", ".join(f"{model} ×{tries.count(model)}" for model in dict.fromkeys(tries))
+    if usage:
+        details["Tokens (last try)"] = (f"prompt {int(usage.get('promptTokenCount', 0)):,} · thinking "
+                                        f"{int(usage.get('thoughtsTokenCount', 0)):,} · reply {int(usage.get('candidatesTokenCount', 0)):,}")
+    if finish.get("modelVersion"):
+        details["Model version"] = finish["modelVersion"]
+    return details
 
 
 def summarize_quota(raw: dict[str, Any], model: str) -> dict[str, Any]:
@@ -247,11 +353,12 @@ class CodeAssistRuntime:
 
     async def _post(self, http: httpx.AsyncClient, token: str, method: str, body: dict[str, Any]) -> dict[str, Any]:
         response = await http.post(f"{self.api_base}:{method}", json=body, headers={"Authorization": f"Bearer {token}"})
+        said = {"Google's reply": google_message(response.status_code, response.text), "Request": method}
         if response.status_code in (401, 403):
             raise AgentFailure("model_permission_denied", "Gemini refused the request for your account (check your "
-                                                          "Gemini entitlement and Google Cloud project).")
+                                                          "Gemini entitlement and Google Cloud project).", said)
         if response.status_code >= 400:
-            raise AgentFailure("model_error", f"Gemini {method} failed ({response.status_code}).")
+            raise AgentFailure("model_error", f"Gemini {method} failed ({response.status_code}).", said)
         return dict(response.json())
 
     async def quota(self, user_home: Path, user_id: str) -> dict[str, Any]:
@@ -301,15 +408,12 @@ class CodeAssistRuntime:
         self._projects[user_id] = resolved
         return resolved
 
-    async def _request(self, http: httpx.AsyncClient, token: str, envelope: dict[str, Any], emit: Emit
-                       ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]] | Limit:
-        """One model turn: its parts, function calls and usage, or Google's refusal to act on."""
+    async def _request(self, http: httpx.AsyncClient, token: str, envelope: dict[str, Any], emit: Emit) -> Reply | Limit:
+        """One model turn as Google sent it, or Google's refusal to act on."""
         model = str(envelope["model"])
         dropped_thinking = False
         while True:
-            parts: list[dict[str, Any]] = []
-            calls: list[dict[str, Any]] = []
-            usage: dict[str, Any] = {}
+            reply = Reply()
             async with http.stream("POST", f"{self.api_base}:streamGenerateContent", params={"alt": "sse"}, json=envelope,
                                    headers={"Authorization": f"Bearer {token}", "Accept": "text/event-stream"}) as response:
                 if response.status_code in RETRY_STATUSES:
@@ -324,24 +428,26 @@ class CodeAssistRuntime:
                     dropped_thinking = True
                     await emit("warning", {"message": "The model rejected the thinking setting; retried with its default."})
                     continue
-                if response.status_code in (401, 403):
-                    raise AgentFailure("model_permission_denied", "Gemini refused the request for your account.")
                 if response.status_code >= 400:
-                    raise AgentFailure("model_error", f"Gemini streamGenerateContent failed ({response.status_code}).")
+                    said = {"Google's reply": google_message(response.status_code, (await response.aread()).decode(
+                        "utf-8", "replace")), "Model": model}
+                    if response.status_code in (401, 403):
+                        raise AgentFailure("model_permission_denied", "Gemini refused the request for your account.", said)
+                    raise AgentFailure("model_error", f"Gemini streamGenerateContent failed ({response.status_code}).", said)
                 data_lines: list[str] = []
                 async for line in response.aiter_lines():
                     if line.startswith("data:"):
                         data_lines.append(line[5:].strip())
                         continue
                     if line.strip() == "" and data_lines:
-                        await self._consume("\n".join(data_lines), parts, calls, usage, emit)
+                        await self._consume("\n".join(data_lines), reply, emit)
                         data_lines = []
                 if data_lines:
-                    await self._consume("\n".join(data_lines), parts, calls, usage, emit)
-            return parts, calls, usage
+                    await self._consume("\n".join(data_lines), reply, emit)
+            return reply
 
     async def _step(self, http: httpx.AsyncClient, token: str, run: _Models, contents: list[dict[str, Any]], emit: Emit
-                    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+                    ) -> Reply:
         """One step of the run, answered by whichever of the two models (the chosen one and the fallback) can.
 
         A model Google has no room for gets Gemini CLI's two quick tries; then the other model takes the step, silently,
@@ -362,9 +468,9 @@ class CodeAssistRuntime:
             if limit.kind == "quota":
                 self._resting[model] = (time.monotonic() + min(limit.delay or 3600, 6 * 3600), limit)
                 if other is None:
-                    raise AgentFailure("model_quota", limit_message(limit, model))
+                    raise AgentFailure("model_quota", limit_message(limit, model), limit_details(limit, tried))
                 await emit("status", {"message": limit_message(limit, model, other)})
-                await run.switch(other, contents, emit, limit)
+                await run.switch(other, contents, emit, limit_message(limit, model, other))
                 continue
             if (limit.kind == "capacity" and other and quick.get(model, 0) < CAPACITY_RETRIES
                     and (limit.delay or 0) <= QUICK_TRY_S):  # Google asking for longer: the other model takes over now
@@ -374,10 +480,11 @@ class CodeAssistRuntime:
                 continue
             refused.append(model)
             if other and other not in refused:
-                await run.switch(other, contents, emit, limit)  # as Gemini CLI, a switch is silent
+                await run.switch(other, contents, emit, limit_message(limit, model, other))  # as Gemini CLI, silent
                 continue
             if waits + 1 >= MAX_RETRIES:  # no wait after the last round
-                raise AgentFailure("model_capacity", limit_message(limit, " or ".join(tried)))
+                raise AgentFailure("model_capacity", limit_message(limit, " or ".join(tried)),
+                                   limit_details(limit, tried, waits + 1))
             delay = retry_delay(limit.delay, waits)
             if limit.kind == "rate":
                 message = f"Gemini's per-minute limit for {model} was reached; waiting {delay:.0f} s"
@@ -405,24 +512,32 @@ class CodeAssistRuntime:
         return self.model, None
 
     @staticmethod
-    async def _consume(payload: str, parts: list[dict[str, Any]], calls: list[dict[str, Any]], usage: dict[str, Any],
-                       emit: Emit) -> None:
+    async def _consume(payload: str, reply: Reply, emit: Emit) -> None:
         try:
             root = json.loads(payload)
         except json.JSONDecodeError:
             return
         inner = root.get("response", root)
-        usage.update(inner.get("usageMetadata") or {})
+        reply.usage.update(inner.get("usageMetadata") or {})
+        feedback = inner.get("promptFeedback") or {}
         candidates = inner.get("candidates") or []
-        content = (candidates[0].get("content") if candidates else None) or {}
-        for part in content.get("parts") or []:
+        candidate = candidates[0] if candidates and isinstance(candidates[0], dict) else {}
+        for key, value in (("blockReason", feedback.get("blockReason")), ("blockReasonMessage", feedback.get("blockReasonMessage")),
+                           ("finishReason", candidate.get("finishReason")), ("finishMessage", candidate.get("finishMessage")),
+                           ("modelVersion", inner.get("modelVersion"))):
+            if value:
+                reply.finish[key] = str(value)
+        blocked = [str(r.get("category")) for r in candidate.get("safetyRatings") or [] if isinstance(r, dict) and r.get("blocked")]
+        if blocked:
+            reply.finish["blockedCategories"] = ", ".join(blocked)
+        for part in (candidate.get("content") or {}).get("parts") or []:
             if part.get("thought") is True:
                 continue
-            parts.append(part)
+            reply.parts.append(part)
             if isinstance(part.get("text"), str) and part["text"]:
                 await emit("text_delta", {"text": part["text"], "delta": True})
             if isinstance(part.get("functionCall"), dict):
-                calls.append(part["functionCall"])
+                reply.calls.append(part["functionCall"])
 
     def _generation(self, model: str) -> dict[str, Any]:
         thinking = thinking_config(model, self.thinking)
@@ -432,7 +547,8 @@ class CodeAssistRuntime:
         try:
             await self._run(request, emit, tools, cancelled)
         except httpx.HTTPError as error:
-            raise AgentFailure("network_error", outbound.explain(error, self.api_base, self.proxy)) from None
+            raise AgentFailure("network_error", outbound.explain(error, self.api_base, self.proxy),
+                               {"Network error": f"{type(error).__name__}: {error}"[:1000]}) from None
 
     async def _run(self, request: AgentRequest, emit: Emit, tools: ToolBridge, cancelled: Any) -> None:
         async with self._http() as http:
@@ -451,19 +567,20 @@ class CodeAssistRuntime:
             for step in range(1, MAX_STEPS + 1):
                 if cancelled():
                     raise AgentFailure("cancelled", "The run was cancelled.")
-                parts, calls, usage = await self._step(http, token, run, contents, emit)
-                totals["input_tokens"] += int(usage.get("promptTokenCount", 0))
-                totals["output_tokens"] += int(usage.get("candidatesTokenCount", 0))
+                reply = await self._step(http, token, run, contents, emit)
+                tries = [run.model]
+                while reply.empty:
+                    reply = await self._again(http, token, run, contents, emit, reply, tries, step, totals, cancelled)
+                totals["input_tokens"] += int(reply.usage.get("promptTokenCount", 0))
+                totals["output_tokens"] += int(reply.usage.get("candidatesTokenCount", 0))
                 log.info("run %s step %d on %s: %s prompt tokens, %d tool call(s)", request.run_id, step, run.model,
-                         usage.get("promptTokenCount", "?"), len(calls))
-                if not parts:
-                    raise AgentFailure("model_error", "Gemini returned neither text nor a tool call.")
-                contents.append({"role": "model", "parts": parts})
-                if not calls:
+                         reply.usage.get("promptTokenCount", "?"), len(reply.calls))
+                contents.append({"role": "model", "parts": reply.parts})
+                if not reply.calls:
                     await emit("agent_stats", {"stats": totals})
                     return
                 responses = []
-                for call in calls:
+                for call in reply.calls:
                     totals["tool_calls"] += 1
                     ok, text = await tools.call(str(call.get("name")), dict(call.get("args") or {}))
                     payload = json.loads(text)
@@ -471,6 +588,29 @@ class CodeAssistRuntime:
                                                            "response": payload if ok else {"error": payload.get("error")}}})
                 contents.append({"role": "user", "parts": responses})
             raise AgentFailure("too_many_steps", f"Gemini used more than {MAX_STEPS} steps without finishing.")
+
+    async def _again(self, http: httpx.AsyncClient, token: str, run: _Models, contents: list[dict[str, Any]], emit: Emit,
+                     reply: Reply, tries: list[str], step: int, totals: dict[str, int], cancelled: Any) -> Reply:
+        """A turn came back with neither text nor a tool call. Ask the same model once more and then the other model
+        (Gemini CLI asks again too), silently; a request Google blocked, or every try empty, fails with what Google said."""
+        details = turn_details(reply, step, totals["tool_calls"], tries)
+        if reply.finish.get("blockReason"):
+            raise AgentFailure("model_blocked", f"Google blocked the request at step {step} before Gemini could answer "
+                                                f"({reply.finish['blockReason']}).", details)
+        if cancelled():
+            raise AgentFailure("cancelled", "The run was cancelled.")
+        log.warning("run %s step %d on %s: a turn with neither text nor a tool call (%s; %s)", run.request.run_id, step,
+                    run.model, finish_words(reply.finish), describe_parts(reply.parts))
+        if tries.count(run.model) >= EMPTY_TRIES:
+            other = run.other(self._resting)
+            if other is None or other in tries:
+                raise AgentFailure("empty_answer", f"Gemini sent back an empty turn {len(tries)} times in a row: no answer "
+                                                   f"and no request for data. Google's reason: {finish_words(reply.finish)}.",
+                                   details)
+            await run.switch(other, contents, emit, f"{run.model} sent back nothing {EMPTY_TRIES} times")
+        again = await self._step(http, token, run, contents, emit)
+        tries.append(run.model)  # the model that answered: Google's capacity may have moved the step
+        return again
 
 
 class _Models:
@@ -495,8 +635,8 @@ class _Models:
             "tools": [{"functionDeclarations": self.declarations}],
             "generationConfig": self.generation}}  # shared: a thinking setting the model rejects stays dropped
 
-    async def switch(self, model: str, contents: list[dict[str, Any]], emit: Emit, why: Limit) -> None:
-        log.info("Gemini continues with %s: %s", model, limit_message(why, self.model, model))
+    async def switch(self, model: str, contents: list[dict[str, Any]], emit: Emit, why: str) -> None:
+        log.info("Gemini continues with %s: %s", model, why)
         self.model = model
         self.generation = self.runtime._generation(model)
         _skip_signatures(contents)

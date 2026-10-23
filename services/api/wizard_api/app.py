@@ -45,6 +45,9 @@ OWNER_ID = "local-owner"
 KB_IDLE_RESTART_S = 600  # restart for a new knowledge base only after 10 minutes without a request from the user
 # Requests a page or a probe makes on its own (the quota ring polls every 5 minutes): not a sign someone is using Wizard.
 BACKGROUND_PATHS = {"/api/v1/health", "/api/v1/ready", "/api/v1/account/gemini/quota"}
+# A session in use is signed again once it is this old, so a Wizard left open (WizardBar keeps the page for days) is
+# never signed out between two questions. It still lapses session_hours after the page last reached Wizard.
+SESSION_RENEW_S = 3600
 log = logging.getLogger("wizard.api")
 
 
@@ -277,7 +280,12 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
             return identities.by_login(email) or Identity(id=f"sso:{email.lower()}", email=email.lower(), name=email,
                                                            role="Unassigned", entitlements={})
         claims = verify(settings.session_secret, "session", request.cookies.get(SESSION_COOKIE))
+        request.state.session_issued = float(claims.get("iat", 0)) if claims else None
         return identities.get(str(claims["u"])) if claims else None
+
+    def start_session(response: Response, user_id: str) -> None:
+        response.set_cookie(SESSION_COOKIE, session_token(settings.session_secret, user_id, settings.session_hours),
+                            httponly=True, samesite="strict", secure=settings.secure_cookies, max_age=settings.session_hours * 3600)
 
     def me(request: Request) -> Identity:
         identity: Identity | None = request.state.identity
@@ -308,6 +316,10 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         response = await call_next(request)
         if path.startswith(("/api/", "/internal/")):
             response.headers["Cache-Control"] = "no-store"
+        issued = getattr(request.state, "session_issued", None)
+        if (issued is not None and request.state.identity is not None and not path.startswith("/api/v1/session/")
+                and time.time() - issued > SESSION_RENEW_S):
+            start_session(response, request.state.identity.id)
         return _secure(response)
 
     @app.exception_handler(HTTPException)
@@ -414,8 +426,7 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         if identity is None:
             raise HTTPException(400, "Unknown test identity.")
         response = JSONResponse({"ok": True, "identity": {"id": identity.id, "name": identity.name}})
-        response.set_cookie(SESSION_COOKIE, session_token(settings.session_secret, identity.id, settings.session_hours),
-                            httponly=True, samesite="strict", secure=settings.secure_cookies, max_age=settings.session_hours * 3600)
+        start_session(response, identity.id)
         store.audit(identity.id, "session:login")
         return response
 
