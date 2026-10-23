@@ -1,5 +1,6 @@
 """The settings pane: the company settings a person may change on their own PC (Gemini model and project, the knowledge
-base, the read-only database, Metronome, the proxy), where each value comes from, saving, and connection tests.
+base, the read-only database, Metronome, the portals, the proxy), where each value comes from, saving, and connection
+tests.
 
 Values are saved to this PC's store (provisioning.update_local; secrets through the SecretBox). A key that the PC's .env
 also sets is removed from .env on save, so the new value applies and no password stays there in plain text. A key set
@@ -47,6 +48,8 @@ SECTIONS = [
     ("postgres", "Company database", "A read-only PostgreSQL account for Gemini's SQL questions."),
     ("metronome", "Metronome", "Recurring extractions: Metronome emails a table on a schedule, as Flows owned by its "
                                "Wizard user."),
+    ("portals", "Portals", "ASAP, GSCM and the Big Data Portal, read by Gemini in Wizard's own browser on this PC, "
+                           "signed in as you. Sign in once in the window Wizard opens; it then works in the background."),
     ("network", "Network", "Only if Wizard cannot reach Google or GitHub on its own."),
 ]
 FIELDS = [
@@ -72,6 +75,14 @@ FIELDS = [
           "Signed in to Metronome as the Wizard user; scripts/metronome_link.py makes one on the Metronome host PC."),
     Field("WIZARD_METRONOME_USER", "Metronome user", "metronome", "Every Flow Wizard creates belongs to this user.",
           "Wizard"),
+    Field("WIZARD_PORTAL_ASAP_URL", "ASAP address", "portals", "The page you open ASAP with.", "https://asap.company.example/"),
+    Field("WIZARD_PORTAL_GSCM_URL", "GSCM address", "portals", "The page you open GSCM with.", "https://gscm.company.example/"),
+    Field("WIZARD_PORTAL_BDP_URL", "Big Data Portal address", "portals", "Superset's start page.",
+          "https://bdp.company.example/"),
+    Field("WIZARD_BROWSER", "Browser", "portals", "Wizard uses its own profile of this browser, never your everyday one.",
+          "chrome", ("chrome", "msedge")),
+    Field("WIZARD_PORTAL_HOSTS", "Other hosts the portals need", "portals",
+          "Only when sign-in or a portal uses a host outside the company domain, e.g. login.microsoftonline.com.", ""),
     Field("WIZARD_PROXY", "Proxy", "network", "http://host:port, or direct. Empty: the Windows proxy settings.", ""),
 ]
 BY_KEY = {f.key: f for f in FIELDS}

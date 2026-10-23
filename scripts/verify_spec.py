@@ -209,7 +209,8 @@ def portable_locks() -> None:
     for name, key in (("runtime.lock.json", "runtime_lock_sha256"), ("dependencies.lock.json", "dependency_lock_sha256")):
         check(hashlib.sha256(locks[name].read_bytes()).hexdigest() == assets[key], f"{name} does not match portable_assets.lock.json")
     for package in json.loads(locks["dependencies.lock.json"].read_text(encoding="utf-8"))["packages"]:
-        check(package["filename"].endswith(("-none-any.whl", "-cp313-cp313-win_amd64.whl")), f"unsupported wheel {package['filename']}")
+        check(package["filename"].endswith(("-none-any.whl", "-cp313-cp313-win_amd64.whl", "-py3-none-win_amd64.whl")),
+              f"unsupported wheel {package['filename']}")
         check(re.fullmatch(r"[0-9a-f]{64}", package["sha256"]) is not None, f"bad digest for {package['filename']}")
 
 

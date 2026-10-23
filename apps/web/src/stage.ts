@@ -3,9 +3,10 @@ import type {RunView, SystemInfo, TimelineItem} from './types';
 /** Wizard's own work (calculating, charts, checks, searching every catalog): shown on the Wizard orb itself. */
 export const WIZARD = 'wizard';
 
-/** Which system module a tool call belongs to, from the tool's name. */
-export function moduleOf(name: string | undefined): string {
+/** Which system module a tool call belongs to, from the tool's name (and, for the portal tools, the portal it names). */
+export function moduleOf(name: string | undefined, args?: Record<string, unknown>): string {
   const tool = name ?? '';
+  if (/^portal_(run|guide|save_script)$/.test(tool) && typeof args?.system === 'string' && args.system) return args.system;
   if (tool === 'wizard_query_postgresql') return 'postgresql';
   if (tool === 'wizard_schedule_brief') return 'metronome';
   if (/^wizard_(lookup_definitions|browse_knowledge|read_knowledge)$/.test(tool)) return 'knowledge';
@@ -81,7 +82,7 @@ export function stageModel(run: RunView, systems: SystemInfo[]): StageModel {
   const tools = run.timeline.filter(t => t.kind === 'tool');
   const byModule = new Map<string, TimelineItem[]>();
   for (const tool of tools) {
-    const id = moduleOf(tool.name);
+    const id = moduleOf(tool.name, tool.args);
     byModule.set(id, [...(byModule.get(id) ?? []), tool]);
   }
   const listed = systems.filter(s => s.kind !== 'files' || byModule.has(s.id));
@@ -89,10 +90,11 @@ export function stageModel(run: RunView, systems: SystemInfo[]): StageModel {
     .map(id => {
       const calls = byModule.get(id)!;
       const named = id === 'metronome' ? undefined : calls.find(c => c.evidence?.system_name)?.evidence?.system_name;
+      const portal = calls.some(c => c.name?.startsWith('portal_'));
       return {id, name: named ?? NAMES[id] ?? id.toUpperCase(), kind: id === 'postgresql' ? 'database' : id === 'knowledge'
-        ? 'knowledge' : id === 'attachment' ? 'files' : id === 'metronome' ? 'schedules' : 'reports'} as SystemInfo;
+        ? 'knowledge' : id === 'attachment' ? 'files' : id === 'metronome' ? 'schedules' : portal ? 'portal' : 'reports'} as SystemInfo;
     });
-  const order = (s: SystemInfo) => ({database: 0, reports: 1, knowledge: 2, files: 3, schedules: 4})[s.kind] ?? 5;
+  const order = (s: SystemInfo) => ({database: 0, portal: 1, reports: 1, knowledge: 2, files: 3, schedules: 4})[s.kind] ?? 5;
   const modules = [...listed, ...extra].sort((a, b) => order(a) - order(b))
     .map(s => ({...s, stats: stats(s.id, byModule.get(s.id) ?? [])}));
   const active = [...tools].reverse().find(t => t.state === 'running') ?? null;
@@ -104,6 +106,19 @@ export function stageModel(run: RunView, systems: SystemInfo[]): StageModel {
   };
 }
 
+/** What the stage says Wizard is doing with a system right now, true to the call: a catalog search reads Wizard's own
+ * list of reports, not the system; a portal read happens in the person's own browser. */
+export function verbOf(item: TimelineItem, kind: SystemInfo['kind'] | undefined): {verb: string; suffix: string} {
+  const tool = item.name ?? '';
+  if (/_(search_reports|get_report_schema)$/.test(tool)) return {verb: 'Searching the catalog of', suffix: ''};
+  if (tool === 'portal_guide') return {verb: "Reading Wizard's guide to", suffix: ''};
+  if (tool === 'portal_save_script') return {verb: 'Keeping a script for', suffix: ''};
+  if (tool === 'portal_run') return {verb: 'Reading', suffix: ' in your browser'};
+  const verbs: Record<string, string> = {database: 'Querying', reports: 'Reading', portal: 'Reading', knowledge: 'Searching',
+    files: 'Reading', schedules: 'Preparing a schedule in'};
+  return {verb: verbs[kind ?? ''] ?? 'Reading', suffix: ''};
+}
+
 export interface Badge { id: string; label: string; detail: string }
 
 /** Earned, never invented: each badge is a plain fact about the finished run. */
@@ -112,7 +127,9 @@ export function badges(run: RunView, model: StageModel): Badge[] {
   const earned: Badge[] = [];
   const data = model.modules.filter(m => m.kind !== 'knowledge' && m.stats.rows > 0);
   const knowledge = model.modules.find(m => m.kind === 'knowledge' && m.stats.calls.some(c => c.state === 'ok'));
-  if (model.totals.systems >= 2) earned.push({id: 'cross', label: `Cross-checked ${model.totals.systems} systems`,
+  // Only systems something was read from: searching a report catalog is not reading the system.
+  const drawn = model.modules.filter(m => m.stats.rows > 0 || m.stats.notes > 0).length;
+  if (drawn >= 2) earned.push({id: 'cross', label: `Cross-checked ${drawn} systems`,
     detail: 'The answer draws on more than one system.'});
   if (knowledge && data.length) earned.push({id: 'grounded', label: 'Data + definitions',
     detail: 'Numbers from the data, read against the knowledge base.'});

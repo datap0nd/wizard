@@ -74,12 +74,14 @@ def test_vendor_dependencies_verifies_and_reuses_archives(tmp_path):
     cache, store = tmp_path / "cache", tmp_path / "store"
     cache.mkdir()
     packages = [_wheel(cache / "alpha-1.0-py3-none-any.whl", {"alpha/__init__.py": "A = 1\n"}),
-                _wheel(cache / "beta-1.0-cp313-cp313-win_amd64.whl", {"beta/__init__.py": "B = 2\n"})]
+                _wheel(cache / "beta-1.0-cp313-cp313-win_amd64.whl", {"beta/__init__.py": "B = 2\n"}),
+                _wheel(cache / "gamma-1.0-py3-none-win_amd64.whl", {"gamma/driver/node.exe": "MZ\n"})]  # like Playwright
     lock = tmp_path / "dependencies.lock.json"
     lock.write_text(json.dumps({"format": 2, "packages": packages}), encoding="utf-8")
-    assert vendor(cache, store, tmp_path / "release" / "vendor", lock) == {"unpacked": 2, "reused": 0}
+    assert vendor(cache, store, tmp_path / "release" / "vendor", lock) == {"unpacked": 3, "reused": 0}
     assert (tmp_path / "release" / "vendor" / "alpha" / "__init__.py").read_text() == "A = 1\n"
-    assert vendor(cache, store, tmp_path / "release2" / "vendor", lock) == {"unpacked": 0, "reused": 2}
+    assert (tmp_path / "release" / "vendor" / "gamma" / "driver" / "node.exe").is_file()
+    assert vendor(cache, store, tmp_path / "release2" / "vendor", lock) == {"unpacked": 0, "reused": 3}
     (cache / "alpha-1.0-py3-none-any.whl").write_bytes(b"tampered")
     shutil.rmtree(store)
     with pytest.raises(ValueError, match="invalid downloaded archive"):
@@ -96,7 +98,7 @@ def test_portable_locks_are_consistent():
     runtime = json.loads((ROOT / "runtime.lock.json").read_text(encoding="utf-8"))
     assert runtime["filename"] == f"python-{runtime['version']}-embed-amd64.zip"
     names = {p["name"] for p in json.loads((ROOT / "dependencies.lock.json").read_text(encoding="utf-8"))["packages"]}
-    assert {"fastapi", "uvicorn", "pydantic", "pydantic-core", "httpx", "starlette"} <= names
+    assert {"fastapi", "uvicorn", "pydantic", "pydantic-core", "httpx", "starlette", "playwright", "greenlet", "pyee"} <= names
 
 
 def test_gemini_task_kit_is_complete():

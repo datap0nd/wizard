@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest';
 import {emptyRun} from './runState';
-import {badges, detailOf, moduleOf, stageModel} from './stage';
+import {badges, detailOf, moduleOf, stageModel, verbOf} from './stage';
 import type {RunView, SystemInfo, TimelineItem} from './types';
 
 const SYSTEMS: SystemInfo[] = [
@@ -86,5 +86,27 @@ describe('the systems stage', () => {
     expect(badges(live, stageModel(live, SYSTEMS))).toEqual([]);
     const one = run([tool('1', 'nerp_run_report', 'ok', {evidence: evidence('E1', 'nerp', 5)})], 'succeeded');
     expect(badges(one, stageModel(one, SYSTEMS))).toEqual([]);
+  });
+
+  it('puts portal reads on the portal they name, and says what each call really does', () => {
+    expect(moduleOf('portal_run', {system: 'gscm'})).toBe('gscm');
+    expect(moduleOf('portal_guide', {system: 'asap'})).toBe('asap');
+    expect(moduleOf('portal_run')).toBe('wizard');
+    const read = tool('t1', 'portal_run', 'running', {args: {system: 'gscm', steps: []}});
+    const model = stageModel(run([read]), [...SYSTEMS, {id: 'gscm', name: 'GSCM', kind: 'portal'}]);
+    expect(model.modules.find(m => m.id === 'gscm')!.stats.state).toBe('active');
+    expect(verbOf(read, 'portal')).toEqual({verb: 'Reading', suffix: ' in your browser'});
+    // Searching a report catalog is not reading the system (the owner, 23 Oct: "it's not actually going in").
+    expect(verbOf(tool('t2', 'asap_search_reports', 'running'), 'reports').verb).toBe('Searching the catalog of');
+    expect(verbOf(tool('t3', 'wizard_query_postgresql', 'running'), 'database').verb).toBe('Querying');
+  });
+
+  it('counts only systems something was read from as cross-checked', () => {
+    const searched = run([tool('a', 'asap_search_reports', 'ok', {summary: '3 report(s) found'}),
+      tool('b', 'wizard_query_postgresql', 'ok', {evidence: evidence('E1', 'postgresql', 12)})], 'succeeded');
+    expect(badges(searched, stageModel(searched, SYSTEMS)).map(b => b.id)).not.toContain('cross');
+    const read = run([tool('a', 'portal_run', 'ok', {args: {system: 'asap'}, evidence: evidence('E1', 'asap', 4)}),
+      tool('b', 'wizard_query_postgresql', 'ok', {evidence: evidence('E2', 'postgresql', 12)})], 'succeeded');
+    expect(badges(read, stageModel(read, SYSTEMS)).map(b => b.id)).toContain('cross');
   });
 });

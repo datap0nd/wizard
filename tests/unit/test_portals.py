@@ -1,0 +1,192 @@
+"""The rules that keep Gemini's portal scripts read-only, without a browser: settings, reachable hosts, write detection
+(paths, service names, methods, SQL Lab), Metronome's forbidden clicks, redaction, and tables from script results."""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+from tests.helpers import HEADERS, login, make_settings
+
+from wizard_connectors import portals
+from wizard_connectors.portals import (
+    HostPolicy,
+    PortalConfigError,
+    click_refusal,
+    settings_from,
+    sql_problem,
+    write_reason,
+)
+
+
+def test_portals_come_from_their_addresses_and_nothing_else():
+    assert settings_from({}) is None
+    configured = settings_from({"WIZARD_PORTAL_GSCM_URL": "https://gscm.corp.example.com/gscm30/",
+                                "WIZARD_PORTAL_ASAP_URL": "https://asap.corp.example.com/", "WIZARD_BROWSER": "msedge",
+                                "WIZARD_PORTAL_HOSTS": "login.microsoftonline.com, *.sso.example.net"})
+    assert configured is not None
+    assert [p.id for p in configured.portals] == ["asap", "gscm"] and configured.channel == "msedge"
+    assert configured.portal("gscm").host == "gscm.corp.example.com"
+    assert configured.portal("gscm").origin == "https://gscm.corp.example.com"
+    assert configured.extra_hosts == ("login.microsoftonline.com", "*.sso.example.net")
+    for bad in ({"WIZARD_PORTAL_ASAP_URL": "asap.corp"}, {"WIZARD_PORTAL_ASAP_URL": "ftp://asap.corp/"},
+                {"WIZARD_PORTAL_ASAP_URL": "https://me:pw@asap.corp/"},
+                {"WIZARD_PORTAL_ASAP_URL": "https://asap.corp/", "WIZARD_BROWSER": "firefox"},
+                {"WIZARD_PORTAL_ASAP_URL": "https://asap.corp/", "WIZARD_PORTAL_HOSTS": "*.com"},
+                {"WIZARD_PORTAL_ASAP_URL": "https://asap.corp/", "WIZARD_PORTAL_HOSTS": "evil host"}):
+        with pytest.raises(PortalConfigError):
+            settings_from(bad)
+
+
+def test_only_the_portals_their_company_domain_and_sign_in_hosts_are_reachable():
+    configured = settings_from({"WIZARD_PORTAL_GSCM_URL": "https://gscm.corp.example.com/",
+                                "WIZARD_PORTAL_BDP_URL": "https://bdp.example.com/", "WIZARD_PORTAL_HOSTS": "*.idp.example.org"})
+    assert configured is not None
+    policy = HostPolicy(configured, {"sso.partner.example.net"})
+    for host in ("gscm.corp.example.com", "static.corp.example.com", "corp.example.com", "bdp.example.com",
+                 "a.idp.example.org", "sso.partner.example.net", "GSCM.CORP.EXAMPLE.COM"):
+        assert policy.allowed(host), host
+    # bdp.example.com has no company domain of its own: example.com is not widened to every host under it.
+    for host in ("example.com", "other.example.com", "evil.com", "corp.example.com.evil.com", "idp.example.org", None, ""):
+        assert not policy.allowed(host), host
+    assert portals.company_domain("10.1.2.3") is None
+
+
+@pytest.mark.parametrize(("method", "url", "body"), [
+    ("GET", "https://p.corp.example.com/gscm30/common/master/tree.do", None),
+    ("POST", "https://p.corp.example.com/mstr/menuInfo.do?folderId=A1", "authToken=x&depth=2"),
+    ("POST", "https://p.corp.example.com/svc/selectWeeklyList.do", "SSV:utf-8\x1eDataset:ds_in\x1e"),
+    ("POST", "https://p.corp.example.com/mstr/taskProc?taskId=reportExecute", None),
+    ("PUT", "https://p.corp.example.com/MicroStrategyLibrary/api/reports/R1/instances/I1/prompts/answers", "{}"),
+    ("GET", "https://p.corp.example.com/getUpdatedList.do", None),
+    ("GET", "https://p.corp.example.com/addressBook/list", None),
+    ("POST", "https://bdp.example.com/api/v1/sqllab/execute/", json.dumps({"sql": "SELECT REPLACE(name, 'a', 'b'), comment FROM t"})),
+])
+def test_reads_go_through(method, url, body):
+    assert write_reason(method, url, body) is None
+
+
+@pytest.mark.parametrize(("method", "url", "body", "word"), [
+    ("POST", "https://p.corp.example.com/svc/saveBookmark.do", "x", "save"),
+    ("POST", "https://p.corp.example.com/svc/deleteUserReport.do", None, "delete"),
+    ("GET", "https://p.corp.example.com/mstr/logout.do", None, "logout"),
+    ("POST", "https://p.corp.example.com/svc/update_plan", None, "update"),
+    ("POST", "https://p.corp.example.com/mstr/taskProc?taskId=saveReport", None, "save"),
+    ("POST", "https://p.corp.example.com/mstr/taskProc", "taskId=deleteObject&x=1", "delete"),
+    ("POST", "https://p.corp.example.com/nexacro/run.do", '<Root><Parameters><Parameter id="svcid">insertPlan</Parameter>'
+                                                          '</Parameters></Root>', "insert"),
+    ("PUT", "https://p.corp.example.com/api/v1/chart/3", "{}", "PUT"),
+    ("DELETE", "https://p.corp.example.com/api/v1/chart/3", None, "DELETE"),
+    ("PATCH", "https://p.corp.example.com/api/thing", "{}", "PATCH"),
+])
+def test_writes_are_refused(method, url, body, word):
+    reason = write_reason(method, url, body)
+    assert reason and word in reason
+
+
+@pytest.mark.parametrize("sql", [
+    "DELETE FROM t", "SELECT 1; DROP TABLE t", "WITH gone AS (DELETE FROM t RETURNING *) SELECT * FROM gone",
+    "SELECT * INTO copy FROM t", "EXPLAIN ANALYZE DELETE FROM t", "INSERT OVERWRITE TABLE t SELECT 1", "", "SET x = 1",
+])
+def test_sql_lab_runs_one_select_only(sql):
+    assert sql_problem(json.dumps({"sql": sql}))
+    assert write_reason("POST", "https://bdp.example.com/api/v1/sqllab/execute/", json.dumps({"sql": sql}))
+
+
+def test_sql_lab_reads_pass():
+    for sql in ("SELECT 1", "with x as (select 1) select * from x;", "-- note; with semicolon\nSELECT ';' AS s",
+                "SHOW TABLES", "SELECT updated_at, delete_flag FROM t"):
+        assert sql_problem(json.dumps({"sql": sql})) is None, sql
+    assert sql_problem("not json")
+
+
+def test_metronomes_forbidden_controls_are_never_clicked():
+    for control in ({"text": "Save"}, {"text": "  Delete row "}, {"id": "mainframe.VFrameSet.TopFrame.Setting0.form.btn_save:icontext"},
+                    {"aria": "Unselect all"}, {"title": "Pin to home"}, {"text": "Sign out"}, {"value": "Submit"},
+                    {"text": "Log Out"}, {"name": "btnApply"}, {"id": "div_favorite.form.btn_unpin"}):
+        assert click_refusal(control), control
+    for control in ({"text": "Go >>"}, {"text": "RUN"}, {"text": "Shipping"}, {"text": "Address"}, {"text": "Renewal"},
+                    {"id": "mainframe.VFrameSet.WorkFrame0.form.div_addInfo.form.btn_search"}, {"text": "Favorite"},
+                    {"text": "Export Wizard (Detail)"}):
+        assert click_refusal(control) is None, control
+
+
+def test_secrets_never_reach_gemini():
+    url = portals.redact_url("https://p.example.com/x?authToken=abc&week=2026W40&SESSIONID=1")
+    assert "abc" not in url and "week=2026W40" in url
+    assert "s3cret" not in portals.redact_text("authToken=s3cret&depth=1")
+    xml = '<Parameter id="authToken">s3cret</Parameter><Parameter id="week">2026W40</Parameter>'
+    assert "s3cret" not in portals.redact_text(xml) and "2026W40" in portals.redact_text(xml)
+    body = json.dumps({"csrf_token": "s3cret", "rows": [{"a": 1}]})
+    assert "s3cret" not in portals.redact_text(body) and '"a": 1' in portals.redact_text(body)
+    token = "A" * 30 + "b" * 30
+    assert token not in portals.redact_text(f"value {token} end")
+    ssv = "SSV:utf-8\x1eErrorCode:int=0\x1fErrorMsg:string=OK\x1e"
+    assert portals.redact_text(ssv) == ssv
+    assert portals.redact_json({"x": {"MSTRWEB_AUTH_TOKEN_ENC": "t", "Password": "p", "n": 1}}) == \
+        {"x": {"MSTRWEB_AUTH_TOKEN_ENC": "<redacted>", "Password": "<redacted>", "n": 1}}
+
+
+def test_tables_and_errors_lose_their_secrets():
+    token = "Z" * 50
+    assert portals.redact_rows(["market", "sessionId", "note"], [["AE", "abc", f"x {token}"], ["SA", None, "short"]]) == \
+        [["AE", "<redacted>", "x ZZZZZZ…<redacted>"], ["SA", None, "short"]]
+    assert token not in portals.scrub(f"Error: bad {token}")
+    configured = settings_from({"WIZARD_PORTAL_GSCM_URL": "https://gscm.corp.example.com/"})
+    assert configured is not None
+    policy = HostPolicy(configured, {"login.idp.example.org", "gscm.corp.example.com"})
+    assert policy.portal_domain("app.corp.example.com") and not policy.portal_domain("login.idp.example.org")
+
+
+def test_a_script_result_is_a_table_only_when_it_says_so():
+    assert portals.table_from({"columns": ["m", "u"], "rows": [["AE", 1], ["SA"]], "total_rows": 9}) == \
+        (["m", "u"], [["AE", 1], ["SA", None]], 9)
+    assert portals.table_from([{"m": "AE", "u": 1}, {"m": "SA", "x": 2}]) == (["m", "u", "x"], [["AE", 1, None], ["SA", None, 2]], 2)
+    assert portals.table_from({"columns": [{"key": "m"}], "rows": [{"m": "AE"}]}) == (["m"], [["AE"]], 1)
+    for value in (None, 3, "text", [], [1, 2], {"rows": []}, {"columns": ["a"], "rows": [1]}):
+        assert portals.table_from(value) is None
+    assert portals.column_types(["m", "u"], [["AE", 1], ["SA", 2.5]]) == [
+        {"key": "m", "label": "m", "type": "string"}, {"key": "u", "label": "u", "type": "number"}]
+
+
+def test_portals_are_a_single_person_pc_feature(tmp_path: Path):
+    from wizard_api.config import ConfigError
+    with pytest.raises(ConfigError, match="desktop app or a work-PC install"):
+        make_settings(tmp_path, WIZARD_PORTAL_GSCM_URL="https://gscm.corp.example.com/", WIZARD_AUTH_MODE="trusted-header",
+                      WIZARD_PUBLIC_ORIGIN="https://wizard.example.com")
+    with pytest.raises(ConfigError, match="WIZARD_BROWSER"):
+        make_settings(tmp_path, WIZARD_PORTAL_GSCM_URL="https://gscm.corp.example.com/", WIZARD_BROWSER="safari")
+
+
+def test_a_company_file_cannot_choose_the_browser_binary():
+    from wizard_api import provisioning
+    assert "WIZARD_BROWSER_EXECUTABLE" in provisioning.LOCAL_ONLY
+
+
+def test_configured_portals_are_on_the_stage_with_their_tools_and_sign_in(tmp_path: Path):
+    from fastapi.testclient import TestClient
+
+    from wizard_api.app import create_app
+    settings = make_settings(tmp_path, WIZARD_PORTAL_GSCM_URL="https://gscm.corp.example.com/start",
+                             WIZARD_LOCAL_USER_EMAIL="owner@example.com")
+    settings.install_mode = True
+    with TestClient(create_app(settings)) as client:
+        assert {"portal_guide", "portal_run", "portal_save_script"} <= set(client.app.state.registry.specs)
+        assert client.app.state.registry.specs["portal_run"].scope == "portal"
+        login(client, "local-owner")
+        systems = client.get("/api/v1/bootstrap").json()["systems"]
+        assert {"id": "gscm", "name": "GSCM", "kind": "portal", "data_mode": "LIVE"} in systems
+        status = client.get("/api/v1/portals").json()
+        assert status["portals"] == [{"id": "gscm", "name": "GSCM", "host": "gscm.corp.example.com"}]
+        assert status["browser"] == "Google Chrome" and status["signing_in"] is False and status["running"] is False
+        assert client.post("/api/v1/portals/sign-in").status_code == 403, "state changes need the Wizard header"
+    from wizard_api import settings_pane
+    assert "portals" in [section for section, _, _ in settings_pane.SECTIONS]
+    assert settings_pane.BY_KEY["WIZARD_BROWSER"].choices == ("chrome", "msedge")
+
+
+def test_without_portals_there_are_no_portal_tools(client):
+    assert not any(name.startswith("portal_") for name in client.app.state.registry.specs)
+    login(client, "u-ceo")
+    assert client.get("/api/v1/portals").status_code == 404
+    assert client.post("/api/v1/portals/sign-in", headers=HEADERS).status_code == 404

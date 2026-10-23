@@ -16,6 +16,8 @@ from wizard_connectors.metronome import settings_from as metronome_settings
 from wizard_connectors.paths import FIXTURES, ROOT
 from wizard_connectors.pg import PgError, PgSettings
 from wizard_connectors.pg import settings_from as pg_settings
+from wizard_connectors.portals import PortalConfigError, PortalSettings
+from wizard_connectors.portals import settings_from as portal_settings
 
 from . import knowledge_sync, provisioning
 
@@ -118,6 +120,9 @@ class Settings:
     google_domains: list[str] = field(default_factory=list)
     # Metronome, which runs recurring extractions as Flows owned by its Wizard user (WIZARD_METRONOME_*); None = not set.
     metronome: MetronomeSettings | None = None
+    # Company portals Gemini reads in the person's own Wizard browser (WIZARD_PORTAL_*, WIZARD_BROWSER); None = not set.
+    # Only on a single-person PC: the browser runs where Wizard runs, signed in as the person at that PC.
+    portals: PortalSettings | None = None
     # Names (never values) of what the provisioning file set, for readiness views.
     provision: dict[str, Any] = field(default_factory=dict)
     # A work-PC or desktop install folder (run.py --home) and its .env: the settings pane edits only such installs.
@@ -294,6 +299,16 @@ def load_settings(env: dict[str, str] | None = None, env_file: Path | None = Non
                                                 get("WIZARD_METRONOME_USER"))
     except MetronomeConfigError as error:
         raise ConfigError(str(error)) from None
+    try:
+        settings.portals = portal_settings({**{k: v for k, v in merged.items() if k.startswith(("WIZARD_PORTAL_", "WIZARD_BROWSER"))},
+                                            "WIZARD_BROWSER_EXECUTABLE": (env if env is not None else os.environ).get(
+                                                "WIZARD_BROWSER_EXECUTABLE") or read_env_file(env_file or base / ".env").get(
+                                                "WIZARD_BROWSER_EXECUTABLE")})
+    except PortalConfigError as error:
+        raise ConfigError(str(error)) from None
+    if settings.portals and settings.auth_mode != "fixture":
+        raise ConfigError("The company portals (WIZARD_PORTAL_*) run in each person's own browser, so only the desktop app "
+                          "or a work-PC install can use them, not a shared server behind SSO.")
     if settings.auth_mode == "trusted-header" and settings.runtime != "replay" and not settings.public_origin:
         raise ConfigError("WIZARD_PUBLIC_ORIGIN is required behind a corporate SSO proxy")
     settings.session_secret = _session_secret(data_dir)

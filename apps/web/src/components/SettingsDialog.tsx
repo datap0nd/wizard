@@ -6,6 +6,7 @@ import {inHost, toHost} from '@/host';
 import {cn} from '@/lib/utils';
 import {Button} from './ui/button';
 import {Dialog, DialogContent} from './ui/dialog';
+import {PortalSignIn} from './PortalSignIn';
 import type {SettingField, SettingsView, UpdateInfo} from '@/types';
 
 const SOURCES: Record<string, string> = {
@@ -31,7 +32,7 @@ async function waitForRestart(): Promise<void> {
 }
 
 /** Company settings the person may change on their own PC: Gemini, the knowledge base, the read-only database, the
- * proxy. Secrets are write-only: the page learns only whether one is set. Also shows the version and installs updates. */
+ * portals and the browser Wizard reads them in, the proxy. Secrets are write-only: the page learns only whether one is set. Also shows the version and installs updates. */
 export function SettingsDialog({open, onClose, onSaved}: {open: boolean; onClose: () => void; onSaved: () => void}) {
   const [view, setView] = useState<SettingsView | null>(null);
   const [draft, setDraft] = useState<Draft>({});
@@ -150,6 +151,7 @@ export function SettingsDialog({open, onClose, onSaved}: {open: boolean; onClose
                   </label>
                 ))}
               </div>
+              {section.id === 'portals' && <PortalSignIn />}
             </section>
           ))}
           {view && (

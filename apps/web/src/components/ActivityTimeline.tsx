@@ -1,14 +1,16 @@
 import {useState} from 'react';
-import {AlertTriangle, BookOpen, Calculator, ChartColumn, CheckCircle2, ChevronDown, Database, Loader2, MessageSquareText, Search, ShieldCheck, XCircle} from 'lucide-react';
+import {AlertTriangle, BookOpen, Calculator, ChartColumn, CheckCircle2, ChevronDown, Database, Globe, Loader2, MessageSquareText, Search, ShieldCheck, XCircle} from 'lucide-react';
 import {clock, spoken} from '@/format';
 import {cn} from '@/lib/utils';
 import type {RunView, TimelineItem} from '@/types';
+import {PortalSignIn} from './PortalSignIn';
 
 function icon(item: TimelineItem) {
   if (item.kind === 'note') return <MessageSquareText />;
   if (item.kind === 'warning') return <AlertTriangle className="text-warn" />;
   if (item.kind === 'status') return <Loader2 />;
   const name = item.name ?? '';
+  if (name === 'portal_run') return <Globe />;
   if (name.endsWith('run_report')) return <Database />;
   if (name.includes('search') || name.includes('schema') || name.includes('list_sources')) return <Search />;
   if (name.includes('definitions')) return <BookOpen />;
@@ -70,6 +72,7 @@ export function ActivityTimeline({run, onEvidence}: {run: RunView; onEvidence: (
                   {item.evidence && <button type="button" onClick={() => onEvidence(item.evidence!.id)} className="rounded bg-accent-soft px-1.5 text-[11px] font-semibold text-accent hover:bg-accent-line/60">{item.evidence.id}</button>}
                 </div>
                 {item.summary && <p className={cn('text-xs', item.state === 'error' ? 'text-danger' : 'text-ink-3')}>{item.summary}</p>}
+                {item.state === 'error' && item.summary?.startsWith('sign_in_required') && <div className="mt-1.5"><PortalSignIn compact /></div>}
                 {item.evidence?.access_note && <p className="text-xs text-warn">{item.evidence.access_note}</p>}
                 {item.evidence?.warnings?.map(w => <p key={w} className="text-xs text-warn">{w}</p>)}
               </div>

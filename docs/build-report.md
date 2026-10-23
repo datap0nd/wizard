@@ -3,7 +3,78 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-23 (latest) — Recurring briefs: the analysis as a newsletter email; a Recurring tab synced with Metronome
+## 2026-10-23 (latest) — Gemini reads ASAP, GSCM and the Big Data Portal live, in the person's own Wizard browser
+
+The owner asked how to be sure Wizard reads the portals it says it reads: "I think it's not actually going in and
+exploring tables." It was not. The ASAP, GSCM and NERP report tools read synthetic fixtures, or refused with
+`navigation_only` over the real catalogs. BDP had no tool. The systems stage said "Reading ASAP" for a search of Wizard's
+own catalog. The owner then asked for Wizard to "spawn its own little browser (use google chrome in user machine)",
+explore and query the portals in the background, and prefer MicroStrategy and Nexacro queries over the screens, with
+Metronome's knowledge "relayed to gemini to use for its own scripts". [Decision](decisions/2026-10-23-portal-browser.md).
+
+**What changed.**
+- `wizard_connectors/portals.py` (new): portal settings (`WIZARD_PORTAL_ASAP_URL`, `WIZARD_PORTAL_GSCM_URL`,
+  `WIZARD_PORTAL_BDP_URL`, `WIZARD_BROWSER`, `WIZARD_PORTAL_HOSTS`) and the read-only rules: reachable hosts (the
+  portals, their company domain, configured and learned sign-in hosts), write detection (path segments, task ids,
+  action fields and Nexacro XML service names that start with a write verb; PUT/PATCH/DELETE except MicroStrategy prompt
+  answers; SQL Lab one SELECT), Metronome's forbidden clicks, redaction, tables from script results.
+- `portal_browser.py` (new): one browser per person on its own thread. It runs Playwright 1.62.0 with the installed
+  Chrome or Edge and Wizard's own profile. It is headless for Gemini, with every request routed through the rules,
+  WebSockets checked, downloads and service workers off, and confirmations answered No. A visible window opens for the
+  person's sign-in and remembers the hosts that sign-in used. A sign-in page stops a read with `sign_in_required`.
+- `portal_helpers.js` and `portal_capture.js` (new): the W helpers in every script.
+  - Nexacro: component paths, active WorkFrames, the wait overlay, Grid → Dataset → rows, `gds_bookmark`.
+  - MicroStrategy: the session, and the `menuInfo.do` menu walk. The token stays in the page.
+  - The page's own data requests: kept in the page, replayed with new parameters, and their SSV, XML and JSON replies
+    parsed.
+  - Superset SQL Lab.
+- `portal_guides/` (new): Metronome's knowledge of GSCM and ASAP and Superset's API, as guides Gemini reads, plus a
+  general guide. Two background agents read `datap0nd/data_governance` (`flow_gscm.py`, `flow_worker.py`,
+  `flow_replay.py` and the docs), and I checked their main claims against the source. Company host names and GSCM's
+  backend route names are left out.
+- Tools (`portal` MCP server, 24 tools with portals configured): `portal_guide`, `portal_run`, `portal_save_script`.
+  Tables become `LIVE` / `BROWSER_SESSION` evidence with the steps as their query. `wizard_list_sources` lists the
+  portals. Check my data does not repeat a portal read. The system prompt asks Gemini to name the system each number
+  came from.
+- API: `GET /api/v1/portals`, `POST /api/v1/portals/sign-in`, `.../sign-in/done`, `.../check`. Portals appear on the
+  stage, and the local Owner has rights to them. Portal settings are refused behind SSO.
+  `WIZARD_BROWSER_EXECUTABLE` (tests) cannot come from a company file.
+- Web:
+  - Settings → Portals, with **Sign in to the portals** and **Check sign-in**. The same button appears under a step
+    that hit a sign-in page.
+  - The evidence drawer shows the steps and scripts.
+  - The stage tells the truth: "Searching the catalog of ASAP", "Reading GSCM in your browser", and "Cross-checked"
+    counts only systems something was read from.
+- Packaging:
+  - Playwright, greenlet and pyee are added to `pyproject.toml`, `uv.lock` and the portable locks; nothing else in the
+    locks changed. `pywin32` was kept: pip on Linux drops it because of its Windows marker.
+  - `py3-none-win_amd64` wheels are allowed.
+  - The desktop workflow publishes the portable runtime release when the locks name a new one, for `setup.ps1`.
+- Docs: AGENTS.md (third exception, `BROWSER_SESSION`), README, `platforms.md`, `desktop.md`, `threat-model.md`,
+  decision record; contracts regenerated.
+
+**Tests.**
+- `test_portals.py` (37): the rules, redaction and the API.
+- `test_portal_browser.py` (9), in a real Chromium against a simulated portal:
+  - a Nexacro Dataset as evidence;
+  - bookmarks, tables and the page outline;
+  - an SSV transaction replayed with a new week;
+  - the ASAP menu walked with the token never reaching Gemini;
+  - refused clicks, writes, other hosts and a confirmation;
+  - a sign-in page;
+  - partial results;
+  - a saved script rerun with parameters.
+- Its own layer, `portal-browser` (BLOCKED without a browser).
+- Web unit: 53, including portal stage mapping, honest verbs and the badge.
+- `verify_all.sh --allow-blocked=live-parity,postgres` with `CI=true`: lock, spec, secrets, contracts, lint, types,
+  Python 440 passed and 5 skipped, real Gemini CLI 4, portal-browser 9, evals, web types, unit, dist and build all pass.
+  postgres and live-parity are BLOCKED, as allowed.
+- e2e could not launch here: this sandbox has Chromium build 1194 and the web app's Playwright wants 1243. The same 16
+  e2e tests passed against the installed Chromium. Settings → Portals was checked in a browser.
+- The real portals, Chrome on the work PC, and Application Control's view of the Playwright driver are first checked on
+  the work PC.
+
+## 2026-10-23 (later) — Recurring briefs: the analysis as a newsletter email; a Recurring tab synced with Metronome
 
 The owner tested a recurring Flow: creating it in Metronome worked, but "the file received sucked". They want the same
 analysis by email, with the charts, the data and what it says, "a little newsletter they decided to receive on a topic

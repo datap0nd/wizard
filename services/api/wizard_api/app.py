@@ -31,6 +31,7 @@ from wizard_connectors import metronome
 from wizard_connectors.content import errors, validate_content
 from wizard_connectors.entitlements import Identity, IdentityDirectory, SystemRights
 from wizard_connectors.paths import ROOT
+from wizard_connectors.portal_browser import PortalBrowser, PortalBrowsers, PortalError
 from wizard_connectors.tools import build_registry, build_services
 
 from . import __version__, knowledge_sync, settings_pane
@@ -204,6 +205,9 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
     else:
         services = build_services(postgres=settings.postgres, postgres_name=settings.pg_name)
     services.metronome, services.mail_domains = settings.metronome, settings.google_domains
+    if settings.portals:
+        services.portals = PortalBrowsers(settings.portals, settings.user_home)
+    portal_ids = [p.id for p in settings.portals.portals] if settings.portals else []
     registry = build_registry(services)
     identities = IdentityDirectory.load(settings.identities_file)
     store = Store(settings.data_dir / "wizard.sqlite3")
@@ -214,7 +218,8 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         email = (linked["google_email"] if linked else settings.local_user_email) or ""
         owner = Identity(id=OWNER_ID, email=email.lower(), name=settings.local_user_name or "You", role="Owner (local test)",
                          entitlements={system: SystemRights(reports=["*"], markets=["*"]) for system in
-                                       [*(s.id for s in services.catalog.systems), *(["postgresql"] if services.postgres else [])]})
+                                       [*(s.id for s in services.catalog.systems), *(["postgresql"] if services.postgres else []),
+                                        *portal_ids]})
         others = [] if settings.desktop else [i for i in identities.all() if not owner.email or i.email != owner.email]
         identities = IdentityDirectory([owner, *others])
     interrupted = store.mark_interrupted()
@@ -266,6 +271,8 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         for task in background:
             task.cancel()
         await manager.shutdown()
+        if services.portals is not None:
+            await asyncio.to_thread(services.portals.shutdown)
 
     app = FastAPI(title="Wizard", version=__version__, lifespan=lifespan, docs_url=None, redoc_url=None,
                   openapi_url="/api/v1/openapi.json")
@@ -375,6 +382,12 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         knowledge base and attached files. Only what they may use."""
         found: list[dict[str, Any]] = [{"id": s.id, "name": s.name, "kind": "reports", "data_mode": s.connector.data_mode}
                                        for s in services.catalog.systems if identity.can_use_system(s.id)]
+        for portal in settings.portals.portals if settings.portals else ():
+            if not identity.can_use_system(portal.id):
+                continue
+            # A portal read live in the person's browser; it takes over a navigation-only catalog of the same system.
+            found = [s for s in found if s["id"] != portal.id]
+            found.append({"id": portal.id, "name": portal.name, "kind": "portal", "data_mode": "LIVE"})
         if services.postgres and identity.can_use_system("postgresql"):
             found.append({"id": "postgresql", "name": services.postgres_name, "kind": "database", "data_mode": "LIVE"})
         if services.knowledge.notes:
@@ -932,6 +945,40 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         store.delete_link(identity.id)
         store.audit(identity.id, "gemini:unlink")
         return await account_status(identity)
+
+    # Company portals in the person's own Wizard browser ----------------------------------------------------------------
+    def portal_browser(request: Request) -> tuple[Identity, PortalBrowser]:
+        identity = me(request)
+        if services.portals is None or not any(identity.can_use_system(p) for p in portal_ids):
+            raise HTTPException(404, "No company portals are configured on this Wizard (Settings → Portals).")
+        return identity, services.portals.for_user(identity.id)
+
+    async def portal_action(request: Request, action: str) -> dict[str, Any]:
+        identity, browser = portal_browser(request)
+        try:
+            result = await asyncio.to_thread(getattr(browser, action))
+        except PortalError as error:
+            raise HTTPException(409, error.message) from None
+        if action != "status":
+            store.audit(identity.id, f"portals:{action}")
+        return result
+
+    @app.get("/api/v1/portals")
+    async def portals_status(request: Request) -> dict[str, Any]:
+        return await portal_action(request, "status")
+
+    @app.post("/api/v1/portals/sign-in")
+    async def portals_sign_in(request: Request) -> dict[str, Any]:
+        """Opens a visible window of Wizard's browser on this PC, one tab per portal, for the person to sign in."""
+        return await portal_action(request, "begin_sign_in")
+
+    @app.post("/api/v1/portals/sign-in/done")
+    async def portals_signed_in(request: Request) -> dict[str, Any]:
+        return await portal_action(request, "finish_sign_in")
+
+    @app.post("/api/v1/portals/check")
+    async def portals_check(request: Request) -> dict[str, Any]:
+        return await portal_action(request, "check")
 
     # Settings pane, model picker and updates (a person's own install only) ----------------------------------------------
     def settings_owner(request: Request) -> Identity:

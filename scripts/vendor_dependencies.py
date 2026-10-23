@@ -76,6 +76,10 @@ def unpack(store: Path, package: dict, wheel: Path) -> tuple[Path, dict]:
     return directory, files
 
 
+# Pure Python, CPython 3.13 on Windows x64, and Python code with a Windows x64 program inside (Playwright's driver).
+WHEEL_TAGS = ("-none-any.whl", "-cp313-cp313-win_amd64.whl", "-py3-none-win_amd64.whl")
+
+
 def vendor(cache: Path, store: Path, target: Path, lock: Path) -> dict:
     packages = json.loads(lock.read_text(encoding="utf-8-sig"))["packages"]
     target = target.absolute()
@@ -85,7 +89,7 @@ def vendor(cache: Path, store: Path, target: Path, lock: Path) -> dict:
     counts = {"unpacked": 0, "reused": 0}
     for package in packages:
         filename = package["filename"]
-        if Path(filename).name != filename or not (filename.endswith("-none-any.whl") or filename.endswith("-cp313-cp313-win_amd64.whl")):
+        if Path(filename).name != filename or not filename.endswith(WHEEL_TAGS):
             raise ValueError("Only pure-Python or CPython 3.13 Windows x64 wheels are allowed: " + filename)
         cached = cached_package(store, package)
         if cached:

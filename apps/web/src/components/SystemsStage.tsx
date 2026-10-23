@@ -2,7 +2,7 @@ import {createContext, useContext, useEffect, useMemo, useRef, useState} from 'r
 import {CheckCircle2, ChevronDown, Hourglass, Loader2, MessageSquareText, Sparkles, Trophy, X, XCircle} from 'lucide-react';
 import {spoken} from '@/format';
 import {cn} from '@/lib/utils';
-import {badges, detailOf, stageModel, WIZARD, type ModuleStats, type StageModel} from '@/stage';
+import {badges, detailOf, stageModel, verbOf, WIZARD, type ModuleStats, type StageModel} from '@/stage';
 import {toolAnimation, wizardAnimation, wizardCaption} from '@/wizard';
 import type {WizardAnimation} from '@/wizardSheet';
 import {brand, SystemLogo} from './SystemLogo';
@@ -143,9 +143,6 @@ function statLine(m: SystemInfo & {stats: ModuleStats}): string {
   if (s.errors) parts.push(`${s.errors} failed`);
   return parts.join(' · ');
 }
-
-const VERBS: Record<string, string> = {database: 'Querying', reports: 'Reading', knowledge: 'Searching', files: 'Reading',
-  schedules: 'Preparing a schedule in'};
 
 function Detail({item, className, onlyNew = false}: {item: TimelineItem; className?: string; onlyNew?: boolean}) {
   const detail = detailOf(item);
@@ -338,7 +335,10 @@ function Stage({run, model, onEvidence, finale}: {run: RunView; model: StageMode
               <SystemLogo id={activeModule?.id ?? WIZARD} name={activeModule?.name} size={26} className="stage-breathe mt-0.5" />
               <div className="min-w-0 flex-1">
                 <p className="text-[13px] font-medium text-ink">
-                  {activeModule ? <>{VERBS[activeModule.kind] ?? 'Reading'} <span style={{color: brand(activeModule.id).deep}}>{activeModule.name}</span></> : active.label}
+                  {activeModule ? (() => {
+                    const {verb, suffix} = verbOf(active, activeModule.kind);
+                    return <>{verb} <span style={{color: brand(activeModule.id).deep}}>{activeModule.name}</span>{suffix}</>;
+                  })() : active.label}
                   <span className="stage-dots ml-0.5" aria-hidden="true" />
                 </p>
                 {activeModule && <p className="truncate text-[12.5px] text-ink-2">{active.label}</p>}

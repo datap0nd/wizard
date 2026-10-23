@@ -155,7 +155,9 @@ export interface Evidence extends EvidenceSummary {
   connector_status: string;
   /** Report and file queries: filters and grouping. PostgreSQL: the SQL Gemini wrote and the database it ran on. */
   request: {filters?: {field: string; values: string[]}[]; group_by?: string[] | null; measures?: string[] | null; limit?: number;
-            sql?: string; database?: string; max_rows?: number};
+            sql?: string; database?: string; max_rows?: number;
+            /** A portal read: the steps Gemini ran in the person's browser, and the page it ended on. */
+            steps?: PortalStep[]; page?: string | null; page_title?: string | null; script_name?: string | null};
   columns: Column[];
   rows: (string | number | null)[][];
   retrieved_at: string;
@@ -295,9 +297,25 @@ export interface TimelineItem {
 export interface SystemInfo {
   id: string;
   name: string;
-  kind: 'reports' | 'database' | 'knowledge' | 'files' | 'schedules';
+  kind: 'reports' | 'portal' | 'database' | 'knowledge' | 'files' | 'schedules';
   data_mode?: DataMode;
   notes?: number;
+}
+
+export interface PortalStep { action: string; url?: string; selector?: string; role?: string; name?: string; text?: string; frame?: string;
+  value?: string; script?: string }
+
+/** The company portals Gemini reads in this person's own Wizard browser. */
+export interface PortalStatus {
+  browser: string;
+  signing_in: boolean;
+  running: boolean;
+  last_sign_in: string | null;
+  portals: {id: string; name: string; host: string}[];
+}
+
+export interface PortalCheck {
+  portals: {id: string; name: string; signed_in: boolean; title?: string; error?: string}[];
 }
 
 export interface RunView {

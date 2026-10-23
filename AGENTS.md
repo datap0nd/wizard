@@ -16,10 +16,11 @@ around a precomputed result is withdrawn. Its credential, entitlement, DLP and h
 - Capture evidence for every source read (request, rows within approved retention, as-of, digest, data mode) so a
   numeric claim can be reviewed. Show what Gemini actually did; never invent steps or expose private chain of thought.
 - Keep data mode (SYNTHETIC / USER_PROVIDED / LIVE / DATED_APPROVED_SNAPSHOT / LIVE_VERIFIED), connector status
-  (SYNTHETIC_FIXTURE / NAVIGATION_ONLY / ROWS_VERIFIED / READ_ONLY_SQL / BLOCKED) and check status (CHECKED /
+  (SYNTHETIC_FIXTURE / NAVIGATION_ONLY / ROWS_VERIFIED / READ_ONLY_SQL / BROWSER_SESSION / BLOCKED) and check status (CHECKED /
   NOT_CHECKED / DISCREPANCY) as separate fields. USER_PROVIDED marks a file a user attached: never present it as a
-  verified source. LIVE marks rows Gemini read from the company PostgreSQL server with its own query; the query is
-  part of the evidence. Never label it verified.
+  verified source. LIVE marks rows Gemini read from the company PostgreSQL server with its own query, or from a
+  company portal with its own browser steps (BROWSER_SESSION); the query or the steps are part of the evidence. Never
+  label it verified.
 - Run each Gemini request under the requesting user's own enterprise identity, with isolated per-user state
   (`GEMINI_CLI_HOME` + `GEMINI_FORCE_FILE_STORAGE=true`, or the per-user Code Assist token).
 - Keep company content (knowledge notes, report catalogs) in the owner's private enterprise GitHub repository, which the
@@ -53,10 +54,20 @@ around a precomputed result is withdrawn. Its credential, entitlement, DLP and h
   the Recurring tab only turns the Flow off, by the person's click; Wizard never deletes a Flow. Keep the click, the
   Wizard-user check before every create and turn-off, company-domain recipients, one read-only statement per query,
   the generated script's read-only session, and the email renderer's standard-library-only rule.
+  The third exception, also an owner decision
+  ([docs/decisions/2026-10-23-portal-browser.md](docs/decisions/2026-10-23-portal-browser.md)): the portal tools run
+  Gemini's own browser steps and page scripts in the person's own Wizard browser (Playwright driving the installed
+  Chrome or Edge, Wizard's own profile, signed in by the person in a visible window), on a single-person PC only. Keep
+  all of these, inside the tool: only the portals' hosts, their company domain, configured hosts and the person's
+  sign-in hosts are reachable; requests named for a write (save, delete, submit, upload, logout...) and PUT/PATCH/DELETE
+  (except MicroStrategy prompt answers) are aborted; SQL Lab runs one SELECT; Metronome's forbidden controls are never
+  clicked; confirmations are answered No; downloads are off; secrets are redacted from what Gemini sees; a sign-in page
+  stops the read and Gemini never types credentials; evidence is `LIVE` / `BROWSER_SESSION`, never verified.
 - Commit corporate exports, live rows, credentials, tokens, cookies, `.env`, `*.provision`, the DLP-blocked DOCX, raw
   model/source logs, or owner reference answers. Live references live in the approved private location; CI sees safe
   IDs only. Never build a password or token into WizardSetup.exe or a release: they are public.
-- Use copied browser cookies, TLS bypass, `/mstr` event URLs or a debugging browser as a production connector.
+- Use copied browser cookies, TLS bypass, `/mstr` event URLs or a debugging browser as a production connector. The
+  portal browser is none of these: its own profile, signed in by the person, driven by Playwright.
 - Present SYNTHETIC output as live, call a navigation-only report a data connection, upgrade an unchecked figure to
   checked, call an investment-efficiency proxy "ROI", or describe observed Smart Switch counts as all switchers.
 - Silently replace a live source with fake output, or count a missing live credential as a pass.

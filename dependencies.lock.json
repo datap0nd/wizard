@@ -53,6 +53,13 @@
       "sha256": "bd5f4d81f1e93a88bcd77caf4dfe3c2dbffc3805407a0007e9a114c18b3a670b"
     },
     {
+      "name": "greenlet",
+      "version": "3.5.6",
+      "filename": "greenlet-3.5.6-cp313-cp313-win_amd64.whl",
+      "url": "https://files.pythonhosted.org/packages/86/da/b7669b09586365654083a62bd0724cf06cb74bd5085a15cdd161271f992f/greenlet-3.5.6-cp313-cp313-win_amd64.whl",
+      "sha256": "5b602b4201b965a8354d74e232364a66ff243dd142e350d035f46169bb36e13d"
+    },
+    {
       "name": "h11",
       "version": "0.16.0",
       "filename": "h11-0.16.0-py3-none-any.whl",
@@ -95,6 +102,13 @@
       "sha256": "0af2c1926b153307639868d2ee5cef6cd3a7d07448e12736989b10e1d491e201"
     },
     {
+      "name": "playwright",
+      "version": "1.62.0",
+      "filename": "playwright-1.62.0-py3-none-win_amd64.whl",
+      "url": "https://files.pythonhosted.org/packages/2b/a9/4160c1033c07af98bf841ad079457dd78408a5ee0dd56cbfe50b8b6a1c22/playwright-1.62.0-py3-none-win_amd64.whl",
+      "sha256": "92c0d98ed04eb35af557b709875edba415b1f548bdb22ddb5bb3e1e6c835c2f1"
+    },
+    {
       "name": "pydantic",
       "version": "2.13.5",
       "filename": "pydantic-2.13.5-py3-none-any.whl",
@@ -107,6 +121,13 @@
       "filename": "pydantic_core-2.46.5-cp313-cp313-win_amd64.whl",
       "url": "https://files.pythonhosted.org/packages/2c/1e/1d5371213f4cc9a7ed70c0bfcc7911de22311ee99a662a56077d7292d2ac/pydantic_core-2.46.5-cp313-cp313-win_amd64.whl",
       "sha256": "15f4a94963c95accac15b7b657bb177d3ad82bb90b0d0526d9a9b85079925db5"
+    },
+    {
+      "name": "pyee",
+      "version": "13.0.1",
+      "filename": "pyee-13.0.1-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/a0/c4/b4d4827c93ef43c01f599ef31453ccc1c132b353284fc6c87d535c233129/pyee-13.0.1-py3-none-any.whl",
+      "sha256": "af2f8fede4171ef667dfded53f96e2ed0d6e6bd7ee3bb46437f77e3b57689228"
     },
     {
       "name": "python-dateutil",

@@ -14,3 +14,4 @@ Evidence**. A decision that changes repository rules also updates [AGENTS.md](..
 - [2026-10-20 Wizard as an always-on desktop app; knowledge base in a private GitHub repository](2026-10-20-desktop-app.md)
 - [2026-10-20 Recurring extractions as Metronome Flows owned by Metronome's Wizard user](2026-10-20-metronome-recurring-extractions.md)
 - [2026-10-23 Recurring briefs: the analysis as a newsletter email, and a Recurring tab synced with Metronome](2026-10-23-recurring-briefs.md)
+- [2026-10-23 Gemini reads the company portals in the person's own Wizard browser](2026-10-23-portal-browser.md)

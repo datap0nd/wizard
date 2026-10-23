@@ -308,6 +308,13 @@ def list_sources(ctx: ToolContext, _: NoArgs) -> dict[str, Any]:
                         "connector_status": "READ_ONLY_SQL", "data_mode": "LIVE", "your_market_access": "all markets",
                         "how_to_navigate": "wizard_browse_knowledge(area='datasets') → wizard_read_knowledge → "
                                            "wizard_query_postgresql"})
+    for portal in ctx.services.portals.settings.portals if ctx.services.portals else ():
+        if ctx.identity.can_use_system(portal.id):
+            systems.append({"system": portal.id, "name": f"{portal.name} (live, in the person's own browser)",
+                            "description": f"The {portal.name} web portal, read live in the person's own signed-in "
+                                           "Wizard browser with your own steps and scripts.",
+                            "connector_status": "BROWSER_SESSION", "data_mode": "LIVE",
+                            "how_to_navigate": f"portal_guide('{portal.id}') → portal_run(system='{portal.id}', ...)"})
     return {"sources": systems, "note": "Only sources and reports you are entitled to are listed."}
 
 
@@ -681,6 +688,8 @@ def check_my_data(ctx: ToolContext, args: CheckArgs) -> dict[str, Any]:
 
     def replay(evidence_id: str) -> tuple[str, str]:
         original = evidence[evidence_id]
+        if original.get("tool") == "portal_run":
+            return "UNAVAILABLE", "a portal read is not repeated here; run the portal steps again to read it fresh"
         if original.get("system") == "postgresql":
             if ctx.services.postgres is None or not _postgres_allowed(ctx):
                 return "UNAVAILABLE", "PostgreSQL is not available to you on this server"
