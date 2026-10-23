@@ -13,8 +13,9 @@ takes the step and the run stays on it, as Gemini CLI does (within Gemini 3, Fla
 It goes both ways: a run that moved to Pro goes back to Flash when Pro refuses. Like the CLI's default (errorVerbosity
 low), a lack of capacity that Wizard handles is not shown: the quick tries and the switches go to the log only, and the
 run records the model that answered. Only when both models have refused (or there is no other) does Wizard wait, like
-for a busy server (Google's capacity usually comes back within a minute or two), and the stage says only that Gemini is
-busy. The person reads "no capacity" only when an answer stops for it.
+for a busy server (Google's capacity usually comes back within a minute or two). The wait is not shown either (owner, 23
+October: people see Wizard working through the data, not Gemini being busy): it goes to the log and, as a `model_wait`
+event, into Error details. The person reads "no capacity" only when an answer stops for it.
 
 A turn with neither text nor a tool call is what Gemini CLI calls an invalid stream, and it asks again. Wizard asks the
 same model once more, then the other model twice, before it gives up; then the failure carries what Google sent back
@@ -452,8 +453,8 @@ class CodeAssistRuntime:
 
         A model Google has no room for gets Gemini CLI's two quick tries; then the other model takes the step, silently,
         and the run stays on it. So a run that moved to Pro goes back to Flash as soon as Pro refuses, instead of
-        waiting on Pro at every step. Wizard waits (5 to 30 s, shown as "Gemini is busy") only once both have refused,
-        and then tries both again after each wait, up to MAX_RETRIES rounds. A used-up quota is not waited for."""
+        waiting on Pro at every step. Wizard waits (5 to 30 s, not shown) only once both have refused, and then tries
+        both again after each wait, up to MAX_RETRIES rounds. A used-up quota is not waited for."""
         quick: dict[str, int] = {}
         refused: list[str] = []  # models that refused since the last wait
         tried: list[str] = []    # every model that refused in this step, for the failure message
@@ -486,14 +487,10 @@ class CodeAssistRuntime:
                 raise AgentFailure("model_capacity", limit_message(limit, " or ".join(tried)),
                                    limit_details(limit, tried, waits + 1))
             delay = retry_delay(limit.delay, waits)
-            if limit.kind == "rate":
-                message = f"Gemini's per-minute limit for {model} was reached; waiting {delay:.0f} s"
-            else:  # no capacity anywhere reads like a busy server: the wait is what matters
-                message = f"Gemini is busy; trying again in {delay:.0f} s"
-            message += f" (attempt {waits + 1} of {MAX_RETRIES})."
-            if waits == 0 and limit.kind != "capacity":
-                message += google_says(limit)
-            await emit("status", {"message": message})
+            # Not a status line: the stage keeps Wizard at work. The log and Error details keep the wait.
+            log.info("run %s: waiting %.0f s for Gemini (%s for %s, round %d of %d)", run.request.run_id, delay, limit.kind,
+                     " and ".join(tried), waits + 1, MAX_RETRIES)
+            await emit("model_wait", {"seconds": round(delay, 1), "reason": limit.kind, "models": tried, "round": waits + 1})
             await sleep(delay)
             waits += 1
             refused.clear()

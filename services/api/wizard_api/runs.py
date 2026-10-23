@@ -86,6 +86,11 @@ def public_schedule(schedule: dict[str, Any]) -> dict[str, Any]:
     return {**shown, "requested_by": {"name": schedule.get("requested_by", {}).get("name")}}
 
 
+def minutes(seconds: float) -> str:
+    whole = round(seconds)
+    return f"{whole // 60} min {whole % 60} s"
+
+
 class Busy(Exception):
     pass
 
@@ -115,7 +120,9 @@ class ActiveRun:
     session: dict[str, Any] = field(default_factory=dict)
     stats: dict[str, Any] = field(default_factory=dict)
     last_tool: str = ""    # the last tool call and how it ended, for Error details
-    last_status: str = ""  # the last status line the stage showed ("Gemini is busy..."), for Error details
+    last_status: str = ""  # the last status line the stage showed, for Error details
+    waits: int = 0         # times Wizard waited for Gemini (not shown on the stage), for Error details
+    waited_s: float = 0.0
     task: asyncio.Task[None] | None = None
 
 
@@ -335,6 +342,9 @@ class RunManager:
             run.warnings.append(str(payload.get("message", ""))[:500])
         elif kind == "status":
             run.last_status = str(payload.get("message", ""))[:500]
+        elif kind == "model_wait":
+            run.waits += 1
+            run.waited_s += float(payload.get("seconds") or 0)
         self._publish(run, kind, payload)
 
     def _publish(self, run: ActiveRun, kind: str, payload: dict[str, Any]) -> None:
@@ -496,8 +506,10 @@ class RunManager:
         details.setdefault("Model", str(run.session.get("model") or self.runtime.model))
         details["Connection"] = self.runtime.label()
         if run.started:
-            seconds = round(time.monotonic() - run.started)
-            details["Ran for"] = f"{seconds // 60} min {seconds % 60} s"
+            details["Ran for"] = minutes(time.monotonic() - run.started)
+        if run.waits:
+            details["Waited for Gemini"] = (f"{run.waits} time{'s' if run.waits != 1 else ''}, {minutes(run.waited_s)} in all "
+                                            "(both models busy or rate-limited)")
         details["Tool calls"] = str(run.tool_calls)
         if run.last_tool:
             details["Last tool call"] = run.last_tool

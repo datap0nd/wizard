@@ -11,7 +11,7 @@
     "ts": {"type": "string"},
     "type": {"enum": ["run_started", "status", "agent_session", "text_delta", "note", "model_tool_trace", "tool_started",
                       "tool_finished", "visual_added", "check_result", "schedule_proposed", "warning", "agent_stats",
-                      "diagnostic", "run_finished", "run_failed"]},
+                      "model_wait", "diagnostic", "run_finished", "run_failed"]},
     "payload": {"type": "object"}
   },
   "allOf": [
@@ -21,6 +21,9 @@
      "then": {"properties": {"payload": {"required": ["call_id", "name", "ok", "duration_ms", "summary"]}}}},
     {"if": {"properties": {"type": {"const": "text_delta"}}},
      "then": {"properties": {"payload": {"required": ["text"]}}}},
+    {"if": {"properties": {"type": {"const": "model_wait"}}},
+     "then": {"properties": {"payload": {"required": ["seconds", "reason", "round"],
+       "description": "Wizard waited for Gemini (both models refused). Not shown on the stage; counted in Error details."}}}},
     {"if": {"properties": {"type": {"const": "run_finished"}}},
      "then": {"properties": {"payload": {"required": ["status", "report_id", "answer", "data_mode", "check_status"]}}}},
     {"if": {"properties": {"type": {"const": "run_failed"}}},

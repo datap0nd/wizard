@@ -186,12 +186,14 @@ of Wizard on this PC:
     CLI's default, this is silent: no message on the stage (the owner did not want "Google has no capacity" on every
     question), and the answer's report names the model that answered. Every new question starts on Flash. Only when
     both models refuse (or no fallback is set) does Wizard wait: 5 to 30 s, then one more try on each, for up to 10
-    rounds (about 4 minutes), and the stage shows only "Gemini is busy; trying again in …". Only if every round fails
-    does the answer stop, with Google's reason.
+    rounds (about 4 minutes). The wait is not shown either: the stage keeps the wizard at work, with no "Gemini is
+    busy" (owner, 23 October). `logs\wizard.log` records each wait (`waiting 12 s for Gemini`), and if the answer
+    fails, Error details says how often and how long Wizard waited. Only if every round fails does the answer stop,
+    with Google's reason.
   - *Your quota for the model is used up* (often the daily quota): no waiting. The answer continues on the other
     model, and Wizard does not go back to the first one until Google's reset time.
   - *Per-minute limit* (Wizard asks Gemini once per step, so a long answer can reach it): the other model takes the
-    step; if it refuses too, Wizard waits as long as Google asks, then continues.
+    step; if it refuses too, Wizard waits as long as Google asks, without a message, then continues.
   - `logs\wizard.log` also records each step's model and size (`run … step 12 on gemini-3.8-flash: 48210 prompt
     tokens, 3 tool call(s)`), so a slow answer shows whether the time went to waiting or to a growing conversation.
   - Gemini is asked to request independent lookups and queries together, in one step, since every step is a round trip

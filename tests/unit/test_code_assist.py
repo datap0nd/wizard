@@ -116,7 +116,8 @@ def test_a_busy_gemini_is_retried(tmp_path, monkeypatch):
         events.append(kind)
 
     asyncio.run(rt.run(req, emit, Bridge(), lambda: False))
-    assert events.count("status") == 2 and "text_delta" in events
+    assert events.count("model_wait") == 2 and "text_delta" in events
+    assert "status" not in events, "people see Wizard working, not Gemini being busy (owner, 23 Oct)"
 
 
 def test_missing_sign_in_is_a_clear_failure(tmp_path):
@@ -253,8 +254,9 @@ def test_a_per_minute_limit_waits_as_long_as_google_asks(tmp_path, waits):
     rt, req = make(tmp_path, fake, fallback="gemini-3.8-flash")
     events = run_and_collect(rt, req)
     assert len(waits) == 1 and 17 <= waits[0] <= 17 * 1.2
-    status = next(p["message"] for k, p in events if k == "status")
-    assert status.startswith("Gemini's per-minute limit for gemini-3.8-flash was reached; waiting")
+    wait = next(p for k, p in events if k == "model_wait")
+    assert wait["reason"] == "rate" and wait["seconds"] == pytest.approx(waits[0], abs=0.1) and wait["round"] == 1
+    assert not any(k in ("status", "warning") for k, _ in events), "the wait is not shown"
 
 
 @pytest.mark.parametrize("fallback", ["gemini-3.8-flash", None])
@@ -265,10 +267,8 @@ def test_no_capacity_with_no_other_model_is_waited_out(tmp_path, waits, fallback
     events = run_and_collect(rt, req)
     assert [p["text"] for k, p in events if k == "text_delta"] == ["ok"]
     assert len(waits) == 3 and all(base <= wait <= base * 1.2 for base, wait in zip([5, 10, 20], waits, strict=True))
-    statuses = [p["message"] for k, p in events if k == "status"]
-    assert len(statuses) == 3 and statuses[0].startswith("Gemini is busy; trying again in") and "(attempt 1 of 10)." in statuses[0]
-    assert not any("capacity" in m for m in statuses), "the wait is shown, Google's capacity is not repeated on every step"
-    assert not any(k == "warning" for k, _ in events)
+    assert [p["round"] for k, p in events if k == "model_wait"] == [1, 2, 3]
+    assert not any(k in ("status", "warning") for k, _ in events), "the stage keeps Wizard at work: no \"Gemini is busy\""
 
 
 def test_no_capacity_through_every_attempt_says_whose_side_it_is(tmp_path, waits):
@@ -309,9 +309,8 @@ def test_when_both_models_refuse_wizard_waits_and_tries_both_again(tmp_path, wai
     events = run_and_collect(rt, req)
     assert fake.models == [FLASH] * 3 + [PRO] * 4 + [FLASH] * 2, "after each wait, one more try on each model"
     assert waits[:4] == [1.0, 3.0, 1.0, 3.0] and 5 <= waits[4] <= 6 and 10 <= waits[5] <= 12 and len(waits) == 6
-    statuses = [p["message"] for k, p in events if k == "status"]
-    assert [m.split(" (attempt")[1] for m in statuses] == [" 1 of 10).", " 2 of 10)."]
-    assert all(m.startswith("Gemini is busy; trying again in ") for m in statuses), "no capacity wording on the stage"
+    assert [(p["round"], p["models"]) for k, p in events if k == "model_wait"] == [(1, [FLASH, PRO]), (2, [FLASH, PRO])]
+    assert not any(k in ("status", "warning") for k, _ in events), "nothing on the stage about Gemini waiting"
     assert [p["text"] for k, p in events if k == "text_delta"] == ["ok"]
 
 
@@ -340,7 +339,8 @@ def test_a_model_whose_quota_is_used_up_is_not_gone_back_to(tmp_path, waits):
     assert fake.models == [FLASH, PRO, PRO], "Pro is the only model left, so it is waited for, without quick tries"
     assert len(waits) == 1 and 5 <= waits[0] <= 6
     statuses = [p["message"] for k, p in events if k == "status"]
-    assert "quota for gemini-3.8-flash is used up" in statuses[0] and statuses[1].startswith("Gemini is busy; trying again")
+    assert len(statuses) == 1 and "quota for gemini-3.8-flash is used up" in statuses[0], "the quota is told, the wait is not"
+    assert [p["reason"] for k, p in events if k == "model_wait"] == ["capacity"]
 
 
 def empty_turn(reason: str | None = "STOP", **extra) -> dict:

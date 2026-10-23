@@ -95,7 +95,11 @@ class EmptyTurns(Outage):
         if self.note:
             await emit("text_delta", {"text": self.note})
         await tools.call("wizard_lookup_definitions", {"query": "share"})
-        await emit("status", {"message": "Gemini is busy; trying again in 5 s (attempt 1 of 10)."})
+        await emit("status", {"message": "Your Gemini quota for gemini-3.8-flash is used up. Wizard continues with "
+                                         "gemini-3.1-pro-preview."})
+        for round_ in (1, 2):
+            await emit("model_wait", {"seconds": 32.5, "reason": "capacity", "models": ["gemini-3.1-pro-preview"],
+                                      "round": round_})
         raise AgentFailure("empty_answer", "Gemini sent back an empty turn 4 times in a row: no answer and no request for "
                                            "data. Google's reason: a normal stop, with nothing written (STOP).",
                            {"Google's finish reason": "a normal stop, with nothing written (STOP)",
@@ -115,7 +119,8 @@ def test_a_failed_answer_says_exactly_why_under_error_details(tmp_path):
         assert details["Model"] == "gemini-3.8-flash" and details["Connection"] == "Outage test runtime"
         assert details["Tool calls"] == "1" and details["Last tool call"].startswith("wizard_lookup_definitions at ")
         assert details["Last tool call"].endswith(": ok")
-        assert details["Last status"] == "Gemini is busy; trying again in 5 s (attempt 1 of 10)."
+        assert details["Last status"].startswith("Your Gemini quota for gemini-3.8-flash is used up.")
+        assert details["Waited for Gemini"] == "2 times, 1 min 5 s in all (both models busy or rate-limited)"
         assert details["Run"] == run["id"] and details["Ran for"].endswith(" s")
 
 
