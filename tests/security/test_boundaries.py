@@ -5,11 +5,12 @@ import json
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from tests.helpers import CEO_QUESTION, CONQUEST_QUESTION, HEADERS, ask, login
 
-from wizard_api.security import run_token
+from wizard_api.security import run_token, verify
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -32,6 +33,30 @@ def test_state_changes_need_the_wizard_header_and_same_origin(client):
 def test_forged_or_foreign_session_cookie_is_ignored(client):
     client.cookies.set("wizard_session", "eyJ1IjoidS1jZW8ifQ.AAAA")
     assert client.get("/api/v1/conversations").status_code == 401
+
+
+def test_a_session_in_use_is_renewed_so_an_open_wizard_is_not_signed_out(client):
+    # The owner, 23 Oct: "your session expired, please refresh" in WizardBar, which has no refresh button. A page left
+    # open for days keeps using its session; once it is an hour old, any request signs it again for session_hours.
+    from wizard_api.security import sign
+    settings = client.app.state.settings
+    login(client, "u-ceo")
+    assert "wizard_session" not in client.get("/api/v1/conversations").headers.get("set-cookie", ""), "fresh: not re-signed"
+    issued = time.time() - 11 * 3600  # an hour before the 12 h session would lapse
+    client.cookies.set("wizard_session", sign(settings.session_secret, "session",
+                                              {"u": "u-ceo", "iat": int(issued), "exp": int(issued + 12 * 3600)}))
+    renewed = client.get("/api/v1/conversations")
+    assert renewed.status_code == 200 and f"Max-Age={settings.session_hours * 3600}" in renewed.headers["set-cookie"]
+    claims = verify(settings.session_secret, "session", renewed.cookies["wizard_session"])
+    assert claims and claims["u"] == "u-ceo" and claims["exp"] > time.time() + 11.9 * 3600
+    old = sign(settings.session_secret, "session", {"u": "u-ceo", "iat": int(issued), "exp": int(issued + 12 * 3600)})
+    client.cookies.set("wizard_session", old)
+    logout = client.post("/api/v1/session/logout", headers=HEADERS)
+    assert "wizard_session=\"\"" in logout.headers["set-cookie"] or "Max-Age=0" in logout.headers["set-cookie"], \
+        "signing out is not undone by a renewal"
+    client.cookies.set("wizard_session", sign(settings.session_secret, "session", {"u": "u-ceo", "iat": int(issued),
+                                                                                    "exp": int(time.time() - 1)}))
+    assert client.get("/api/v1/conversations").status_code == 401, "a lapsed session is not renewed"
 
 
 def test_security_headers_and_no_store(client):

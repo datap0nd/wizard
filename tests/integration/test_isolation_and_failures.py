@@ -84,6 +84,64 @@ def test_model_outage_is_a_clear_failure(tmp_path):
         assert client.get("/api/v1/reports").json()["reports"] == []
 
 
+class EmptyTurns(Outage):
+    """Code Assist after a tool call: Gemini sent back nothing, twice on each model (code_assist raises this)."""
+    kind = "code-assist"
+
+    def __init__(self, note: str = ""):
+        self.note = note
+
+    async def run(self, request, emit, tools, cancelled):
+        if self.note:
+            await emit("text_delta", {"text": self.note})
+        await tools.call("wizard_lookup_definitions", {"query": "share"})
+        await emit("status", {"message": "Gemini is busy; trying again in 5 s (attempt 1 of 10)."})
+        raise AgentFailure("empty_answer", "Gemini sent back an empty turn 4 times in a row: no answer and no request for "
+                                           "data. Google's reason: a normal stop, with nothing written (STOP).",
+                           {"Google's finish reason": "a normal stop, with nothing written (STOP)",
+                            "Google's message": "token ya29.a0AfB_secret leaked into a message"})
+
+
+def test_a_failed_answer_says_exactly_why_under_error_details(tmp_path):
+    with TestClient(create_app(make_settings(tmp_path), runtime=EmptyTurns())) as client:
+        login(client, "u-ceo")
+        run = ask(client, CEO_QUESTION)
+        assert run["status"] == "failed" and run["error_code"] == "empty_answer"
+        failed = next(e["payload"] for e in run["events"] if e["type"] == "run_failed")
+        details = failed["details"]
+        assert list(details)[:3] == ["Error code", "Google's finish reason", "Google's message"], "the runtime's facts first"
+        assert details["Error code"] == "empty_answer" and details["Google's finish reason"].endswith("(STOP)")
+        assert details["Google's message"] == "token [redacted] leaked into a message"
+        assert details["Model"] == "gemini-3.8-flash" and details["Connection"] == "Outage test runtime"
+        assert details["Tool calls"] == "1" and details["Last tool call"].startswith("wizard_lookup_definitions at ")
+        assert details["Last tool call"].endswith(": ok")
+        assert details["Last status"] == "Gemini is busy; trying again in 5 s (attempt 1 of 10)."
+        assert details["Run"] == run["id"] and details["Ran for"].endswith(" s")
+
+
+def test_an_empty_last_turn_after_a_message_shows_that_message(tmp_path):
+    with TestClient(create_app(make_settings(tmp_path), runtime=EmptyTurns(note="EG leads on share."))) as client:
+        login(client, "u-ceo")
+        run = ask(client, CEO_QUESTION)
+        assert run["status"] == "succeeded" and run["answer"] == "EG leads on share."
+        finished = next(e["payload"] for e in run["events"] if e["type"] == "run_finished")
+        assert "Gemini finished without a separate final answer; its last message is shown." in finished["warnings"]
+
+
+class Broken(Outage):
+    async def run(self, request, emit, tools, cancelled):
+        raise KeyError("evidence_id")
+
+
+def test_an_internal_error_names_the_exception_and_where(tmp_path):
+    with TestClient(create_app(make_settings(tmp_path), runtime=Broken())) as client:
+        login(client, "u-ceo")
+        run = ask(client, CEO_QUESTION)
+        details = next(e["payload"] for e in run["events"] if e["type"] == "run_failed")["details"]
+        assert run["error_code"] == "internal_error" and details["Exception"] == "KeyError: 'evidence_id'"
+        assert details["Where"].startswith("test_isolation_and_failures.py, line ") and details["Where"].endswith(" in run")
+
+
 class Unlinked(Outage):
     async def readiness(self, home, email):
         return {"ready": False, "reason": "Link your own Gemini account to ask questions."}

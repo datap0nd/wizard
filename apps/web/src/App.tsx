@@ -1,5 +1,5 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {api, ApiError, eventsUrl} from './api';
+import {api, ApiError, eventsUrl, onSession} from './api';
 import {buildEmail, emlFile, emlName} from './email';
 import {applyEvent, emptyRun, fromRecord, TERMINAL, withSchedule} from './runState';
 import {AccountDialog} from './components/AccountDialog';
@@ -40,6 +40,7 @@ export function App({compact = false}: {compact?: boolean}) {
   const [localOpen, setLocalOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const streams = useRef(new Map<string, EventSource>());
+  const refollows = useRef(new Map<string, number>());
   const [focusTick, setFocusTick] = useState(0);
   const [entering, setEntering] = useState(false);
   const questions = useRef(new Map<string, string>());
@@ -89,6 +90,7 @@ export function App({compact = false}: {compact?: boolean}) {
     streams.current.get(runId)?.close();
     const source = new EventSource(eventsUrl(runId, after));
     streams.current.set(runId, source);
+    source.onopen = () => refollows.current.delete(runId);
     source.onmessage = message => {
       const event = JSON.parse(message.data) as RunEvent;
       setRuns(prev => prev.map(r => (r.id === runId ? applyEvent(r, event) : r)));
@@ -102,7 +104,15 @@ export function App({compact = false}: {compact?: boolean}) {
     source.onerror = () => {
       if (source.readyState === EventSource.CLOSED) {
         streams.current.delete(runId);
-        void api.run(runId).then(record => setRuns(prev => prev.map(r => (r.id === runId ? fromRecord(record) : r)))).catch(() => undefined);
+        void api.run(runId).then(record => {
+          setRuns(prev => prev.map(r => (r.id === runId ? fromRecord(record) : r)));
+          // The stream was refused (a lapsed session, renewed by api.run) while the answer goes on: follow the rest.
+          const tries = (refollows.current.get(runId) ?? 0) + 1;
+          if (record.active && tries <= 3) {
+            refollows.current.set(runId, tries);
+            setTimeout(() => { if (!streams.current.has(runId)) follow(runId, Math.max(0, ...record.events.map(e => e.seq)), parentId); }, 1000 * tries);
+          }
+        }).catch(() => undefined);
       }
     };
   }, [refreshConversations]);
@@ -118,6 +128,11 @@ export function App({compact = false}: {compact?: boolean}) {
   }, [follow]);
 
   useEffect(() => { void loadBoot(); }, [loadBoot]);
+  // A session lapses after hours without Wizard (WizardBar keeps this page open for days, through sleep): sign in
+  // again as the same person without asking, as the desktop app signs in at start. Otherwise show sign-in.
+  const signedInAs = boot?.auth.mode === 'fixture' ? boot.identity?.id : undefined;
+  useEffect(() => onSession({renew: signedInAs ? async () => { await api.login(signedInAs); } : null,
+    signedOut: () => void loadBoot()}), [signedInAs, loadBoot]);
   useEffect(() => {
     if (!boot?.identity) return;
     void refreshConversations();
@@ -167,7 +182,7 @@ export function App({compact = false}: {compact?: boolean}) {
       follow(started.run_id, 0, null);
       void refreshConversations();
     } catch (e) {
-      setNotice(e instanceof ApiError && e.loginRequired ? 'Your session expired. Reload the page to sign in again.' : e instanceof Error ? e.message : 'The question could not be sent.');
+      setNotice(e instanceof ApiError && e.loginRequired ? 'You were signed out. Your question is still here: send it again.' : e instanceof Error ? e.message : 'The question could not be sent.');
     }
   }, [currentId, files, follow, refreshConversations]);
 

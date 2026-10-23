@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from wizard_agent.prompting import compose
-from wizard_agent.runtime import AgentFailure, AgentRequest, AgentRuntime, Turn
+from wizard_agent.runtime import AgentFailure, AgentRequest, AgentRuntime, Turn, redact
 from wizard_connectors.attachment_tables import index as table_index
 from wizard_connectors.entitlements import Identity
 from wizard_connectors.tools import Services, ToolContext, ToolOutcome, ToolRegistry
@@ -27,6 +27,7 @@ from .attachments import Attachments
 from .awake import KeepAwake
 from .config import Settings
 from .security import run_token
+from .settings_pane import installed_build
 from .store import Store, new_id, now
 
 log = logging.getLogger("wizard.runs")
@@ -113,6 +114,8 @@ class ActiveRun:
     warnings: list[str] = field(default_factory=list)
     session: dict[str, Any] = field(default_factory=dict)
     stats: dict[str, Any] = field(default_factory=dict)
+    last_tool: str = ""    # the last tool call and how it ended, for Error details
+    last_status: str = ""  # the last status line the stage showed ("Gemini is busy..."), for Error details
     task: asyncio.Task[None] | None = None
 
 
@@ -330,6 +333,8 @@ class RunManager:
             run.stats = dict(payload.get("stats") or {})
         elif kind == "warning":
             run.warnings.append(str(payload.get("message", ""))[:500])
+        elif kind == "status":
+            run.last_status = str(payload.get("message", ""))[:500]
         self._publish(run, kind, payload)
 
     def _publish(self, run: ActiveRun, kind: str, payload: dict[str, Any]) -> None:
@@ -367,6 +372,8 @@ class RunManager:
                                     "summary": tool_summary(name, outcome)}
         if not outcome.ok:
             finished["error_code"] = outcome.error_code
+        run.last_tool = f"{name} at {datetime.now().strftime('%H:%M:%S')}: " + (
+            "ok" if outcome.ok else f"{outcome.error_code}: {outcome.error_message or ''}".strip(": "))
         if outcome.ok and "evidence_id" in outcome.data:
             evidence = self.store.evidence(run.conversation_id, outcome.data["evidence_id"])[0]
             finished["evidence"] = evidence_summary(evidence)
@@ -449,9 +456,13 @@ class RunManager:
                                        timeout=self.settings.run_timeout_s + 30)
             await self._finish(run)
         except AgentFailure as failure:
-            await self._fail(run, failure.code, failure.message)
+            if failure.code == "empty_answer" and run.notes:  # Gemini's last message stands in, with a warning
+                await self._finish(run)
+            else:
+                await self._fail(run, failure.code, failure.message, details=failure.details)
         except TimeoutError:
-            await self._fail(run, "timeout", f"The run did not finish within {self.settings.run_timeout_s} seconds.")
+            await self._fail(run, "timeout", f"The run did not finish within {self.settings.run_timeout_s} seconds.",
+                             details={"Time limit": f"{self.settings.run_timeout_s} s (WIZARD_RUN_TIMEOUT_S)"})
         except asyncio.CancelledError:
             await self._fail(run, "cancelled", "The run was cancelled.", status="cancelled")
         except Exception as error:  # noqa: BLE001 - every failure must surface as a clear run state, never a hung spinner
@@ -461,17 +472,42 @@ class RunManager:
                     await self.emit(run, "diagnostic", {"source": "wizard", "outcome": "internal_error",
                                                         "error": f"{type(error).__name__}: {error}",
                                                         "traceback": traceback.format_exc()[-6000:]})
-            await self._fail(run, "internal_error", "Wizard hit an internal error. The failure was logged.")
+            where = traceback.extract_tb(error.__traceback__)[-1:]
+            await self._fail(run, "internal_error", "Wizard hit an internal error. The failure was logged.", details={
+                "Exception": f"{type(error).__name__}: {error}"[:1000],
+                **({"Where": f"{Path(where[0].filename).name}, line {where[0].lineno}, in {where[0].name}"} if where else {})})
         finally:
             self.active.pop(run.id, None)
 
-    async def _fail(self, run: ActiveRun, code: str, message: str, status: str = "failed") -> None:
-        log.warning("run %s %s: %s %s", run.id, status, code, message)
+    async def _fail(self, run: ActiveRun, code: str, message: str, status: str = "failed",
+                    details: dict[str, str] | None = None) -> None:
+        log.warning("run %s %s: %s %s %s", run.id, status, code, message, details or "")
         with contextlib.suppress(Exception):
             self.store.update_run(run.id, status=status, error_code=code, error_message=message, finished_at=now(),
                                   stats=json.dumps(run.stats))
             self._publish(run, "run_failed", {"code": code, "message": message, "status": status,
-                                              "evidence_ids": run.evidence_ids})
+                                              "evidence_ids": run.evidence_ids,
+                                              "details": self.failure_details(run, code, details or {})})
+
+    def failure_details(self, run: ActiveRun, code: str, found: dict[str, str]) -> dict[str, str]:
+        """What the run card's Error details shows: the runtime's account of the failure (Google's reason and words),
+        then where the run had got to. Never the prompt, the answer or private reasoning; tokens are redacted."""
+        details = {"Error code": code, **found}
+        details.setdefault("Model", str(run.session.get("model") or self.runtime.model))
+        details["Connection"] = self.runtime.label()
+        if run.started:
+            seconds = round(time.monotonic() - run.started)
+            details["Ran for"] = f"{seconds // 60} min {seconds % 60} s"
+        details["Tool calls"] = str(run.tool_calls)
+        if run.last_tool:
+            details["Last tool call"] = run.last_tool
+        if run.last_status:
+            details["Last status"] = run.last_status
+        details["Run"] = run.id
+        build = installed_build()
+        if build.get("version") or build.get("commit"):
+            details["Wizard build"] = " ".join(str(build[k])[:12] for k in ("version", "commit") if build.get(k))
+        return {label: redact(str(value))[:2000] for label, value in details.items()}
 
     async def _finish(self, run: ActiveRun) -> None:
         answer = "".join(run.segment).strip()
@@ -479,7 +515,8 @@ class RunManager:
             answer = run.notes.pop()
             run.warnings.append("Gemini finished without a separate final answer; its last message is shown.")
         if not answer:
-            await self._fail(run, "empty_answer", "Gemini finished without an answer.")
+            await self._fail(run, "empty_answer", "Gemini finished without an answer.",
+                             details={"What Gemini sent back": "no text after its last step, and no earlier message"})
             return
         conversation_evidence = {e["id"]: e for e in self.store.evidence(run.conversation_id)}
         cited = [c for c in dict.fromkeys(CITATION.findall(answer))]

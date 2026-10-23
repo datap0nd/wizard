@@ -1,6 +1,7 @@
 """Runtime interface shared by the Gemini CLI, Code Assist and replay runtimes."""
 from __future__ import annotations
 
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -10,12 +11,21 @@ RuntimeKind = Literal["gemini-cli", "code-assist", "replay"]
 
 
 class AgentFailure(Exception):
-    """A user-presentable failure with a stable code (model outage, sign-in required, timeout...)."""
+    """A user-presentable failure with a stable code (model outage, sign-in required, timeout...). `details` is what the
+    run card's Error details shows: the facts behind the message (Google's own reason and words), label -> value."""
 
-    def __init__(self, code: str, message: str):
+    def __init__(self, code: str, message: str, details: dict[str, str] | None = None):
         super().__init__(message)
         self.code = code
         self.message = message
+        self.details = details or {}
+
+
+def redact(text: str, *secrets: str) -> str:
+    for secret in secrets:
+        if secret:
+            text = text.replace(secret, "[redacted]")
+    return re.sub(r"(ya29\.[A-Za-z0-9_\-]+|1//[A-Za-z0-9_\-]{20,}|AIza[0-9A-Za-z_\-]{30,})", "[redacted]", text)
 
 
 @dataclass

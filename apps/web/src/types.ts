@@ -289,7 +289,9 @@ export interface RunView {
   checkSummary: string | null;
   dataMode: DataMode | null;
   reportId: string | null;
-  error: {code: string; message: string} | null;
+  /** Why the run failed. `details` is what Error details shows (Google's reason and words, the last tool call...),
+   * label -> value, as the server recorded it; runs that failed before it was recorded have none. */
+  error: {code: string; message: string; details?: Record<string, string>} | null;
   /** Raw diagnostics the server attached to this run (CLI output, setup, tracebacks). */
   diagnostics: Record<string, unknown>[];
   warnings: string[];

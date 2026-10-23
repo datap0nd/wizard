@@ -198,6 +198,19 @@ of Wizard on this PC:
     that a busy Gemini can make wait.
   - A failure or a quota message quotes Google's own words (`Google said: "..."`), and `logs\wizard.log` records each
     refusal and each switch of model with Google's reason (lines from `wizard.gemini`).
+  - *A turn with nothing in it* (no answer and no tool call; Gemini CLI calls it an invalid stream and asks again):
+    Wizard asks the same model once more, then the other model twice, silently. Only if all of them come back empty
+    does the answer stop, saying Google's finish reason (for example `MALFORMED_FUNCTION_CALL`, a tool call Gemini
+    wrote that could not be read). If Gemini wrote a message earlier in the answer, that message is shown instead,
+    with a warning.
+- **Error details:** every answer that could not finish has an **Error details** button next to **Ask again**. It shows
+  exactly why: Google's finish reason and message (or its refusal, or the HTTP error it answered with), what Gemini
+  sent back (`text (0 characters) + thoughtSignature`), which models were tried and how often, the step and token
+  counts, the last tool call and status line, how long the answer ran, the run id and the build. **Copy details** puts
+  it on the clipboard with the question. Tokens are redacted; the prompt and Gemini's reasoning are never shown.
+- **Staying signed in:** WizardBar keeps the page open for days. A session in use is renewed every hour; after a long
+  sleep the page signs in again as you by itself and repeats what it was doing, as it does when Wizard starts. No
+  reload is needed (the panel has no reload button).
 - **Sleep:** while a question runs, Wizard keeps the PC from going to sleep when idle (as a download does), so a long
   answer is not stopped half-way. The screen still turns off; closing the lid or choosing Sleep still sleeps.
 - **Update:** Check for updates reads the public release manifest; **Update to 1.0.N** has WizardBar download it, check
@@ -265,6 +278,7 @@ Someone who already has Wizard can import a new file from the tray menu: **Impor
 | Ctrl+Alt+W does nothing | Another program owns it (`bar.log` says "taken by another program"); use the tab or the tray icon |
 | The panel is blank and mentions WebView2 | The Edge WebView2 runtime is missing; it ships with Windows 10/11 and Edge |
 | "Google has no capacity for …" | Google had no capacity for Flash or for Pro, the fallback (not your quota). Wizard already waited about 4 minutes; try again a little later. The message quotes Google's reason, and `logs\wizard.log` has it for each refusal |
+| "Wizard could not finish this answer" | **Error details** under the message says why: Google's finish reason and words, the models tried, the last tool call. **Copy details** to send it on. The same run id is in `logs\wizard.log` |
 | A dropped file shows "Could not read" | Point at the file in the panel for the reason (type, size, a protected file Office would not open). `bar.log` has drop errors |
 
 ## Building it yourself

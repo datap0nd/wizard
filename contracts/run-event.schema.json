@@ -24,6 +24,8 @@
     {"if": {"properties": {"type": {"const": "run_finished"}}},
      "then": {"properties": {"payload": {"required": ["status", "report_id", "answer", "data_mode", "check_status"]}}}},
     {"if": {"properties": {"type": {"const": "run_failed"}}},
-     "then": {"properties": {"payload": {"required": ["code", "message"]}}}}
+     "then": {"properties": {"payload": {"required": ["code", "message"], "properties": {
+       "details": {"type": "object", "additionalProperties": {"type": "string"},
+                   "description": "Error details: why the run failed, label -> value (Google's finish reason and message, what Gemini sent back, the last tool call, where the run had got to). Tokens are redacted; never the prompt, the answer or private reasoning."}}}}}}
   ]
 }

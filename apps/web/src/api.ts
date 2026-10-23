@@ -4,7 +4,25 @@ export class ApiError extends Error {
   constructor(message: string, public status: number, public code?: string, public loginRequired = false) { super(message); }
 }
 
-async function request<T>(path: string, init: {method?: string; body?: unknown; file?: File} = {}): Promise<T> {
+/** Signs this page in again when its session has lapsed (set by the app: fixture sign-in, as the same person). */
+let renewal: (() => Promise<void>) | null = null;
+let renewing: Promise<boolean> | null = null;
+/** Called when the session has lapsed and could not be renewed: the app shows sign-in. */
+let signedOut: (() => void) | null = null;
+
+export function onSession(handlers: {renew: (() => Promise<void>) | null; signedOut: () => void}) {
+  renewal = handlers.renew;
+  signedOut = handlers.signedOut;
+}
+
+/** One renewal for every request that found the session lapsed at the same time. */
+function renew(): Promise<boolean> {
+  if (!renewal) return Promise.resolve(false);
+  renewing ??= renewal().then(() => true, () => false).finally(() => { renewing = null; });
+  return renewing;
+}
+
+async function request<T>(path: string, init: {method?: string; body?: unknown; file?: File} = {}, again = true): Promise<T> {
   const method = init.method ?? (init.body === undefined && !init.file ? 'GET' : 'POST');
   const headers: Record<string, string> = {};
   if (method !== 'GET') headers['X-Wizard-Request'] = '1';
@@ -21,6 +39,11 @@ async function request<T>(path: string, init: {method?: string; body?: unknown; 
   let payload: Record<string, any> = {};
   try { payload = await response.json(); } catch { /* not JSON */ }
   if (!response.ok) {
+    if (payload.login_required) {
+      // A Wizard left open outlives its session: sign in again as the same person and send the request once more.
+      if (again && await renew()) return request<T>(path, init, false);
+      signedOut?.();
+    }
     const fallback = response.status === 429 ? 'A question is already running.' : 'The request failed.';
     throw new ApiError(payload.error ?? fallback, response.status, payload.code, !!payload.login_required);
   }

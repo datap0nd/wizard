@@ -50,7 +50,8 @@ export function applyEvent(run: RunView, event: RunEvent): RunView {
         checkStatus: p.check_status ?? 'NOT_CHECKED', checkSummary: p.check_summary ?? null,
         warnings: Array.from(new Set([...next.warnings, ...(p.warnings ?? [])])), finishedAt: event.ts};
     case 'run_failed':
-      return {...next, status: p.status === 'cancelled' ? 'cancelled' : 'failed', error: {code: String(p.code), message: String(p.message)},
+      return {...next, status: p.status === 'cancelled' ? 'cancelled' : 'failed',
+        error: {code: String(p.code), message: String(p.message), details: p.details && typeof p.details === 'object' ? p.details : undefined},
         finishedAt: event.ts, timeline: next.timeline.map(item => item.state === 'running' ? {...item, state: 'error', summary: 'Stopped'} : item)};
     default:
       return next;
@@ -65,7 +66,7 @@ export function fromRecord(record: RunRecord): RunView {
   return {...view, status: record.status, answer: record.answer ?? view.answer, reportId: record.report_id ?? view.reportId,
     dataMode: record.data_mode ?? view.dataMode, checkStatus: record.check_status, checkSummary: record.check_summary,
     visuals: record.visuals.length ? record.visuals : view.visuals, evidence: record.evidence.length ? record.evidence : view.evidence,
-    error: record.error_code ? {code: record.error_code, message: record.error_message ?? ''} : view.error,
+    error: record.error_code ? {code: record.error_code, message: record.error_message ?? '', details: view.error?.details} : view.error,
     attachments: record.attachments ?? [], schedules: record.schedules?.length ? record.schedules : view.schedules,
     finishedAt: record.finished_at};
 }
@@ -74,6 +75,19 @@ export function fromRecord(record: RunRecord): RunView {
 export function withSchedule(run: RunView, schedule: Schedule): RunView {
   const known = run.schedules.some(s => s.id === schedule.id);
   return {...run, schedules: known ? run.schedules.map(s => (s.id === schedule.id ? schedule : s)) : [...run.schedules, schedule]};
+}
+
+/** Error details for a failed run: what the server recorded, or for a run without it (one Wizard restarted under,
+ * or from before) what the card knows. */
+export function errorDetails(run: RunView): Record<string, string> {
+  if (run.error?.details && Object.keys(run.error.details).length) return run.error.details;
+  const known: Record<string, string> = {'Error code': run.error?.code ?? 'unknown'};
+  if (run.model) known.Model = run.model;
+  if (run.runtimeLabel) known.Connection = run.runtimeLabel;
+  known.Started = run.createdAt;
+  if (run.finishedAt) known.Stopped = run.finishedAt;
+  known.Run = run.id;
+  return known;
 }
 
 export function sourcesConsulted(run: RunView): string[] {
