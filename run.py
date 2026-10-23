@@ -62,6 +62,13 @@ def main() -> int:
     except ConfigError as error:
         print(f"Wizard configuration error: {error}", file=sys.stderr)
         return 2
+    except Exception:
+        # Name the build and the folder the code ran from: a crash from an old copy of the code is then obvious.
+        from wizard_api.settings_pane import installed_build
+        build = installed_build()
+        logging.getLogger("wizard").exception("Wizard could not start (build %s, commit %s, code in %s)",
+                                              build.get("version") or "development", build.get("commit") or "-", ROOT)
+        raise
     print(f"Wizard {settings.runtime} runtime | http://{settings.internal_url.split('//')[1]} | data {settings.data_dir}", flush=True)
     server = uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port, log_level="warning",
                                            proxy_headers=False))

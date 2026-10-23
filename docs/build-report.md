@@ -3,7 +3,37 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-23 (latest) — Wizard edits a copy of an attached workbook and hands it back
+## 2026-10-23 (latest) — Company content never stops Wizard; crashes name the build that ran
+
+The owner reported, after updating: "wizard has an error and wizard stopped", quoting a `TypeError` (`build_services`
+got an unexpected keyword argument `postgres_name`) and "connector status ROWS_VERIFIED is not allowed for real
+content: no approved live adapter exists for this system yet".
+- **ROWS_VERIFIED.** Start-up validated the company content and stopped the service (exit code 2, "settings have a
+  problem") because a report catalog claimed `ROWS_VERIFIED`. The same rule made the knowledge-base sync refuse a
+  whole commit.
+  - Claims of readable rows (status `ROWS_VERIFIED` or `SYNTHETIC_FIXTURE`, `row_access` `ROWS`, a data `file`,
+    data mode `SYNTHETIC`) are now warnings. `catalog.navigation_only` takes them back when real content loads, so
+    such a catalog loads as navigation only, and a catalog edit can neither unlock rows nor stop Wizard.
+  - At start-up, a content file with a real error (not JSON, no front matter, a credential) is left out and logged
+    instead of stopping the service. The sync still refuses commits with errors.
+  - Live portal reads go through the portal browser, not catalog flags.
+- **The TypeError.** `build_services` has taken `postgres_name` since 20 October 08:54 (`8a7e07a`), and the installer
+  replaces the whole program folder. So the line comes from an older copy of the code: an old line in the log, which
+  keeps earlier runs, or another, older Wizard folder. The start-up log line and any start-up crash now name the build,
+  the commit and the folder the code ran from.
+
+**Tests.** `test_content.py`:
+- readable claims are warnings;
+- Wizard starts with a `ROWS_VERIFIED` catalog, a non-JSON catalog, a note without front matter and a note with a
+  password;
+- the catalog loads as navigation only, and the broken and leaky files are left out.
+
+A local start with such content answers `/api/v1/health` and logs the warnings.
+`verify_all.sh --allow-blocked=live-parity,postgres,e2e` with `CI=true`: every other layer passes (Python 447 passed and
+5 skipped, real Gemini CLI 4, portal-browser 9, web unit 55). e2e cannot launch this sandbox's Chromium build, and the
+UI is unchanged since its last pass.
+
+## 2026-10-23 (later) — Wizard edits a copy of an attached workbook and hands it back
 
 The owner attached an Excel file and asked for changes; Gemini answered with "a pastable code block". They want Wizard
 to "edit the file and spit back an edited file". [Decision](decisions/2026-10-23-edited-attachments.md).
