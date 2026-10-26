@@ -3,7 +3,49 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-23 (latest) — Company content never stops Wizard; crashes name the build that ran
+## 2026-10-26 (latest) — Download of an edited workbook: Wizard saves it in Downloads itself
+
+The owner: "when I try to download a file after it edited something, says: couldn't finish download in chrome."
+[Decision update](decisions/2026-10-23-edited-attachments.md#update-26-october-2026--download-on-the-persons-own-pc-saves-into-downloads).
+- **Cause.** Chromium shows "Couldn't finish download" (`FILE_UNFINISHED`) when the server sends fewer bytes than its
+  Content-Length, when the file cannot be written or renamed (a sharing violation, often a scanner or a protection
+  agent holding it), or when the browser stops. Here, the same edited copy downloads fine in Chromium, through the API
+  and through the real Download button, so it fails on the work PC, where Excel saves the copy. NASCA-protected
+  workbooks open only where Office saved them, so a browser download of one would not open even when it finishes.
+- **Fix.** Where Wizard runs on the person's PC (signed in locally, page on the same PC, as for Outlook drafts),
+  **Download** asks Wizard to save the copy into their Downloads folder itself:
+  - `POST /api/v1/attachments/{id}/save` runs `wizard_docs.py save-copy` in its own process under the Office lock.
+    Excel opens the copy read-only and writes it with `SaveCopyAs`, so a protected workbook opens where it lands.
+    Without Office, or when Excel cannot, the bytes are copied, with a warning when Excel failed.
+  - The Downloads folder is Windows' known folder (it may be redirected), else `~/Downloads`. An existing file is never
+    overwritten: a taken name gets (1), (2)…, and names cannot leave the folder.
+  - The card then says where the file was saved and offers **Open** (`POST /api/v1/attachments/{id}/open`), which
+    opens only a copy Wizard saved since it started. Both are owner-only and audited.
+  - Elsewhere (behind a proxy) the server answers `not_on_this_pc` and the page downloads through the browser as
+    before. `GET …/file` now reads the whole file before answering, so an unreadable file is an error, never a
+    download cut short.
+- No new Gemini tool; AGENTS.md, README and the decision record updated; contracts regenerated.
+
+**Tests.** `test_edit_attachment.py` (10, 4 new):
+- Excel writes the saved copy (fake COM): read-only open, `SaveCopyAs`, Close without saving; never overwrites;
+- a byte copy without Office, and when Excel fails (with the warning);
+- through the API: saved in Downloads, the second save as "(1)", Open, Open's failure in words, the request header
+  required, another user refused, a page on another PC told `not_on_this_pc` and served the whole file, an unreadable
+  file refused before any byte;
+- names never leave Downloads.
+
+`RunCard.test.tsx`: on this PC no browser download starts and the card says where the file was saved, then Open;
+elsewhere the browser downloads it; a failure is shown in words.
+
+In a real Chromium against a local server (synthetic workbook, replay runtime): from `127.0.0.1` the Download button
+saved `Gulf sales (edited).xlsx` into the Downloads folder with no browser download; from the container's own address
+the browser downloaded all 5,508 bytes.
+
+`verify_all.sh --allow-blocked=live-parity,postgres` with `CI=true`: every required layer passes (Python 451 passed and 5 skipped, real
+Gemini CLI 4, portal-browser 9, web unit 57, e2e 16); postgres and live-parity are BLOCKED as allowed. Real Excel,
+NASCA and the work PC's Downloads folder are first exercised on the work PC.
+
+## 2026-10-23 (later) — Company content never stops Wizard; crashes name the build that ran
 
 The owner reported, after updating: "wizard has an error and wizard stopped", quoting a `TypeError` (`build_services`
 got an unexpected keyword argument `postgres_name`) and "connector status ROWS_VERIFIED is not allowed for real

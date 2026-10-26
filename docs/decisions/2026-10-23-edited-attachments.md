@@ -35,3 +35,31 @@ answered with code for the person to run.
 
 Web: the made-file card with its download link, and the `file_made` event. Real Excel is first exercised on the work
 PC.
+
+## Update 26 October 2026 — Download on the person's own PC saves into Downloads
+
+**Context.** The owner: "when I try to download a file after it edited something, says: couldn't finish download in
+chrome." Chromium shows "Couldn't finish download" when the server sends fewer bytes than it announced, when the
+download cannot be written or renamed (a sharing violation, often a scanner or a protection agent holding the file),
+or when the browser stops. The same download works in a plain Chromium, so it fails on the work PC, where Excel saves
+the copy and protected (NASCA) workbooks open only where Office saved them.
+
+**Decision.**
+- **Where Wizard runs on the person's PC** (signed in locally, the page on the same PC, as for Outlook drafts),
+  **Download** asks Wizard to save the copy in the person's Downloads folder itself (`POST
+  /api/v1/attachments/{id}/save`). Excel writes the copy when Office runs there (opened read-only, `SaveCopyAs`), so a
+  protected workbook opens where it lands; without Office, or when Excel cannot, the file is copied as it is, with a
+  warning when Excel failed. An existing file is never overwritten: a taken name gets (1), (2)… as a browser does.
+- **Open** then opens that saved copy with its application (`POST /api/v1/attachments/{id}/open`), only a copy Wizard
+  saved since it started, on the person's click. Both are owner-only and audited (`attachment:save`,
+  `attachment:open`).
+- **Elsewhere** (behind a proxy, where Downloads would be the server's) the page keeps the browser download. The file
+  is now read whole before the answer starts, so a file that cannot be read is an error, never a download cut short.
+- No new tool: Gemini still only makes the copy; the person's click saves or opens it.
+
+**Evidence.** `tests/unit/test_edit_attachment.py`: Excel writes the saved copy (fake COM: read-only open,
+`SaveCopyAs`, Close without saving), never overwrites, copies as is without Office or when Excel fails; through the
+API: saved in Downloads, the second save as "(1)", Open, the request header required, another user refused, a remote
+page told to download through the browser, an unreadable file refused before any byte; names never leave Downloads.
+Web: on this PC no browser download starts and the card says where the file was saved; elsewhere the browser downloads
+it; a failure is shown in words. Real Excel and the work PC's Downloads folder are first exercised on the work PC.

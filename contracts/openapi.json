@@ -531,7 +531,7 @@
     "/api/v1/attachments/{attachment_id}/file": {
       "get": {
         "summary": "Attachment File",
-        "description": "Download a file Wizard keeps: an edited copy (or an uploaded original). Only its owner can.",
+        "description": "Download a file Wizard keeps: an edited copy (or an uploaded original). Only its owner can. The whole file is\nread before the answer starts, so a file that cannot be read is an error, never a download cut short.",
         "operationId": "attachment_file_api_v1_attachments__attachment_id__file_get",
         "parameters": [
           {
@@ -550,6 +550,90 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/attachments/{attachment_id}/save": {
+      "post": {
+        "summary": "Save Attachment",
+        "description": "Download where Wizard runs on the person's own PC: Wizard saves the file in their Downloads folder itself\n(Excel writes it when Office runs here). Elsewhere the page downloads it through the browser.",
+        "operationId": "save_attachment_api_v1_attachments__attachment_id__save_post",
+        "parameters": [
+          {
+            "name": "attachment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Attachment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Save Attachment Api V1 Attachments  Attachment Id  Save Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/attachments/{attachment_id}/open": {
+      "post": {
+        "summary": "Open Attachment",
+        "description": "Open the copy Wizard saved in Downloads (Excel), on the person's click.",
+        "operationId": "open_attachment_api_v1_attachments__attachment_id__open_post",
+        "parameters": [
+          {
+            "name": "attachment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Attachment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Open Attachment Api V1 Attachments  Attachment Id  Open Post"
+                }
               }
             }
           },

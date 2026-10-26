@@ -22,6 +22,7 @@ import contextlib
 import copy
 import datetime as dt
 import re
+import shutil
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -696,6 +697,12 @@ class ExcelBook:
         except Exception as error:  # noqa: BLE001 - COM errors, in words
             raise EditError(f"Excel could not save the edited copy: {self.session.error(error)}") from None
 
+    def save_copy(self, path: Path) -> None:
+        try:
+            self.wb.SaveCopyAs(str(path))
+        except Exception as error:  # noqa: BLE001 - COM errors, in words
+            raise EditError(f"Excel could not save the copy: {self.session.error(error)}") from None
+
     def close(self) -> None:
         with contextlib.suppress(Exception):
             self.wb.Close(False)
@@ -733,3 +740,32 @@ def edit(source: Path, operations: list[dict[str, Any]], output: Path, office: s
     finally:
         if session is not None:
             session.close()
+
+
+def save_copy(source: Path, target: Path, office: str = "auto") -> dict[str, Any]:
+    """Put a copy of a workbook Wizard made at `target` (the person's Downloads folder). Excel writes it when Office runs
+    here: a NASCA-protected workbook opens only where Office itself saved it, and a browser download of one can fail
+    ("Couldn't finish download"). Without Office, or when Excel cannot, the bytes are copied. Never overwrites."""
+    from .office import OfficeSession, OfficeUnavailable
+    if target.exists():
+        raise EditError(f"{target.name} already exists")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    problem = None
+    if office != "never":
+        try:
+            with OfficeSession() as session:
+                book = ExcelBook(session, source)
+                try:
+                    book.save_copy(target)
+                finally:
+                    book.close()
+            if target.is_file():
+                return {"status": "ok", "method": "excel", "warnings": []}
+            problem = "Excel did not write the copy"
+        except OfficeUnavailable:
+            pass
+        except EditError as error:
+            problem = str(error)
+    shutil.copyfile(source, target)
+    return {"status": "ok", "method": "copy",
+            "warnings": [f"{problem}; Wizard copied the file as it is, so a protected workbook may not open."] if problem else []}

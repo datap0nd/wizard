@@ -1,8 +1,9 @@
 import {afterEach, describe, expect, it, vi} from 'vitest';
-import {act, cleanup, fireEvent, render, screen} from '@testing-library/react';
+import {act, cleanup, fireEvent, render, screen, waitFor} from '@testing-library/react';
 import {RunCard} from './RunCard';
 import {beam, layout, SystemsContext} from './SystemsStage';
 import {TooltipProvider} from './ui/menu';
+import {api, ApiError} from '@/api';
 import {applyEvent, emptyRun} from '@/runState';
 import type {RunEvent, RunView, Schedule} from '@/types';
 import {brand, SystemLogo} from './SystemLogo';
@@ -304,16 +305,50 @@ describe('error details', () => {
 });
 
 describe('files Wizard made', () => {
-  it('shows an edited copy under the answer with a download link', () => {
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  function madeRun() {
     let run = emptyRun('run_e', 'cnv_e', 'Delete the closed rows and give me the file');
     run = applyEvent(run, {seq: 1, type: 'file_made', ts: '2026-10-23T12:00:00Z', payload: {attachment: {
       id: 'att_9', label: 'F2', filename: 'Sales (edited).xlsx', kind: 'spreadsheet', bytes: 9000, origin: 'edited', status: 'ok',
       method: 'openpyxl', chars: 120, note: 'Edited copy of F1 (Sales.xlsx): Sales: deleted 2 row(s)', parts: 1,
       created_at: '2026-10-23T12:00:00Z', run_id: 'run_e'}}});
-    render(card(run));
-    const link = screen.getByTestId('made-file-download') as HTMLAnchorElement;
-    expect(link.getAttribute('href')).toBe('/api/v1/attachments/att_9/file');
-    expect(link.getAttribute('download')).toBe('Sales (edited).xlsx');
+    return run;
+  }
+
+  it('on this PC, Download has Wizard save the copy in Downloads (not the browser), then Open opens it', async () => {
+    const save = vi.spyOn(api, 'saveFile').mockResolvedValue({saved: {filename: 'Sales (edited) (1).xlsx',
+      folder: 'C:\\Users\\exec\\Downloads', method: 'excel', warnings: []}});
+    const opened = vi.spyOn(api, 'openFile').mockResolvedValue({ok: true});
+    const clicked = vi.spyOn(HTMLAnchorElement.prototype, 'click');
+    render(card(madeRun()));
     expect(screen.getByTestId('made-files').textContent).toContain('deleted 2 row(s)');
+    fireEvent.click(screen.getByTestId('made-file-download'));
+    await waitFor(() => expect(screen.getByTestId('made-file-saved').textContent)
+      .toBe('Saved in C:\\Users\\exec\\Downloads as Sales (edited) (1).xlsx.'));
+    expect(save).toHaveBeenCalledWith('att_9');
+    expect(clicked).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('made-file-open'));
+    await waitFor(() => expect(opened).toHaveBeenCalledWith('att_9'));
+  });
+
+  it('where Wizard runs elsewhere, the browser downloads the copy', async () => {
+    vi.spyOn(api, 'saveFile').mockRejectedValue(new ApiError('Wizard saves files only on your own PC.', 409, 'not_on_this_pc'));
+    const links: HTMLAnchorElement[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { links.push(this); });
+    render(card(madeRun()));
+    fireEvent.click(screen.getByTestId('made-file-download'));
+    await waitFor(() => expect(links).toHaveLength(1));
+    expect(links[0].getAttribute('href')).toBe('/api/v1/attachments/att_9/file');
+    expect(links[0].getAttribute('download')).toBe('Sales (edited).xlsx');
+    expect(screen.queryByTestId('made-file-error')).toBeNull();
+  });
+
+  it('says why the copy was not saved', async () => {
+    vi.spyOn(api, 'saveFile').mockRejectedValue(new ApiError('Sales (edited).xlsx was not saved: Access is denied.', 422));
+    render(card(madeRun()));
+    fireEvent.click(screen.getByTestId('made-file-download'));
+    await waitFor(() => expect(screen.getByTestId('made-file-error').textContent).toContain('Access is denied'));
+    expect((screen.getByTestId('made-file-download') as HTMLButtonElement).disabled).toBe(false);
   });
 });
