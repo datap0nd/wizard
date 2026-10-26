@@ -12,7 +12,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Literal
-from urllib.parse import unquote, urlsplit
+from urllib.parse import quote, unquote, urlsplit
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
@@ -308,6 +308,11 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
             raise HTTPException(401, "Sign in to use Wizard.")
         return identity
 
+    def on_this_pc(request: Request) -> bool:
+        """The browser and Wizard share a PC (a local install, signed in as its person): Wizard may open Outlook, save to
+        Downloads and open files there. Behind a proxy that would happen on the server."""
+        return settings.auth_mode == "fixture" and _is_loopback(request.client.host if request.client else None)
+
     def same_origin(origin: str, request: Request) -> bool:
         allowed = {settings.public_origin.rstrip("/")} if settings.public_origin else set()
         host = request.headers.get("host", "")
@@ -565,16 +570,45 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
             raise HTTPException(error.status, error.message) from None
 
     @app.get("/api/v1/attachments/{attachment_id}/file")
-    def attachment_file(request: Request, attachment_id: str) -> FileResponse:
-        """Download a file Wizard keeps: an edited copy (or an uploaded original). Only its owner can."""
+    def attachment_file(request: Request, attachment_id: str) -> Response:
+        """Download a file Wizard keeps: an edited copy (or an uploaded original). Only its owner can. The whole file is
+        read before the answer starts, so a file that cannot be read is an error, never a download cut short."""
         identity = me(request)
         row = store.attachment(identity.id, attachment_id)
         path = manager.attachments.original(row) if row and row.get("origin") != "local" else None
         if row is None or path is None or not path.is_file():
             raise HTTPException(404, "That file is not available.")
+        try:
+            data = path.read_bytes()
+        except OSError as error:
+            raise HTTPException(409, f"{row['filename']} could not be read: {error.strerror or error}.") from None
         store.audit(identity.id, "attachment:download", detail={"attachment_id": attachment_id})
-        return FileResponse(path, filename=row["filename"], media_type=DOWNLOAD_TYPES.get(path.suffix.lower(),
-                                                                                         "application/octet-stream"))
+        return Response(data, media_type=DOWNLOAD_TYPES.get(path.suffix.lower(), "application/octet-stream"),
+                        headers={"Content-Disposition": f"attachment; filename*=utf-8''{quote(row['filename'])}"})
+
+    @app.post("/api/v1/attachments/{attachment_id}/save")
+    def save_attachment(request: Request, attachment_id: str) -> dict[str, Any]:
+        """Download where Wizard runs on the person's own PC: Wizard saves the file in their Downloads folder itself
+        (Excel writes it when Office runs here). Elsewhere the page downloads it through the browser."""
+        identity = me(request)
+        if not on_this_pc(request):
+            raise HTTPException(409, {"error": "Wizard saves files only on your own PC.", "code": "not_on_this_pc"})
+        try:
+            return {"saved": manager.attachments.save_to_downloads(identity, attachment_id)}
+        except AttachmentError as error:
+            raise HTTPException(error.status, error.message) from None
+
+    @app.post("/api/v1/attachments/{attachment_id}/open")
+    def open_attachment(request: Request, attachment_id: str) -> dict[str, Any]:
+        """Open the copy Wizard saved in Downloads (Excel), on the person's click."""
+        identity = me(request)
+        if not on_this_pc(request):
+            raise HTTPException(409, {"error": "Wizard opens files only on your own PC.", "code": "not_on_this_pc"})
+        try:
+            manager.attachments.open_saved(identity, attachment_id)
+        except AttachmentError as error:
+            raise HTTPException(error.status, error.message) from None
+        return {"ok": True}
 
     @app.delete("/api/v1/attachments/{attachment_id}")
     def remove_attachment(request: Request, attachment_id: str) -> dict[str, Any]:
@@ -746,7 +780,7 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         run = store.run(identity.id, run_id)
         if not run or run["status"] != "succeeded":
             raise HTTPException(404, "Only a finished answer can be emailed.")
-        if settings.auth_mode != "fixture" or not _is_loopback(request.client.host if request.client else None):
+        if not on_this_pc(request):
             raise HTTPException(409, {"error": "Outlook opens only when Wizard runs on your own PC.", "code": "outlook_not_local"})
         try:
             await open_outlook_draft(settings.data_dir / "drafts", body.subject, body.html)

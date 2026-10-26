@@ -1,11 +1,11 @@
 import {useEffect, useState} from 'react';
-import {AlertTriangle, Download, FileSpreadsheet, FileText, Loader2, Mail, Presentation, Search, X} from 'lucide-react';
+import {AlertTriangle, Download, FileSpreadsheet, FileText, FolderOpen, Loader2, Mail, Presentation, Search, X} from 'lucide-react';
 import {api, ApiError} from '@/api';
 import {formatDate} from '@/format';
 import {cn} from '@/lib/utils';
 import {Dialog, DialogContent} from './ui/dialog';
 import {Hint} from './ui/menu';
-import type {Attachment, LocalFile} from '@/types';
+import type {Attachment, LocalFile, SavedFile} from '@/types';
 
 /** A file in the composer: being read, ready, or not readable (with the reason). */
 export interface PendingFile {
@@ -81,18 +81,55 @@ export function MadeFiles({files}: {files: Attachment[]}) {
   if (!made.length) return null;
   return (
     <div className="space-y-2" data-testid="made-files">
-      {made.map(file => (
-        <div key={file.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-surface px-4 py-3">
-          <KindIcon kind={file.kind} />
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-[13.5px] font-medium text-ink">{file.filename}</p>
-            <p className="line-clamp-2 text-xs text-ink-3">{file.label} · {file.note ?? 'An edited copy; the original is unchanged.'}</p>
-          </div>
-          <a href={`/api/v1/attachments/${encodeURIComponent(file.id)}/file`} download={file.filename}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-accent px-3 text-[13px] font-medium text-white" data-testid="made-file-download">
-            <Download className="size-4" />Download</a>
-        </div>
-      ))}
+      {made.map(file => <MadeFile key={file.id} file={file} />)}
+    </div>
+  );
+}
+
+type SaveState = {step: 'idle' | 'saving'} | {step: 'saved'; saved: SavedFile} | {step: 'failed'; message: string};
+
+/** The browser's own download, where Wizard does not run on this PC. */
+function browserDownload(file: Attachment) {
+  const link = document.createElement('a');
+  link.href = `/api/v1/attachments/${encodeURIComponent(file.id)}/file`;
+  link.download = file.filename;
+  link.click();
+}
+
+/** Download: where Wizard runs on this PC it saves the file in Downloads itself (Excel writes it), because the browser's
+ *  download of a workbook Excel saved can fail there ("Couldn't finish download"). Then Open opens it in Excel. */
+function MadeFile({file}: {file: Attachment}) {
+  const [state, setState] = useState<SaveState>({step: 'idle'});
+  const download = async () => {
+    setState({step: 'saving'});
+    try {
+      setState({step: 'saved', saved: (await api.saveFile(file.id)).saved});
+    } catch (e) {
+      if (e instanceof ApiError && e.code === 'not_on_this_pc') { browserDownload(file); setState({step: 'idle'}); return; }
+      setState({step: 'failed', message: e instanceof Error ? e.message : 'The file was not saved.'});
+    }
+  };
+  const open = async () => {
+    try { await api.openFile(file.id); } catch (e) { setState({step: 'failed', message: e instanceof Error ? e.message : 'The file did not open.'}); }
+  };
+  const button = 'inline-flex h-8 items-center gap-1.5 rounded-lg bg-accent px-3 text-[13px] font-medium text-white disabled:opacity-60';
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-surface px-4 py-3">
+      <KindIcon kind={file.kind} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[13.5px] font-medium text-ink">{file.filename}</p>
+        <p className="line-clamp-2 text-xs text-ink-3">{file.label} · {file.note ?? 'An edited copy; the original is unchanged.'}</p>
+        {state.step === 'saved' && (
+          <p className="text-xs text-ink-2" data-testid="made-file-saved">
+            Saved in {state.saved.folder} as {state.saved.filename}.{state.saved.warnings.length > 0 && ` ${state.saved.warnings.join(' ')}`}
+          </p>
+        )}
+        {state.step === 'failed' && <p className="text-xs text-danger" role="alert" data-testid="made-file-error">{state.message}</p>}
+      </div>
+      {state.step === 'saved'
+        ? <button type="button" onClick={open} className={button} data-testid="made-file-open"><FolderOpen className="size-4" />Open</button>
+        : <button type="button" onClick={download} disabled={state.step === 'saving'} className={button} data-testid="made-file-download">
+            {state.step === 'saving' ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}Download</button>}
     </div>
   );
 }

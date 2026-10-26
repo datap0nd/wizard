@@ -235,3 +235,125 @@ def test_gemini_is_told_to_edit_files_not_to_paste_code(registry):
     assert "never answer with code" in spec.description and spec.category == "present"
     schema = json.dumps(registry.describe("wizard"))
     assert "delete_rows_where" in schema
+
+
+class FakeExcel:
+    """Excel through COM, as save_copy uses it: Open (read-only), SaveCopyAs, Close."""
+
+    def __init__(self, log: list[str], fail: str | None = None):
+        excel = self
+
+        class Book:
+            def SaveCopyAs(self, path: str) -> None:  # noqa: N802 - Excel's name
+                log.append(f"SaveCopyAs({Path(path).name})")
+                if fail:
+                    raise RuntimeError(fail)
+                Path(path).write_bytes(b"written by Excel")
+
+            def Close(self, save: bool) -> None:  # noqa: N802 - Excel's name
+                log.append(f"Close({save})")
+
+        class Books:
+            def Open(self, path: str, **options: Any) -> Book:  # noqa: N802 - Excel's name
+                log.append(f"Open({Path(path).name}, ReadOnly={options.get('ReadOnly')})")
+                return Book()
+
+        self.Workbooks = Books()
+        self.session = type("Session", (), {"app": lambda _, name: excel, "error": lambda _, e: str(e),
+                                            "__enter__": lambda s: s, "__exit__": lambda s, *a: None})
+
+
+def test_a_saved_copy_is_written_by_excel_where_office_runs_and_never_overwrites(tmp_path, monkeypatch):
+    from wizard_documents import office
+    source = workbook(tmp_path / "original.xlsx")
+    log: list[str] = []
+    monkeypatch.setattr(office, "OfficeSession", FakeExcel(log).session)
+    result = editing.save_copy(source, tmp_path / "Downloads" / "Sales (edited).xlsx")
+    assert result == {"status": "ok", "method": "excel", "warnings": []}
+    assert log == ["Open(original.xlsx, ReadOnly=True)", "SaveCopyAs(Sales (edited).xlsx)", "Close(False)"]
+    assert (tmp_path / "Downloads" / "Sales (edited).xlsx").read_bytes() == b"written by Excel", \
+        "Excel writes the copy, so a protected workbook opens where it was saved"
+    with pytest.raises(EditError, match="already exists"):
+        editing.save_copy(source, tmp_path / "Downloads" / "Sales (edited).xlsx")
+    assert (tmp_path / "Downloads" / "Sales (edited).xlsx").read_bytes() == b"written by Excel"
+
+
+def test_a_saved_copy_is_copied_as_is_without_office_or_when_excel_fails(tmp_path, monkeypatch):
+    from wizard_documents import office
+    source = workbook(tmp_path / "original.xlsx")
+    assert editing.save_copy(source, tmp_path / "a.xlsx", "never") == {"status": "ok", "method": "copy", "warnings": []}
+    assert (tmp_path / "a.xlsx").read_bytes() == source.read_bytes()
+
+    def unavailable() -> None:
+        raise office.OfficeUnavailable("pywin32 is not installed")
+    monkeypatch.setattr(office, "OfficeSession", unavailable)
+    assert editing.save_copy(source, tmp_path / "b.xlsx")["method"] == "copy"
+    log: list[str] = []
+    monkeypatch.setattr(office, "OfficeSession", FakeExcel(log, fail="The file is locked").session)
+    failed = editing.save_copy(source, tmp_path / "c.xlsx")
+    assert failed["method"] == "copy" and (tmp_path / "c.xlsx").read_bytes() == source.read_bytes()
+    assert "Excel could not save the copy: The file is locked" in failed["warnings"][0]
+    assert "protected workbook may not open" in failed["warnings"][0]
+    assert log[-1] == "Close(False)"
+
+
+def test_download_on_this_pc_saves_the_copy_in_downloads_and_opens_it(tmp_path, monkeypatch):
+    from wizard_api import attachments as attachments_module
+    downloads = tmp_path / "Downloads"
+    monkeypatch.setattr(attachments_module, "downloads_folder", lambda: downloads)
+    opened: list[str] = []
+    monkeypatch.setattr(attachments_module.os, "startfile", opened.append, raising=False)
+    source = workbook(tmp_path / "sales.xlsx")
+    with TestClient(create_app(make_settings(tmp_path))) as client:
+        login(client, "u-ceo")
+        started, run = bound_file(client, "Gulf sales.xlsx", source.read_bytes())
+        app = client.app
+        ceo = IdentityDirectory.load(FIXTURES / "identities.json").get("u-ceo")
+        assert ceo is not None
+        active = ActiveRun("run_edit", ceo, started["conversation_id"], "ask", "edit it", None, "replay")
+        context = ToolContext(identity=ceo, run_id="run_edit", recorder=Recorder(app.state.store, active, app.state.manager.attachments),
+                              services=app.state.manager.services)
+        outcome = app.state.registry.execute("wizard_edit_attachment", {"file": "F1", "operations": [
+            {"op": "set", "sheet": "Sales", "cell": "E1", "values": [["Checked"]]}]}, context)
+        assert outcome.ok, outcome.error_message
+        made = outcome.data["attachment_id"]
+        assert client.post(f"/api/v1/attachments/{made}/open", headers=HEADERS).status_code == 404, "nothing saved yet"
+        saved = client.post(f"/api/v1/attachments/{made}/save", headers=HEADERS)
+        assert saved.status_code == 200, saved.text
+        assert saved.json()["saved"] == {"filename": "Gulf sales (edited).xlsx", "folder": str(downloads), "method": "copy",
+                                         "warnings": []}
+        assert openpyxl.load_workbook(downloads / "Gulf sales (edited).xlsx")["Sales"]["E1"].value == "Checked"
+        again = client.post(f"/api/v1/attachments/{made}/save", headers=HEADERS).json()["saved"]
+        assert again["filename"] == "Gulf sales (edited) (1).xlsx", "a file already in Downloads is never overwritten"
+        assert client.post(f"/api/v1/attachments/{made}/open", headers=HEADERS).json() == {"ok": True}
+        assert opened == [str(downloads / "Gulf sales (edited) (1).xlsx")]
+        monkeypatch.setattr(attachments_module.os, "startfile",
+                            lambda path: (_ for _ in ()).throw(OSError(1155, "No application is associated")), raising=False)
+        no_app = client.post(f"/api/v1/attachments/{made}/open", headers=HEADERS)
+        assert no_app.status_code == 409 and "No application is associated" in no_app.json()["error"]
+        audit = [r["action"] for r in app.state.store.db.execute(
+            "SELECT action FROM audit_log WHERE action LIKE 'attachment:%' ORDER BY rowid").fetchall()]
+        assert audit.count("attachment:save") == 2 and audit[-1] == "attachment:open"
+        assert client.post(f"/api/v1/attachments/{made}/save").status_code == 403, "the Wizard request header is required"
+        login(client, "u-cfo")
+        assert client.post(f"/api/v1/attachments/{made}/save", headers=HEADERS).status_code == 404, "another user's file"
+        assert client.post(f"/api/v1/attachments/{made}/open", headers=HEADERS).status_code == 404
+    with TestClient(app, client=("10.20.30.40", 50000)) as remote:
+        login(remote, "u-ceo")
+        refused = remote.post(f"/api/v1/attachments/{made}/save", headers=HEADERS)
+        assert refused.status_code == 409 and refused.json()["code"] == "not_on_this_pc", \
+            "away from the person's PC the page downloads through the browser instead"
+        download = remote.get(f"/api/v1/attachments/{made}/file")
+        assert download.status_code == 200 and download.headers["content-length"] == str(len(download.content))
+        monkeypatch.setattr(Path, "read_bytes", lambda self: (_ for _ in ()).throw(PermissionError(13, "Access is denied")))
+        unreadable = remote.get(f"/api/v1/attachments/{made}/file")
+        assert unreadable.status_code == 409 and "Access is denied" in unreadable.json()["error"], \
+            "a file that cannot be read is an error before any byte, never a download cut short"
+
+
+def test_downloads_never_get_a_name_outside_the_folder(tmp_path):
+    from wizard_api.attachments import free_name
+    assert free_name(tmp_path, "..") == tmp_path / "file"
+    assert free_name(tmp_path, "a/../b:c.xlsx") == tmp_path / "a .. b c.xlsx"
+    (tmp_path / "Sales.xlsx").write_bytes(b"x")
+    assert free_name(tmp_path, "Sales.xlsx") == tmp_path / "Sales (1).xlsx"

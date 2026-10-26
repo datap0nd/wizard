@@ -64,7 +64,8 @@ around a precomputed result is withdrawn. Its credential, entitlement, DLP and h
   clicked; confirmations are answered No; downloads are off; secrets are redacted from what Gemini sees; a sign-in page
   stops the read and Gemini never types credentials; evidence is `LIVE` / `BROWSER_SESSION`, never verified.
 - Change a file the person attached in place. `wizard_edit_attachment` writes an edited copy the person downloads
-  ([decision](docs/decisions/2026-10-23-edited-attachments.md)); the original is opened read-only.
+  ([decision](docs/decisions/2026-10-23-edited-attachments.md)); the original is opened read-only. On the person's own
+  PC, Download saves the copy into their Downloads folder (Excel writes it; never over an existing file).
 - Commit corporate exports, live rows, credentials, tokens, cookies, `.env`, `*.provision`, the DLP-blocked DOCX, raw
   model/source logs, or owner reference answers. Live references live in the approved private location; CI sees safe
   IDs only. Never build a password or token into WizardSetup.exe or a release: they are public.

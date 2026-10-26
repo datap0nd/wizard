@@ -98,6 +98,17 @@ def cmd_edit(args: argparse.Namespace) -> int:
     return 0 if result["status"] == "ok" else 1
 
 
+def cmd_save_copy(args: argparse.Namespace) -> int:
+    """Wizard's Download on the person's own PC: a copy of a workbook it made, written by Excel when it runs here."""
+    from .edit import save_copy
+    try:
+        result: dict[str, object] = save_copy(args.file, args.out, args.office)
+    except (ConversionError, OSError) as error:
+        result = {"status": "failed", "note": str(error)[:600]}
+    print(json.dumps(result, ensure_ascii=False, default=str))
+    return 0 if result["status"] == "ok" else 1
+
+
 def cmd_extract(args: argparse.Namespace) -> int:
     content = args.content.resolve()
     if not (content / "inbox").is_dir():
@@ -252,6 +263,10 @@ def main(argv: list[str] | None = None) -> int:
     edit_parser.add_argument("--operations", type=Path, required=True)
     edit_parser.add_argument("--out", type=Path, required=True)
     edit_parser.add_argument("--office", choices=("auto", "always", "never"), default="auto")
+    save_parser = commands.add_parser("save-copy", help="copy a workbook Wizard made to a new place (Excel writes it)")
+    save_parser.add_argument("file", type=Path)
+    save_parser.add_argument("--out", type=Path, required=True)
+    save_parser.add_argument("--office", choices=("auto", "never"), default="auto")
     folders = commands.add_parser("outlook-folders")
     folders.add_argument("--depth", type=int, default=3)
     draft = commands.add_parser("outlook-draft")
@@ -312,6 +327,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_extract(args)
         if args.command == "edit":
             return cmd_edit(args)
+        if args.command == "save-copy":
+            return cmd_save_copy(args)
         if args.command == "outlook-folders":
             return cmd_outlook_folders(args)
         if args.command == "outlook-draft":

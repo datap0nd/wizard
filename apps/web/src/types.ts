@@ -125,6 +125,15 @@ export interface Attachment {
   run_id: string | null;
 }
 
+/** A file Wizard saved in the person's Downloads folder itself (Download where Wizard runs on their own PC). */
+export interface SavedFile {
+  filename: string;
+  folder: string;
+  /** excel: Excel wrote the copy (protected workbooks stay openable); copy: the bytes were copied. */
+  method: 'excel' | 'copy';
+  warnings: string[];
+}
+
 export interface LocalFile { path: string; name: string; kind: Attachment['kind']; bytes: number; folder: string; modified: string }
 
 export interface ConversationSummary { id: string; title: string; created_at: string; updated_at: string }

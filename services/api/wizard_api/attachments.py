@@ -17,12 +17,14 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
 import threading
 import time
+import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -43,6 +45,37 @@ GRANT_S = 600
 EDITABLE = (".xlsx", ".xlsm", ".xls", ".xlsb")
 # One Office job at a time (a conversion from the page, an edit from a tool thread): Office automation is not reentrant.
 OFFICE = threading.Lock()
+DOWNLOADS = uuid.UUID("374DE290-123F-4565-9164-39C4925E467B")  # FOLDERID_Downloads
+
+
+def downloads_folder() -> Path:
+    """The person's Downloads folder, where Windows keeps it (it may be redirected), else ~/Downloads."""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            windll = getattr(ctypes, "windll")  # noqa: B009 - Windows-only attribute; getattr keeps type checks platform-neutral
+            folder_id = ctypes.create_string_buffer(DOWNLOADS.bytes_le, 16)
+            found = ctypes.c_wchar_p()
+            if windll.shell32.SHGetKnownFolderPath(folder_id, 0, None, ctypes.byref(found)) == 0:
+                try:
+                    if found.value:
+                        return Path(found.value)
+                finally:
+                    windll.ole32.CoTaskMemFree(found)
+        except (OSError, AttributeError, ValueError):
+            pass
+    return Path.home() / "Downloads"
+
+
+def free_name(folder: Path, filename: str) -> Path:
+    """A place in `folder` no file has yet, named as a browser would: Sales.xlsx, then Sales (1).xlsx..."""
+    name = re.sub(r'[\\/:*?"<>|\x00-\x1f]+', " ", filename).strip().strip(".") or "file"
+    stem, suffix = Path(name).stem, Path(name).suffix
+    for number in range(100):
+        candidate = folder / (name if number == 0 else f"{stem} ({number}){suffix}")
+        if not candidate.exists():
+            return candidate
+    raise AttachmentError(409, f"Downloads already has {name} and 99 copies of it.")
 
 
 class AttachmentError(Exception):
@@ -69,6 +102,7 @@ class Attachments:
         self.settings, self.store = settings, store
         self.root = settings.data_dir / "attachments"
         self.granted: dict[str, float] = {}
+        self.saved: dict[tuple[str, str], Path] = {}  # (user, attachment) -> the copy saved in Downloads, for Open
 
     def folder(self, user_id: str, attachment_id: str) -> Path:
         return self.root / hashlib.sha256(user_id.encode("utf-8")).hexdigest()[:20] / attachment_id
@@ -246,6 +280,40 @@ class Attachments:
                                                                   "operations": len(operations), "method": result.get("method")})
         return {**public(bound), "changes": changes, "warnings": [str(w) for w in result.get("warnings") or []],
                 "method": result.get("method"), "sheets": result.get("sheets") or []}
+
+    # Saved on this PC ------------------------------------------------------------------------------------------------------
+    def save_to_downloads(self, identity: Identity, attachment_id: str) -> dict[str, Any]:
+        """Download where Wizard runs on the person's own PC: Wizard writes the copy into their Downloads folder itself,
+        with Excel when Office runs here, instead of the browser. A browser download of a workbook Excel saved can fail
+        there ("Couldn't finish download"), and a NASCA-protected copy the browser wrote would not open."""
+        row = self.store.attachment(identity.id, attachment_id)
+        source = self.original(row) if row and row.get("origin") != "local" else None
+        if row is None or source is None or not source.is_file():
+            raise AttachmentError(404, "That file is not available.")
+        folder = downloads_folder()
+        target = free_name(folder, row["filename"])
+        result = self._docs("save-copy", str(source), "--out", str(target), "--office", self.settings.attachment_office)
+        if result.get("status") != "ok" or not target.is_file():
+            self.store.audit(identity.id, "attachment:save", outcome="failed", detail={"attachment_id": attachment_id})
+            raise AttachmentError(422, f"{row['filename']} was not saved: {result.get('note') or 'unknown reason'}.")
+        self.saved[(identity.id, attachment_id)] = target
+        self.store.audit(identity.id, "attachment:save", detail={"attachment_id": attachment_id, "method": result.get("method")})
+        return {"filename": target.name, "folder": str(folder), "method": result.get("method"),
+                "warnings": [str(w) for w in result.get("warnings") or []]}
+
+    def open_saved(self, identity: Identity, attachment_id: str) -> None:
+        """Open the copy saved in Downloads with its application (Excel), on the person's click."""
+        path = self.saved.get((identity.id, attachment_id))
+        if path is None or not path.is_file():
+            raise AttachmentError(404, "Download the file again: it is no longer where Wizard saved it.")
+        start = getattr(os, "startfile", None)
+        if start is None:
+            raise AttachmentError(409, f"Open {path.name} from {path.parent}.")
+        try:
+            start(str(path))
+        except OSError as error:
+            raise AttachmentError(409, f"{path.name} did not open ({error.strerror or error}); open it from {path.parent}.") from None
+        self.store.audit(identity.id, "attachment:open", detail={"attachment_id": attachment_id})
 
     def remove(self, identity: Identity, attachment_id: str) -> bool:
         removed = self.store.delete_attachment(identity.id, attachment_id)
