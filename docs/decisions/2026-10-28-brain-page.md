@@ -41,6 +41,17 @@ I'm not updating anything. I want a fake 'new news article came in' animation, n
   publication date"), the right end of the chart names its last week, and "published in the last 7 days" and
   "newest … ago" show only when they say something recent. The tour's news step is "Reading the market".
 
+**Update (28 October 2026, later): a simple and an advanced view, and more room for the news.** The owner: "in the
+/brain, create a simple/advanced toggle, advanced is current view (more emphasis on the news on the bottom right, the
+section is too small) and the simple one is without animations and the wizard logo and the cards at the bottom."
+- **Simple / Advanced** in the header (V switches; `?view=simple` or `?view=advanced` opens one; the browser keeps
+  the last choice). Advanced is the page as it was. Simple has no wizard in the middle, no counters along the bottom
+  and nothing moving: the picture is drawn still, the news total does not count up, the headlines do not scroll. The
+  tour and the demo arrival (N) still work there, without their motion.
+- **The news gets the room** in both: a wider panel (420 px, 480 px on wide screens), a lower chart, the categories in
+  two columns, and the latest articles list at least 220 px tall with larger headlines. With motion off (the simple
+  view or the PC's reduced-motion setting) the chart's running-total line is drawn instead of left invisible.
+
 **Evidence.** `tests/unit/test_brain.py` (9), `tests/integration/test_brain_postgres_real.py` (2, real PostgreSQL 16),
 `apps/web/src/brain.test.ts` (8), the e2e test "the Brain page maps what Wizard knows…" in `apps/web/e2e/wizard.spec.ts`,
 and screenshots of the page in Chromium at 1280×720, 1600×900 and 1920×1080 over a synthetic knowledge base of 111 notes

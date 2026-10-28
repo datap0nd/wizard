@@ -218,6 +218,20 @@ test('the Brain page maps what Wizard knows and walks a presenter through it, be
   await expect(page.getByTestId('brain-caption')).toHaveCount(0);
   await page.getByTestId('brain-cluster').filter({hasText: 'Metrics'}).click();
   await expect(page.getByTestId('brain-cluster').filter({hasText: 'Metrics'})).toHaveAttribute('aria-pressed', 'true');
+  // Simple: no wizard in the middle, no counters, nothing moving; the browser keeps the choice; V switches back.
+  await expect(page.getByTestId('brain-wizard')).toBeVisible();
+  await page.getByTestId('brain-view-simple').click();
+  await expect(page.getByTestId('brain-page')).toHaveAttribute('data-view', 'simple');
+  await expect(page.getByTestId('brain-wizard')).toHaveCount(0);
+  await expect(page.getByTestId('brain-stats')).toHaveCount(0);
+  await expect(page.getByTestId('brain-canvas')).toBeVisible();
+  await page.reload();
+  await expect(page.getByTestId('brain-page')).toHaveAttribute('data-view', 'simple');
+  await expect(page.getByTestId('brain-view-simple')).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('v');
+  await expect(page.getByTestId('brain-page')).toHaveAttribute('data-view', 'advanced');
+  await expect(page.getByTestId('brain-wizard')).toBeVisible();
+  await expect(page.getByTestId('brain-stat').first()).toBeVisible();
   await page.getByRole('link', {name: 'Ask Wizard'}).click();
   await expect(page.getByTestId('conversation-title')).toBeVisible();
 });

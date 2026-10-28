@@ -17,6 +17,16 @@ const REFRESH_MS = 10 * 60_000;
 const FRESH_MS = 5 * 60_000;
 const ARRIVE_AFTER_MS = 2500;  // on the tour's news step, the demo arrival comes this long after the step opens
 const STAGE_NAMES = {SIGNED: 'Signed by its owner', EXPERT_CHECKED: 'Checked by an expert', DRAFT: 'Draft'} as const;
+const VIEW_KEY = 'wizard.brain.view';
+
+/** Simple (nothing moves, no wizard in the middle, no counters along the bottom) or advanced (everything). From
+ *  ?view=simple|advanced, else this browser's last choice, else advanced. */
+type View = 'simple' | 'advanced';
+function firstView(): View {
+  const asked = new URLSearchParams(location.search).get('view');
+  if (asked === 'simple' || asked === 'advanced') return asked;
+  try { return localStorage.getItem(VIEW_KEY) === 'simple' ? 'simple' : 'advanced'; } catch { return 'advanced'; }
+}
 
 /** The stage's size, measured once it is on the page (it appears only after sign-in) and whenever it changes. */
 function useSize(): [(el: HTMLDivElement | null) => void, {width: number; height: number}] {
@@ -52,7 +62,8 @@ function Stat({value, label, delay}: {value: number; label: string; delay: numbe
  * /brain: what Wizard can draw on, as one living picture, for showing Wizard to people. A page of its own, beside the
  * app: it changes nothing in the chat. Every number and name on it was read from the knowledge base, the catalogs and
  * the company database (brain.py); the motion is decoration. Presenter keys: → or Space for the next step of the tour,
- * ← for the previous one, Esc to leave it, F for full screen, N for a demo "new article came in".
+ * ← for the previous one, Esc to leave it, F for full screen, N for a demo "new article came in", V for the simple or
+ * advanced view (the owner, 28 Oct 2026: simple has no motion, no wizard and no counters; advanced is everything).
  */
 export function BrainPage() {
   const [boot, setBoot] = useState<Bootstrap | null>(null);
@@ -70,7 +81,13 @@ export function BrainPage() {
   const shownDemo = useRef(new Set<string>());
   const freshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [stageRef, size] = useSize();
-  const reduced = useReducedMotion();
+  const [view, setView] = useState<View>(firstView);
+  const simple = view === 'simple';
+  const reduced = useReducedMotion() || simple;
+  const choose = useCallback((next: View) => {
+    setView(next);
+    try { localStorage.setItem(VIEW_KEY, next); } catch { /* the choice is only a convenience */ }
+  }, []);
 
   const loadBoot = useCallback(() => { api.bootstrap().then(setBoot).catch((e: unknown) => setError(e instanceof Error ? e.message : 'Wizard could not start.')); }, []);
   useEffect(() => { loadBoot(); }, [loadBoot]);
@@ -121,10 +138,11 @@ export function BrainPage() {
       else if (e.key === 'Home') setStep(0);
       else if (e.key.toLowerCase() === 'f') void document.documentElement.requestFullscreen?.().catch(() => undefined);
       else if (e.key.toLowerCase() === 'n') arrive();
+      else if (e.key.toLowerCase() === 'v') choose(simple ? 'advanced' : 'simple');
     };
     window.addEventListener('keydown', keydown);
     return () => window.removeEventListener('keydown', keydown);
-  }, [next, previous, arrive]);
+  }, [next, previous, arrive, choose, simple]);
 
   if (error) return <div className="grid min-h-dvh place-items-center bg-[#050817] p-6 text-sm text-rose-300" role="alert">{error}</div>;
   if (!boot) return <div className="grid min-h-dvh place-content-center justify-items-center gap-2 bg-[#050817] text-sm text-slate-400"><WizardSprite animation="idle" scale={2} />Loading Wizard…</div>;
@@ -138,7 +156,7 @@ export function BrainPage() {
   const database = live?.database.status === 'ok' ? live.database : null;
   const scale = layout && layout.core >= 78 ? 3 : 2;
   return (
-    <div className="brain-page flex h-dvh w-screen flex-col overflow-hidden text-slate-100" data-testid="brain-page">
+    <div className={cn('brain-page flex h-dvh w-screen flex-col overflow-hidden text-slate-100', simple && 'brain-still')} data-testid="brain-page" data-view={view}>
       <header className="z-20 flex flex-wrap items-center gap-3 px-5 pb-2 pt-4">
         <img src={mark} alt="" className="size-8" />
         <div className="min-w-0">
@@ -150,6 +168,12 @@ export function BrainPage() {
         </div>
         {map && map.content !== 'company' && <span className="rounded-full border border-amber-300/40 bg-amber-300/10 px-2 py-0.5 text-[11.5px] font-semibold text-amber-200" data-testid="brain-examples">EXAMPLE CONTENT</span>}
         <div className="ml-auto flex items-center gap-1.5">
+          <div className="flex rounded-lg border border-white/15 bg-white/5 p-0.5" role="group" aria-label="View" title="Simple or advanced view (V)">
+            {(['simple', 'advanced'] as const).map(v => (
+              <button key={v} type="button" onClick={() => choose(v)} aria-pressed={view === v} data-testid={`brain-view-${v}`}
+                className={cn('rounded-md px-2.5 py-1 text-[13px] font-medium capitalize', view === v ? 'bg-white/15 text-white' : 'text-slate-400 hover:text-white')}>{v}</button>
+            ))}
+          </div>
           <button type="button" onClick={() => (step === null ? setStep(0) : setStep(null))} data-testid="brain-tour"
             className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-[13px] font-medium hover:bg-white/10">
             {step === null ? <><Play className="size-3.5" />Tour</> : <><Pause className="size-3.5" />End tour</>}</button>
@@ -166,8 +190,8 @@ export function BrainPage() {
           {layout && map && <>
             <BrainCanvas layout={layout} focus={focus} hovered={card?.key ?? null} reduced={reduced} burst={burst}
               onHover={node => { if (!pinned) setHover(node); }} onPick={node => { setPinned(node); setCluster(null); }} />
-            {/* The wizard at the centre, in his magic circle. */}
-            <div className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2" style={{left: layout.center.x, top: layout.center.y}}>
+            {/* The wizard at the centre, in his magic circle (not in the simple view). */}
+            {!simple && <div className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2" style={{left: layout.center.x, top: layout.center.y}} data-testid="brain-wizard">
               <svg width={layout.core * 2 + 40} height={layout.core * 2 + 40} viewBox="-1 -1 2 2" className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" aria-hidden="true">
                 <defs><radialGradient id="brain-core"><stop offset="0" stopColor="#3b5bff" stopOpacity="0.55" /><stop offset="0.7" stopColor="#1428a0" stopOpacity="0.18" /><stop offset="1" stopColor="#1428a0" stopOpacity="0" /></radialGradient></defs>
                 <circle r="1" fill="url(#brain-core)" />
@@ -175,7 +199,7 @@ export function BrainPage() {
                 <circle r="0.74" fill="none" stroke="#c7d2fe" strokeOpacity="0.35" strokeWidth="0.008" strokeDasharray="0.012 0.03" className="stage-orbit-rev" />
               </svg>
               <WizardSprite animation={current?.id === 'ask' ? 'wave' : 'cast'} scale={scale} label="Wizard" className="relative" />
-            </div>
+            </div>}
             {/* The systems around him. */}
             {layout.systems.map(({id, system, x, y}) => {
               const on = focus.kind === 'all' || focus.kind === 'systems' || (focus.kind === 'cluster' && focus.id === NEWS && id === 'postgresql');
@@ -251,7 +275,7 @@ export function BrainPage() {
               </div>
             </div>
           )}
-          {!current && counts && (
+          {!current && counts && !simple && (
             <div className="pointer-events-none absolute bottom-3 left-3 right-3 z-10 flex gap-2 overflow-hidden" data-testid="brain-stats">
               {/* One row, most telling first: as many as the stage has room for. */}
               {([[counts.notes, 'notes'], [counts.areas, 'topics'], [counts.links, 'connections'], [showNews ? news.total ?? 0 : 0, 'news articles'],
@@ -264,8 +288,8 @@ export function BrainPage() {
           {step === null && map && !card && <p className="pointer-events-none absolute right-4 top-4 z-0 hidden text-[11.5px] text-slate-500 lg:block">Press → to start the tour</p>}
         </div>
         {news && (
-          <aside className={cn('flex min-h-0 shrink-0 flex-col lg:w-[380px]', current?.focus.kind === 'cluster' && current.focus.id === NEWS && 'brain-spotlight')}>
-            {showNews ? <NewsPanel news={news} fresh={fresh} incoming={incoming} category={category} onCategory={setCategory} name={live?.name ?? 'Company database'} />
+          <aside className={cn('flex min-h-0 shrink-0 flex-col lg:w-[420px] xl:w-[480px]', current?.focus.kind === 'cluster' && current.focus.id === NEWS && 'brain-spotlight')}>
+            {showNews ? <NewsPanel news={news} fresh={fresh} incoming={incoming} category={category} onCategory={setCategory} name={live?.name ?? 'Company database'} still={simple} />
               : <NewsMissing news={news} />}
           </aside>
         )}

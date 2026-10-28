@@ -136,6 +136,10 @@
   .brain-halo { box-shadow: 0 0 0 2px rgb(142 162 255 / 0.7), 0 0 26px 6px rgb(91 124 255 / 0.45); animation: brain-live 2s ease-in-out infinite; }
   .brain-spotlight > section { box-shadow: 0 0 0 1px rgb(251 113 133 / 0.5), 0 0 40px rgb(251 113 133 / 0.25); transition: box-shadow 0.5s; }
   .brain-fade { mask-image: linear-gradient(to bottom, black 85%, transparent); }
+  /* The simple view (and reduced motion): nothing moves, and what an animation would draw in is drawn. */
+  .brain-still *, .brain-still *::before, .brain-still *::after { animation: none !important; transition: none !important; }
+  .brain-still .brain-draw { stroke-dashoffset: 0; }
+  @media (prefers-reduced-motion: reduce) { .brain-draw { stroke-dashoffset: 0; } }
   @keyframes brain-live { 50% { opacity: 0.45; } }
   @keyframes brain-draw { to { stroke-dashoffset: 0; } }
   @keyframes brain-grow { from { transform: scaleX(0); } }
