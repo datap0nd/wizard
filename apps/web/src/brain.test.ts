@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {ago, cumulative, inFocus, layoutBrain, nodeAt, NEWS, sunflower, tourSteps, type BrainLive, type BrainMap, type BrainNews} from './brain';
+import {ago, cumulative, demoArrival, inFocus, itemKey, layoutBrain, nodeAt, NEWS, sunflower, tourSteps, type BrainLive, type BrainMap, type BrainNews} from './brain';
 
 const map: BrainMap = {
   content: 'company', knowledge_synced_at: null, pg_name: 'AI Team Database',
@@ -90,6 +90,7 @@ describe('the tour', () => {
     expect(steps[0].body).toContain('4 notes across 3 topics, joined by 2 connections');
     expect(steps[3].body).toContain('40 terms');
     expect(steps[4].body).toBe('It reads GSCM (12 reports catalogued) and AI Team Database (412 tables and views), only ever with your own rights.');
+    expect(steps[5].title).toBe('Reading the market');
     expect(steps[5].body).toBe('1,512 news articles curated and sorted into 2 categories, 90 articles in the last 7 days.');
     expect(steps[1].examples).toEqual(['ASAP guide', 'GSCM guide']);
     const withoutNews = tourSteps(map, {...live, news: {status: 'not_found'}});
@@ -111,5 +112,22 @@ describe('news helpers', () => {
     expect(ago('2026-10-28T05:00:00Z', now)).toBe('5 h ago');
     expect(ago('2026-10-26T10:00:00Z', now)).toBe('2 days ago');
     expect(ago(null, now)).toBe('');
+  });
+});
+
+describe('the demo arrival', () => {
+  const latest = Array.from({length: 6}, (_, i) => ({title: `Article ${i}`, category: 'Competitors', date: `2026-10-0${i + 1}T08:00:00Z`}));
+  it('re-shows one of the table\'s own articles as just in, below the top three, never the same one twice', () => {
+    const shown = new Set<string>();
+    const now = Date.parse('2026-10-28T10:00:00Z');
+    const first = demoArrival(latest, shown, now)!;
+    expect(first.title).toBe('Article 3');
+    expect(first.date).toBe('2026-10-28T10:00:00.000Z');
+    expect(first.origin).toBe(itemKey(latest[3]));
+    shown.add(first.origin!);
+    expect(demoArrival(latest, shown, now)!.title).toBe('Article 4');
+    latest.forEach(item => shown.add(itemKey(item)));
+    expect(demoArrival(latest, shown, now)).toBeNull();
+    expect(demoArrival([], new Set(), now)).toBeNull();
   });
 });

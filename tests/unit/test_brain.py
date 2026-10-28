@@ -129,6 +129,9 @@ def test_news_queries_quote_names_and_unnest_array_categories():
     assert queries["summary"].endswith('FROM "My Schema".news')
     assert 'unnest(t."tags")' in queries["categories"]
     assert 'left(array_to_string("tags", \', \'), 160) AS category' in queries["latest"] and 'ORDER BY "published" DESC NULLS LAST' in queries["latest"]
+    assert "date_trunc('week', \"published\")" in queries["weekly"], "weeks by publication date"
+    added = brain.news_queries(brain.NewsTable("db", "public", "news", {"title": "t", "date": "p", "added": "a"}, frozenset()))
+    assert 'max("a") AS last_added' in added["summary"] and "FILTER (WHERE \"p\" >= now() - interval '7 days')" in added["summary"]
     undated = brain.news_queries(brain.NewsTable("db", "public", "news", {"title": "title"}, frozenset()))
     assert set(undated) == {"summary", "latest"} and "ORDER BY" not in undated["latest"]
 

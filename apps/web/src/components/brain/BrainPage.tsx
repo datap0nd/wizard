@@ -1,7 +1,7 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {ArrowLeft, ArrowRight, BadgeCheck, Maximize2, MessageSquareText, Pause, Play, X} from 'lucide-react';
 import {api} from '@/api';
-import {areaColor, layoutBrain, NEWS, plural, ringSystems, tourSteps, type BrainLive, type BrainMap, type Focus, type LaidNode} from '@/brain';
+import {areaColor, demoArrival, itemKey, layoutBrain, NEWS, plural, ringSystems, tourSteps, type BrainLive, type BrainMap, type Focus, type LaidNode, type NewsItem} from '@/brain';
 import mark from '@/assets/wizard-mark.svg';
 import {formatDate} from '@/format';
 import {cn} from '@/lib/utils';
@@ -11,11 +11,11 @@ import {SystemLogo} from '../SystemLogo';
 import {WizardSprite} from '../WizardSprite';
 import {BrainCanvas} from './BrainCanvas';
 import {CountUp} from './CountUp';
-import {itemKey, NewsMissing, NewsPanel} from './NewsPanel';
+import {NewsMissing, NewsPanel} from './NewsPanel';
 
-const LIVE_EVERY_MS = 60_000;
-const MAP_EVERY_MS = 10 * 60_000;
+const REFRESH_MS = 10 * 60_000;
 const FRESH_MS = 5 * 60_000;
+const ARRIVE_AFTER_MS = 2500;  // on the tour's news step, the demo arrival comes this long after the step opens
 const STAGE_NAMES = {SIGNED: 'Signed by its owner', EXPERT_CHECKED: 'Checked by an expert', DRAFT: 'Draft'} as const;
 
 /** The stage's size, measured once it is on the page (it appears only after sign-in) and whenever it changes. */
@@ -52,7 +52,7 @@ function Stat({value, label, delay}: {value: number; label: string; delay: numbe
  * /brain: what Wizard can draw on, as one living picture, for showing Wizard to people. A page of its own, beside the
  * app: it changes nothing in the chat. Every number and name on it was read from the knowledge base, the catalogs and
  * the company database (brain.py); the motion is decoration. Presenter keys: → or Space for the next step of the tour,
- * ← for the previous one, Esc to leave it, F for full screen.
+ * ← for the previous one, Esc to leave it, F for full screen, N for a demo "new article came in".
  */
 export function BrainPage() {
   const [boot, setBoot] = useState<Bootstrap | null>(null);
@@ -66,7 +66,8 @@ export function BrainPage() {
   const [category, setCategory] = useState<string | null>(null);
   const [fresh, setFresh] = useState<Set<string>>(new Set());
   const [burst, setBurst] = useState(0);
-  const seen = useRef<Set<string> | null>(null);
+  const [incoming, setIncoming] = useState<NewsItem[]>([]);
+  const shownDemo = useRef(new Set<string>());
   const freshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [stageRef, size] = useSize();
   const reduced = useReducedMotion();
@@ -77,24 +78,10 @@ export function BrainPage() {
   useEffect(() => {
     if (!signedIn) return;
     const loadMap = () => api.brain().then(setMap).catch((e: unknown) => setError(e instanceof Error ? e.message : 'The brain could not be read.'));
-    const loadLive = () => api.brainLive().then(next => {
-      setLive(next);
-      const latest = next.news.latest ?? [];
-      const keys = new Set(latest.map(itemKey));
-      if (seen.current) {
-        const arrived = latest.filter(item => !seen.current!.has(itemKey(item))).map(itemKey);
-        if (arrived.length) {
-          setFresh(new Set(arrived)); setBurst(b => b + 1);
-          // "NEW" for a few minutes, not for as long as the page stays open.
-          if (freshTimer.current) clearTimeout(freshTimer.current);
-          freshTimer.current = setTimeout(() => setFresh(new Set()), FRESH_MS);
-        }
-      }
-      seen.current = new Set([...(seen.current ?? []), ...keys]);
-    }).catch(() => undefined);
+    const loadLive = () => api.brainLive().then(setLive).catch(() => undefined);
     void loadMap(); void loadLive();
-    const a = setInterval(loadLive, LIVE_EVERY_MS), b = setInterval(loadMap, MAP_EVERY_MS);
-    return () => { clearInterval(a); clearInterval(b); if (freshTimer.current) clearTimeout(freshTimer.current); };
+    const timer = setInterval(() => { void loadMap(); void loadLive(); }, REFRESH_MS);
+    return () => { clearInterval(timer); if (freshTimer.current) clearTimeout(freshTimer.current); };
   }, [signedIn]);
 
   const news = live?.news ?? null;
@@ -104,6 +91,24 @@ export function BrainPage() {
   const current = step !== null ? steps[Math.min(step, steps.length - 1)] : null;
   const focus: Focus = current ? current.focus : pinned ? {kind: 'note', id: pinned.key} : cluster ? {kind: 'cluster', id: cluster}
     : hover ? {kind: 'note', id: hover.key} : {kind: 'all'};
+
+  /** The demo "a new article came in" (owner, 28 Oct 2026): one of the table's own articles slides in at the top
+   *  marked NEW, with a flurry along the news synapses. Nothing is written and no count moves (brain.ts, demoArrival). */
+  const arrive = useCallback(() => {
+    if (news?.status !== 'ok') return;
+    const item = demoArrival(news.latest ?? [], shownDemo.current, Date.now());
+    if (!item) return;
+    shownDemo.current.add(item.origin!);
+    setIncoming(prev => [item, ...prev].slice(0, 5));
+    setFresh(new Set([itemKey(item)])); setBurst(b => b + 1);
+    if (freshTimer.current) clearTimeout(freshTimer.current);
+    freshTimer.current = setTimeout(() => setFresh(new Set()), FRESH_MS);
+  }, [news]);
+  useEffect(() => {
+    if (current?.id !== 'news') return;
+    const timer = setTimeout(arrive, ARRIVE_AFTER_MS);
+    return () => clearTimeout(timer);
+  }, [current?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const next = useCallback(() => setStep(s => (s === null ? 0 : Math.min(s + 1, steps.length - 1))), [steps.length]);
   const previous = useCallback(() => setStep(s => (s === null ? null : Math.max(0, s - 1))), []);
@@ -115,10 +120,11 @@ export function BrainPage() {
       else if (e.key === 'Escape') { setStep(null); setPinned(null); setCluster(null); }
       else if (e.key === 'Home') setStep(0);
       else if (e.key.toLowerCase() === 'f') void document.documentElement.requestFullscreen?.().catch(() => undefined);
+      else if (e.key.toLowerCase() === 'n') arrive();
     };
     window.addEventListener('keydown', keydown);
     return () => window.removeEventListener('keydown', keydown);
-  }, [next, previous]);
+  }, [next, previous, arrive]);
 
   if (error) return <div className="grid min-h-dvh place-items-center bg-[#050817] p-6 text-sm text-rose-300" role="alert">{error}</div>;
   if (!boot) return <div className="grid min-h-dvh place-content-center justify-items-center gap-2 bg-[#050817] text-sm text-slate-400"><WizardSprite animation="idle" scale={2} />Loading Wizard…</div>;
@@ -259,7 +265,7 @@ export function BrainPage() {
         </div>
         {news && (
           <aside className={cn('flex min-h-0 shrink-0 flex-col lg:w-[380px]', current?.focus.kind === 'cluster' && current.focus.id === NEWS && 'brain-spotlight')}>
-            {showNews ? <NewsPanel news={news} fresh={fresh} category={category} onCategory={setCategory} name={live?.name ?? 'Company database'} />
+            {showNews ? <NewsPanel news={news} fresh={fresh} incoming={incoming} category={category} onCategory={setCategory} name={live?.name ?? 'Company database'} />
               : <NewsMissing news={news} />}
           </aside>
         )}

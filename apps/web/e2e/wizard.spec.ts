@@ -221,3 +221,27 @@ test('the Brain page maps what Wizard knows and walks a presenter through it, be
   await page.getByRole('link', {name: 'Ask Wizard'}).click();
   await expect(page.getByTestId('conversation-title')).toBeVisible();
 });
+
+test('on the Brain page, N plays a demo "new article came in" without moving any count', async ({page}) => {
+  // A stand-in for the news table (replay mode has no company database).
+  const latest = Array.from({length: 8}, (_, i) => ({title: `Headline ${i}`, category: i % 2 ? 'Competitors' : 'Smartphones',
+    source: 'Wire', url: null, date: `2026-10-${String(20 - i).padStart(2, '0')}T08:00:00Z`}));
+  await page.route('**/api/v1/brain/live', route => route.fulfill({json: {name: 'AI Team Database',
+    database: {status: 'ok', relations: 12, schemas: 2},
+    news: {status: 'ok', table: 'public.news', database: 'db', total: 1512, first: '2026-05-01', last: '2026-10-20T08:00:00Z',
+      last_7_days: 0, categories: [{name: 'Competitors', count: 800}, {name: 'Smartphones', count: 712}],
+      weekly: [{week: '2026-10-12', count: 30}, {week: '2026-10-19', count: 41}], latest, queries: ['SELECT 1'], data_mode: 'LIVE'}}}));
+  await signIn(page, 'u-ceo');
+  await page.goto('/brain');
+  const panel = page.getByTestId('news-panel');
+  await expect(panel.getByTestId('news-total')).toHaveText('1,512');
+  await expect(panel.getByText('NEW', {exact: true})).toHaveCount(0);
+  await page.keyboard.press('n');
+  await expect(panel.getByTestId('news-arrived')).toContainText('1 new article just arrived');
+  const first = panel.getByTestId('news-latest').locator('li').first();
+  await expect(first).toContainText('Headline 3');
+  await expect(first).toContainText('NEW');
+  await expect(first).toContainText('just now');
+  await expect(panel.getByTestId('news-latest').locator('li')).toHaveCount(8);  // moved to the top, not added
+  await expect(panel.getByTestId('news-total')).toHaveText('1,512');
+});
