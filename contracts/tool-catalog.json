@@ -1604,7 +1604,7 @@
     },
     {
       "name": "portal_guide",
-      "description": "How a company portal (ASAP, GSCM, the Big Data Portal) works and how to read it with portal_run: its structure, where its data really comes from, the background data requests to call instead of clicking, the W.* JavaScript helpers, pitfalls, and the scripts saved for it on this PC. Read it before writing steps for a portal.",
+      "description": "How a company portal (ASAP, GSCM, the Big Data Portal: its information catalog, where tables are found, and Superset, where they are queried) works and how to read it with portal_run: its applications and addresses, its structure, where its data really comes from, the background data requests to call instead of clicking, the W.* JavaScript helpers, pitfalls, and the scripts saved for it on this PC. Read it before writing steps for a portal.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1626,7 +1626,7 @@
     },
     {
       "name": "portal_run",
-      "description": "Read a company portal live, in the person's own signed-in Wizard browser (Chrome, in the background): your own steps (open pages, click, fill, wait, look around, read tables) and JavaScript evaluated in the page, where W.* helpers read Nexacro datasets, walk ASAP's menu, replay the portal's own data requests (W.requests, W.replay) and query Superset. Prefer the portal's data requests over clicking through screens. Every table you return (a {columns, rows} object or a list of objects) is recorded as evidence with an id such as E3: cite it next to its numbers. The result also lists the data requests the page made, with secrets removed. Wizard refuses saves, deletes, submissions, uploads, sign-outs and other hosts.",
+      "description": "Read a company portal live, in the person's own signed-in Wizard browser (Chrome, in the background): your own steps (open pages, click, fill, wait, look around, read tables) and JavaScript evaluated in the page, where W.* helpers read Nexacro datasets, walk ASAP's menu, replay the portal's own data requests (W.requests, W.replay), search the Big Data Portal's information catalog and query Superset. Prefer the portal's data requests over clicking through screens. Every table you return (a {columns, rows} object or a list of objects) is recorded as evidence with an id such as E3: cite it next to its numbers. The result also lists the data requests the page made, with secrets removed. Wizard refuses saves, deletes, submissions, uploads, access requests, sign-outs and other hosts.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1657,7 +1657,7 @@
                   "type": "string"
                 },
                 "url": {
-                  "description": "goto: '/path?query' on the portal, or a full portal address (0-2000 characters)",
+                  "description": "goto: '/path?query' on the portal application the page is on, or a full portal address (portal_guide lists them; the Big Data Portal's information catalog and Superset have one each) (0-2000 characters)",
                   "type": "string"
                 },
                 "selector": {
@@ -1808,7 +1808,7 @@
                   "type": "string"
                 },
                 "url": {
-                  "description": "goto: '/path?query' on the portal, or a full portal address (0-2000 characters)",
+                  "description": "goto: '/path?query' on the portal application the page is on, or a full portal address (portal_guide lists them; the Big Data Portal's information catalog and Superset have one each) (0-2000 characters)",
                   "type": "string"
                 },
                 "selector": {

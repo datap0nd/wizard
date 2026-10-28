@@ -48,8 +48,9 @@ SECTIONS = [
     ("postgres", "Company database", "A read-only PostgreSQL account for Gemini's SQL questions."),
     ("metronome", "Metronome", "Recurring extractions: Metronome emails a table on a schedule, as Flows owned by its "
                                "Wizard user."),
-    ("portals", "Portals", "ASAP, GSCM and the Big Data Portal, read by Gemini in Wizard's own browser on this PC, "
-                           "signed in as you. Sign in once in the window Wizard opens; it then works in the background."),
+    ("portals", "Portals", "ASAP, GSCM and the Big Data Portal (its information catalog and Superset), read by Gemini in "
+                           "Wizard's own browser on this PC, signed in as you. Sign in once in the window Wizard opens; "
+                           "it then works in the background."),
     ("network", "Network", "Only if Wizard cannot reach Google or GitHub on its own."),
 ]
 FIELDS = [
@@ -77,8 +78,10 @@ FIELDS = [
           "Wizard"),
     Field("WIZARD_PORTAL_ASAP_URL", "ASAP address", "portals", "The page you open ASAP with.", "https://asap.company.example/"),
     Field("WIZARD_PORTAL_GSCM_URL", "GSCM address", "portals", "The page you open GSCM with.", "https://gscm.company.example/"),
-    Field("WIZARD_PORTAL_BDP_URL", "Big Data Portal address", "portals", "Superset's start page.",
-          "https://bdp.company.example/"),
+    Field("WIZARD_PORTAL_BDP_CATALOG_URL", "Big Data Portal: information catalog", "portals",
+          "Where you search for tables and request access to them.", "https://catalog.company.example/"),
+    Field("WIZARD_PORTAL_BDP_URL", "Big Data Portal: Superset", "portals", "Where you query the tables (SQL Lab).",
+          "https://superset.company.example/"),
     Field("WIZARD_BROWSER", "Browser", "portals", "Wizard uses its own profile of this browser, never your everyday one.",
           "chrome", ("chrome", "msedge")),
     Field("WIZARD_PORTAL_HOSTS", "Other hosts the portals need", "portals",

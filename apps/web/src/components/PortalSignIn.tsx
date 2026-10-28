@@ -6,6 +6,11 @@ import {cn} from '@/lib/utils';
 import {Button} from './ui/button';
 import type {PortalCheck, PortalStatus} from '@/types';
 
+/** A portal's name, with its applications when it has several: "Big Data Portal (Superset, information catalog)". */
+export function portalLabel(portal: PortalStatus['portals'][number]): string {
+  return portal.parts?.length ? `${portal.name} (${portal.parts.map(p => p.name).join(', ')})` : portal.name;
+}
+
 /** Signing in to the company portals in Wizard's own browser: a visible window opens on this PC with one tab per
  * portal; the person signs in and closes it, and Gemini then reads the portals in the background with that sign-in. */
 export function PortalSignIn({compact = false}: {compact?: boolean}) {
@@ -39,7 +44,7 @@ export function PortalSignIn({compact = false}: {compact?: boolean}) {
     <div className={cn('space-y-2', compact ? '' : 'mt-3 rounded-lg bg-surface px-3 py-3')} data-testid="portal-sign-in">
       {!compact && (
         <p className="flex items-center gap-1.5 text-xs text-ink-2"><Globe className="size-3.5" />
-          {status.browser} · {status.portals.map(p => p.name).join(', ')}
+          {status.browser} · {status.portals.map(portalLabel).join(', ')}
           {status.last_sign_in ? ` · last signed in ${formatDate(status.last_sign_in, true)}` : ' · not signed in yet'}</p>
       )}
       {status.signing_in ? (
