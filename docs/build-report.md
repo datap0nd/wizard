@@ -3,7 +3,30 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-28 (latest) — Check for updates reads the release where Wizard's own connection cannot
+## 2026-10-28 (latest) — The roadmap page: what Wizard does today and what comes next
+
+The owner: "Create a /roadmap in wizard ... what wizard can already do on the left, the roadmap comes on the right.
+make it visual", a deadline on each Friday from this one, controlled "with left and right arrows", with logos, and the
+PowerPoint step taking two weeks. [Decision](decisions/2026-10-28-roadmap-page.md).
+- **`/roadmap`**, a page of its own like `/brain`, on the same dark stage. Left: what Wizard already does (nine
+  capabilities from the README's "What runs today") and the systems it reads, as logos. Right: a ruler from today to
+  each Friday, and the steps: week 1 (Fri 30 Oct) more portals read live, SC+ Global Dashboard and the NERP BI Portal;
+  weeks 2–3 (Fri 13 Nov) PowerPoint slides from an answer; week 4 (Fri 20 Nov) a richer knowledge base (metrics,
+  business presentations, strategy) from meetings with the heads of business and each area's main PIC. Each card has
+  its countdown ("Next · In 2 days"); a step past its Friday and not done says "Due date passed".
+- **Presenting:** the roadmap starts empty; → (Space, Page Down) shows the next step, ← takes it back, End all, Home
+  none, F full screen; buttons do the same.
+- **Content in one file**, `apps/web/src/roadmap.ts`: each step's length in weeks sets its Friday, so a longer step
+  moves the ones after it. No data is read and no sign-in is needed. New logo tiles for SC+ and PowerPoint
+  (`SystemLogo`), ready for when SC+ joins the systems stage.
+
+**Tests.** `apps/web/src/roadmap.test.tsx` (3): the Fridays from 30 October with slides taking weeks 2–3, a longer
+step moving the rest, every item with a logo or icon, the meetings line; countdowns (In 2 days, Due tomorrow, Due
+today, Due date passed, Delivered) and which step is next; the page showing nothing on the right until →, one step
+per →, ← back, Home, End and the buttons. E2E: `/roadmap` served, arrows, weeks 2–3, back to the app. Seen in
+Chromium at 1440×900 and 390×844 with no horizontal scroll.
+
+## 2026-10-28 — Check for updates reads the release where Wizard's own connection cannot
 
 The owner, on 1.0.59: "imn trying to click chceck for updates but I get: could not read the release ssl:c:1015 error".
 - **Cause.** In the bundled Python (3.13.15), `_ssl.c:1015` is "The handshake operation timed out": the connection

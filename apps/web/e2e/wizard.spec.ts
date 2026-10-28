@@ -245,3 +245,24 @@ test('on the Brain page, N plays a demo "new article came in" without moving any
   await expect(panel.getByTestId('news-latest').locator('li')).toHaveCount(8);  // moved to the top, not added
   await expect(panel.getByTestId('news-total')).toHaveText('1,512');
 });
+
+test('the roadmap shows what Wizard does, and the next Friday on each arrow key', async ({page}) => {
+  await page.goto('/roadmap');
+  await expect(page.getByTestId('roadmap-page')).toBeVisible();
+  await expect(page.getByTestId('roadmap-capability').filter({hasText: 'Answers business questions'})).toBeVisible();
+  await expect(page.getByTestId('roadmap-system').filter({hasText: 'ASAP'})).toBeVisible();
+  await expect(page.getByTestId('roadmap-milestone')).toHaveCount(0);
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByTestId('roadmap-milestone')).toHaveCount(1);
+  await expect(page.getByTestId('roadmap-milestone').first()).toContainText('SC+ Global Dashboard');
+  await expect(page.getByTestId('roadmap-milestone').first()).toContainText('Fri 30 Oct');
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByTestId('roadmap-milestone').nth(1)).toContainText('Weeks 2–3');
+  await expect(page.getByTestId('roadmap-milestone').nth(1)).toContainText('PowerPoint');
+  await page.keyboard.press('ArrowLeft');
+  await expect(page.getByTestId('roadmap-milestone')).toHaveCount(1);
+  await page.keyboard.press('End');
+  await expect(page.getByTestId('roadmap-milestone')).toHaveCount(3);
+  await page.getByRole('link', {name: 'Ask Wizard'}).click();
+  await expect(page).toHaveURL(/\/$/);
+});
