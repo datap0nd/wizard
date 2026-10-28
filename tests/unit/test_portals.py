@@ -252,7 +252,8 @@ def test_settings_show_both_big_data_portal_addresses(tmp_path: Path):
         assert client.get("/api/v1/portals").json()["portals"] == [
             {"id": "bdp", "name": "Big Data Portal", "host": "superset.corp.example.com",
              "parts": [{"id": "superset", "name": "Superset", "host": "superset.corp.example.com"},
-                       {"id": "catalog", "name": "information catalog", "host": "catalog.corp.example.com"}]}]
+                       {"id": "catalog", "name": "information catalog", "host": "catalog.corp.example.com"}],
+             "access_requests": True}]
 
 
 def test_without_portals_there_are_no_portal_tools(client):

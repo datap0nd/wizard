@@ -27,7 +27,7 @@ from wizard_agent.prompting import recurring_question
 from wizard_agent.replay import ReplayRuntime
 from wizard_agent.runtime import AgentFailure, AgentRuntime
 from wizard_agent.secret_box import SecretBox
-from wizard_connectors import metronome
+from wizard_connectors import access_requests, metronome
 from wizard_connectors.content import errors, validate_content
 from wizard_connectors.entitlements import Identity, IdentityDirectory, SystemRights
 from wizard_connectors.paths import ROOT
@@ -84,7 +84,8 @@ def capture_logs() -> None:
 PUBLIC_PATHS = {"/api/v1/health", "/api/v1/ready", "/api/v1/bootstrap", "/api/v1/session/login",
                 "/api/v1/session/logout", "/api/v1/session/identities"}
 TIMELINE_EVENTS = {"run_started", "status", "agent_session", "note", "tool_started", "tool_finished", "visual_added",
-                   "check_result", "schedule_proposed", "file_made", "warning", "run_failed", "run_finished"}
+                   "check_result", "schedule_proposed", "access_request_proposed", "file_made", "warning", "run_failed",
+                   "run_finished"}
 TERMINAL = {"run_finished", "run_failed"}
 SUGGESTIONS = [
     {"story": "Executive", "question": "Which market gave us the best return on marketing investment last quarter — tie NERP "
@@ -152,6 +153,24 @@ class SettingsTestBody(Body):
 class LinkCompleteBody(Body):
     state: str = Field(pattern=r"^[0-9a-f]{64}$")
     code: str = Field(min_length=4, max_length=1024)
+
+
+class AnswerBody(Body):
+    label: str = Field(max_length=200)
+    value: str = Field(default="", max_length=2000)
+
+
+class AccessFormBody(Body):
+    # The request page (optional) and the answers given on every access request.
+    page: str = Field(default="", max_length=2000)
+    fields: list[AnswerBody] = Field(default_factory=list, max_length=40)
+
+
+class AccessRequestBody(Body):
+    # Empty: the saved request page, else the catalog's start page, with the saved answers only.
+    address: str | None = Field(default=None, max_length=2000)
+    tables: list[str] = Field(default_factory=list, max_length=20)
+    answers: list[AnswerBody] = Field(default_factory=list, max_length=20)
 
 
 class InternalCall(Body):
@@ -1032,6 +1051,50 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
     @app.post("/api/v1/portals/check")
     async def portals_check(request: Request) -> dict[str, Any]:
         return await portal_action(request, "check")
+
+    def request_portal(request: Request, system: str) -> tuple[Identity, PortalBrowser, Any]:
+        identity, browser = portal_browser(request)
+        portal = browser.settings.portal(system)
+        if portal is None or portal.id not in access_requests.REQUEST_PORTALS or not identity.can_use_system(system):
+            raise HTTPException(404, "Access requests are made in the Big Data Portal's information catalog; it is not "
+                                     "configured here (Settings → Portals).")
+        return identity, browser, portal
+
+    @app.get("/api/v1/portals/{system}/access-form")
+    async def access_form(request: Request, system: str) -> dict[str, Any]:
+        """The answers this person gives on every access request, kept on this PC."""
+        _, browser, portal = request_portal(request, system)
+        return access_requests.form(browser.root, portal)
+
+    @app.post("/api/v1/portals/{system}/access-form")
+    async def save_access_form(request: Request, system: str, body: AccessFormBody) -> dict[str, Any]:
+        identity, browser, portal = request_portal(request, system)
+        try:
+            saved = access_requests.save(browser.root, portal, body.page, [f.model_dump() for f in body.fields])
+        except access_requests.AccessFormError as error:
+            raise HTTPException(400, str(error)) from None
+        store.audit(identity.id, "portals:access_form", system=portal.id)
+        return saved
+
+    @app.post("/api/v1/portals/{system}/access-request")
+    async def open_access_request(request: Request, system: str, body: AccessRequestBody) -> dict[str, Any]:
+        """Opens the request page in a visible window of Wizard's browser on this PC and fills the saved answers and
+        this request's into the form's empty fields. The person checks them and submits; Wizard never submits."""
+        identity, browser, portal = request_portal(request, system)
+        saved = access_requests.form(browser.root, portal)
+        try:
+            address = access_requests.check_address(portal, body.address or saved["page"] or saved["default_page"])
+            extra = access_requests.clean_fields([a.model_dump() for a in body.answers])
+        except access_requests.AccessFormError as error:
+            raise HTTPException(400, str(error)) from None
+        tables = [" ".join(t.split())[:200] for t in body.tables if t.strip()]
+        answers = access_requests.answers(saved["fields"], extra, tables)
+        try:
+            status = await asyncio.to_thread(browser.open_access_request, portal, address, answers)
+        except PortalError as error:
+            raise HTTPException(409, error.message) from None
+        store.audit(identity.id, "portals:access_request", system=portal.id, detail={"tables": tables})
+        return status
 
     # Settings pane, model picker and updates (a person's own install only) ----------------------------------------------
     def settings_owner(request: Request) -> Identity:

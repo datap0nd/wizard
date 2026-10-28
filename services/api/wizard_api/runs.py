@@ -215,6 +215,9 @@ def tool_label(name: str, args: dict[str, Any], services: Services) -> str:
         return f"Read Wizard's guide to {portal_name(services, args.get('system'))}"
     if name == "portal_save_script":
         return f"Kept a {portal_name(services, args.get('system'))} script: {args.get('name', '')}"
+    if name == "portal_request_access":
+        tables = ", ".join(str(t) for t in args.get("tables") or [])
+        return f"Prepared an access request in {portal_name(services, args.get('system'))}" + (f": {tables}" if tables else "")
     system = name.split("_", 1)[0].upper()
     if name.endswith("_search_reports"):
         return f"Searched {system} reports for “{args.get('query', '')}”"
@@ -260,6 +263,8 @@ def tool_summary(name: str, outcome: ToolOutcome) -> str:
         return f"{data['file']} {data['name']} ready to download · {len(data['changes'])} change(s)"
     if name == "portal_save_script":
         return f"saved {data.get('saved')}"
+    if name == "portal_request_access":
+        return "waiting for you to open the request form and submit it"
     if name.endswith("_run_report"):
         extra = f" of {data['total_rows']}" if data.get("truncated") else ""
         as_of = f" · as of {str(data.get('as_of'))[:10]}" if data.get("as_of") else ""
@@ -441,6 +446,8 @@ class RunManager:
         if outcome.ok and "schedule" in outcome.data:
             schedule = next(s for s in self.store.schedules(run.conversation_id, run.id) if s["label"] == outcome.data["schedule"])
             await self.emit(run, "schedule_proposed", {"schedule": public_schedule(schedule)})
+        if outcome.ok and name == "portal_request_access":
+            await self.emit(run, "access_request_proposed", {"request": outcome.data["access_request"]})
         if outcome.ok and name == "wizard_edit_attachment":
             made = next((a for a in self.store.conversation_attachments(run.conversation_id) if a["id"] == outcome.data["attachment_id"]), None)
             if made is not None:

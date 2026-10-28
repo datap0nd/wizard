@@ -1,5 +1,6 @@
 """The person's Wizard browser: Google Chrome (or Edge) driven by Playwright, with its own profile, where Gemini's
-portal scripts run in the background (headless) and the person signs in once in a visible window.
+portal scripts run in the background (headless), the person signs in once in a visible window, and an access request
+form opens visibly, filled from the person's saved answers, for them to check and submit.
 
 One PortalBrowser per person. Playwright's synchronous objects belong to the thread that made them, so each browser has
 one thread that owns Playwright and runs every job in turn; tool calls hand it work and wait. The profile is Wizard's
@@ -9,7 +10,9 @@ of its own: the profile keeps the sign-in like any browser does.
 While Gemini drives (headless) every request goes through HostPolicy and write_reason, every click through
 click_refusal, downloads and service workers are off, and the data requests the page makes are kept so Gemini can call
 them again itself. While the person signs in (headed) nothing is filtered: the hosts their sign-in goes through are
-remembered so a later background session can renew it."""
+remembered so a later background session can renew it. The access request window is the person's too, unfiltered so
+they can submit; Wizard only fills the form's empty fields on the portals' own pages (portal_fill.js), and Gemini's
+steps wait until the window is closed."""
 from __future__ import annotations
 
 import contextlib
@@ -26,13 +29,15 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from . import portals
+from . import access_requests, portals
 from .portals import HostPolicy, Portal, PortalSettings
 
 log = logging.getLogger("wizard.portals")
 
 HELPERS = Path(__file__).with_name("portal_helpers.js").read_text(encoding="utf-8")
 CAPTURE = Path(__file__).with_name("portal_capture.js").read_text(encoding="utf-8")
+FILL = Path(__file__).with_name("portal_fill.js").read_text(encoding="utf-8")
+FILL_EVERY_S = 1.5          # the access request window looks for its form's fields this often
 IDLE_CLOSE_S = 600          # a background browser nobody used for this long is closed
 SIGN_IN_LIMIT_S = 20 * 60   # a sign-in window left open this long is closed
 CALL_LIMIT_S = 170          # one tool call's steps together (under the Gemini CLI tool bridge's 180 s)
@@ -66,6 +71,19 @@ class Captured:
 
 
 @dataclass
+class AccessWindow:
+    """The access request window: what it fills, and what it filled and saw, per page."""
+    portal: Portal
+    address: str
+    answers: list[dict[str, str]]
+    done: dict[str, list[str]] = field(default_factory=dict)
+    filled: list[str] = field(default_factory=list)
+    missing: list[str] = field(default_factory=list)
+    seen: list[str] = field(default_factory=list)
+    last: float = 0.0
+
+
+@dataclass
 class CallLog:
     """What one tool call's steps did in the browser, for Gemini and the evidence."""
     requests: list[Captured] = field(default_factory=list)
@@ -90,6 +108,9 @@ class PortalBrowser:
         self._page: Any = None
         self._headed = False
         self._headed_since = 0.0
+        self._window: str | None = None  # the visible window: "sign_in" or "access_request"
+        self._request: AccessWindow | None = None
+        self.show_windows = True  # tests run the person's windows headless
         self._last_used = time.monotonic()
         self._log: CallLog | None = None
         self._sign_in_hosts: set[str] = set()
@@ -155,17 +176,20 @@ class PortalBrowser:
         if self._context is None:
             return
         if self._headed:
-            # The person's sign-in window: keep its events flowing, and finish when they close it or forget it.
+            # The person's window: keep its events flowing, fill a request form as it appears, and finish when they
+            # close the window or forget it.
             try:
                 pages = self._context.pages
                 if not pages:
                     raise RuntimeError("closed")
                 pages[0].wait_for_timeout(250)
             except Exception:  # noqa: BLE001 - the window was closed
-                self._finish_sign_in()
+                self._finish_window()
                 return
+            if self._request is not None and time.monotonic() - self._request.last >= FILL_EVERY_S:
+                self._fill_request()
             if time.monotonic() - self._headed_since > SIGN_IN_LIMIT_S:
-                self._finish_sign_in()
+                self._finish_window()
         elif time.monotonic() - self._last_used > IDLE_CLOSE_S:
             self._close()
 
@@ -188,10 +212,11 @@ class PortalBrowser:
                 self._pw = sync_playwright().start()
         return self._pw
 
-    def _launch(self, headed: bool) -> Any:
+    def _launch(self, headed: bool, window: str = "sign_in") -> Any:
         self._close()
         self.profile.mkdir(parents=True, exist_ok=True)
-        options: dict[str, Any] = {"headless": not headed, "accept_downloads": False, "service_workers": "block",
+        options: dict[str, Any] = {"headless": not (headed and self.show_windows), "accept_downloads": False,
+                                   "service_workers": "block",
                                    "viewport": {"width": 1440, "height": 900}}
         if self.settings.executable:
             options["executable_path"] = self.settings.executable
@@ -212,7 +237,8 @@ class PortalBrowser:
         context.set_default_timeout(30_000)
         context.on("dialog", self._dialog)
         if headed:
-            context.on("request", self._remember_sign_in_host)
+            if window == "sign_in":
+                context.on("request", self._remember_sign_in_host)
         else:
             context.add_init_script(CAPTURE)
             context.route("**/*", self._route)
@@ -222,6 +248,9 @@ class PortalBrowser:
             context.on("response", self._capture_response)
             context.on("page", self._watch_page)
         self._context, self._headed = context, headed
+        self._window = window if headed else None
+        if window != "access_request":
+            self._request = None
         for page in context.pages:
             self._watch_page(page)
         return context
@@ -304,7 +333,7 @@ class PortalBrowser:
         """Open a visible window with one tab per portal (per application: the Big Data Portal's information catalog
         and Superset each get one) for the person to sign in. Wizard waits for them to close it."""
         def job() -> dict[str, Any]:
-            context = self._launch(headed=True)
+            context = self._launch(headed=True, window="sign_in")
             self._headed_since = time.monotonic()
             self._sign_in_hosts = set()
             first = context.pages[0] if context.pages else context.new_page()
@@ -319,27 +348,84 @@ class PortalBrowser:
         return self.run(job, timeout=90)
 
     def finish_sign_in(self) -> dict[str, Any]:
+        """Done: close the person's window (sign-in or access request)."""
         def job() -> dict[str, Any]:
             if self._headed:
-                self._finish_sign_in()
+                self._finish_window()
             return self.status_now()
         return self.run(job, timeout=60)
 
-    def _finish_sign_in(self) -> None:
-        hosts = {h for h in self._sign_in_hosts if "." in h and not h.replace(".", "").isdigit()}
-        learned = sorted(self.policy.learned | hosts)[:50]
-        self.policy.learned = set(learned)
-        self._save_state(learned_hosts=learned, last_sign_in=time.strftime("%Y-%m-%dT%H:%M:%S"))
+    def _finish_window(self) -> None:
+        if self._window == "access_request" and self._request is not None:
+            with contextlib.suppress(Exception):  # the window may be gone; what was seen is already kept
+                self._fill_request()
+            access_requests.remember_seen(self.root, self._request.portal.id, self._request.seen)
+        elif self._window == "sign_in":
+            hosts = {h for h in self._sign_in_hosts if "." in h and not h.replace(".", "").isdigit()}
+            learned = sorted(self.policy.learned | hosts)[:50]
+            self.policy.learned = set(learned)
+            self._save_state(learned_hosts=learned, last_sign_in=time.strftime("%Y-%m-%dT%H:%M:%S"))
         self._close()
-        self._headed = False
+        self._headed, self._window, self._request = False, None, None
+
+    # The access request window ---------------------------------------------------------------------------------------
+    def open_access_request(self, portal: Portal, address: str, answers: list[dict[str, str]]) -> dict[str, Any]:
+        """Open the portal's request page in a visible window and fill the person's answers into the form's empty fields,
+        now and whenever the form appears (after they press Request access); they check it and submit it themselves."""
+        def job() -> dict[str, Any]:
+            if self._headed and self._window == "sign_in":
+                raise PortalError("signing_in", "Finish signing in first: close the Wizard sign-in window, then open the "
+                                                "request form again.")
+            context = self._launch(headed=True, window="access_request")
+            self._headed_since = time.monotonic()
+            self._request = AccessWindow(portal, address, answers)
+            page = context.pages[0] if context.pages else context.new_page()
+            with contextlib.suppress(Exception):  # the person sees the page and its error
+                page.goto(address, wait_until="domcontentloaded", timeout=45_000)
+            self._fill_request()
+            with contextlib.suppress(Exception):
+                page.bring_to_front()
+            return self.status_now()
+        return self.run(job, timeout=90)
+
+    def _fill_request(self) -> None:
+        request = self._request
+        if request is None or self._context is None:
+            return
+        request.last = time.monotonic()
+        for page in list(self._context.pages):
+            if not access_requests.on_portal(request.portal, (urlsplit(page.url).hostname or "").lower()):
+                continue  # only this portal's own pages: never another site's form
+            done = request.done.setdefault(page.url.split("#")[0], [])
+            try:
+                result = page.evaluate(FILL, {"answers": request.answers, "done": done})
+            except Exception as error:  # noqa: BLE001 - navigating, or the page closed: the next round fills it
+                log.debug("access request fill skipped a page: %s", _first_line(error))
+                continue
+            if not isinstance(result, dict):
+                continue
+            for label in [*result.get("filled", []), *result.get("kept", [])]:
+                if label not in done:
+                    done.append(label)
+            request.filled = list(dict.fromkeys([*request.filled, *result.get("filled", [])]))
+            request.missing = [str(m) for m in result.get("missing", [])][:20]
+            for label in result.get("seen", []):
+                if isinstance(label, str) and label not in request.seen and len(request.seen) < access_requests.MAX_SEEN:
+                    request.seen.append(label[:access_requests.MAX_LABEL])
 
     def status_now(self) -> dict[str, Any]:
         state = self._state()
+        request = self._request if self._headed else None
         return {"browser": portals.CHANNELS[self.settings.channel], "signing_in": self._headed,
+                "window": self._window if self._headed else None,
+                **({"access_request": {"system": request.portal.id, "filled": request.filled, "missing": request.missing}}
+                   if request else {}),
                 "running": self._context is not None, "last_sign_in": state.get("last_sign_in"),
                 "portals": [{"id": p.id, "name": p.name, "host": p.host,
                              **({"parts": [{"id": part.id, "name": part.label, "host": part.host} for part in p.parts]}
-                                if p.parts else {})} for p in self.settings.portals]}
+                                if p.parts else {}),
+                             **({"access_requests": True} if p.id in access_requests.REQUEST_PORTALS else {})}
+                            for p in self.settings.portals]}
 
     def status(self) -> dict[str, Any]:
         return self.status_now()
@@ -351,7 +437,7 @@ class PortalBrowser:
 
         def job() -> dict[str, Any]:
             if self._headed:
-                raise PortalError("signing_in", "Finish signing in first: close the Wizard sign-in window.")
+                raise PortalError("signing_in", "Close Wizard's browser window first (sign-in or access request).")
             results = []
             for portal, page_id, name, url in pages:
                 page = self._ready_page()
@@ -391,6 +477,9 @@ class PortalBrowser:
 
     # Gemini's steps ----------------------------------------------------------------------------------------------------
     def _ready_page(self) -> Any:
+        if self._headed and self._window == "access_request":
+            raise PortalError("signing_in", "The person has an access request form open in Wizard's browser window. Ask "
+                                            "them to submit it (or not) and close that window, then try again.")
         if self._headed:
             raise PortalError("signing_in", "The person is signing in to the portals in Wizard's browser window. Ask them "
                                             "to finish and close that window, then try again.")

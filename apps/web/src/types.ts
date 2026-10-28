@@ -318,11 +318,41 @@ export interface PortalStep { action: string; url?: string; selector?: string; r
 /** The company portals Gemini reads in this person's own Wizard browser. */
 export interface PortalStatus {
   browser: string;
+  /** A visible Wizard browser window is open: the person's sign-in, or an access request form. */
   signing_in: boolean;
+  window?: 'sign_in' | 'access_request' | null;
+  /** The open access request window: the saved answers it filled, and those it found no field for. */
+  access_request?: {system: string; filled: string[]; missing: string[]};
   running: boolean;
   last_sign_in: string | null;
   /** parts: the applications of a portal that has several (the Big Data Portal's Superset and information catalog). */
-  portals: {id: string; name: string; host: string; parts?: {id: string; name: string; host: string}[]}[];
+  portals: {id: string; name: string; host: string; parts?: {id: string; name: string; host: string}[]; access_requests?: boolean}[];
+}
+
+export interface Answer { label: string; value: string }
+
+/** The answers this person gives on every access request in a portal's information catalog, kept on their PC. */
+export interface AccessForm {
+  system: string;
+  /** The catalog's request page, when it has one for every request ('' when not saved). */
+  page: string;
+  fields: Answer[];
+  /** Labels Wizard saw on the request form the last time it was open. */
+  seen: string[];
+  /** Where a request opens when nothing else names a page: the catalog's start page. */
+  default_page: string;
+}
+
+/** An access request Gemini prepared: the person opens the form, checks it and submits it themselves. */
+export interface AccessRequest {
+  id: string;
+  system: string;
+  portal: string;
+  address: string;
+  tables: string[];
+  /** This request's own answers; the saved ones (by label) are filled too. */
+  answers: Answer[];
+  saved: string[];
 }
 
 export interface PortalCheck {
@@ -359,6 +389,8 @@ export interface RunView {
   attachments: Attachment[];
   /** Recurring extractions proposed in this answer, with their current state. */
   schedules: Schedule[];
+  /** Access requests prepared in this answer, for the person to open and submit. */
+  accessRequests: AccessRequest[];
   createdAt: string;
   /** Server time the agent started (run_started), the zero point for each step's start time. */
   startedAt: string | null;

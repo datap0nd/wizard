@@ -12,6 +12,7 @@ import {CheckBadge, DataModeBadge, RuntimeBadge} from './Badges';
 import {Diagnostics} from './Diagnostics';
 import {MadeFiles} from './Attachments';
 import {RecurringCard} from './RecurringCard';
+import {AccessRequestCard} from './AccessRequestCard';
 import {SystemsStage} from './SystemsStage';
 import {VisualBlock} from './VisualBlock';
 import mark from '@/assets/wizard-mark.svg';
@@ -128,6 +129,7 @@ export const RunCard = memo(function RunCard({run, onEvidence, onCheck, onCancel
         <MadeFiles files={run.attachments} />
         {run.schedules.map(schedule => <RecurringCard key={schedule.id} schedule={schedule}
           onCreate={s => onSchedule?.(run, s, 'create')} onDismiss={s => onSchedule?.(run, s, 'dismiss')} />)}
+        {run.accessRequests.map(request => <AccessRequestCard key={request.id} request={request} />)}
         <CheckPanel run={run} />
         {run.warnings.length > 0 && run.status !== 'running' && (
           <ul className="space-y-1 rounded-xl border border-warn-line bg-warn-soft px-4 py-2 text-[13px] text-warn" data-testid="warnings">

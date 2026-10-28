@@ -17,7 +17,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .. import portals
+from .. import access_requests, portals
 from ..portal_browser import PortalError
 from .registry import UNTRUSTED_NOTICE, ToolContext, ToolError, ToolSpec
 
@@ -92,6 +92,18 @@ class SaveArgs(Args):
     params: list[Param] = Field(default_factory=list, max_length=20, description="Parameters with an example value each.")
 
 
+class Answer(Args):
+    label: str = Field(min_length=1, max_length=access_requests.MAX_LABEL, description="The field's label as the request form shows it, e.g. Reason, Table name.")
+    value: str = Field(max_length=access_requests.MAX_VALUE)
+
+
+class RequestAccessArgs(Args):
+    system: str = Field(pattern=SYSTEM, description="The portal where access is requested: bdp (its information catalog).")
+    address: str | None = Field(default=None, max_length=2000, description="The page with the request form, or the table's page in the catalog where the person presses Request access (the full address you read it at). Omit to use the request page the person saved, else the catalog's start page.")
+    tables: list[str] = Field(default_factory=list, max_length=20, description="The tables the person needs, as the catalog names them.")
+    answers: list[Answer] = Field(default_factory=list, max_length=20, description="This request's own fields by the form's labels (the guide lists labels seen before), e.g. the reason, in the person's words from the question. Their saved answers (purpose, manager, duration...) are filled too.")
+
+
 def _portal(ctx: ToolContext, system: str) -> portals.Portal:
     browsers = ctx.services.portals
     if browsers is None:
@@ -140,6 +152,11 @@ def guide(ctx: ToolContext, args: GuideArgs) -> dict[str, Any]:
                     "writes (save, delete, submit, upload, request access, sign out...) and any host outside the portals."}
     if portal.parts:
         data["applications"] = [{"part": part.id, "name": part.label, "address": part.url} for part in portal.parts]
+    if portal.id in access_requests.REQUEST_PORTALS:
+        form = access_requests.form(browser.root, portal)
+        data["access_request_form"] = {"request_page": form["page"] or None,
+                                       "saved_labels": [f["label"] for f in form["fields"] if f.get("value")],
+                                       "labels_seen_on_the_form": form["seen"]}
         data["start_page_note"] = ("This portal is several applications, each at its own address: goto one by its full "
                                    "address; a '/path' then stays on that application.")
     return data
@@ -279,6 +296,32 @@ def save_script(ctx: ToolContext, args: SaveArgs) -> dict[str, Any]:
                     "this PC for this person only."}
 
 
+def request_access(ctx: ToolContext, args: RequestAccessArgs) -> dict[str, Any]:
+    portal = _portal(ctx, args.system)
+    if portal.id not in access_requests.REQUEST_PORTALS:
+        raise ToolError("invalid_arguments", f"Access to {portal.name} is not requested through Wizard; the Big Data "
+                                             "Portal (bdp) is.")
+    browser = ctx.services.portals.for_user(ctx.identity.id)  # type: ignore[union-attr]
+    saved = access_requests.form(browser.root, portal)
+    try:
+        address = access_requests.check_address(portal, args.address or saved["page"] or saved["default_page"])
+    except access_requests.AccessFormError as error:
+        raise ToolError("invalid_arguments", str(error)) from None
+    tables = [" ".join(t.split())[:200] for t in args.tables if t.strip()]
+    extra = [{"label": " ".join(a.label.split()), "value": a.value.strip()} for a in args.answers if a.value.strip()]
+    request = {"id": access_requests.request_id(portal.id, address, tables, extra), "system": portal.id,
+               "portal": portal.name, "address": address, "tables": tables, "answers": extra,
+               "saved": [f["label"] for f in saved["fields"] if f.get("value")]}
+    note = ("The person now sees a button, 'Open the request form': it opens this page in Wizard's browser window on "
+            "their PC and fills their saved answers and yours into the form's empty fields. Tell them to check every "
+            "field and submit the request themselves; Wizard never submits it, and portal reads wait until they close "
+            "that window.")
+    if not request["saved"]:
+        note += (" They have no saved answers yet: they can add the ones they give every time in Settings → Portals → "
+                 "Access request form.")
+    return {"access_request": request, "form_labels_seen": saved["seen"], "note": note}
+
+
 PORTAL_TOOLS = [
     ToolSpec("portal_guide",
              "How a company portal (ASAP, GSCM, the Big Data Portal: its information catalog, where tables are found, "
@@ -299,4 +342,11 @@ PORTAL_TOOLS = [
              "Keep steps that worked as a named script for this person's portal, with parameters, so a later question "
              "runs it with portal_run(script=...) instead of exploring again. Saves on this PC only; it changes "
              "nothing in the portal.", SaveArgs, save_script, "portal", "present"),
+    ToolSpec("portal_request_access",
+             "Prepare an access request in a portal's information catalog (the Big Data Portal) for tables the person "
+             "cannot query yet. Wizard never sends it: the person gets a button that opens the request page in Wizard's "
+             "visible browser window, with their saved answers (purpose, manager, duration...) and your answers for "
+             "this request filled into the form's empty fields; they check every field and submit it themselves. Use it "
+             "after you found the table and saw that the person lacks access, and name the table in your answer.",
+             RequestAccessArgs, request_access, "portal", "present"),
 ]

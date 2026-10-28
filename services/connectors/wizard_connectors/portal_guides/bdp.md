@@ -18,10 +18,15 @@ application by its full address; a `/path` then stays on the application the pag
   `portal_save_script`.
 - Read what helps the question: table names, descriptions, columns, owners, partitions, refresh, and whether this person
   already has access. Return a table (`{columns, rows}`) to cite it.
-- **Requesting access is the person's own step.** Wizard never requests access, whatever the button or request is called:
-  it refuses Request buttons, addresses that start with request, POSTs to an access-request address and GraphQL
-  mutations. When the answer needs a table the person cannot query, name the table and tell them to request access in
-  the information catalog (give its address); the answer waits until the access is granted.
+- **Access requests: you prepare, the person submits.** Your own steps never request access: Wizard refuses Request
+  buttons, addresses that start with request, POSTs to an access-request address and GraphQL mutations. When the answer
+  needs a table the person cannot query, call `portal_request_access` with the table's page (or the request page) as
+  `address`, the `tables`, and this request's own `answers` by the form's labels (`access_request_form` above lists
+  the labels seen on the form before), such as the reason in the person's words. The person then sees a button that
+  opens the page in Wizard's visible browser window, with their saved answers (purpose, manager, duration...) and yours
+  filled into the form's empty fields; they press Request access there if the form is behind it, check every field and
+  submit. Name the table in your answer and say the data waits until access is granted. Portal reads wait while that
+  window is open, so call it last.
 
 ## Superset: queries
 

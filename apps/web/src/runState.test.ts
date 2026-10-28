@@ -30,6 +30,16 @@ describe('run reducer', () => {
     expect(sourcesConsulted(run)).toEqual(['NERP']);
   });
 
+  it('keeps each access request Gemini prepared once, for the person to open', () => {
+    seq = 0;
+    const request = {id: 'AR-1', system: 'bdp', portal: 'Big Data Portal', address: 'https://catalog.example.com/t/sales_daily',
+      tables: ['sales_daily'], answers: [{label: 'Reason', value: 'GCC review'}], saved: ['Purpose']};
+    let run = emptyRun('run_a', 'cnv', 'Weekly sell-out from BDP');
+    run = applyEvent(run, ev('access_request_proposed', {request}));
+    run = applyEvent(run, ev('access_request_proposed', {request}));
+    expect(run.accessRequests).toEqual([request]);
+  });
+
   it('adds a file Wizard made to the run, once, apart from the files the user attached', () => {
     seq = 0;
     const made = {id: 'att_2', label: 'F2', filename: 'Sales (edited).xlsx', kind: 'spreadsheet', bytes: 9000, origin: 'edited',
