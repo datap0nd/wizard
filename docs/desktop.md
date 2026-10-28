@@ -256,7 +256,7 @@ Someone who already has Wizard can import a new file from the tray menu: **Impor
 |---|---|
 | Ask Wizard (Ctrl+Alt+W) | Opens the panel |
 | Open Wizard in the browser | The full app (sidebar, history, sources) at `http://127.0.0.1:8771` |
-| (in the browser) `/brain` | The Brain page: what Wizard knows as one picture, the systems and the live news, with a presenter tour (`http://127.0.0.1:8771/brain`; [decision](decisions/2026-10-28-brain-page.md)) |
+| (in the browser) `/brain` | The Brain page: what Wizard knows as one picture, the systems and the live news, with a presenter tour; N plays a demo "new article came in" (`http://127.0.0.1:8771/brain`; [decision](decisions/2026-10-28-brain-page.md)) |
 | Sync the knowledge base now | Checks GitHub now and restarts the service on a new version |
 | Show the button at the top of the screen | Hide the tab (Ctrl+Alt+W and the tray still work) |
 | Start Wizard when I sign in | The `HKCU\...\Run` entry |

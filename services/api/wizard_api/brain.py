@@ -252,15 +252,16 @@ def find_news(postgres: PostgresQuery, table: str | None = None, database: str |
 def news_queries(table: NewsTable) -> dict[str, str]:
     """Wizard's fixed queries over the news table: totals, categories, articles per week, the latest articles."""
     cols, t = table.columns, table.sql
+    # Recency and weeks count by publication date, which a curated table loaded in one go still spreads over time;
+    # the time a row was added (when there is a column for it) is only reported.
     date = quote(cols["date"]) if "date" in cols else None
-    when = quote(cols.get("added") or cols["date"]) if "date" in cols else None
     parts = ["count(*) AS total"]
     if date:
-        parts += [f"min({date}) AS first", f"max({date}) AS last"]
-    if when:
-        parts += [f"max({when}) AS last_added",
-                  f"count(*) FILTER (WHERE {when} >= now() - interval '7 days') AS last_7_days",
-                  f"count(*) FILTER (WHERE {when} >= now() - interval '1 day') AS last_day"]
+        parts += [f"min({date}) AS first", f"max({date}) AS last",
+                  f"count(*) FILTER (WHERE {date} >= now() - interval '7 days') AS last_7_days",
+                  f"count(*) FILTER (WHERE {date} >= now() - interval '1 day') AS last_day"]
+    if "added" in cols:
+        parts.append(f"max({quote(cols['added'])}) AS last_added")
     queries = {"summary": f"SELECT {', '.join(parts)} FROM {t}"}
     if "category" in cols:
         category = quote(cols["category"])
@@ -268,9 +269,9 @@ def news_queries(table: NewsTable) -> dict[str, str]:
             f"SELECT u.name::text AS name, count(*) AS count FROM {t} AS t CROSS JOIN LATERAL unnest(t.{category}) AS u(name) "
             f"GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 40" if "category" in table.arrays else
             f"SELECT {category}::text AS name, count(*) AS count FROM {t} GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 40")
-    if when:
-        queries["weekly"] = (f"SELECT date_trunc('week', {when})::date AS week, count(*) AS count FROM {t} "
-                             f"WHERE {when} IS NOT NULL GROUP BY 1 ORDER BY 1 DESC LIMIT 400")
+    if date:
+        queries["weekly"] = (f"SELECT date_trunc('week', {date})::date AS week, count(*) AS count FROM {t} "
+                             f"WHERE {date} IS NOT NULL GROUP BY 1 ORDER BY 1 DESC LIMIT 400")
     picked = []
     for role, width in (("title", 300), ("category", 160), ("source", 120), ("url", 600), ("summary", 420), ("market", 80)):
         if role in cols:

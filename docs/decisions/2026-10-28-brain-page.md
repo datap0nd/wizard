@@ -30,6 +30,17 @@ portals, etc", the curated news table (about 1,500 articles, categorized) shown 
 - **For presenting.** A guided tour built from the counts it read (→ or Space next, ← back, Esc out, F full screen; a
   presenter clicker's Page Down / Page Up work).
 
+**Update (28 October 2026, later): a demo arrival instead of real ones.** The owner: "The table is a static table.
+I'm not updating anything. I want a fake 'new news article came in' animation, not an actual true sql query please."
+- Pressing **N**, or reaching the tour's news step (2.5 seconds after it opens), plays the arrival: one of the table's
+  own articles, below the top three and never the same one twice, slides in at the top as "just now" with NEW,
+  "1 new article just arrived" and a flurry along the news synapses. It writes nothing and no count moves (the total
+  stays the table's). It is the page's one staged motion, recorded in AGENTS.md.
+- The page no longer watches for real new rows; it reads the news when it opens and every 10 minutes.
+- For a table loaded in one go, recency and weeks count by publication date (the chart is "articles per week by
+  publication date"), the right end of the chart names its last week, and "published in the last 7 days" and
+  "newest … ago" show only when they say something recent. The tour's news step is "Reading the market".
+
 **Evidence.** `tests/unit/test_brain.py` (9), `tests/integration/test_brain_postgres_real.py` (2, real PostgreSQL 16),
 `apps/web/src/brain.test.ts` (8), the e2e test "the Brain page maps what Wizard knows…" in `apps/web/e2e/wizard.spec.ts`,
 and screenshots of the page in Chromium at 1280×720, 1600×900 and 1920×1080 over a synthetic knowledge base of 111 notes

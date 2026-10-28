@@ -53,9 +53,10 @@ def test_the_news_table_is_read_live(postgres):
     assert news["status"] == "ok" and news["table"] == "brain_news.news"
     assert news["columns"] == {"title": "headline", "category": "topics", "date": "published_at", "added": "created_at",
                                "source": "outlet", "url": "link"}
-    assert news["total"] == 4 and news["last_7_days"] == 3 and news["last_day"] == 2
+    # Recency and weeks count by publication date (the row without one is in the total only).
+    assert news["total"] == 4 and news["last_7_days"] == 2 and news["last_day"] == 1 and news["last_added"]
     assert {c["name"]: c["count"] for c in news["categories"]} == {"Competitors": 2, "Pricing": 1, "Telecom": 1}
-    assert sum(w["count"] for w in news["weekly"]) == 4 and news["weekly"] == sorted(news["weekly"], key=lambda w: w["week"])
+    assert sum(w["count"] for w in news["weekly"]) == 3 and news["weekly"] == sorted(news["weekly"], key=lambda w: w["week"])
     titles = [item["title"] for item in news["latest"]]
     assert titles[:3] == ["Operator launches 5G plans", "Rival cuts prices", "Old story"] and titles[-1] == "No topic yet"
     assert news["latest"][1]["category"] == "Competitors, Pricing"

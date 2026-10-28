@@ -3,7 +3,26 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-28 (latest) — The Brain page: what Wizard knows as one picture, and the news it keeps reading
+## 2026-10-28 (latest) — The Brain page: a demo "new article came in" for a static news table
+
+The owner: "The table is a static table. I'm not updating anything. I want a fake 'new news article came in' animation,
+not an actual true sql query please." [Decision update](decisions/2026-10-28-brain-page.md).
+- **N** on the Brain page, or the tour's news step 2.5 s after it opens, plays the arrival: one of the table's own
+  articles (below the top three, never the same one twice) slides in at the top as "just now", marked NEW, with
+  "1 new article just arrived" and a flurry along the news synapses. Nothing is written and no count moves.
+  `demoArrival` in `apps/web/src/brain.ts`; AGENTS.md records it as the page's one staged motion.
+- The page no longer watches for real new rows: it reads the news on opening and every 10 minutes.
+- A table loaded in one go: recency and weeks count by publication date (`news_queries`), the chart's right end names
+  its last week, and "published in the last 7 days" / "newest … ago" show only when recent. The tour step is
+  "Reading the market".
+
+**Tests.** `brain.test.ts` (9, 1 new): the demo pick and its date and origin, never twice, none left. `test_brain.py` (9):
+weeks and recency by publication date, the added time only reported. `test_brain_postgres_real.py` (2) updated on real
+PostgreSQL 16 (2 in the last 7 days by publication date, the undated row in the total only). New e2e: N slides the
+fourth headline to the top with NEW and "just now", the list keeps its length and the total stays 1,512 (desktop and
+narrow). Checked in a screenshot at 1920×1080 over the synthetic 1,513-row table made static (newest three weeks old).
+
+## 2026-10-28 — The Brain page: what Wizard knows as one picture, and the news it keeps reading
 
 The owner, preparing a meeting with the MENA President: "a 'brain' view with all the topics, the portals, etc", the
 news table ("1500 news already curated and categorized") shown "as an ongoing automation", and "the brain view could be
