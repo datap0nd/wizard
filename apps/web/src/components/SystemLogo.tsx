@@ -40,6 +40,8 @@ const BRANDS: Record<string, Brand> = {
   attachment: {color: '#475569', deep: '#1e293b', icon: Paperclip, mark: 'F'},
   metronome: {color: '#0d7377', deep: '#084b4e', icon: MetronomeGlyph, mark: 'ME'},
   orchestra: {color: '#0125c4', deep: '#561ad4', icon: OrchestraGlyph, mark: 'OR'},
+  scplus: {color: '#e11d48', deep: '#881337', icon: null, mark: 'SC+'},
+  powerpoint: {color: '#d24726', deep: '#8a2a12', icon: null, mark: 'P'},
 };
 const SPARE = [['#db2777', '#831843'], ['#0d9488', '#134e4a'], ['#9333ea', '#581c87'], ['#dc2626', '#7f1d1d'], ['#4f46e5', '#312e81']];
 
