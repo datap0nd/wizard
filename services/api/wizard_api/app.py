@@ -34,7 +34,7 @@ from wizard_connectors.paths import ROOT
 from wizard_connectors.portal_browser import PortalBrowser, PortalBrowsers, PortalError
 from wizard_connectors.tools import build_registry, build_services
 
-from . import __version__, knowledge_sync, settings_pane
+from . import __version__, brain, knowledge_sync, settings_pane
 from .attachments import AttachmentError, public
 from .config import Settings, kb_source, load_settings
 from .metronome_client import MetronomeClient, MetronomeError
@@ -895,6 +895,28 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
                              "status": "NAVIGATION_ONLY" if r.row_access == "NAVIGATION_ONLY" else
                              ("ROWS_VERIFIED" if contract.system.connector.status == "ROWS_VERIFIED" else contract.system.connector.status)}
                             for r in visible]}
+
+    # Brain page (/brain) ---------------------------------------------------------------------------------------------------
+    # What Wizard can draw on, for showing it to people: read from the knowledge base, the catalogs and the database,
+    # within this person's rights. Read-only, and never a Gemini tool (brain.py).
+    live_cache = brain.LiveCache()
+
+    @app.get("/api/v1/brain")
+    def brain_map(request: Request) -> dict[str, Any]:
+        identity = me(request)
+        reports = {s.id: sum(1 for _, r in services.catalog.reports(s.id) if identity.can_see_report(s.id, r.id))
+                   for s in services.catalog.systems if identity.can_use_system(s.id)}
+        content = "company" if loaded_content else "none" if kb else "examples"
+        synced = knowledge_status().get("synced_at")  # never the repository: people do not see it
+        return {**brain.knowledge_map(services.knowledge, systems_for(identity), reports, content),
+                "knowledge_synced_at": synced, "pg_name": services.postgres_name}
+
+    @app.get("/api/v1/brain/live")
+    def brain_live(request: Request) -> dict[str, Any]:
+        identity = me(request)
+        allowed = identity.can_use_system("postgresql") and identity.allowed_markets("postgresql") is None
+        return brain.live(services.postgres, allowed, live_cache, settings.news_table, settings.news_database,
+                          services.postgres_name)
 
     # Dev diagnostics -----------------------------------------------------------------------------------------------------
     @app.get("/api/v1/dev/log")

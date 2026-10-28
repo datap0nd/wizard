@@ -85,6 +85,9 @@ class Settings:
     postgres: PgSettings | None = None
     # The name people see for that database in the app (the systems stage, sources, evidence).
     pg_name: str = "AI Team Database"
+    # The news table the Brain page shows (schema.name, optionally in another database); None: found by its name.
+    news_table: str | None = None
+    news_database: str | None = None
     # Backstops against a runaway run, not a budget for a normal answer: Gemini may take its time and many calls. A run
     # is steered to answer by the loop and time checks in runs.py long before it is cut off.
     max_concurrent_runs: int = 8
@@ -261,6 +264,9 @@ def load_settings(env: dict[str, str] | None = None, env_file: Path | None = Non
     except PgError as error:
         raise ConfigError(f"PostgreSQL settings: {error}") from None
     settings.pg_name = (get("WIZARD_PG_NAME", "AI Team Database") or "AI Team Database").strip()[:60]
+    # Checked where the Brain page reads them (brain.py), which says what is wrong: a showcase page never stops Wizard.
+    settings.news_table = (get("WIZARD_NEWS_TABLE") or "").strip() or None
+    settings.news_database = (get("WIZARD_NEWS_DATABASE") or "").strip() or None
     settings.max_concurrent_runs = _int(get("WIZARD_MAX_CONCURRENT_RUNS", "8") or "8", "WIZARD_MAX_CONCURRENT_RUNS", 1, 64)
     settings.run_timeout_s = _int(get("WIZARD_RUN_TIMEOUT_S", "1800") or "1800", "WIZARD_RUN_TIMEOUT_S", 10, 3600)
     settings.max_tool_calls = _int(get("WIZARD_MAX_TOOL_CALLS", "150") or "150", "WIZARD_MAX_TOOL_CALLS", 1, 500)

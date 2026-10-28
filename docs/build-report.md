@@ -3,7 +3,48 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-28 (latest) — The portal sign-in outlives its window
+## 2026-10-28 (latest) — The Brain page: what Wizard knows as one picture, and the news it keeps reading
+
+The owner, preparing a meeting with the MENA President: "a 'brain' view with all the topics, the portals, etc", the
+news table ("1500 news already curated and categorized") shown "as an ongoing automation", and "the brain view could be
+something additional. I dont want to mess with the original functionality."
+[Decision](decisions/2026-10-28-brain-page.md).
+- **`/brain`**, a page of its own (like `/quick`): the chat, sidebar, systems stage and Settings are unchanged, and
+  nothing in the app links to it. A dark stage for a meeting-room screen: the pixel wizard casting in his circle, the
+  systems around him (ASAP, GSCM, BDP, the AI Team Database, the knowledge base, Metronome: whatever this person can
+  use), each knowledge area as a cluster of notes, synapses for the notes' own links and their strongest topic links,
+  and pulses running along them into the wizard. Hover or click a note for its title, summary and status (draft,
+  checked by an expert, signed). Counters along the bottom: notes, topics, connections, news articles, systems, terms,
+  datasets, readable tables.
+- **The news panel**: the total, the date it starts, how many in the last 7 days and how long ago the newest came,
+  articles per week with the running total, the categories, and the latest headlines scrolling slowly (a pointer stops
+  them). The page asks every minute; new articles jump to the top with NEW and a flurry along the news synapses. "How
+  this was read" shows the table and the queries.
+- **A presenter tour** built from what was read (intro, up to six topics with their best-linked notes, the systems, the
+  news, "Ask it anything"): → / Space / Page Down next, ← / Page Up back, Esc out, F full screen. The caption moves to
+  the top when the topic it shows is at the bottom.
+- **API.** `GET /api/v1/brain` (the map) and `GET /api/v1/brain/live` (readable tables and the news, through
+  `PostgresQuery`: one statement as a subquery, read-only transaction rolled back, fresh connection, read-only account;
+  only for people who may read the whole database; read at most every 45 s). New settings `WIZARD_NEWS_TABLE` and
+  `WIZARD_NEWS_DATABASE` (`.env` or the company file), needed only when the table is not called `news`; a bad value
+  is reported on the page and never stops Wizard. No Gemini tool changed. Contracts regenerated (`openapi.json`).
+
+**Tests.** `tests/unit/test_brain.py` (9): the map's areas in the standard's order, stages, glossary terms, links to
+notes that exist only, which notes document which system, counts; column matching (a text `date` is not a date, arrays,
+names that contain the word); the table called `news` wins and a table needs a title; names quoted and array categories
+unnested; every statement read-only and rolled back; a configured table checked, a missing one explained; the cache and
+errors; the API's sign-in, rights (`not_allowed` without whole-database rights) and caching.
+`tests/integration/test_brain_postgres_real.py` (2) on a real PostgreSQL 16 under a read-only role: the news read with a
+`text[]` category column, NULL rows, a non-web link, weeks and the 7-day and 1-day counts; the table found by name and
+the relations counted. `apps/web/src/brain.test.ts` (8): every note laid out once inside the page, news on the right
+sized by articles, synapses, focus and pointer, names kept on the page, the tour's numbers and its six-topic limit,
+running totals and "ago". E2E: the page signs in, shows EXAMPLE CONTENT, clusters, systems with reports, counters and
+the news-missing reason, walks the tour with the keys and goes back to the app.
+
+Seen in Chromium at 1280×720, 1600×900 and 1920×1080 against a local PostgreSQL 16 with a synthetic 111-note knowledge
+base and 1,512 synthetic articles (scratch only, not committed); a row inserted while the page was open appeared within
+a minute (1,512 → 1,513).
+## 2026-10-28 — The portal sign-in outlives its window
 
 The owner: "I filled in portal addresses. I signed in to them. Closed the browser. When I click check sign in I still
 get that the sign in wasn't done. Possible that the browser headless profile is not the same as the one where we sign

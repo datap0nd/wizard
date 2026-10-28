@@ -17,3 +17,4 @@ Evidence**. A decision that changes repository rules also updates [AGENTS.md](..
 - [2026-10-23 Gemini reads the company portals in the person's own Wizard browser](2026-10-23-portal-browser.md)
 - [2026-10-23 Wizard edits a copy of an attached workbook and hands it back](2026-10-23-edited-attachments.md)
 - [2026-10-28 The Big Data Portal is its information catalog and Superset](2026-10-28-bdp-information-catalog.md)
+- [2026-10-28 The Brain page: what Wizard knows, as one picture, beside the app](2026-10-28-brain-page.md)
