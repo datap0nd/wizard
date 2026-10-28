@@ -356,7 +356,7 @@ export interface AccessRequest {
 }
 
 export interface PortalCheck {
-  portals: {id: string; name: string; signed_in: boolean; title?: string; error?: string}[];
+  portals: {id: string; name: string; signed_in: boolean; title?: string; host?: string; error?: string}[];
 }
 
 export interface RunView {

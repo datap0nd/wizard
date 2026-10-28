@@ -170,7 +170,7 @@ of Wizard on this PC:
 | Gemini | Google Cloud project, company Google domains | — |
 | Knowledge base | Repository, read-only token, branch, folder, check interval | **Test connection**: can the token read the repository? |
 | Company database | Name people see (default "AI Team Database"), server, port, database, read-only user, password, SSL | **Test connection**: connects read-only and reports the user |
-| Portals | ASAP and GSCM addresses, the Big Data Portal's two (information catalog and Superset), browser (Chrome or Edge), other hosts the portals need; the **Access request form**: your usual answers on every Big Data Portal access request (field and answer) and an optional request page | **Sign in to the portals** opens Wizard's own browser visibly, one tab per portal (two for the Big Data Portal): sign in, then close it (or **Done**). **Check sign-in** opens each in the background and says whether it is signed in. **Open the request page** opens the catalog's request page with your answers filled in; you check it and submit it |
+| Portals | ASAP and GSCM addresses, the Big Data Portal's two (information catalog and Superset), browser (Chrome or Edge), other hosts the portals need; the **Access request form**: your usual answers on every Big Data Portal access request (field and answer) and an optional request page | **Sign in to the portals** opens Wizard's own browser visibly, one tab per portal (two for the Big Data Portal): sign in, then close it (or **Done**). The sign-in lasts as long as the portals' own sessions, across restarts too: Wizard keeps its browser's session cookies (DPAPI), never a password. **Check sign-in** opens each in the background and says whether it is signed in, or which page asked for a sign-in. **Open the request page** opens the catalog's request page with your answers filled in; you check it and submit it |
 | Network | Proxy | — |
 | Version and updates | The installed version | **Check for updates** / **Update to 1.0.N** |
 
@@ -256,6 +256,7 @@ Someone who already has Wizard can import a new file from the tray menu: **Impor
 |---|---|
 | Ask Wizard (Ctrl+Alt+W) | Opens the panel |
 | Open Wizard in the browser | The full app (sidebar, history, sources) at `http://127.0.0.1:8771` |
+| (in the browser) `/brain` | The Brain page: what Wizard knows as one picture, the systems and the live news, with a presenter tour (`http://127.0.0.1:8771/brain`; [decision](decisions/2026-10-28-brain-page.md)) |
 | Sync the knowledge base now | Checks GitHub now and restarts the service on a new version |
 | Show the button at the top of the screen | Hide the tab (Ctrl+Alt+W and the tray still work) |
 | Start Wizard when I sign in | The `HKCU\...\Run` entry |

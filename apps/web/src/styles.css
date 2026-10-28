@@ -117,6 +117,30 @@
     to { opacity: 1; transform: none; clip-path: inset(0 0 0 0); }
   }
   @keyframes panel-glint { to { transform: translateX(100%); } }
+  /* The Brain page (components/brain, /brain): a dark stage for a meeting-room screen. Its motion is decoration;
+     reduced motion turns it off through the base rule above. */
+  .brain-page { color-scheme: dark; background: radial-gradient(1400px 900px at 42% 46%, #0f1c58 0%, #080e30 42%, #04061a 100%); }
+  .brain-stars { opacity: 0.55; background-size: 260px 260px;
+    background-image: radial-gradient(1px 1px at 24px 34px, rgb(255 255 255 / 0.55), transparent),
+      radial-gradient(1px 1px at 132px 86px, rgb(255 255 255 / 0.35), transparent),
+      radial-gradient(1.6px 1.6px at 208px 170px, rgb(170 190 255 / 0.6), transparent),
+      radial-gradient(1px 1px at 70px 214px, rgb(255 255 255 / 0.3), transparent),
+      radial-gradient(1.2px 1.2px at 176px 18px, rgb(255 220 240 / 0.4), transparent); }
+  .brain-live { animation: brain-live 1.6s ease-in-out infinite; }
+  .brain-draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: brain-draw 2.2s 0.3s ease-out forwards; }
+  .brain-grow { transform-origin: left center; animation: brain-grow 1.2s 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  .brain-new { animation: brain-live 1s ease-in-out 6; }
+  .brain-arrive { animation: brain-arrive 0.9s cubic-bezier(0.2, 0.9, 0.3, 1.1) both; box-shadow: 0 0 0 1px rgb(251 113 133 / 0.35), 0 0 22px rgb(251 113 133 / 0.25); }
+  .brain-pop { animation: stage-pop 0.3s ease-out both; }
+  .brain-caption { animation: brain-caption 0.5s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
+  .brain-halo { box-shadow: 0 0 0 2px rgb(142 162 255 / 0.7), 0 0 26px 6px rgb(91 124 255 / 0.45); animation: brain-live 2s ease-in-out infinite; }
+  .brain-spotlight > section { box-shadow: 0 0 0 1px rgb(251 113 133 / 0.5), 0 0 40px rgb(251 113 133 / 0.25); transition: box-shadow 0.5s; }
+  .brain-fade { mask-image: linear-gradient(to bottom, black 85%, transparent); }
+  @keyframes brain-live { 50% { opacity: 0.45; } }
+  @keyframes brain-draw { to { stroke-dashoffset: 0; } }
+  @keyframes brain-grow { from { transform: scaleX(0); } }
+  @keyframes brain-arrive { from { opacity: 0; transform: translateX(24px) scale(0.97); } }
+  @keyframes brain-caption { from { opacity: 0; transform: translateY(14px); } }
   /* The wizard sprite (components/WizardSprite.tsx): pixel art scaled by whole numbers, stepped frame by frame. */
   .wizard-sprite { display: inline-block; flex: none; background-repeat: no-repeat; image-rendering: pixelated; }
   @keyframes wizard-frames { from { background-position-x: 0; } to { background-position-x: var(--wizard-end); } }

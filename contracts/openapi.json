@@ -1326,6 +1326,46 @@
         }
       }
     },
+    "/api/v1/brain": {
+      "get": {
+        "summary": "Brain Map",
+        "operationId": "brain_map_api_v1_brain_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Brain Map Api V1 Brain Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/brain/live": {
+      "get": {
+        "summary": "Brain Live",
+        "operationId": "brain_live_api_v1_brain_live_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Brain Live Api V1 Brain Live Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/dev/log": {
       "get": {
         "summary": "Dev Log",
