@@ -170,7 +170,7 @@ of Wizard on this PC:
 | Gemini | Google Cloud project, company Google domains | — |
 | Knowledge base | Repository, read-only token, branch, folder, check interval | **Test connection**: can the token read the repository? |
 | Company database | Name people see (default "AI Team Database"), server, port, database, read-only user, password, SSL | **Test connection**: connects read-only and reports the user |
-| Portals | ASAP and GSCM addresses, the Big Data Portal's two (information catalog and Superset), browser (Chrome or Edge), other hosts the portals need | **Sign in to the portals** opens Wizard's own browser visibly, one tab per portal (two for the Big Data Portal): sign in, then close it (or **Done**). **Check sign-in** opens each in the background and says whether it is signed in |
+| Portals | ASAP and GSCM addresses, the Big Data Portal's two (information catalog and Superset), browser (Chrome or Edge), other hosts the portals need | **Sign in to the portals** opens Wizard's own browser visibly, one tab per portal (two for the Big Data Portal): sign in, then close it (or **Done**). The sign-in lasts as long as the portals' own sessions, across restarts too: Wizard keeps its browser's session cookies (DPAPI), never a password. **Check sign-in** opens each in the background and says whether it is signed in, or which page asked for a sign-in |
 | Network | Proxy | — |
 | Version and updates | The installed version | **Check for updates** / **Update to 1.0.N** |
 

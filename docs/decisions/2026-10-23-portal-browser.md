@@ -22,7 +22,8 @@ relayed to gemini to use for its own scripts in the best way possible."
 - **The browser.** Playwright 1.62.0 (the version Metronome's Flows already run on the work PCs) drives the installed
   Google Chrome (or Edge, Settings → Portals) with Wizard's own profile in the person's Wizard home, never their
   everyday profile. It runs headless in the background. **Sign in to the portals** opens it visibly, one tab per
-  portal; the person signs in themselves (SSO, MFA) and closes it. Wizard stores no password or cookie of its own.
+  portal; the person signs in themselves (SSO, MFA) and closes it. Wizard stores no password. (Its own browser's
+  session-only cookies are kept since 28 October 2026: [update](#update-28-october-2026--the-sign-in-outlives-its-window).)
   Only on a single-person PC (desktop app or work-PC install): a shared server behind SSO refuses portal settings.
 - **The tools** (`portal` MCP server): `portal_guide` (how the portal works, the helpers, saved scripts),
   `portal_run` (Gemini's steps: open, click, fill, select, press, wait, look, read a table, and JavaScript evaluated in
@@ -78,3 +79,25 @@ real Chromium against a simulated portal: a Nexacro Dataset as LIVE evidence wit
 tables and the page outline, a captured SSV transaction replayed with a new week, the ASAP menu walked with the token
 never reaching Gemini, refused clicks, writes, other hosts and a confirmation, a sign-in page, partial results, a saved
 script rerun with parameters. The real portals are first read on the work PC.
+
+## Update 28 October 2026 — the sign-in outlives its window
+
+**Context.** The owner signed in to the portals, closed the window, and **Check sign-in** still said the portals asked
+for a sign-in. The profile is the same folder for the window and the background browser. But Chrome drops
+session-only cookies (no expiry date) when it closes, and most portal and sign-in sessions use them, so the sign-in
+ended with its window. Chrome keeps them only when "Continue where you left off" is on, a protected preference Chrome
+resets when anything but its own settings page changes it.
+
+**Decision.** Do what Metronome's Flows already do with their browser's sign-in (`datap0nd/data_governance`
+`app/flow_browser_state.py`, DPAPI-protected `storage_state`). Wizard notes its own browser's cookies while a window is
+open, keeps the session-only ones that the portals and the person's sign-in hosts receive in `session.bin` in the
+person's Wizard home, through the secret store (DPAPI on Windows, the same store as the Google sign-in), and puts them
+back whenever its browser starts. Lasting cookies stay in the profile, where Chrome keeps them itself. Still no
+password, and Gemini still never sees or types one; a portal whose session has expired still asks for a sign-in.
+**Check sign-in** now names the page it ended on ("asks for a sign-in (Sign in · login.company.example)").
+
+**Evidence.** `tests/integration/test_portal_browser.py::test_the_sign_in_outlives_its_window_and_a_restart`, real
+Chromium, a portal whose sign-in is a session-only cookie: signed in in the window, window closed, checked signed in,
+then signed in again after a Wizard restart; only the session-only cookie is kept. Without the change it fails exactly
+as the owner saw it (`Sign in`). The real portals are first checked on the work PC.
+

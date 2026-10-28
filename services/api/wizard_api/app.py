@@ -210,8 +210,9 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
     else:
         services = build_services(postgres=settings.postgres, postgres_name=settings.pg_name)
     services.metronome, services.mail_domains = settings.metronome, settings.google_domains
+    secret_box = SecretBox()
     if settings.portals:
-        services.portals = PortalBrowsers(settings.portals, settings.user_home)
+        services.portals = PortalBrowsers(settings.portals, settings.user_home, secrets=secret_box)
     portal_ids = [p.id for p in settings.portals.portals] if settings.portals else []
     registry = build_registry(services)
     identities = IdentityDirectory.load(settings.identities_file)
@@ -228,7 +229,6 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         others = [] if settings.desktop else [i for i in identities.all() if not owner.email or i.email != owner.email]
         identities = IdentityDirectory([owner, *others])
     interrupted = store.mark_interrupted()
-    secret_box = SecretBox()
     runtime = runtime or build_runtime(settings, secret_box, registry.scopes())
     manager = RunManager(settings, store, registry, services, runtime)
     kb = kb_source(settings)
