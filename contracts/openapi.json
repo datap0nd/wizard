@@ -1607,6 +1607,149 @@
         }
       }
     },
+    "/api/v1/portals/{system}/access-form": {
+      "get": {
+        "summary": "Access Form",
+        "description": "The answers this person gives on every access request, kept on this PC.",
+        "operationId": "access_form_api_v1_portals__system__access_form_get",
+        "parameters": [
+          {
+            "name": "system",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "System"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Access Form Api V1 Portals  System  Access Form Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Save Access Form",
+        "operationId": "save_access_form_api_v1_portals__system__access_form_post",
+        "parameters": [
+          {
+            "name": "system",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "System"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccessFormBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Save Access Form Api V1 Portals  System  Access Form Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/portals/{system}/access-request": {
+      "post": {
+        "summary": "Open Access Request",
+        "description": "Opens the request page in a visible window of Wizard's browser on this PC and fills the saved answers and\nthis request's into the form's empty fields. The person checks them and submits; Wizard never submits.",
+        "operationId": "open_access_request_api_v1_portals__system__access_request_post",
+        "parameters": [
+          {
+            "name": "system",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "System"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccessRequestBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Open Access Request Api V1 Portals  System  Access Request Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/settings": {
       "get": {
         "summary": "Get Settings",
@@ -1950,6 +2093,83 @@
   },
   "components": {
     "schemas": {
+      "AccessFormBody": {
+        "properties": {
+          "page": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Page",
+            "default": ""
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/AnswerBody"
+            },
+            "type": "array",
+            "maxItems": 40,
+            "title": "Fields"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "AccessFormBody"
+      },
+      "AccessRequestBody": {
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "tables": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Tables"
+          },
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/AnswerBody"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Answers"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "AccessRequestBody"
+      },
+      "AnswerBody": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Label"
+          },
+          "value": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Value",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "label"
+        ],
+        "title": "AnswerBody"
+      },
       "DropBody": {
         "properties": {
           "paths": {

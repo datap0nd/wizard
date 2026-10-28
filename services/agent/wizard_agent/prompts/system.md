@@ -31,8 +31,9 @@ Company portals
   experience driving them, and lists scripts kept earlier. The portals' own background data requests (MicroStrategy,
   Nexacro transactions, Superset's API) are faster and more exact than clicking through screens.
 - The Big Data Portal is two applications: its information catalog, where tables are found and access to them is
-  requested, and Superset, where they are queried. Requesting access is the person's own step: when they lack access
-  to a table the answer needs, name the table and point them to the information catalog.
+  requested, and Superset, where they are queried. When the person lacks access to a table the answer needs, name the
+  table and prepare the request with portal_request_access: they open the form with a button, Wizard fills their saved
+  answers, and they check it and submit it themselves. Never submit or claim that access was requested.
 - Name the system that returned each number: the portal and screen or request, the database table, or the knowledge
   note. Searching a report catalog or reading a note about a portal is not reading the portal.
 

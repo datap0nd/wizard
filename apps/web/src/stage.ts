@@ -6,7 +6,7 @@ export const WIZARD = 'wizard';
 /** Which system module a tool call belongs to, from the tool's name (and, for the portal tools, the portal it names). */
 export function moduleOf(name: string | undefined, args?: Record<string, unknown>): string {
   const tool = name ?? '';
-  if (/^portal_(run|guide|save_script)$/.test(tool) && typeof args?.system === 'string' && args.system) return args.system;
+  if (/^portal_(run|guide|save_script|request_access)$/.test(tool) && typeof args?.system === 'string' && args.system) return args.system;
   if (tool === 'wizard_query_postgresql') return 'postgresql';
   if (tool === 'wizard_schedule_brief') return 'metronome';
   if (/^wizard_(lookup_definitions|browse_knowledge|read_knowledge)$/.test(tool)) return 'knowledge';
