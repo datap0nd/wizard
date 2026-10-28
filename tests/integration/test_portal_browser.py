@@ -1,6 +1,7 @@
 """Gemini's portal tools in a real Chromium, against a simulated portal on this machine: a GSCM-like Nexacro application
 object with datasets and a bookmark list, an ASAP-like MicroStrategy session with menuInfo.do, Nexacro SSV transactions,
-a sign-in page, and the controls and requests Wizard must refuse. The real portals are first read on a work PC.
+a sign-in page, a Big Data Portal whose information catalog and Superset sit on two hosts, and the controls and requests
+Wizard must refuse. The real portals are first read on a work PC.
 
 Needs a Chromium or Chrome (WIZARD_TEST_BROWSER, Playwright's browser cache, or an installed Chrome); BLOCKED otherwise."""
 from __future__ import annotations
@@ -70,6 +71,12 @@ const _COMMON_INFO = {"MSTR_MAIN_MENU_ID": "ROOT", "MSTR_CUSTOM_WEB_CONTEXT_PATH
 const _SESSION = {"MSTRWEB_AUTH_TOKEN_ENC": "TOKEN"};
 </script></head><body><nav><a href="#">Sales</a></nav></body></html>""".replace('"TOKEN"', f'"{TOKEN}"')
 
+CATALOG_PAGE = """<!doctype html><html><head><title>Information catalog</title></head><body>
+<table id="found"><tr><th>Table</th><th>Description</th><th>Access</th></tr>
+<tr><td>sales_daily</td><td>Daily sell-out by market</td><td>No</td></tr></table>
+<button id="ask" onclick="fetch('/api/v1/access-requests', {method: 'POST', body: '{}'})">Request access</button>
+</body></html>"""
+
 MENU = {"ROOT": [{"id": "S", "name": "01.Sales"}, {"id": "F", "name": "02.Finance"}],
         "S": {"id": "S", "name": "01.Sales", "children": [{"id": "G", "name": "Sell-out", "child": [{"id": "R1", "name": "Weekly Sell-out"}]}]},
         "F": {"id": "F", "name": "02.Finance", "children": [{"id": "R2", "name": "P&L"}]}}
@@ -94,7 +101,9 @@ class Portal(SimpleHTTPRequestHandler):
         pages = {"/": GSCM_PAGE, "/asap": ASAP_PAGE, "/login": "<title>Sign in</title><input type=password>",
                  "/sso": "<title>Company</title><p>Single Sign On</p><input type=email>",
                  "/help": "<title>Help</title><p>Trouble with single sign-on? Call the desk.</p><input type=text>",
-                 "/report": "<title>Report</title><table><tr><th>A</th></tr><tr><td>1</td></tr></table>"}
+                 "/report": "<title>Report</title><table><tr><th>A</th></tr><tr><td>1</td></tr></table>",
+                 "/superset": "<title>Superset</title><div id=app data-bootstrap='{}'>SQL Lab</div>",
+                 "/catalog": CATALOG_PAGE}
         self.reply(pages.get(self.path.split("?")[0], "<title>Not found</title>"), status=200 if self.path.split("?")[0] in pages else 404)
 
     def do_POST(self) -> None:  # noqa: N802
@@ -127,6 +136,8 @@ def setup(portal_url: str) -> Iterator[tuple[Any, Any]]:
     TEST_TMP.mkdir(parents=True, exist_ok=True)
     root = Path(tempfile.mkdtemp(prefix="portal-", dir=TEST_TMP))
     settings = settings_from({"WIZARD_PORTAL_GSCM_URL": portal_url, "WIZARD_PORTAL_ASAP_URL": portal_url + "asap",
+                              "WIZARD_PORTAL_BDP_URL": portal_url + "superset",
+                              "WIZARD_PORTAL_BDP_CATALOG_URL": catalog_address(portal_url),
                               "WIZARD_BROWSER_EXECUTABLE": BROWSER})
     assert settings is not None
     services = build_services()
@@ -137,16 +148,21 @@ def setup(portal_url: str) -> Iterator[tuple[Any, Any]]:
     shutil.rmtree(root, ignore_errors=True)
 
 
+def catalog_address(portal_url: str) -> str:
+    """The Big Data Portal's information catalog, on another host than its Superset (localhost, not 127.0.0.1)."""
+    return portal_url.replace("127.0.0.1", "localhost") + "catalog"
+
+
 def refused(outcome: Any) -> str | None:
     """The refusal of a call: its error, or, when steps before it read something, the step it stopped at."""
     return outcome.error_code if not outcome.ok else (outcome.data.get("stopped") or {}).get("code")
 
 
-def call(setup: tuple[Any, Any], name: str, args: dict[str, Any], recorder: MemoryRecorder | None = None) -> Any:
+def call(setup: tuple[Any, Any], name: str, args: dict[str, Any], recorder: MemoryRecorder | None = None,
+         systems: tuple[str, ...] = ("gscm", "asap")) -> Any:
     services, registry = setup
     identity = Identity(id="owner", email="owner@example.com", name="Owner", role="Owner",
-                        entitlements={"gscm": SystemRights(reports=["*"], markets=["*"]),
-                                      "asap": SystemRights(reports=["*"], markets=["*"])})
+                        entitlements={system: SystemRights(reports=["*"], markets=["*"]) for system in systems})
     context = ToolContext(identity=identity, run_id="run_t", recorder=recorder or MemoryRecorder(), services=services)
     return registry.execute(name, args, context)
 
@@ -276,3 +292,30 @@ def test_a_script_that_worked_is_kept_and_rerun_with_parameters(setup):
 def test_a_portal_the_person_lacks_is_not_available(setup):
     outcome = call(setup, "portal_run", {"system": "bdp", "steps": [{"action": "look"}]})
     assert not outcome.ok and outcome.error_code == "portal_not_available"
+
+
+def test_the_big_data_portal_reads_its_information_catalog_and_superset_but_never_requests_access(setup, portal_url):
+    catalog = catalog_address(portal_url)
+    guide = call(setup, "portal_guide", {"system": "bdp"}, systems=("bdp",))
+    assert guide.ok, guide.error_message
+    assert guide.data["applications"] == [
+        {"part": "superset", "name": "Superset", "address": portal_url + "superset"},
+        {"part": "catalog", "name": "information catalog", "address": catalog}]
+    assert "information catalog" in guide.data["guide"] and "W.superset.sql" in guide.data["guide"]
+    found = call(setup, "portal_run", {"system": "bdp", "title": "Tables about sell-out", "steps": [
+        {"action": "goto", "url": catalog}, {"action": "read_table", "selector": "#found"},
+        {"action": "goto", "url": "/report"}]}, systems=("bdp",))
+    assert found.ok, found.error_message
+    assert found.data["outputs"][1]["rows"] == [["sales_daily", "Daily sell-out by market", "No"]]
+    assert found.data["page"]["url"].startswith("http://localhost:"), "a path stays on the catalog's host"
+    Portal.hits.clear()
+    ask = call(setup, "portal_run", {"system": "bdp", "steps": [{"action": "goto", "url": catalog},
+                                                                {"action": "click", "selector": "#ask"}]}, systems=("bdp",))
+    assert refused(ask) == "click_refused"
+    script = "return (await fetch('/api/v1/access-requests', {method: 'POST', body: '{}'})).status;"
+    sent = call(setup, "portal_run", {"system": "bdp", "steps": [{"action": "evaluate", "script": script}]}, systems=("bdp",))
+    assert refused(sent) == "request_refused"
+    assert not any("access-requests" in hit for hit in Portal.hits)
+    checked = setup[0].portals.for_user("owner").check()["portals"]
+    assert [(c["id"], c["name"], c["signed_in"]) for c in checked if c["id"].startswith("bdp")] == [
+        ("bdp-superset", "Big Data Portal: Superset", True), ("bdp-catalog", "Big Data Portal: information catalog", True)]

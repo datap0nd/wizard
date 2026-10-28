@@ -42,7 +42,7 @@ class Step(Args):
         "script, JavaScript in the page (an async function body ending in return; W helpers and P parameters are "
         "defined). read_table: an HTML table as rows (selector, default the first table). look: the page's controls, "
         "tables, frames and text, to explore. back: browser back. use_page: switch to open page number nth (popups)."))
-    url: str | None = Field(default=None, max_length=2000, description="goto: '/path?query' on the portal, or a full portal address.")
+    url: str | None = Field(default=None, max_length=2000, description="goto: '/path?query' on the portal application the page is on, or a full portal address (portal_guide lists them; the Big Data Portal's information catalog and Superset have one each).")
     selector: str | None = Field(default=None, max_length=500, description="Playwright selector: CSS ('[id=\"…btn_search\"]', '#content-frame'), 'text=Run', or 'role=button[name=\"Go\"]'.")
     role: str | None = Field(default=None, max_length=40, description="ARIA role, e.g. button, link, tab, menuitem, option.")
     name: str | None = Field(default=None, max_length=200, description="Accessible name with role.")
@@ -133,11 +133,16 @@ def guide(ctx: ToolContext, args: GuideArgs) -> dict[str, Any]:
               "last_ok": s.get("last_ok")} for s in _saved(ctx) if s.get("system") == portal.id]
     address = urlsplit(portal.url)
     start = (address.path or "/") + (f"?{address.query}" if address.query else "")
-    return {"system": portal.id, "name": portal.name, "start_page": start, "browser": status["browser"],
+    data = {"system": portal.id, "name": portal.name, "start_page": start, "browser": status["browser"],
             "last_sign_in": status["last_sign_in"], "signing_in": status["signing_in"], "saved_scripts": saved,
             "guide": _guide_text(portal.id),
             "note": "Steps run in the person's own Wizard browser, signed in as them, in the background. Wizard refuses "
-                    "writes (save, delete, submit, upload, sign out...) and any host outside the portals."}
+                    "writes (save, delete, submit, upload, request access, sign out...) and any host outside the portals."}
+    if portal.parts:
+        data["applications"] = [{"part": part.id, "name": part.label, "address": part.url} for part in portal.parts]
+        data["start_page_note"] = ("This portal is several applications, each at its own address: goto one by its full "
+                                   "address; a '/path' then stays on that application.")
+    return data
 
 
 def _fill(value: Any, params: dict[str, str]) -> Any:
@@ -276,19 +281,20 @@ def save_script(ctx: ToolContext, args: SaveArgs) -> dict[str, Any]:
 
 PORTAL_TOOLS = [
     ToolSpec("portal_guide",
-             "How a company portal (ASAP, GSCM, the Big Data Portal) works and how to read it with portal_run: its "
-             "structure, where its data really comes from, the background data requests to call instead of clicking, "
-             "the W.* JavaScript helpers, pitfalls, and the scripts saved for it on this PC. Read it before writing "
-             "steps for a portal.", GuideArgs, guide, "portal", "knowledge"),
+             "How a company portal (ASAP, GSCM, the Big Data Portal: its information catalog, where tables are found, "
+             "and Superset, where they are queried) works and how to read it with portal_run: its applications and "
+             "addresses, its structure, where its data really comes from, the background data requests to call instead "
+             "of clicking, the W.* JavaScript helpers, pitfalls, and the scripts saved for it on this PC. Read it "
+             "before writing steps for a portal.", GuideArgs, guide, "portal", "knowledge"),
     ToolSpec("portal_run",
              "Read a company portal live, in the person's own signed-in Wizard browser (Chrome, in the background): "
              "your own steps (open pages, click, fill, wait, look around, read tables) and JavaScript evaluated in the "
              "page, where W.* helpers read Nexacro datasets, walk ASAP's menu, replay the portal's own data requests "
-             "(W.requests, W.replay) and query Superset. Prefer the portal's data requests over clicking through "
-             "screens. Every table you return (a {columns, rows} object or a list of objects) is recorded as evidence "
-             "with an id such as E3: cite it next to its numbers. The result also lists the data requests the page "
-             "made, with secrets removed. Wizard refuses saves, deletes, submissions, uploads, sign-outs and other "
-             "hosts.", RunArgs, run, "portal", "source"),
+             "(W.requests, W.replay), search the Big Data Portal's information catalog and query Superset. Prefer the "
+             "portal's data requests over clicking through screens. Every table you return (a {columns, rows} object "
+             "or a list of objects) is recorded as evidence with an id such as E3: cite it next to its numbers. The "
+             "result also lists the data requests the page made, with secrets removed. Wizard refuses saves, deletes, "
+             "submissions, uploads, access requests, sign-outs and other hosts.", RunArgs, run, "portal", "source"),
     ToolSpec("portal_save_script",
              "Keep steps that worked as a named script for this person's portal, with parameters, so a later question "
              "runs it with portal_run(script=...) instead of exploring again. Saves on this PC only; it changes "

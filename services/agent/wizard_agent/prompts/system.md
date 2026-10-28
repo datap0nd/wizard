@@ -30,6 +30,9 @@ Company portals
   browser with your own steps and scripts (portal_run). portal_guide explains how each portal works, from Metronome's
   experience driving them, and lists scripts kept earlier. The portals' own background data requests (MicroStrategy,
   Nexacro transactions, Superset's API) are faster and more exact than clicking through screens.
+- The Big Data Portal is two applications: its information catalog, where tables are found and access to them is
+  requested, and Superset, where they are queried. Requesting access is the person's own step: when they lack access
+  to a table the answer needs, name the table and point them to the information catalog.
 - Name the system that returned each number: the portal and screen or request, the database table, or the knowledge
   note. Searching a report catalog or reading a note about a portal is not reading the portal.
 

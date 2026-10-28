@@ -1,8 +1,11 @@
 # Task 40 — Discover the Big Data Portal (BDP)
 
-**Goal:** find out what Wizard needs to query BDP tables through Superset, BDP's SQL tool, under each person's own
-company sign-in: what BDP is and how table access is requested, which database engines sit behind Superset, how
-Superset signs people in, and whether its REST API answers from this PC. Nothing in this task reads table rows.
+**Goal:** find out what Wizard needs to find BDP tables in its information catalog and query them through Superset,
+BDP's SQL tool, under each person's own company sign-in. BDP is two applications: the **information catalog**, where
+people search for tables and request access to them, and **Superset**, where they query them. Find out what BDP holds,
+how table access is requested in the catalog, which product runs the catalog, which database engines sit behind
+Superset, how both sign people in, and whether Superset's REST API answers from this PC. Nothing in this task reads
+table rows.
 **Output:** `content\inbox\bdp\` (the check and the pages the user saves), `outbox\40-bdp-discovery.md` (internal)
 and `outbox\40-bdp-shareable.md` · **Shareable:** `outbox\40-bdp-shareable.md` only (yes/no answers, versions, engine
 types and counts; no addresses, database, schema or table names, or people).
@@ -13,7 +16,8 @@ All `.\docs.ps1` commands run in PowerShell in this folder. If your shell is cmd
 
 ## Rules for this task
 
-- You never sign in to Superset, run SQL or open a browser. The user does the browser steps, signed in as usual.
+- You never sign in to Superset or the information catalog, run SQL or open a browser. The user does the browser
+  steps, signed in as usual. Nobody requests access to a table for this task.
 - Never ask for, accept or write down a password, token or cookie. If a saved file holds one (for example a line with
   `access_token`, `csrf_token` or `session=`), stop, ask the user to delete that file, and continue without it.
 - Never copy table rows. Database, schema and table names are internal: they may appear in `content\` and in
@@ -24,11 +28,12 @@ All `.\docs.ps1` commands run in PowerShell in this folder. If your shell is cmd
 
 1. **What the documents say.** Search `content\inbox\_text\` and, if tasks 20-21 ran, `content\inbox\_digests\` for:
    `BDP`, `Big Data Portal`, `Superset`, `SQL Lab`, `Trino`, `Presto`, `Hive`, `Spark`, `Impala`, `Databricks`,
-   `Hadoop`, `data lake`, `access request`. Note, with source ids: what BDP holds, how table access is requested and
-   approved, which engines are named, the Superset address, and the team that runs BDP (team name or role, not
-   people's emails). Then ask the user whether they have a BDP guide, an access-request guide or emails about BDP; if
+   `Hadoop`, `data lake`, `access request`, `information catalog`, `data catalog`, `metadata`. Note, with source ids:
+   what BDP holds, how table access is requested in the information catalog and approved, which engines are named, the
+   catalog and Superset addresses, and the team that runs BDP (team name or role, not people's emails). Then ask the user whether they have a BDP guide, an access-request guide or emails about BDP; if
    so, they put them in `content\inbox\bdp\` and you run `.\docs.ps1 extract` and read them.
-2. **The Superset address.** Ask the user to open SQL Lab in their browser and copy the address from the address bar.
+2. **The two addresses.** Ask the user to open SQL Lab in their browser and copy the address from the address bar,
+   then to open the information catalog and copy its address too.
 3. **Check from this PC.** `.\docs.ps1 bdp-check --url "<that address>"`. It sends anonymous requests only (no
    sign-in, no SQL) and writes `content\inbox\bdp\superset-check.md`. Read the lines it prints:
    - `FAIL ... could not reach`: note the reason (proxy, certificate, blocked) and continue; the browser steps still work.
@@ -49,6 +54,11 @@ All `.\docs.ps1` commands run in PowerShell in this folder. If your shell is cmd
    3. In Superset, open the Settings menu (top right) and choose About: ask the user for the version it shows.
    4. Ask: in SQL Lab, which database do they pick for BDP tables? When they signed in to Superset, did they see the
       same sign-in page as for ASAP and GSCM?
+   5. In the information catalog, ask the user (without sending a request): which product it is (its About page,
+      footer or logo; e.g. DataHub, Collibra, Alation, Atlas, OpenMetadata, Amundsen, or an in-house page); whether it
+      asked for a sign-in, and the same one as Superset; how they search for a table; what a table's page shows
+      (description, columns, owner, partitions, whether they already have access); and what requesting access involves
+      (a button, a form, who approves, how long it usually takes, and where they see their requests).
 5. **Run the check again.** `.\docs.ps1 bdp-check --url "<base>"`. It now adds one line per database from the saved
    list: name, engine (`backend`: trino, presto, hive, spark, databricks, impala, ...), and whether Superset allows
    data changes (`allow_dml`), background queries (`allow_run_async`) and SQL Lab (`expose_in_sqllab`). A `WARN ... not
@@ -61,6 +71,8 @@ All `.\docs.ps1` commands run in PowerShell in this folder. If your shell is cmd
 
 Sections, each with source ids or the check line it comes from:
 - **What BDP is:** what it holds, how access is requested and approved, who runs it, other meanings of "BDP".
+- **Information catalog:** address, product, sign-in (same as Superset or not), how a table is searched, what a
+  table's page shows, and how access is requested and approved (step 4.5 and the documents).
 - **Superset:** base address, version, reachable from this PC (route and any failure).
 - **Sign-in:** protocol, identity provider, gateway in front of Superset, Windows integrated sign-in, same page as ASAP
   and GSCM (the user's answer).
@@ -75,21 +87,24 @@ Sections, each with source ids or the check line it comes from:
   3. Is "Allow DML" off for every database Wizard would use, and is there a read-only connection?
   4. What query time limit and row limit apply in SQL Lab, and are long queries run in the background?
   5. Which columns partition the large tables (usually a date) and should always be filtered?
-  6. Where are table and column descriptions kept (Superset dataset descriptions, a metastore, a data catalog)?
-  7. How are access requests approved, and can Wizard link a person to the request page when they lack access?
+  6. Does the information catalog have an API or search request an application may call under the person's own
+     sign-in, and does it say whether a person already has access to a table?
+  7. How are access requests approved, and can Wizard link a person to a table's request page in the catalog when
+     they lack access?
 
 ## Write `outbox\40-bdp-shareable.md`
 
 One table, question | answer: Superset reachable from this PC; route (direct or proxy, no address); Superset version;
 sign-in protocol; identity provider product (e.g. Microsoft Entra ID, AD FS, Okta, or unknown); gateway in front of
 Superset; Windows integrated sign-in offered; what the REST API answered; API lists SQL Lab execute (yes / no / not
-public); same sign-in page as ASAP and GSCM; number of databases; engines with counts (e.g. trino 2, hive 1); DML
+public); same sign-in page as ASAP and GSCM; information catalog product (or unknown); catalog uses the same sign-in as
+Superset; number of databases; engines with counts (e.g. trino 2, hive 1); DML
 allowed (k of n); background queries (k of n); grants by kind (counts); how access is requested (one sentence without
 names); number of open questions. Then the `bdp-check` lines with every host name replaced by `<superset>`,
 `<gateway>` or `<identity provider>`.
 
 **Done when:** `content\inbox\bdp\superset-check.md` exists, every database in the saved list has its engine in the
 discovery file (or the file says why the list could not be saved), the sign-in route is described or marked unknown
-with the reason, the open questions are listed, and the shareable file has no address, database, schema, table or
+with the reason, the information catalog's product and request route are described or marked unknown, the open questions are listed, and the shareable file has no address, database, schema, table or
 person name. If the user could not do the browser steps, mark the task `partial` in `STATUS.md` and say which
 answers are missing.

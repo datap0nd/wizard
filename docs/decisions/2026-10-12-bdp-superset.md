@@ -1,6 +1,7 @@
 # 2026-10-12 — The Big Data Portal: per-user access through Superset, discovery first
 
 **Owner:** project owner. **Status:** decided for discovery (12 October 2026); the query tool waits for its results.
+Amended 28 October 2026: [BDP is its information catalog and Superset](2026-10-28-bdp-information-catalog.md).
 
 **Context.** The owner wants Wizard to use a fourth platform, the Big Data Portal (BDP). BDP is not a report platform
 like ASAP or GSCM. People request access to individual tables, and query them with SQL in Superset (SQL Lab), BDP's

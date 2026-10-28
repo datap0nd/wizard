@@ -29,7 +29,7 @@ last page between calls, so you can explore step by step.
 - `W.requests(pattern)`, `W.request(i)`, `W.replay(i, {body | replace | url | headers})`.
 - `W.parse(text)`, `W.parseSSV(text)`, `W.parseXML(text)`: `{parameters, datasets: {name: {columns, rows}}}`.
 - `W.fetchText(url, options)`, `W.fetchJson(url, options)`.
-- `W.nexacro.*` (GSCM), `W.mstr.*` (ASAP), `W.superset.*` (BDP): see the portal's own section.
+- `W.nexacro.*` (GSCM), `W.mstr.*` (ASAP), `W.superset.*` (BDP's Superset): see the portal's own section.
 - `P` holds the parameters you passed.
 
 Scripts are the body of an async function: use `await`, end with `return`. A step stops after `timeout_ms` (30 s by
@@ -40,10 +40,12 @@ default, at most 150 s); one call stops after about 3 minutes, so split long wor
 - Requests to any host outside the portals, their company domain and the person's sign-in hosts.
 - Requests that change something: a path segment, service name or task id that starts with save, insert, update,
   delete, remove, modify, edit, upload, import, approve, reject, register, create, new, add, submit, send, publish,
-  share, pin, apply, confirm, cancel, reset, clear, schedule, subscribe, email, logout...; PUT, PATCH and DELETE (except
-  MicroStrategy prompt answers); SQL other than one SELECT.
+  share, pin, apply, confirm, cancel, reset, clear, schedule, subscribe, email, request, logout...; a POST to an
+  access-request address; a GraphQL mutation; PUT, PATCH and DELETE (except MicroStrategy prompt answers); SQL other
+  than one SELECT.
 - Clicks on controls whose label, title, value, name or id names save, delete, remove, clear, reset, unselect, apply,
-  submit, confirm, pin, share, new, add, edit, modify, update, upload, import, send, approve, publish, sign out...
+  submit, confirm, pin, share, new, add, edit, modify, update, upload, import, send, approve, publish, request, sign
+  out...
   (Metronome's list). Confirmation dialogs are always answered No; downloads are off.
 
 A refused request makes the step fail with `request_refused`; use another route. Never try to get around a refusal.
