@@ -3,8 +3,11 @@ portal scripts run in the background (headless) and the person signs in once in 
 
 One PortalBrowser per person. Playwright's synchronous objects belong to the thread that made them, so each browser has
 one thread that owns Playwright and runs every job in turn; tool calls hand it work and wait. The profile is Wizard's
-own folder under the person's Wizard home, never their everyday Chrome profile, and Wizard stores no password or cookie
-of its own: the profile keeps the sign-in like any browser does.
+own folder under the person's Wizard home, never their everyday Chrome profile, and Wizard stores no password. The profile
+keeps the sign-in's lasting cookies like any browser does. Chrome drops session-only cookies when it closes, and most
+portal and sign-in sessions are session-only, so the sign-in ended with its window (owner, 28 October 2026). Wizard
+keeps those cookies of its own browser, protected by the secret store (DPAPI on Windows), and puts them back whenever the
+browser starts, as Metronome's Flows keep their browser's sign-in (data_governance app/flow_browser_state.py).
 
 While Gemini drives (headless) every request goes through HostPolicy and write_reason, every click through
 click_refusal, downloads and service workers are off, and the data requests the page makes are kept so Gemini can call
@@ -23,7 +26,7 @@ from concurrent.futures import Future
 from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 from urllib.parse import urlsplit
 
 from . import portals
@@ -44,6 +47,14 @@ MAX_CAPTURED = 60
 # is visible yet (an account picker, a code prompt).
 SIGN_IN_MARKERS = ("single sign on", "single sign-on", "please enter your password", "verification code", "session expired",
                    "sign in to continue", "login required")
+
+
+class SecretStore(Protocol):
+    """Where the sign-in's session cookies are kept: wizard_agent's SecretBox (DPAPI on Windows)."""
+
+    def write(self, path: Path, value: str) -> None: ...
+
+    def read(self, path: Path) -> str | None: ...
 
 
 class PortalError(Exception):
@@ -75,7 +86,8 @@ class CallLog:
 
 
 class PortalBrowser:
-    def __init__(self, settings: PortalSettings, root: Path, launcher: Callable[..., Any] | None = None):
+    def __init__(self, settings: PortalSettings, root: Path, launcher: Callable[..., Any] | None = None,
+                 secrets: SecretStore | None = None):
         self.settings = settings
         self.root = root
         self.profile = root / settings.channel
@@ -93,6 +105,10 @@ class PortalBrowser:
         self._last_used = time.monotonic()
         self._log: CallLog | None = None
         self._sign_in_hosts: set[str] = set()
+        self._secrets = secrets
+        self.session_file = root / "session.bin"
+        self._session: list[dict[str, Any]] = self._load_session()
+        self._seen: list[dict[str, Any]] | None = None  # the sign-in window's cookies, the last time Wizard looked
 
     # State without secrets: the hosts sign-in went through and when it last happened --------------------------------
     def _state(self) -> dict[str, Any]:
@@ -106,6 +122,57 @@ class PortalBrowser:
         state = {**self._state(), **changes}
         self.root.mkdir(parents=True, exist_ok=True)
         self.state_file.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+    # The sign-in's session-only cookies, which Chrome drops when it closes ---------------------------------------------
+    def _load_session(self) -> list[dict[str, Any]]:
+        text = self._secrets.read(self.session_file) if self._secrets is not None else None
+        try:
+            cookies = json.loads(text) if text else []
+        except ValueError:
+            return []
+        return [c for c in cookies if isinstance(c, dict)] if isinstance(cookies, list) else []
+
+    def _keep_session(self, cookies: list[dict[str, Any]]) -> None:
+        """Keep the session-only cookies the portals and the person's sign-in hosts receive (Chrome keeps the lasting
+        ones in the profile itself)."""
+        hosts = {host for portal in self.settings.portals for host in portal.hosts} | self.policy.learned
+
+        def reaches(domain: str) -> bool:
+            domain = domain.lstrip(".").lower()
+            return self.policy.allowed(domain) or any(h == domain or h.endswith("." + domain) for h in hosts)
+
+        kept = [c for c in cookies if float(c.get("expires", -1)) < 0 and reaches(str(c.get("domain") or ""))]
+        if kept == self._session:
+            return
+        self._session = kept
+        if self._secrets is not None:
+            try:
+                self._secrets.write(self.session_file, json.dumps(kept))
+            except OSError as error:
+                log.warning("portal browser: could not keep the sign-in: %s", error)
+
+    def _note_session(self) -> None:
+        """Note the browser's cookies as they are now: the sign-in window's are kept when the person closes it (the
+        browser may be gone by then), the background browser's at once (a portal may renew its session)."""
+        try:
+            # Once its last window has closed, Chrome has already dropped them: what was noted before stays.
+            if self._context is None or not self._context.pages:
+                return
+            cookies = self._context.cookies()
+        except Exception:  # noqa: BLE001 - the browser has exited; what was noted stays
+            return
+        if self._headed:
+            self._seen = cookies
+        else:
+            self._keep_session(cookies)
+
+    def _restore_session(self, context: Any) -> None:
+        if not self._session:
+            return
+        try:
+            context.add_cookies(self._session)
+        except Exception as error:  # noqa: BLE001 - the portals then ask for a sign-in, which the person gives again
+            log.warning("portal browser: the kept sign-in could not be restored: %s", _first_line(error))
 
     # The browser thread ----------------------------------------------------------------------------------------------
     def run(self, job: Callable[[], Any], timeout: float = CALL_LIMIT_S) -> Any:
@@ -150,6 +217,7 @@ class PortalBrowser:
                 future.set_exception(error)
             finally:
                 self._last_used = time.monotonic()
+                self._note_session()
 
     def _idle(self) -> None:
         if self._context is None:
@@ -164,12 +232,15 @@ class PortalBrowser:
             except Exception:  # noqa: BLE001 - the window was closed
                 self._finish_sign_in()
                 return
+            self._note_session()
             if time.monotonic() - self._headed_since > SIGN_IN_LIMIT_S:
                 self._finish_sign_in()
         elif time.monotonic() - self._last_used > IDLE_CLOSE_S:
             self._close()
 
     def _close(self) -> None:
+        if not self._headed:
+            self._note_session()
         context, self._context, self._page = self._context, None, None
         if context is not None:
             with contextlib.suppress(Exception):  # the browser may already have exited
@@ -210,6 +281,7 @@ class PortalBrowser:
                               f"Could not start {portals.CHANNELS[self.settings.channel]} for Wizard: {text.splitlines()[0][:300]}. "
                               "Check that it is installed on this PC (Settings → Portals chooses Chrome or Edge).") from None
         context.set_default_timeout(30_000)
+        self._restore_session(context)
         context.on("dialog", self._dialog)
         if headed:
             context.on("request", self._remember_sign_in_host)
@@ -326,9 +398,13 @@ class PortalBrowser:
         return self.run(job, timeout=60)
 
     def _finish_sign_in(self) -> None:
+        self._note_session()
         hosts = {h for h in self._sign_in_hosts if "." in h and not h.replace(".", "").isdigit()}
         learned = sorted(self.policy.learned | hosts)[:50]
         self.policy.learned = set(learned)
+        if self._seen is not None:
+            self._keep_session(self._seen)
+            self._seen = None
         self._save_state(learned_hosts=learned, last_sign_in=time.strftime("%Y-%m-%dT%H:%M:%S"))
         self._close()
         self._headed = False
@@ -360,7 +436,7 @@ class PortalBrowser:
                     page.goto(url, wait_until="domcontentloaded", timeout=45_000)
                     page.wait_for_timeout(1500)
                     results.append({"id": page_id, "name": name, "signed_in": not self._signs_in(page, portal),
-                                    "title": (page.title() or "")[:120]})
+                                    "title": (page.title() or "")[:120], "host": urlsplit(page.url).hostname or ""})
                 except Exception as error:  # noqa: BLE001 - reported per portal
                     results.append({"id": page_id, "name": name, "signed_in": False,
                                     "error": str(error).splitlines()[0][:200]})
@@ -636,10 +712,11 @@ class PortalBrowsers:
     """One browser per person, made when first needed."""
 
     def __init__(self, settings: PortalSettings, home_for: Callable[[str], Path],
-                 launcher: Callable[..., Any] | None = None):
+                 launcher: Callable[..., Any] | None = None, secrets: SecretStore | None = None):
         self.settings = settings
         self.home_for = home_for
         self.launcher = launcher
+        self.secrets = secrets
         self._browsers: dict[str, PortalBrowser] = {}
         self._lock = threading.Lock()
 
@@ -647,7 +724,8 @@ class PortalBrowsers:
         with self._lock:
             browser = self._browsers.get(user_id)
             if browser is None:
-                browser = PortalBrowser(self.settings, self.home_for(user_id) / "portal-browser", self.launcher)
+                browser = PortalBrowser(self.settings, self.home_for(user_id) / "portal-browser", self.launcher,
+                                        self.secrets)
                 self._browsers[user_id] = browser
             return browser
 

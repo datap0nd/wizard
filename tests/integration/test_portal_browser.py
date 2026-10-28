@@ -13,16 +13,18 @@ import os
 import shutil
 import tempfile
 import threading
+import time
 from collections.abc import Iterator
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
 import pytest
 from tests.helpers import TEST_TMP, MemoryRecorder
 
+from wizard_agent.secret_box import SecretBox
 from wizard_connectors.entitlements import Identity, SystemRights
-from wizard_connectors.portal_browser import PortalBrowsers
+from wizard_connectors.portal_browser import PortalBrowser, PortalBrowsers
 from wizard_connectors.portals import settings_from
 from wizard_connectors.tools import ToolContext, build_registry, build_services
 
@@ -319,3 +321,78 @@ def test_the_big_data_portal_reads_its_information_catalog_and_superset_but_neve
     checked = setup[0].portals.for_user("owner").check()["portals"]
     assert [(c["id"], c["name"], c["signed_in"]) for c in checked if c["id"].startswith("bdp")] == [
         ("bdp-superset", "Big Data Portal: Superset", True), ("bdp-catalog", "Big Data Portal: information catalog", True)]
+
+
+class SessionPortal(BaseHTTPRequestHandler):
+    """A portal whose sign-in is a session-only cookie, as most portal and sign-in sessions are, beside a lasting one."""
+
+    def log_message(self, *args: Any) -> None:
+        pass
+
+    def do_GET(self) -> None:  # noqa: N802 - http.server's name
+        if self.path == "/signed-in":  # where the person's sign-in ends
+            self.send_response(302)
+            self.send_header("set-cookie", "sid=session-1; Path=/; HttpOnly")
+            self.send_header("set-cookie", "lang=en; Path=/; Max-Age=86400")
+            self.send_header("location", "/")
+        elif self.path == "/" and "sid=session-1" not in (self.headers.get("cookie") or ""):
+            self.send_response(302)
+            self.send_header("location", "/login")
+        else:
+            body = (b"<title>GSCM</title><p>Welcome</p>" if self.path == "/"
+                    else b"<title>Sign in</title><input type=password>")
+            self.send_response(200)
+            self.send_header("content-type", "text/html")
+            self.send_header("content-length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        self.send_header("content-length", "0")
+        self.end_headers()
+
+
+class Headless:
+    """Playwright with the sign-in window headless too, so the test runs where there is no display."""
+
+    def __init__(self) -> None:
+        from playwright.sync_api import sync_playwright
+        self.playwright = sync_playwright().start()
+        self.chromium = self
+
+    def launch_persistent_context(self, profile: str, **options: Any) -> Any:
+        return self.playwright.chromium.launch_persistent_context(profile, **{**options, "headless": True})
+
+    def stop(self) -> None:
+        self.playwright.stop()
+
+
+def test_the_sign_in_outlives_its_window_and_a_restart():
+    """Chrome drops session-only cookies when it closes: Check sign-in said "asks for a sign-in" right after the person
+    signed in (owner, 28 October 2026). Wizard keeps them, protected, and puts them back when the browser starts."""
+    server = ThreadingHTTPServer(("127.0.0.1", 0), SessionPortal)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{server.server_port}/"
+    root = Path(tempfile.mkdtemp(prefix="portal-session-", dir=TEST_TMP)) / "portal-browser"
+    settings = settings_from({"WIZARD_PORTAL_GSCM_URL": url, "WIZARD_BROWSER_EXECUTABLE": BROWSER})
+    assert settings is not None
+    box = SecretBox(force_plain=True)
+    browser = PortalBrowser(settings, root, Headless, box)
+    try:
+        browser.begin_sign_in()
+        browser.run(lambda: browser._context.pages[0].goto(url + "signed-in"))  # the person signs in
+        browser.run(lambda: [page.close() for page in list(browser._context.pages)])  # and closes the window
+        deadline = time.monotonic() + 15
+        while browser.status()["signing_in"] and time.monotonic() < deadline:
+            time.sleep(0.2)
+        assert [(c["signed_in"], c["title"]) for c in browser.check()["portals"]] == [(True, "GSCM")]
+    finally:
+        browser.shutdown()
+    kept = json.loads(box.read(root / "session.bin") or "[]")
+    assert [c["name"] for c in kept] == ["sid"], "only the session-only cookie: Chrome keeps the lasting one itself"
+    again = PortalBrowser(settings, root, Headless, box)  # Wizard restarted
+    try:
+        assert [(c["signed_in"], c["title"]) for c in again.check()["portals"]] == [(True, "GSCM")]
+    finally:
+        again.shutdown()
+        server.shutdown()
+        shutil.rmtree(root.parent, ignore_errors=True)
