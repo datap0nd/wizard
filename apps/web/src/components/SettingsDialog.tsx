@@ -164,6 +164,9 @@ export function SettingsDialog({open, onClose, onSaved}: {open: boolean; onClose
                 {update && update !== 'checking' && update.available && (inHost()
                   ? <Button size="sm" variant="accent" onClick={() => toHost({type: 'update'})} data-testid="update-now"><Download />Update to {update.latest}</Button>
                   : <a className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-accent px-3 text-[13px] font-medium text-white" href={update.download} target="_blank" rel="noopener noreferrer"><Download className="size-4" />Download {update.latest}</a>)}
+                {/* WizardBar checks and downloads with Windows' own connection, which can work where the service's does not. */}
+                {update && update !== 'checking' && update.ok === false && inHost() && (
+                  <Button size="sm" variant="outline" onClick={() => toHost({type: 'update'})} data-testid="update-with-windows"><Download />Check with Windows</Button>)}
               </div>
               {update && update !== 'checking' && <p className="mt-2 text-xs text-ink-2" role="status" data-testid="update-message">{update.message}</p>}
             </section>

@@ -3,7 +3,31 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-28 (latest) — The Brain page: what Wizard knows as one picture, and the news it keeps reading
+## 2026-10-28 (latest) — Check for updates reads the release where Wizard's own connection cannot
+
+The owner, on 1.0.59: "imn trying to click chceck for updates but I get: could not read the release ssl:c:1015 error".
+- **Cause.** In the bundled Python (3.13.15), `_ssl.c:1015` is "The handshake operation timed out": the connection
+  reached a server but the TLS handshake never finished: the likely cause is the route, not the certificate. The check
+  resolved one proxy for `github.com` and reused it for GitHub's redirect to `release-assets.githubusercontent.com`,
+  and Python cannot sign in to a proxy as the person. WizardBar's updater (Windows' own connection: the proxy for each
+  address and the person's proxy sign-in) is what installed 1.0.59, and `setup.ps1` downloads releases the same way.
+- **Fix.** Each redirect hop gets its own route (`outbound.proxy_for` for that address), and a handshake that does not
+  finish fails after 10 s instead of 30 s. When Wizard's own connection still fails on Windows, Windows reads the
+  manifest: Windows PowerShell's `Invoke-WebRequest` (proxy settings, PAC and the person's proxy sign-in), into a
+  temporary file. An HTTP answer such as 404 or 503 is reported as it is. The message now names the host and the route
+  (`outbound.explain`), and both failures when Windows fails too.
+- **Settings → Version and updates**, in the desktop app: when the check fails, **Check with Windows** has WizardBar
+  check and, if there is a newer release, install it with its own connection, as the tray's **Check for updates…** does.
+
+**Tests.** `tests/unit/test_settings_pane.py`: a redirect served by a local HTTP server is routed hop by hop (each
+address asked of `proxy_for`); the owner's handshake timeout falls back to Windows and finds 1.0.66; Windows failing
+too names both; a 503 never asks Windows; off Windows Windows is not asked; the PowerShell reader passes the address
+as data, reads a manifest with a byte-order mark and reports PowerShell's first error line.
+`apps/web/src/components/SettingsDialog.test.tsx` (2): **Check with Windows** appears in the desktop app after a failed
+check and sends `update` to WizardBar; it does not appear in a browser or after a check that worked. The real check on
+the work PC is the owner's next click.
+
+## 2026-10-28 — The Brain page: what Wizard knows as one picture, and the news it keeps reading
 
 The owner, preparing a meeting with the MENA President: "a 'brain' view with all the topics, the portals, etc", the
 news table ("1500 news already curated and categorized") shown "as an ongoing automation", and "the brain view could be
