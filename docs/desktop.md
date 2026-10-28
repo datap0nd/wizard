@@ -220,8 +220,13 @@ of Wizard on this PC:
   reload is needed (the panel has no reload button).
 - **Sleep:** while a question runs, Wizard keeps the PC from going to sleep when idle (as a download does), so a long
   answer is not stopped half-way. The screen still turns off; closing the lid or choosing Sleep still sleeps.
-- **Update:** Check for updates reads the public release manifest; **Update to 1.0.N** has WizardBar download it, check
-  size, SHA-256 and version, install it silently and start again. In a normal browser it offers the download instead.
+- **Update:** Check for updates reads the public release manifest, routing GitHub's redirect to its download host
+  (`release-assets.githubusercontent.com`) by that host's own proxy. When Wizard's own connection fails on Windows,
+  Windows reads the manifest itself (Windows PowerShell's `Invoke-WebRequest`, with Windows' proxy settings and the
+  person's proxy sign-in, as `setup.ps1` downloads releases). **Update to 1.0.N** has WizardBar download it, check
+  size, SHA-256 and version, install it silently and start again. If the check still fails in the desktop app,
+  **Check with Windows** has WizardBar check and update with its own connection (the tray's **Check for updates…**).
+  In a normal browser it offers the download instead.
 
 The settings pane exists only on a person's own install (desktop app or work-PC install), for the person at that PC:
 never on a server behind SSO.

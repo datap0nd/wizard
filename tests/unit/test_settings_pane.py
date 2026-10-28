@@ -183,12 +183,93 @@ def test_update_check_compares_with_the_installed_build(tmp_path, monkeypatch):
     assert newer["available"] and newer["latest"] == "1.0.9.0" and newer["download"].endswith("/WizardSetup.exe")
     monkeypatch.setattr(settings_pane, "installed_build", lambda: {"version": "1.0.9.0"})
     assert settings_pane.check_update(settings, transport=transport)["available"] is False
-    offline = settings_pane.check_update(settings, transport=httpx.MockTransport(lambda request: httpx.Response(503)))
+    offline = settings_pane.check_update(settings, transport=httpx.MockTransport(lambda request: httpx.Response(503)),
+                                         windows=lambda url: pytest.fail("an HTTP answer is not a route problem"))
     assert offline["ok"] is False and "Could not read the release" in offline["message"]
     with TestClient(create_app(settings)) as client:
         owner(client)
         monkeypatch.setattr(settings_pane, "check_update", lambda s: {"ok": True, "available": False, "message": "latest"})
         assert client.get("/api/v1/updates").json()["message"] == "latest"
+
+
+def test_update_check_routes_each_redirect_hop_on_its_own(monkeypatch):
+    """GitHub redirects a release link to its download host; the Windows proxy settings may route that host differently."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class Release(BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802 - http.server's name
+            if self.path == "/download/wizard-desktop.json":
+                self.send_response(302)
+                self.send_header("Location", f"http://localhost:{self.server.server_port}/asset/wizard-desktop.json")
+                self.end_headers()
+                return
+            body = b'{"version": "1.0.66.0"}'
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Release)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    routed: list[str] = []
+    monkeypatch.setattr(settings_pane.outbound, "proxy_for", lambda url, override=None: (routed.append(url), (None, "direct"))[1])
+    try:
+        start = f"http://127.0.0.1:{server.server_port}/download/wizard-desktop.json"
+        assert settings_pane._read_release(start, None, None) == {"version": "1.0.66.0"}
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert routed == [start, f"http://localhost:{server.server_port}/asset/wizard-desktop.json"]
+
+
+def test_update_check_asks_windows_when_wizards_connection_fails(tmp_path, monkeypatch):
+    """The owner's 1.0.59: "Could not read the release: _ssl.c:1015: The handshake operation timed out"."""
+    settings = install(tmp_path)
+    monkeypatch.setattr(settings_pane, "installed_build", lambda: {"version": "1.0.59.0"})
+
+    def handshake_timeout(request):
+        raise httpx.ConnectTimeout("_ssl.c:1015: The handshake operation timed out", request=request)
+
+    stuck = httpx.MockTransport(handshake_timeout)
+    asked: list[str] = []
+    found = settings_pane.check_update(settings, transport=stuck,
+                                       windows=lambda url: (asked.append(url), {"version": "1.0.66.0", "commit": "f" * 40})[1])
+    assert asked == [settings_pane.RELEASE + "wizard-desktop.json"]
+    assert found["ok"] and found["available"] and found["latest"] == "1.0.66.0"
+
+    def blocked(url):
+        raise OSError("Unable to connect to the remote server")
+
+    failed = settings_pane.check_update(settings, transport=stuck, windows=blocked)
+    assert failed["ok"] is False and failed["message"].startswith("Could not read the release: Wizard could not reach github.com")
+    assert "timed out" in failed["message"] and "Windows could not read it either: Unable to connect" in failed["message"]
+    alone = settings_pane.check_update(settings, transport=stuck)["message"]
+    assert "_ssl.c:1015" in alone and "Windows" not in alone, "off Windows (and with a test transport) Windows is not asked"
+
+
+def test_windows_reads_the_release_with_invoke_webrequest(monkeypatch):
+    calls: list[dict] = []
+
+    def powershell(command, **kwargs):
+        calls.append({"command": command, **kwargs})
+        env = kwargs["env"]
+        if "fail" in env["WIZARD_RELEASE_URL"]:
+            return settings_pane.subprocess.CompletedProcess(command, 1, "", "Invoke-WebRequest : The operation has timed out.\r\nAt line:1\r\n")
+        settings_pane.Path(env["WIZARD_RELEASE_FILE"]).write_text('{"version": "1.0.66.0"}', encoding="utf-8-sig")
+        return settings_pane.subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(settings_pane.subprocess, "run", powershell)
+    url = settings_pane.RELEASE + "wizard-desktop.json"
+    assert settings_pane._read_release_with_windows(url) == {"version": "1.0.66.0"}, "a byte-order mark is fine"
+    command = calls[0]["command"]
+    assert command[0] == "powershell.exe" and "Invoke-WebRequest -Uri $env:WIZARD_RELEASE_URL" in command[-1]
+    assert calls[0]["env"]["WIZARD_RELEASE_URL"] == url and url not in command[-1], "the address is passed as data"
+    with pytest.raises(OSError, match="^Invoke-WebRequest : The operation has timed out.$"):
+        settings_pane._read_release_with_windows("https://fail.example/wizard-desktop.json")
 
 
 @pytest.mark.parametrize("key", [f.key for f in settings_pane.FIELDS])

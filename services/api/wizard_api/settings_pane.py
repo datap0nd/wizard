@@ -11,6 +11,9 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
+import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -275,22 +278,66 @@ def _version(text: object) -> tuple[int, ...]:
         return ()
 
 
-def check_update(settings: Settings, transport: httpx.BaseTransport | None = None) -> dict[str, Any]:
-    """The newest desktop release against this build. Only reads the public release manifest."""
+def _read_release(url: str, proxy: str | None, transport: httpx.BaseTransport | None) -> Any:
+    """GitHub answers a release link with a redirect to its download host (release-assets.githubusercontent.com). Each
+    hop gets its own route: the Windows proxy settings (a PAC script) can route that host differently from github.com."""
+    for _ in range(5):
+        if transport is not None:
+            client = httpx.Client(transport=transport, timeout=30)
+        else:
+            route, _ = outbound.proxy_for(url, proxy)
+            client = httpx.Client(timeout=httpx.Timeout(30, connect=10), verify=outbound.ssl_context(), proxy=route,
+                                  trust_env=False)
+        with client:
+            response = client.get(url, headers={"User-Agent": "Wizard"})
+        if not response.has_redirect_location:
+            response.raise_for_status()
+            return response.json()
+        url = str(response.url.join(response.headers["location"]))
+    raise httpx.TooManyRedirects("Too many redirects.", request=response.request)
+
+
+def _read_release_with_windows(url: str) -> Any:
+    """The manifest read by Windows itself: Windows PowerShell's Invoke-WebRequest, as setup.ps1 downloads GitHub
+    releases on work PCs. Windows applies its proxy settings to every hop and signs in to the proxy as the person, as
+    WizardBar's updater does."""
+    with tempfile.TemporaryDirectory(prefix="wizard-update-") as folder:
+        target = Path(folder) / "wizard-desktop.json"
+        script = ("$ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue';"
+                  "try { [System.Net.WebRequest]::DefaultWebProxy.Credentials = "
+                  "[System.Net.CredentialCache]::DefaultNetworkCredentials } catch {};"
+                  "Invoke-WebRequest -Uri $env:WIZARD_RELEASE_URL -OutFile $env:WIZARD_RELEASE_FILE -UseBasicParsing "
+                  "-UserAgent Wizard -TimeoutSec 30")
+        result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+                                env={**os.environ, "WIZARD_RELEASE_URL": url, "WIZARD_RELEASE_FILE": str(target)},
+                                capture_output=True, text=True, timeout=60, creationflags=0x08000000)
+        if result.returncode != 0 or not target.is_file():
+            lines = [line.strip() for line in (result.stderr or result.stdout or "").splitlines() if line.strip()]
+            raise OSError(lines[0] if lines else f"PowerShell exited with {result.returncode}")
+        return json.loads(target.read_text(encoding="utf-8-sig"))
+
+
+def check_update(settings: Settings, transport: httpx.BaseTransport | None = None,
+                 windows: Callable[[str], Any] | None = None) -> dict[str, Any]:
+    """The newest desktop release against this build. Only reads the public release manifest. When Wizard's own
+    connection fails on Windows, Windows reads it (`windows`, by default only on Windows and without a test transport)."""
     build = installed_build()
     installed = build.get("version")
     url = RELEASE + "wizard-desktop.json"
     result: dict[str, Any] = {"installed": installed, "commit": build.get("commit"), "download": RELEASE + "WizardSetup.exe"}
+    if windows is None and transport is None and os.name == "nt":
+        windows = _read_release_with_windows
     try:
-        if transport is not None:
-            client = httpx.Client(transport=transport, timeout=30, follow_redirects=True)
-        else:
-            route, _ = outbound.proxy_for(url, settings.proxy)
-            client = httpx.Client(timeout=30, verify=outbound.ssl_context(), proxy=route, trust_env=False, follow_redirects=True)
-        with client:
-            response = client.get(url, headers={"User-Agent": "Wizard"})
-            response.raise_for_status()
-            manifest = response.json()
+        manifest = _read_release(url, settings.proxy, transport)
+    except httpx.TransportError as error:
+        failed = outbound.explain(error, str(error.request.url), settings.proxy)
+        if windows is None:
+            return {**result, "ok": False, "message": f"Could not read the release: {failed}"}
+        try:
+            manifest = windows(url)
+        except (OSError, subprocess.SubprocessError, ValueError) as second:
+            return {**result, "ok": False, "message": f"Could not read the release: {failed} Windows could not read it "
+                                                      f"either: {second}"}
     except (httpx.HTTPError, ValueError) as error:
         return {**result, "ok": False, "message": f"Could not read the release: {error}"}
     latest = manifest.get("version") if isinstance(manifest, dict) else None
