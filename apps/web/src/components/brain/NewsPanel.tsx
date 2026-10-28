@@ -1,11 +1,9 @@
 import {useEffect, useMemo, useRef, useState} from 'react';
 import {ChevronDown, Newspaper} from 'lucide-react';
-import {ago, categoryColor, cumulative, plural, type BrainNews, type NewsItem} from '@/brain';
+import {ago, categoryColor, cumulative, itemKey, plural, type BrainNews, type NewsItem} from '@/brain';
 import {formatDate} from '@/format';
 import {cn} from '@/lib/utils';
 import {CountUp} from './CountUp';
-
-export function itemKey(item: NewsItem): string { return `${item.date ?? ''}|${item.title}`; }
 
 /** Articles per week as bars, and the running total as a line over them: the automation at work. */
 function Growth({news}: {news: BrainNews}) {
@@ -31,19 +29,22 @@ function Growth({news}: {news: BrainNews}) {
         <path d={area} fill="url(#news-area)" />
         <path d={line} fill="none" stroke="#fb7185" strokeWidth="2" className="brain-draw" pathLength={1} />
         <text x="0" y={height - 3} fontSize="10" fill="#94a3b8">{formatDate(weeks[0].week)}</text>
-        <text x={width} y={height - 3} fontSize="10" fill="#94a3b8" textAnchor="end">this week</text>
+        <text x={width} y={height - 3} fontSize="10" fill="#94a3b8" textAnchor="end">{formatDate(weeks.at(-1)!.week)}</text>
       </svg>
-      <figcaption className="text-[11.5px] text-slate-400">Articles per week (bars) and the running total (line)</figcaption>
+      <figcaption className="text-[11.5px] text-slate-400">Articles per week by publication date (bars) and the running total (line)</figcaption>
     </figure>
   );
 }
 
 /** The news table an automation keeps filling, read live from the company database. */
-export function NewsPanel({news, fresh, onCategory, category, name}: {
-  news: BrainNews; fresh: Set<string>; onCategory: (name: string | null) => void; category: string | null; name: string;
+export function NewsPanel({news, fresh, incoming, onCategory, category, name}: {
+  news: BrainNews; fresh: Set<string>; incoming: NewsItem[]; onCategory: (name: string | null) => void; category: string | null; name: string;
 }) {
   const order = (news.categories ?? []).map(c => c.name);
-  const list = (news.latest ?? []).filter(item => !category || (item.category ?? '').split(', ').includes(category));
+  // Demo arrivals sit on top, in place of the article each one re-shows.
+  const moved = new Set(incoming.map(item => item.origin));
+  const list = [...incoming, ...(news.latest ?? []).filter(item => !moved.has(itemKey(item)))]
+    .filter(item => !category || (item.category ?? '').split(', ').includes(category));
   const scroller = useRef<HTMLDivElement>(null);
   const [paused, setPaused] = useState(false);
   const [arrived, setArrived] = useState(0);
@@ -67,6 +68,8 @@ export function NewsPanel({news, fresh, onCategory, category, name}: {
     return () => clearTimeout(timer);
   }, [fresh]);
   const biggest = Math.max(1, ...(news.categories ?? []).map(c => c.count));
+  // "Newest ... ago" only while it says something recent.
+  const recent = !!news.last && now - new Date(news.last).getTime() < 7 * 86_400_000;
   return (
     <section className="flex min-h-0 flex-col rounded-2xl border border-white/10 bg-white/[0.04] p-4 backdrop-blur" aria-label="Market news" data-testid="news-panel">
       <header className="flex items-center gap-2">
@@ -83,8 +86,9 @@ export function NewsPanel({news, fresh, onCategory, category, name}: {
         <p className="pb-1 text-[12.5px] leading-tight text-slate-300">articles<br />{news.first ? `since ${formatDate(news.first)}` : 'curated'}</p>
       </div>
       <p className="mt-1.5 text-[12.5px] text-slate-300">
-        {news.last_7_days ? <><strong className="text-rose-300">+{news.last_7_days.toLocaleString()}</strong> in the last 7 days</> : 'None added in the last 7 days'}
-        {news.last_added || news.last ? <> · newest {ago(news.last_added ?? news.last, now)}</> : null}
+        {news.last_7_days ? <><strong className="text-rose-300">+{news.last_7_days.toLocaleString()}</strong> published in the last 7 days · </> : null}
+        {plural(news.categories?.length ?? 0, 'category', 'categories')}
+        {recent ? <> · newest {ago(news.last, now)}</> : null}
       </p>
       <Growth news={news} />
       {(news.categories?.length ?? 0) > 0 && (

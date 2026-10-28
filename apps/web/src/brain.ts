@@ -23,8 +23,9 @@ export interface BrainMap {
 }
 
 export type LiveStatus = 'ok' | 'not_configured' | 'not_allowed' | 'not_found' | 'error';
+/** `origin`: on a demo arrival, the article (by its key) it re-shows. */
 export interface NewsItem { title: string; category?: string | null; source?: string | null; url?: string | null;
-  summary?: string | null; market?: string | null; date?: string | null }
+  summary?: string | null; market?: string | null; date?: string | null; origin?: string }
 export interface BrainNews {
   status: LiveStatus; message?: string; read_at?: number; database?: string; table?: string;
   columns?: Record<string, string>; total?: number; first?: string | null; last?: string | null; last_added?: string | null;
@@ -311,7 +312,7 @@ export function tourSteps(map: BrainMap, live: BrainLive | null): TourStep[] {
   if (news?.status === 'ok') {
     const categories = news.categories?.length ?? 0;
     const recent = news.last_7_days ? `, ${plural(news.last_7_days, 'article')} in the last 7 days` : '';
-    steps.push({id: 'news', title: 'Reading the market, every day', focus: {kind: 'cluster', id: NEWS},
+    steps.push({id: 'news', title: 'Reading the market', focus: {kind: 'cluster', id: NEWS},
       body: `${plural(news.total ?? 0, 'news article')} curated and sorted into ${plural(categories, 'category', 'categories')}${recent}.`});
   }
   steps.push({id: 'ask', title: 'Ask it anything', focus: {kind: 'all'},
@@ -338,4 +339,17 @@ export function ago(iso: string | null | undefined, now = Date.now()): string {
 export function cumulative(weekly: {week: string; count: number}[]): {week: string; count: number; total: number}[] {
   let total = 0;
   return weekly.map(w => ({...w, total: (total += w.count)}));
+}
+
+export function itemKey(item: NewsItem): string { return `${item.date ?? ''}|${item.title}`; }
+
+/**
+ * A demo arrival for a presentation (owner, 28 Oct 2026: "a fake 'new news article came in' animation"): one of the
+ * table's own articles, shown again at the top as if it had just come in. The news table is not changed and no count
+ * moves. It skips the articles already at the top and those already shown this way, and takes the next one down.
+ */
+export function demoArrival(latest: NewsItem[], shown: Set<string>, now: number): NewsItem | null {
+  const pool = latest.slice(3).filter(item => !shown.has(itemKey(item)));
+  const pick = pool[0] ?? latest.find(item => !shown.has(itemKey(item))) ?? null;
+  return pick ? {...pick, date: new Date(now).toISOString(), origin: itemKey(pick)} : null;
 }
