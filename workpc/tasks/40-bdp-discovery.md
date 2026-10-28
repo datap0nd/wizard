@@ -58,7 +58,9 @@ All `.\docs.ps1` commands run in PowerShell in this folder. If your shell is cmd
       footer or logo; e.g. DataHub, Collibra, Alation, Atlas, OpenMetadata, Amundsen, or an in-house page); whether it
       asked for a sign-in, and the same one as Superset; how they search for a table; what a table's page shows
       (description, columns, owner, partitions, whether they already have access); and what requesting access involves
-      (a button, a form, who approves, how long it usually takes, and where they see their requests).
+      (a button, a form, who approves, how long it usually takes, and where they see their requests). Ask them to list
+      the form's field labels and which ones they answer the same way every time: those go in Wizard's Settings →
+      Portals → Access request form (they type the answers there themselves).
 5. **Run the check again.** `.\docs.ps1 bdp-check --url "<base>"`. It now adds one line per database from the saved
    list: name, engine (`backend`: trino, presto, hive, spark, databricks, impala, ...), and whether Superset allows
    data changes (`allow_dml`), background queries (`allow_run_async`) and SQL Lab (`expose_in_sqllab`). A `WARN ... not

@@ -23,8 +23,9 @@ import pytest
 from tests.helpers import TEST_TMP, MemoryRecorder
 
 from wizard_agent.secret_box import SecretBox
+from wizard_connectors import access_requests
 from wizard_connectors.entitlements import Identity, SystemRights
-from wizard_connectors.portal_browser import PortalBrowser, PortalBrowsers
+from wizard_connectors.portal_browser import FILL_EVERY_S, PortalBrowser, PortalBrowsers
 from wizard_connectors.portals import settings_from
 from wizard_connectors.tools import ToolContext, build_registry, build_services
 
@@ -79,6 +80,21 @@ CATALOG_PAGE = """<!doctype html><html><head><title>Information catalog</title><
 <button id="ask" onclick="fetch('/api/v1/access-requests', {method: 'POST', body: '{}'})">Request access</button>
 </body></html>"""
 
+# A catalog table page whose request form appears when the person presses Request access.
+TABLE_PAGE = """<!doctype html><html><head><title>sales_daily</title></head><body>
+<label>Search <input id="search" type="search"></label><h1>sales_daily</h1><p>Daily sell-out by market</p>
+<button id="ask" onclick="document.getElementById('dialog').style.display = 'block'">Request access</button>
+<div id="dialog" class="modal" style="display:none"><form id="request" method="post" action="/api/requestAccess">
+<label for="purpose">Purpose *</label><input id="purpose" name="purpose">
+<div class="form-item"><label>Manager</label><input name="mgr"></div>
+<div class="form-item"><label>Department</label><input name="dept" value="Finance"></div>
+<label>Duration <select name="duration"><option value="">Choose</option><option value="3m">3 months</option>
+<option value="6m">6 months</option></select></label>
+<table><tr><td>Table name</td><td><input name="tbl"></td></tr></table>
+<textarea aria-label="Justification" name="why"></textarea>
+<label>Password <input type="password" name="pw"></label>
+<button id="send" type="submit">Send request</button></form></div></body></html>"""
+
 MENU = {"ROOT": [{"id": "S", "name": "01.Sales"}, {"id": "F", "name": "02.Finance"}],
         "S": {"id": "S", "name": "01.Sales", "children": [{"id": "G", "name": "Sell-out", "child": [{"id": "R1", "name": "Weekly Sell-out"}]}]},
         "F": {"id": "F", "name": "02.Finance", "children": [{"id": "R2", "name": "P&L"}]}}
@@ -105,7 +121,7 @@ class Portal(SimpleHTTPRequestHandler):
                  "/help": "<title>Help</title><p>Trouble with single sign-on? Call the desk.</p><input type=text>",
                  "/report": "<title>Report</title><table><tr><th>A</th></tr><tr><td>1</td></tr></table>",
                  "/superset": "<title>Superset</title><div id=app data-bootstrap='{}'>SQL Lab</div>",
-                 "/catalog": CATALOG_PAGE}
+                 "/catalog": CATALOG_PAGE, "/catalog/table/sales_daily": TABLE_PAGE}
         self.reply(pages.get(self.path.split("?")[0], "<title>Not found</title>"), status=200 if self.path.split("?")[0] in pages else 404)
 
     def do_POST(self) -> None:  # noqa: N802
@@ -321,6 +337,63 @@ def test_the_big_data_portal_reads_its_information_catalog_and_superset_but_neve
     checked = setup[0].portals.for_user("owner").check()["portals"]
     assert [(c["id"], c["name"], c["signed_in"]) for c in checked if c["id"].startswith("bdp")] == [
         ("bdp-superset", "Big Data Portal: Superset", True), ("bdp-catalog", "Big Data Portal: information catalog", True)]
+
+
+def wait_until(condition: Any, seconds: float = 10) -> None:
+    deadline = time.monotonic() + seconds
+    while not condition() and time.monotonic() < deadline:
+        time.sleep(0.25)
+
+
+def test_the_access_request_form_is_filled_from_saved_answers_and_only_the_person_submits_it(setup, portal_url):
+    services = setup[0]
+    browser = services.portals.for_user("owner")
+    browser.show_windows = False  # the person's window, headless on a test machine
+    portal = services.portals.settings.portal("bdp")
+    access_requests.save(browser.root, portal, "", [
+        {"label": "Purpose", "value": "Weekly sales reporting"}, {"label": "Manager", "value": "Head of Sales"},
+        {"label": "Department", "value": "Sales"}, {"label": "Duration", "value": "6 months"},
+        {"label": "Password", "value": "never-typed"}])
+    proposal = call(setup, "portal_request_access", {"system": "bdp", "address": catalog_address(portal_url) + "/table/sales_daily",
+                                                     "tables": ["sales_daily"],
+                                                     "answers": [{"label": "Justification", "value": "GCC sell-out review"}]},
+                    systems=("bdp",))
+    assert proposal.ok, proposal.error_message
+    request = proposal.data["access_request"]
+    Portal.hits.clear()
+    saved = access_requests.form(browser.root, portal)["fields"]
+    status = browser.open_access_request(portal, request["address"],
+                                         access_requests.answers(saved, request["answers"], request["tables"]))
+    assert status["window"] == "access_request" and status["access_request"]["filled"] == [], "the form is not shown yet"
+    busy = call(setup, "portal_run", {"system": "bdp", "steps": [{"action": "look"}]}, systems=("bdp",))
+    assert not busy.ok and busy.error_code == "signing_in" and "access request" in (busy.error_message or "")
+
+    def page() -> Any:
+        return browser._context.pages[0]
+    browser.run(lambda: page().click("#ask"))  # the person presses Request access; Wizard fills the form as it appears
+    wait_until(lambda: len(browser.status()["access_request"]["filled"]) >= 5)
+    status = browser.status()["access_request"]
+    assert sorted(status["filled"]) == ["Duration", "Justification", "Manager", "Purpose", "Table"]
+    assert status["missing"] == ["Password"], "a password field is never filled"
+    values = browser.run(lambda: page().evaluate(
+        "() => Object.fromEntries([...document.querySelectorAll('#request [name], #search')].map(e => [e.name || e.id, e.value]))"))
+    assert values == {"purpose": "Weekly sales reporting", "mgr": "Head of Sales", "dept": "Finance", "duration": "6m",
+                      "tbl": "sales_daily", "why": "GCC sell-out review", "pw": "", "search": ""}, "only empty fields, only the form"
+    assert "submit the request yourself" in browser.run(lambda: page().inner_text("#wizard-access-banner"))
+    browser.run(lambda: page().fill("#purpose", ""))  # the person clears a field Wizard filled: it stays as they left it
+    time.sleep(2 * FILL_EVERY_S + 0.5)
+    assert browser.run(lambda: page().input_value("#purpose")) == ""
+    assert not any("requestAccess" in hit for hit in Portal.hits), "Wizard never submits the request"
+    browser.run(lambda: page().click("#send"))  # the person submits: their own window does not refuse it
+    wait_until(lambda: any(hit.startswith("POST /api/requestAccess") for hit in Portal.hits))
+    assert any(hit.startswith("POST /api/requestAccess") for hit in Portal.hits)
+    assert browser.finish_sign_in()["window"] is None
+    seen = access_requests.form(browser.root, portal)["seen"]
+    assert {"Purpose", "Manager", "Department", "Duration", "Table name", "Justification"} <= set(seen)
+    assert "Password" not in seen and "Search" not in seen
+    after = call(setup, "portal_run", {"system": "bdp", "steps": [{"action": "goto", "url": catalog_address(portal_url)}]},
+                 systems=("bdp",))
+    assert after.ok, "Gemini reads again once the window is closed"
 
 
 class SessionPortal(BaseHTTPRequestHandler):

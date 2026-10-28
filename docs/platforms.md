@@ -62,5 +62,7 @@ The Big Data Portal (BDP) follows the PostgreSQL route, not the report-catalog o
 **information catalog**, where people search for tables and request access to them, and **Superset**, where they query
 the tables with SQL. Wizard reads both under each person's own sign-in, in the Wizard browser: Gemini finds tables in
 the catalog and queries them through Superset (`W.superset.sql`, one SELECT at a time). Requesting access stays the
-person's own step; Wizard refuses it. Work-PC task 40 (`.\docs.ps1 bdp-check`) finds out more about both
+person's own step: Wizard opens the request form in a visible window and fills the answers they saved in Settings →
+Portals → Access request form; they check it and submit it
+([decision](decisions/2026-10-28-bdp-access-requests.md)). Work-PC task 40 (`.\docs.ps1 bdp-check`) finds out more about both
 ([decision](decisions/2026-10-12-bdp-superset.md), [two applications](decisions/2026-10-28-bdp-information-catalog.md)).

@@ -1908,6 +1908,63 @@
         "destructiveHint": false,
         "openWorldHint": false
       }
+    },
+    {
+      "name": "portal_request_access",
+      "description": "Prepare an access request in a portal's information catalog (the Big Data Portal) for tables the person cannot query yet. Wizard never sends it: the person gets a button that opens the request page in Wizard's visible browser window, with their saved answers (purpose, manager, duration...) and your answers for this request filled into the form's empty fields; they check every field and submit it themselves. Use it after you found the table and saw that the person lacks access, and name the table in your answer.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "system": {
+            "description": "The portal where access is requested: bdp (its information catalog) (pattern ^[a-z][a-z0-9]{1,15}$)",
+            "type": "string"
+          },
+          "address": {
+            "description": "The page with the request form, or the table's page in the catalog where the person presses Request access (the full address you read it at). Omit to use the request page the person saved, else the catalog's start page (0-2000 characters)",
+            "type": "string"
+          },
+          "tables": {
+            "description": "The tables the person needs, as the catalog names them.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "answers": {
+            "description": "This request's own fields by the form's labels (the guide lists labels seen before), e.g. the reason, in the person's words from the question. Their saved answers (purpose, manager, duration...) are filled too.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "label": {
+                  "description": "The field's label as the request form shows it, e.g. Reason, Table name (1-120 characters)",
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string",
+                  "description": "(0-2000 characters)"
+                }
+              },
+              "required": [
+                "label",
+                "value"
+              ],
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
+          }
+        },
+        "required": [
+          "system"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
     }
   ]
 }
