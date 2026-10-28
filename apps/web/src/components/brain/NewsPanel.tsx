@@ -9,7 +9,7 @@ import {CountUp} from './CountUp';
 function Growth({news}: {news: BrainNews}) {
   const weeks = useMemo(() => cumulative(news.weekly ?? []), [news.weekly]);
   if (weeks.length < 2) return null;
-  const width = 340, height = 86, top = 6, bottom = 16;
+  const width = 440, height = 64, top = 6, bottom = 16;  // the panel's width, so the chart fills it at this height
   const most = Math.max(...weeks.map(w => w.count), 1), total = weeks.at(-1)!.total || 1;
   const step = width / weeks.length;
   const x = (i: number) => i * step + step / 2;
@@ -17,7 +17,7 @@ function Growth({news}: {news: BrainNews}) {
   const area = `${line} L${x(weeks.length - 1).toFixed(1)} ${height - bottom} L${x(0).toFixed(1)} ${height - bottom} Z`;
   return (
     <figure className="mt-3" data-testid="news-growth">
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-[86px] w-full" role="img"
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-[64px] w-full" role="img"
         aria-label={`Articles collected per week, ${weeks.length} weeks, ${total.toLocaleString()} in all`}>
         <defs>
           <linearGradient id="news-area" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="#fb7185" stopOpacity="0.35" /><stop offset="1" stopColor="#fb7185" stopOpacity="0" /></linearGradient>
@@ -31,14 +31,16 @@ function Growth({news}: {news: BrainNews}) {
         <text x="0" y={height - 3} fontSize="10" fill="#94a3b8">{formatDate(weeks[0].week)}</text>
         <text x={width} y={height - 3} fontSize="10" fill="#94a3b8" textAnchor="end">{formatDate(weeks.at(-1)!.week)}</text>
       </svg>
-      <figcaption className="text-[11.5px] text-slate-400">Articles per week by publication date (bars) and the running total (line)</figcaption>
+      <figcaption className="text-[11.5px] text-slate-400">Articles per week (bars) and the running total (line)</figcaption>
     </figure>
   );
 }
 
-/** The news table an automation keeps filling, read live from the company database. */
-export function NewsPanel({news, fresh, incoming, onCategory, category, name}: {
+/** The news table an automation keeps filling, read live from the company database. `still`: the simple view, where
+ *  nothing moves (no counting up, no scrolling headlines). */
+export function NewsPanel({news, fresh, incoming, onCategory, category, name, still = false}: {
   news: BrainNews; fresh: Set<string>; incoming: NewsItem[]; onCategory: (name: string | null) => void; category: string | null; name: string;
+  still?: boolean;
 }) {
   const order = (news.categories ?? []).map(c => c.name);
   // Demo arrivals sit on top, in place of the article each one re-shows.
@@ -53,12 +55,12 @@ export function NewsPanel({news, fresh, incoming, onCategory, category, name}: {
   // The headlines scroll slowly by themselves, for a screen in a meeting room; a pointer over them stops it.
   useEffect(() => {
     const el = scroller.current;
-    if (!el || paused || arrived || (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches)) return;
+    if (!el || still || paused || arrived || (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches)) return;
     const timer = setInterval(() => {
       if (el.scrollTop + el.clientHeight >= el.scrollHeight - 1) el.scrollTop = 0; else el.scrollTop += 1;
     }, 45);
     return () => clearInterval(timer);
-  }, [paused, arrived, list.length]);
+  }, [still, paused, arrived, list.length]);
   // New articles: back to the top of the list, where they are, and hold the scrolling there for a while.
   useEffect(() => {
     if (!fresh.size) return;
@@ -82,7 +84,7 @@ export function NewsPanel({news, fresh, incoming, onCategory, category, name}: {
           <i className="brain-live size-1.5 rounded-full bg-emerald-400" />LIVE</span>
       </header>
       <div className="mt-3 flex items-end gap-3">
-        <p className="text-[40px] font-semibold leading-none tracking-tight text-white" data-testid="news-total"><CountUp value={news.total ?? 0} duration={1800} /></p>
+        <p className="text-[40px] font-semibold leading-none tracking-tight text-white" data-testid="news-total"><CountUp value={news.total ?? 0} duration={1800} still={still} /></p>
         <p className="pb-1 text-[12.5px] leading-tight text-slate-300">articles<br />{news.first ? `since ${formatDate(news.first)}` : 'curated'}</p>
       </div>
       <p className="mt-1.5 text-[12.5px] text-slate-300">
@@ -94,25 +96,27 @@ export function NewsPanel({news, fresh, incoming, onCategory, category, name}: {
       {(news.categories?.length ?? 0) > 0 && (
         <div className="mt-3" data-testid="news-categories">
           <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-400">{plural(news.categories!.length, 'category', 'categories')}</p>
-          <ul className="space-y-1">
-            {news.categories!.slice(0, 7).map(c => (
+          <ul className="grid grid-cols-2 gap-x-3 gap-y-1">
+            {news.categories!.slice(0, 8).map(c => (
               <li key={c.name}>
                 <button type="button" onClick={() => onCategory(category === c.name ? null : c.name)} aria-pressed={category === c.name}
-                  className={cn('group flex w-full items-center gap-2 rounded-md px-1 py-0.5 text-left text-[12.5px] hover:bg-white/5', category && category !== c.name && 'opacity-50')}>
-                  <span className="w-[42%] truncate text-slate-200">{c.name}</span>
-                  <span className="relative h-2 flex-1 overflow-hidden rounded-full bg-white/5">
+                  className={cn('group block w-full rounded-md px-1 py-0.5 text-left text-[12.5px] hover:bg-white/5', category && category !== c.name && 'opacity-50')}>
+                  <span className="flex items-baseline gap-2">
+                    <span className="min-w-0 flex-1 truncate text-slate-200">{c.name}</span>
+                    <span className="tabular-nums text-slate-300">{c.count.toLocaleString()}</span>
+                  </span>
+                  <span className="relative mt-0.5 block h-1.5 overflow-hidden rounded-full bg-white/5">
                     <span className="brain-grow absolute inset-y-0 left-0 rounded-full" style={{width: `${(c.count / biggest) * 100}%`, background: categoryColor(c.name, order)}} />
                   </span>
-                  <span className="w-12 text-right tabular-nums text-slate-300">{c.count.toLocaleString()}</span>
                 </button>
               </li>
             ))}
           </ul>
         </div>
       )}
-      <p className="mb-1.5 mt-3 flex items-center text-[11px] font-medium uppercase tracking-wide text-slate-400">{category ? `Latest in ${category}` : 'Latest articles'}
+      <p className="mb-1.5 mt-3 flex items-center text-[12px] font-semibold uppercase tracking-wide text-rose-200">{category ? `Latest in ${category}` : 'Latest articles'}
         {arrived > 0 && <span className="brain-new ml-auto rounded-full bg-rose-500/20 px-2 py-px normal-case tracking-normal text-rose-200" data-testid="news-arrived">{plural(arrived, 'new article')} just arrived</span>}</p>
-      <div ref={scroller} className="brain-fade min-h-[120px] flex-1 overflow-y-auto pr-1 scroll-thin" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)} data-testid="news-latest">
+      <div ref={scroller} className="brain-fade min-h-[220px] flex-1 overflow-y-auto pr-1 scroll-thin" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)} data-testid="news-latest">
         <ul className="space-y-2">
           {list.map(item => {
             const isNew = fresh.has(itemKey(item));
@@ -124,7 +128,7 @@ export function NewsPanel({news, fresh, incoming, onCategory, category, name}: {
                   {isNew && <span className="brain-new rounded bg-rose-500 px-1.5 py-px font-bold text-white">NEW</span>}
                   <span className="ml-auto shrink-0 text-slate-400">{ago(item.date, now)}</span>
                 </span>
-                <span className="mt-1 line-clamp-2 block text-[13px] font-medium leading-snug text-slate-100">{item.title}</span>
+                <span className="mt-1 line-clamp-2 block text-[13.5px] font-medium leading-snug text-slate-100">{item.title}</span>
                 {(item.source || item.market) && <span className="mt-0.5 block truncate text-[11.5px] text-slate-400">{[item.source, item.market].filter(Boolean).join(' · ')}</span>}
               </>
             );

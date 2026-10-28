@@ -3,7 +3,29 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-28 (latest) — The roadmap page: what Wizard does today and what comes next
+## 2026-10-28 (latest) — The Brain page: a simple and an advanced view, and more room for the news
+
+The owner: "in the /brain, create a simple/adavnced toggle, advanced is current view (more mephasis on the news on the
+bottom right, the section is too small) and the simple one is without anymations and the wizard logo and the cards at
+the bottom." [Decision update](decisions/2026-10-28-brain-page.md).
+- **Simple / Advanced** in the header; V switches, `?view=` opens one, the browser remembers the choice (local storage,
+  a convenience only). Advanced is the page as it was. Simple: no wizard in his circle, no counters along the bottom,
+  nothing moving (the canvas is drawn still, every CSS animation is off under `.brain-still`, the news total shows at
+  once, the headlines do not scroll).
+- **More room for the news**, in both views: the panel is 420 px wide (480 px from 1280 px screens), the chart is
+  64 px high across the panel, the categories sit in two columns, and the latest articles list is at least 220 px with
+  larger headlines. At 1440×900 it shows three to four articles where it showed two; at 1280×720, two where it showed
+  almost none.
+- With motion off (simple, or Windows' reduced-motion setting) the chart's running-total line used to stay invisible
+  (it is drawn in by an animation); it is now drawn.
+
+**Tests.** E2E (Brain page): Simple hides the wizard and the counters and keeps the picture, the choice survives a
+reload, V switches back and both return. `apps/web/src/components/brain/NewsPanel.test.tsx` (2): in the simple view the
+total shows at once and the headlines never scroll; in the advanced view it counts up and scrolls. Seen in Chromium at
+1440×900 and 1280×720 with a synthetic news table (40 headlines, 1,512 total, 8 categories) answered by the browser
+in place of the database (not committed).
+
+## 2026-10-28 — The roadmap page: what Wizard does today and what comes next
 
 The owner: "Create a /roadmap in wizard ... what wizard can already do on the left, the roadmap comes on the right.
 make it visual", a deadline on each Friday from this one, controlled "with left and right arrows", with logos, and the
