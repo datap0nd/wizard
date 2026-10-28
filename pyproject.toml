@@ -76,6 +76,9 @@ ignore = ["S101", "S603", "S607", "E501"]
 "services/documents/wizard_documents/postgres.py" = ["S608"]
 # Gemini writes the query by design; the read-only transaction and account are the boundary (module docstring).
 "services/connectors/wizard_connectors/postgres_query.py" = ["S608"]
+# The Brain page's fixed news queries, built from catalog names quoted with quote()/literal(), never from model or
+# user text; they run through PostgresQuery's read-only transaction (module docstring).
+"services/api/wizard_api/brain.py" = ["S608"]
 
 [tool.mypy]
 python_version = "3.11"

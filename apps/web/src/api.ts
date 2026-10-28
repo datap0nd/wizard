@@ -1,3 +1,4 @@
+import type {BrainLive, BrainMap} from './brain';
 import type {Attachment, Bootstrap, Cadence, ConversationSummary, Evidence, GeminiAccount, GeminiQuota, LocalFile, PortalCheck, PortalStatus, RecurringList, Report, RunRecord, SavedFile, Schedule, SettingsSaved, SettingsView, SourceCatalog, SourceSummary, UpdateInfo} from './types';
 
 export class ApiError extends Error {
@@ -52,6 +53,8 @@ async function request<T>(path: string, init: {method?: string; body?: unknown; 
 
 export const api = {
   bootstrap: () => request<Bootstrap>('/api/v1/bootstrap'),
+  brain: () => request<BrainMap>('/api/v1/brain'),
+  brainLive: () => request<BrainLive>('/api/v1/brain/live'),
   devLog: () => request<{lines: string[]}>('/api/v1/dev/log'),
   quota: (refresh = false) => request<GeminiQuota>(`/api/v1/account/gemini/quota${refresh ? '?refresh=true' : ''}`),
   identities: () => request<{identities: {id: string; name: string; role: string; email: string}[]; notice: string}>('/api/v1/session/identities'),
