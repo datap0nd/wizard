@@ -1,5 +1,5 @@
 import type {BrainLive, BrainMap} from './brain';
-import type {Attachment, Bootstrap, Cadence, ConversationSummary, Evidence, GeminiAccount, GeminiQuota, LocalFile, PortalCheck, PortalStatus, RecurringList, Report, RunRecord, SavedFile, Schedule, SettingsSaved, SettingsView, SourceCatalog, SourceSummary, UpdateInfo} from './types';
+import type {AccessForm, Answer, Attachment, Bootstrap, Cadence, ConversationSummary, Evidence, GeminiAccount, GeminiQuota, LocalFile, PortalCheck, PortalStatus, RecurringList, Report, RunRecord, SavedFile, Schedule, SettingsSaved, SettingsView, SourceCatalog, SourceSummary, UpdateInfo} from './types';
 
 export class ApiError extends Error {
   constructor(message: string, public status: number, public code?: string, public loginRequired = false) { super(message); }
@@ -99,6 +99,11 @@ export const api = {
   portalSignIn: () => request<PortalStatus>('/api/v1/portals/sign-in', {body: {}}),
   portalSignedIn: () => request<PortalStatus>('/api/v1/portals/sign-in/done', {body: {}}),
   portalCheck: () => request<PortalCheck>('/api/v1/portals/check', {body: {}}),
+  accessForm: (system: string) => request<AccessForm>(`/api/v1/portals/${encodeURIComponent(system)}/access-form`),
+  saveAccessForm: (system: string, form: {page: string; fields: Answer[]}) =>
+    request<AccessForm>(`/api/v1/portals/${encodeURIComponent(system)}/access-form`, {body: form}),
+  openAccessRequest: (system: string, request_: {address?: string; tables?: string[]; answers?: Answer[]} = {}) =>
+    request<PortalStatus>(`/api/v1/portals/${encodeURIComponent(system)}/access-request`, {body: request_}),
   health: () => request<{status: string; version: string}>('/api/v1/health'),
 };
 

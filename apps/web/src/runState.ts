@@ -1,11 +1,12 @@
-import type {Attachment, RunEvent, RunKind, RunRecord, RunView, Schedule, TimelineItem} from './types';
+import type {AccessRequest, Attachment, RunEvent, RunKind, RunRecord, RunView, Schedule, TimelineItem} from './types';
 
 export const TERMINAL = new Set(['run_finished', 'run_failed']);
 
 export function emptyRun(id: string, conversationId: string, question: string, kind: RunKind = 'ask'): RunView {
   return {id, conversationId, kind, question, status: 'queued', runtime: 'replay', runtimeLabel: '', model: '', timeline: [],
     streamText: '', answer: null, visuals: [], evidence: [], check: null, checkStatus: 'NOT_CHECKED', checkSummary: null,
-    dataMode: null, reportId: null, error: null, warnings: [], lastSeq: 0, attachments: [], schedules: [], createdAt: new Date().toISOString(),
+    dataMode: null, reportId: null, error: null, warnings: [], lastSeq: 0, attachments: [], schedules: [], accessRequests: [],
+    createdAt: new Date().toISOString(),
     startedAt: null, finishedAt: null, parentRunId: null, diagnostics: []};
 }
 
@@ -39,6 +40,8 @@ export function applyEvent(run: RunView, event: RunEvent): RunView {
       return {...next, visuals: [...next.visuals.filter(v => v.id !== p.visual.id), p.visual]};
     case 'schedule_proposed':
       return withSchedule(next, p.schedule as Schedule);
+    case 'access_request_proposed':
+      return {...next, accessRequests: [...next.accessRequests.filter(r => r.id !== p.request.id), p.request as AccessRequest]};
     case 'file_made':
       return {...next, attachments: [...next.attachments.filter(a => a.id !== p.attachment.id), p.attachment as Attachment]};
     case 'check_result':

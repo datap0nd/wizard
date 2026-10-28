@@ -27,6 +27,39 @@ as data, reads a manifest with a byte-order mark and reports PowerShell's first 
 check and sends `update` to WizardBar; it does not appear in a browser or after a check that worked. The real check on
 the work PC is the owner's next click.
 
+## 2026-10-28 — Access requests: Wizard opens the form and fills the answers you saved
+
+The owner: "I want wizard to open the request access page at least. There also should be a form for access requests
+(we fill in the same fields over and over) that we should be able to predefine in wizard."
+[Decision](decisions/2026-10-28-bdp-access-requests.md).
+- **Settings → Portals → Access request form** (shown when the Big Data Portal is configured): the fields answered on
+  every request (as the form names them) with the usual answer, and an optional request page. Kept on this PC for this
+  person (`access-requests.json`). After a request window closes, the labels Wizard saw on the form are offered as
+  fields to add. **Open the request page** opens it straight away.
+- **Under an answer:** when the person lacks access to a table, Gemini calls `portal_request_access` (the table's page,
+  the tables, this request's own answers such as the reason). The answer shows a card with **Open the request form**;
+  nothing opens before that click.
+- **The window:** Wizard's browser opens visibly on the page and, as the form appears (also after the person presses
+  Request access), writes the saved answers and this request's into fields whose label matches, outlines them and
+  shows a note. Only empty fields, never one the person cleared, never a password; only that portal's own pages. It
+  never clicks, presses a key or submits; the person submits in their window, which has no write filter. Gemini's
+  portal reads wait until it is closed, and its own steps still refuse every access request.
+- Fixed while previewing: a reopened answer dropped event types the server did not list, so the card would have
+  vanished after a reload (`access_request_proposed` is now kept).
+- AGENTS.md (the portal exception), the threat model, README, `docs/platforms.md`, `docs/desktop.md`, task 40, the
+  guide and system prompt updated; contracts regenerated.
+
+**Tests.**
+- `tests/unit/test_access_requests.py` (7, new): the saved form's limits, the addresses a window may open, what it
+  fills, Gemini's proposal (never sent), the API with its Wizard-header check and audit, a reopened answer keeping its
+  card, and the activity labels.
+- `tests/integration/test_portal_browser.py` (11, 1 new), real Chromium: a catalog table page whose form appears after
+  Request access is filled from saved answers (label beside, `label` wrapper, table row, `aria-label`, select); a
+  pre-filled field and the password are left alone; a field the person cleared is not refilled; nothing is sent until
+  the person's own click, which goes through; the form's labels are kept; Gemini's reads wait while the window is open.
+- `apps/web`: the run reducer keeps each request once; the stage places the tool on BDP (58 tests). The settings panel
+  and the card were checked in screenshots.
+
 ## 2026-10-28 — The Brain page: what Wizard knows as one picture, and the news it keeps reading
 
 The owner, preparing a meeting with the MENA President: "a 'brain' view with all the topics, the portals, etc", the

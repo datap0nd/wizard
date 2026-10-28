@@ -4,6 +4,7 @@ import {api, ApiError} from '@/api';
 import {formatDate} from '@/format';
 import {cn} from '@/lib/utils';
 import {Button} from './ui/button';
+import {AccessRequestForm} from './AccessRequestForm';
 import type {PortalCheck, PortalStatus} from '@/types';
 
 /** A portal's name, with its applications when it has several: "Big Data Portal (Superset, information catalog)". */
@@ -46,7 +47,7 @@ export function PortalSignIn({compact = false}: {compact?: boolean}) {
   if (status === 'none') {
     return compact ? null : <p className="mt-3 text-xs text-ink-3" data-testid="portals-none">Fill in a portal's address and save: Wizard restarts and the sign-in button appears here.</p>;
   }
-  return (
+  return (<>
     <div className={cn('space-y-2', compact ? '' : 'mt-3 rounded-lg bg-surface px-3 py-3')} data-testid="portal-sign-in">
       {!compact && (
         <p className="flex items-center gap-1.5 text-xs text-ink-2"><Globe className="size-3.5" />
@@ -55,7 +56,10 @@ export function PortalSignIn({compact = false}: {compact?: boolean}) {
       )}
       {status.signing_in ? (
         <div className="flex flex-wrap items-center gap-2">
-          <p className="flex-1 text-xs text-ink-2" role="status">A Wizard browser window is open on this PC. Sign in to each portal there, then close the window or press Done.</p>
+          <p className="flex-1 text-xs text-ink-2" role="status">{status.window === 'access_request'
+            ? `An access request form is open in Wizard's browser window on this PC${status.access_request?.filled.length
+              ? `; Wizard filled ${status.access_request.filled.join(', ')}` : ''}. Check every field, submit it there yourself, then close the window or press Done.`
+            : 'A Wizard browser window is open on this PC. Sign in to each portal there, then close the window or press Done.'}</p>
           <Button size="xs" variant="accent" onClick={() => void act('done')} disabled={busy !== null} data-testid="portal-done">
             {busy === 'done' ? <Loader2 className="animate-spin" /> : <CheckCircle2 />}Done</Button>
         </div>
@@ -81,5 +85,6 @@ export function PortalSignIn({compact = false}: {compact?: boolean}) {
       )}
       {error && <p className="text-xs text-danger" role="alert">{error}</p>}
     </div>
-  );
+    {!compact && status.portals.filter(p => p.access_requests).map(p => <AccessRequestForm key={p.id} system={p.id} name={p.name} />)}
+  </>);
 }

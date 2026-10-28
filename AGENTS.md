@@ -65,6 +65,12 @@ around a precomputed result is withdrawn. Its credential, entitlement, DLP and h
   stops the read and Gemini never types credentials, and Wizard stores no password (only its own browser's session-only
   sign-in cookies, which Chrome drops on closing, kept through the secret store); evidence is `LIVE` /
   `BROWSER_SESSION`, never verified.
+  Access requests in the Big Data Portal's information catalog (owner decision,
+  [docs/decisions/2026-10-28-bdp-access-requests.md](docs/decisions/2026-10-28-bdp-access-requests.md)):
+  `portal_request_access` only proposes one; the person opens it with a button in a visible window of their Wizard
+  browser, where Wizard fills their saved answers into the form's empty fields on that portal's own pages and never
+  clicks, presses a key or submits. The person checks the form and submits it. Keep the button, the visible window,
+  empty-fields-only and no-submit; Gemini's own steps still refuse every access request.
 - Change a file the person attached in place. `wizard_edit_attachment` writes an edited copy the person downloads
   ([decision](docs/decisions/2026-10-23-edited-attachments.md)); the original is opened read-only. On the person's own
   PC, Download saves the copy into their Downloads folder (Excel writes it; never over an existing file).

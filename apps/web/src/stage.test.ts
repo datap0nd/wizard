@@ -26,6 +26,7 @@ describe('the systems stage', () => {
     expect(moduleOf('wizard_read_knowledge')).toBe('knowledge');
     expect(moduleOf('wizard_lookup_definitions')).toBe('knowledge');
     expect(moduleOf('nerp_run_report')).toBe('nerp');
+    expect(moduleOf('portal_request_access', {system: 'bdp'})).toBe('bdp');
     expect(moduleOf('bdp_search_reports')).toBe('bdp');
     expect(moduleOf('wizard_query_attachment')).toBe('attachment');
     expect(moduleOf('wizard_calculate')).toBe('wizard');
