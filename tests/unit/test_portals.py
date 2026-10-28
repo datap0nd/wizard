@@ -38,6 +38,39 @@ def test_portals_come_from_their_addresses_and_nothing_else():
             settings_from(bad)
 
 
+def test_the_big_data_portal_is_its_information_catalog_and_superset():
+    both = settings_from({"WIZARD_PORTAL_BDP_URL": "https://superset.example.com/sqllab/",
+                          "WIZARD_PORTAL_BDP_CATALOG_URL": "https://catalog.example.net/search"})
+    assert both is not None
+    bdp = both.portal("bdp")
+    assert bdp is not None and bdp.url == "https://superset.example.com/sqllab/", "steps start in Superset"
+    assert [(p.id, p.label) for p in bdp.parts] == [("superset", "Superset"), ("catalog", "information catalog")]
+    assert bdp.pages == [("bdp-superset", "Big Data Portal: Superset", "https://superset.example.com/sqllab/"),
+                         ("bdp-catalog", "Big Data Portal: information catalog", "https://catalog.example.net/search")]
+    assert bdp.hosts == ("superset.example.com", "catalog.example.net")
+    policy = HostPolicy(both)
+    assert policy.allowed("catalog.example.net") and policy.allowed("superset.example.com")
+    assert not policy.allowed("other.example.net")
+    assert policy.portal_for("catalog.example.net") is bdp and policy.portal_domain("catalog.example.net")
+    only_catalog = settings_from({"WIZARD_PORTAL_BDP_CATALOG_URL": "https://catalog.example.net/"})
+    assert only_catalog is not None and only_catalog.portal("bdp").url == "https://catalog.example.net/"
+    gscm = settings_from({"WIZARD_PORTAL_GSCM_URL": "https://gscm.corp.example.com/"}).portal("gscm")
+    assert gscm.parts == () and gscm.pages == [("gscm", "GSCM", "https://gscm.corp.example.com/")]
+    with pytest.raises(PortalConfigError, match="WIZARD_PORTAL_BDP_CATALOG_URL"):
+        settings_from({"WIZARD_PORTAL_BDP_URL": "https://superset.example.com/", "WIZARD_PORTAL_BDP_CATALOG_URL": "catalog"})
+
+
+def test_a_path_stays_on_the_portal_application_the_page_is_on():
+    from wizard_connectors.portal_browser import _address
+    bdp = settings_from({"WIZARD_PORTAL_BDP_URL": "https://superset.example.com/",
+                         "WIZARD_PORTAL_BDP_CATALOG_URL": "https://catalog.example.net/"}).portal("bdp")
+    assert _address(bdp, "/search?q=sales", "https://catalog.example.net/home") == "https://catalog.example.net/search?q=sales"
+    assert _address(bdp, "sqllab/", "https://superset.example.com/x") == "https://superset.example.com/sqllab/"
+    assert _address(bdp, "/sqllab/", "about:blank") == "https://superset.example.com/sqllab/"
+    assert _address(bdp, "/x", "https://gscm.corp.example.com/") == "https://superset.example.com/x", "another portal's page"
+    assert _address(bdp, "https://catalog.example.net/t/1", "") == "https://catalog.example.net/t/1"
+
+
 def test_only_the_portals_their_company_domain_and_sign_in_hosts_are_reachable():
     configured = settings_from({"WIZARD_PORTAL_GSCM_URL": "https://gscm.corp.example.com/",
                                 "WIZARD_PORTAL_BDP_URL": "https://bdp.example.com/", "WIZARD_PORTAL_HOSTS": "*.idp.example.org"})
@@ -61,6 +94,12 @@ def test_only_the_portals_their_company_domain_and_sign_in_hosts_are_reachable()
     ("GET", "https://p.corp.example.com/getUpdatedList.do", None),
     ("GET", "https://p.corp.example.com/addressBook/list", None),
     ("POST", "https://bdp.example.com/api/v1/sqllab/execute/", json.dumps({"sql": "SELECT REPLACE(name, 'a', 'b'), comment FROM t"})),
+    # The information catalog: searching, reading a table and listing one's own access requests are reads.
+    ("POST", "https://catalog.example.com/api/search", json.dumps({"query": "mutation testing tables", "page": 1})),
+    ("POST", "https://catalog.example.com/api/graphql", json.dumps({"query": "query { search(input: {query: \"sales\"}) { total } }"})),
+    ("GET", "https://catalog.example.com/api/v1/access-requests?status=pending", None),
+    ("GET", "https://catalog.example.com/tables/sales_daily/requests", None),
+    ("POST", "https://p.corp.example.com/svc/selectAccessRequestList.do", "SSV:utf-8\x1e"),
 ])
 def test_reads_go_through(method, url, body):
     assert write_reason(method, url, body) is None
@@ -78,6 +117,15 @@ def test_reads_go_through(method, url, body):
     ("PUT", "https://p.corp.example.com/api/v1/chart/3", "{}", "PUT"),
     ("DELETE", "https://p.corp.example.com/api/v1/chart/3", None, "DELETE"),
     ("PATCH", "https://p.corp.example.com/api/thing", "{}", "PATCH"),
+    # Access to a table is requested by the person, never by Wizard: in the information catalog or in Superset.
+    ("POST", "https://catalog.example.com/api/requestAccess", json.dumps({"table": "t"}), "request"),
+    ("GET", "https://superset.example.com/superset/request_access/?datasource_id=3", None, "request"),
+    ("POST", "https://catalog.example.com/api/v1/access-requests", json.dumps({"table": "t"}), "requests access"),
+    ("POST", "https://catalog.example.com/api/tables/t/permissionRequest", "{}", "requests access"),
+    ("POST", "https://catalog.example.com/svc/tableAccessRequest.do", "id=t", "requests access"),
+    ("POST", "https://catalog.example.com/api/graphql", json.dumps({"query": "mutation { createAccessRequest(urn: \"t\") }"}),
+     "mutation"),
+    ("POST", "https://catalog.example.com/api/graphql", json.dumps([{"query": "# ask\n  mutation Ask { x }"}]), "mutation"),
 ])
 def test_writes_are_refused(method, url, body, word):
     reason = write_reason(method, url, body)
@@ -103,11 +151,12 @@ def test_sql_lab_reads_pass():
 def test_metronomes_forbidden_controls_are_never_clicked():
     for control in ({"text": "Save"}, {"text": "  Delete row "}, {"id": "mainframe.VFrameSet.TopFrame.Setting0.form.btn_save:icontext"},
                     {"aria": "Unselect all"}, {"title": "Pin to home"}, {"text": "Sign out"}, {"value": "Submit"},
-                    {"text": "Log Out"}, {"name": "btnApply"}, {"id": "div_favorite.form.btn_unpin"}):
+                    {"text": "Log Out"}, {"name": "btnApply"}, {"id": "div_favorite.form.btn_unpin"},
+                    {"text": "Request access"}, {"aria": "Request"}, {"id": "btnRequestAccess"}):
         assert click_refusal(control), control
     for control in ({"text": "Go >>"}, {"text": "RUN"}, {"text": "Shipping"}, {"text": "Address"}, {"text": "Renewal"},
                     {"id": "mainframe.VFrameSet.WorkFrame0.form.div_addInfo.form.btn_search"}, {"text": "Favorite"},
-                    {"text": "Export Wizard (Detail)"}):
+                    {"text": "Export Wizard (Detail)"}, {"text": "My requests"}, {"text": "Requested on"}):
         assert click_refusal(control) is None, control
 
 
@@ -183,6 +232,27 @@ def test_configured_portals_are_on_the_stage_with_their_tools_and_sign_in(tmp_pa
     from wizard_api import settings_pane
     assert "portals" in [section for section, _, _ in settings_pane.SECTIONS]
     assert settings_pane.BY_KEY["WIZARD_BROWSER"].choices == ("chrome", "msedge")
+    assert settings_pane.BY_KEY["WIZARD_PORTAL_BDP_CATALOG_URL"].section == "portals"
+    assert settings_pane.BY_KEY["WIZARD_PORTAL_BDP_URL"].label == "Big Data Portal: Superset"
+
+
+def test_settings_show_both_big_data_portal_addresses(tmp_path: Path):
+    from fastapi.testclient import TestClient
+
+    from wizard_api.app import create_app
+    settings = make_settings(tmp_path, WIZARD_PORTAL_BDP_URL="https://superset.corp.example.com/sqllab/",
+                             WIZARD_PORTAL_BDP_CATALOG_URL="https://catalog.corp.example.com/",
+                             WIZARD_LOCAL_USER_EMAIL="owner@example.com")
+    settings.install_mode = True
+    with TestClient(create_app(settings)) as client:
+        login(client, "local-owner")
+        systems = client.get("/api/v1/bootstrap").json()["systems"]
+        assert [s for s in systems if s["id"] == "bdp"] == [{"id": "bdp", "name": "Big Data Portal", "kind": "portal",
+                                                              "data_mode": "LIVE"}], "one system with two applications"
+        assert client.get("/api/v1/portals").json()["portals"] == [
+            {"id": "bdp", "name": "Big Data Portal", "host": "superset.corp.example.com",
+             "parts": [{"id": "superset", "name": "Superset", "host": "superset.corp.example.com"},
+                       {"id": "catalog", "name": "information catalog", "host": "catalog.corp.example.com"}]}]
 
 
 def test_without_portals_there_are_no_portal_tools(client):

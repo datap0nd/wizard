@@ -301,16 +301,18 @@ class PortalBrowser:
 
     # Sign-in -----------------------------------------------------------------------------------------------------------
     def begin_sign_in(self) -> dict[str, Any]:
-        """Open a visible window with one tab per portal for the person to sign in. Wizard waits for them to close it."""
+        """Open a visible window with one tab per portal (per application: the Big Data Portal's information catalog
+        and Superset each get one) for the person to sign in. Wizard waits for them to close it."""
         def job() -> dict[str, Any]:
             context = self._launch(headed=True)
             self._headed_since = time.monotonic()
             self._sign_in_hosts = set()
             first = context.pages[0] if context.pages else context.new_page()
-            for index, portal in enumerate(self.settings.portals):
+            addresses = [url for portal in self.settings.portals for _, _, url in portal.pages]
+            for index, url in enumerate(addresses):
                 page = first if index == 0 else context.new_page()
                 with contextlib.suppress(Exception):  # the person sees the page and its error
-                    page.goto(portal.url, wait_until="commit", timeout=30_000)
+                    page.goto(url, wait_until="commit", timeout=30_000)
             with contextlib.suppress(Exception):
                 first.bring_to_front()
             return self.status_now()
@@ -335,33 +337,37 @@ class PortalBrowser:
         state = self._state()
         return {"browser": portals.CHANNELS[self.settings.channel], "signing_in": self._headed,
                 "running": self._context is not None, "last_sign_in": state.get("last_sign_in"),
-                "portals": [{"id": p.id, "name": p.name, "host": p.host} for p in self.settings.portals]}
+                "portals": [{"id": p.id, "name": p.name, "host": p.host,
+                             **({"parts": [{"id": part.id, "name": part.label, "host": part.host} for part in p.parts]}
+                                if p.parts else {})} for p in self.settings.portals]}
 
     def status(self) -> dict[str, Any]:
         return self.status_now()
 
     def check(self) -> dict[str, Any]:
-        """Open each portal in the background and say whether it is signed in (the page stays on the portal's host
-        and asks for no password)."""
+        """Open each portal (each application of one that has several) in the background and say whether it is
+        signed in (the page stays on the portal's host and asks for no password)."""
+        pages = [(portal, *page) for portal in self.settings.portals for page in portal.pages]
+
         def job() -> dict[str, Any]:
             if self._headed:
                 raise PortalError("signing_in", "Finish signing in first: close the Wizard sign-in window.")
             results = []
-            for portal in self.settings.portals:
+            for portal, page_id, name, url in pages:
                 page = self._ready_page()
                 self._log = CallLog()
                 try:
-                    page.goto(portal.url, wait_until="domcontentloaded", timeout=45_000)
+                    page.goto(url, wait_until="domcontentloaded", timeout=45_000)
                     page.wait_for_timeout(1500)
-                    results.append({"id": portal.id, "name": portal.name, "signed_in": not self._signs_in(page, portal),
+                    results.append({"id": page_id, "name": name, "signed_in": not self._signs_in(page, portal),
                                     "title": (page.title() or "")[:120]})
                 except Exception as error:  # noqa: BLE001 - reported per portal
-                    results.append({"id": portal.id, "name": portal.name, "signed_in": False,
+                    results.append({"id": page_id, "name": name, "signed_in": False,
                                     "error": str(error).splitlines()[0][:200]})
                 finally:
                     self._log = None
             return {"portals": results}
-        return self.run(job, timeout=60 + 60 * len(self.settings.portals))
+        return self.run(job, timeout=60 + 60 * len(pages))
 
     def _signs_in(self, page: Any, portal: Portal) -> bool:
         """The page asks for a sign-in: it left the reachable hosts, it is an identity provider's page (a host the
@@ -520,7 +526,7 @@ class PortalBrowser:
         action = step["action"]
         timeout = step.get("timeout_ms") or 30_000
         if action == "goto":
-            target = _address(portal, step["url"])
+            target = _address(portal, step["url"], page.url)
             if not self.policy.allowed(urlsplit(target).hostname):
                 raise PortalError("host_not_allowed", f"{urlsplit(target).hostname} is not a portal address.")
             response = page.goto(target, wait_until="domcontentloaded", timeout=max(timeout, 45_000))
@@ -600,12 +606,16 @@ def _first_line(error: BaseException) -> str:
     return " ".join(text.split())[:400] or type(error).__name__
 
 
-def _address(portal: Portal, url: str) -> str:
-    """A step's address: absolute, or a path on the portal's own host."""
+def _address(portal: Portal, url: str, current: str = "") -> str:
+    """A step's address: absolute, or a path on the portal application the page is on (the Big Data Portal's
+    information catalog or Superset), else on the portal's start page."""
     if url.startswith(("http://", "https://")):
         return url
     if not url.startswith("/"):
         url = "/" + url
+    here = urlsplit(current)
+    if here.scheme in ("http", "https") and (here.hostname or "").lower() in portal.hosts:
+        return f"{here.scheme}://{here.netloc}" + url
     return portal.origin + url
 
 

@@ -44,6 +44,34 @@ the news-missing reason, walks the tour with the keys and goes back to the app.
 Seen in Chromium at 1280×720, 1600×900 and 1920×1080 against a local PostgreSQL 16 with a synthetic 111-note knowledge
 base and 1,512 synthetic articles (scratch only, not committed); a row inserted while the page was open appeared within
 a minute (1,512 → 1,513).
+## 2026-10-28 — The Big Data Portal: its information catalog and Superset, both in Settings → Portals
+
+The owner: "For bigdata portal, there's two things: the information catalog, where we search for tables and request
+access to them. Then we have superset, the actual query tool." And: "In the wizard menu, we should have both links."
+Wizard had one BDP address, Superset's. [Decision](decisions/2026-10-28-bdp-information-catalog.md).
+- **Settings → Portals** has **Big Data Portal: information catalog** (`WIZARD_PORTAL_BDP_CATALOG_URL`, new) and **Big
+  Data Portal: Superset** (`WIZARD_PORTAL_BDP_URL`, same key as before). Either alone turns BDP on; it stays one
+  system with one set of rights. The section shows "Big Data Portal (Superset, information catalog)".
+- **The Wizard browser** reaches both hosts, opens a sign-in tab for each and checks each ("Big Data Portal:
+  information catalog: signed in"). `portal_guide` lists both addresses; a step's `/path` stays on the application the
+  page is on. `GET /api/v1/portals` lists a portal's `parts`.
+- **Gemini's guide** to BDP: find the table in the information catalog (explore it, then call its own search request),
+  then query it in Superset. The system prompt says the same, and that requesting access is the person's own step.
+- **Access is never requested by Wizard**, inside the tool: Request clicks are refused, `request` is a write verb (it
+  also stops Superset's own `request_access`), a POST to an access-request address and a GraphQL mutation are refused.
+  Searches and listing one's own requests still read.
+- Work-PC task 40 also records the catalog's address, product, sign-in and request route.
+- AGENTS.md is unchanged: the portal exception and its protections already cover a second BDP address. README,
+  `docs/platforms.md`, `docs/desktop.md`, the decision records and contracts updated.
+
+**Tests.**
+- `tests/unit/test_portals.py` (52, 15 new, 2 extended): both addresses and either alone, hosts, relative paths per
+  application, access-request writes against reads, GraphQL mutations against a search text, Request clicks, the
+  settings fields, and `GET /api/v1/portals` with both addresses.
+- `tests/integration/test_portal_browser.py` (10, 1 new), real Chromium with the catalog on `localhost` and Superset on
+  `127.0.0.1`: the guide's addresses, a catalog table as evidence, a path that stays on the catalog, a refused Request
+  access click and POST that never reach the server, and the per-application sign-in check.
+- The real catalog and Superset are first read on the work PC.
 
 ## 2026-10-26 — Download of an edited workbook: Wizard saves it in Downloads itself
 

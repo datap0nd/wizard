@@ -9,10 +9,11 @@ Python so the rules are tested without a browser; portal_browser.py applies them
 The rules, applied inside the tool, never by Gemini's goodwill:
 - only the configured portals' hosts, their company domain and the hosts the person's own sign-in went through can be
   reached, so a script cannot send data anywhere else;
-- requests that save, delete, approve, upload or sign out are refused before they leave the browser (by the verb that
-  starts a path segment or a service name), PUT/PATCH/DELETE only for MicroStrategy prompt answers;
+- requests that save, delete, approve, upload, request access or sign out are refused before they leave the browser (by
+  the verb that starts a path segment or a service name, a POST to an access-request collection, a GraphQL mutation),
+  PUT/PATCH/DELETE only for MicroStrategy prompt answers;
 - Superset SQL Lab runs one SELECT at a time;
-- clicks on controls named Save, Delete, Submit, Pin... are refused (Metronome's list, FORBIDDEN_CLICK_WORDS);
+- clicks on controls named Save, Delete, Submit, Pin, Request... are refused (Metronome's list, FORBIDDEN_CLICK_WORDS);
 - session tokens, passwords and cookies are redacted from everything Gemini sees."""
 from __future__ import annotations
 
@@ -25,11 +26,19 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from .postgres_query import _code, without_terminator
 
-# The portals Wizard knows, in the order people see them. Each is configured by its start address.
+# The portals Wizard knows, in the order people see them. Each is configured by its start address. The Big Data Portal
+# is two applications with an address each: Superset, where people query tables (SQL Lab), and the information catalog,
+# where they search for tables and request access to them (owner, 28 October 2026).
 KNOWN = {
     "asap": ("ASAP", "WIZARD_PORTAL_ASAP_URL"),
     "gscm": ("GSCM", "WIZARD_PORTAL_GSCM_URL"),
     "bdp": ("Big Data Portal", "WIZARD_PORTAL_BDP_URL"),
+}
+# A portal's applications when it has more than one: (part, label, setting). The first configured one is the portal's
+# start page.
+PARTS = {
+    "bdp": (("superset", "Superset", "WIZARD_PORTAL_BDP_URL"),
+            ("catalog", "information catalog", "WIZARD_PORTAL_BDP_CATALOG_URL")),
 }
 CHANNELS = {"chrome": "Google Chrome", "msedge": "Microsoft Edge"}
 HOST = re.compile(r"^(\*\.)?[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?)*$")
@@ -40,8 +49,15 @@ WRITE_VERBS = frozenset({
     "modify", "mod", "edit", "upload", "import", "approve", "reject", "regist", "register", "reg", "create", "new",
     "add", "submit", "send", "publish", "write", "share", "pin", "unpin", "apply", "confirm", "cancel", "revoke",
     "grant", "assign", "reset", "clear", "logout", "logoff", "signout", "subscribe", "unsubscribe", "schedule", "email",
-    "transfer",
+    "transfer", "request",
 })
+# A POST to an address part that ends in an access request (/access-requests, permissionRequest, tableAccessRequest.do)
+# files one in the information catalog; selectAccessRequestList.do still reads.
+ACCESS_WORDS = frozenset({"access", "permission", "permissions", "authority", "privilege", "privileges"})
+REQUEST_WORDS = frozenset({"request", "requests"})
+EXTENSIONS = frozenset({"do", "json", "jsp", "action", "xml"})
+# A GraphQL mutation (optionally named, then its variables or selection), not a search text that starts with the word.
+GRAPHQL_MUTATION = re.compile(r"^\s*(#[^\n]*\n\s*)*mutation\b\s*([A-Za-z_]\w*)?\s*[({]")
 # Query or form parameters whose value names the action a generic endpoint performs.
 ACTION_PARAMS = frozenset({"taskid", "task", "action", "method", "cmd", "command", "op", "operation", "svc", "svcid",
                            "service", "serviceid", "mode", "evtname"})
@@ -59,10 +75,12 @@ SQL_READ_START = re.compile(r"^\s*(\(\s*)*(select|with|show|explain|describe|des
 
 # Metronome's list of controls a portal script must never click (data_governance app/flow_gscm.py), matched as whole
 # words of a control's label, title, value or name, plus the last part of its id (Nexacro ids are component paths).
+# Plus request: the Big Data Portal's information catalog requests table access in the person's name.
 FORBIDDEN_CLICK_WORDS = frozenset({
     "save", "delete", "remove", "del", "drop", "clear", "reset", "unselect", "apply", "submit", "confirm", "pin",
     "unpin", "share", "new", "add", "edit", "modify", "update", "upload", "import", "send", "approve", "reject",
     "publish", "register", "create", "insert", "logout", "logoff", "signout", "subscribe", "unsubscribe", "schedule",
+    "request",
 })
 FORBIDDEN_CLICK_PHRASES = ("sign out", "log out", "log off", "export all")
 
@@ -80,10 +98,23 @@ class PortalConfigError(ValueError):
 
 
 @dataclass(frozen=True)
+class Part:
+    """One application of a portal that has several (the Big Data Portal's Superset and information catalog)."""
+    id: str
+    label: str
+    url: str
+
+    @property
+    def host(self) -> str:
+        return (urlsplit(self.url).hostname or "").lower()
+
+
+@dataclass(frozen=True)
 class Portal:
     id: str
     name: str
-    url: str
+    url: str  # the start page: steps begin here, and a path resolves here unless the page is on another of its parts
+    parts: tuple[Part, ...] = ()
 
     @property
     def host(self) -> str:
@@ -93,6 +124,17 @@ class Portal:
     def origin(self) -> str:
         parts = urlsplit(self.url)
         return f"{parts.scheme}://{parts.netloc}"
+
+    @property
+    def pages(self) -> list[tuple[str, str, str]]:
+        """Each application to sign in to and check, as (id, name, start address)."""
+        if not self.parts:
+            return [(self.id, self.name, self.url)]
+        return [(f"{self.id}-{part.id}", f"{self.name}: {part.label}", part.url) for part in self.parts]
+
+    @property
+    def hosts(self) -> tuple[str, ...]:
+        return tuple(dict.fromkeys((urlsplit(url).hostname or "").lower() for _, _, url in self.pages))
 
 
 @dataclass(frozen=True)
@@ -114,15 +156,14 @@ def settings_from(values: dict[str, str | None]) -> PortalSettings | None:
     no portal is configured."""
     portals = []
     for portal_id, (name, key) in KNOWN.items():
-        url = (values.get(key) or "").strip()
-        if not url:
+        if portal_id in PARTS:
+            parts = tuple(Part(part, label, _address_setting(values, setting)) for part, label, setting in PARTS[portal_id]
+                          if (values.get(setting) or "").strip())
+            if parts:
+                portals.append(Portal(portal_id, name, parts[0].url, parts))
             continue
-        parts = urlsplit(url)
-        if parts.scheme not in ("https", "http") or not parts.hostname:
-            raise PortalConfigError(f"{key} must be the portal's address, for example https://portal.company.example/")
-        if parts.username or parts.password:
-            raise PortalConfigError(f"{key} must not contain a user name or password")
-        portals.append(Portal(portal_id, name, url))
+        if (values.get(key) or "").strip():
+            portals.append(Portal(portal_id, name, _address_setting(values, key)))
     if not portals:
         return None
     channel = (values.get("WIZARD_BROWSER") or "chrome").strip().lower()
@@ -138,6 +179,16 @@ def settings_from(values: dict[str, str | None]) -> PortalSettings | None:
         hosts.append(host)
     executable = (values.get("WIZARD_BROWSER_EXECUTABLE") or "").strip() or None
     return PortalSettings(tuple(portals), channel, tuple(hosts), executable)
+
+
+def _address_setting(values: dict[str, str | None], key: str) -> str:
+    url = (values.get(key) or "").strip()
+    parts = urlsplit(url)
+    if parts.scheme not in ("https", "http") or not parts.hostname:
+        raise PortalConfigError(f"{key} must be the portal's address, for example https://portal.company.example/")
+    if parts.username or parts.password:
+        raise PortalConfigError(f"{key} must not contain a user name or password")
+    return url
 
 
 def company_domain(host: str) -> str | None:
@@ -158,13 +209,9 @@ class HostPolicy:
     def allowed(self, host: str | None) -> bool:
         if not host:
             return False
+        if self.portal_domain(host):
+            return True
         host = host.lower().rstrip(".")
-        for portal in self.settings.portals:
-            if host == portal.host:
-                return True
-            domain = company_domain(portal.host)
-            if domain and (host == domain or host.endswith("." + domain)):
-                return True
         for pattern in self.settings.extra_hosts:
             if host == pattern or (pattern.startswith("*.") and host.endswith(pattern[1:])):
                 return True
@@ -174,13 +221,14 @@ class HostPolicy:
         """The host is a portal's own, or in a portal's company domain."""
         host = host.lower().rstrip(".")
         for portal in self.settings.portals:
-            domain = company_domain(portal.host)
-            if host == portal.host or (domain and (host == domain or host.endswith("." + domain))):
-                return True
+            for own in portal.hosts:
+                domain = company_domain(own)
+                if host == own or (domain and (host == domain or host.endswith("." + domain))):
+                    return True
         return False
 
     def portal_for(self, host: str | None) -> Portal | None:
-        return next((p for p in self.settings.portals if host and host.lower() == p.host), None)
+        return next((p for p in self.settings.portals if host and host.lower() in p.hosts), None)
 
 
 def _tokens(text: str) -> list[str]:
@@ -212,9 +260,17 @@ def write_reason(method: str, url: str, body: str | None = None) -> str | None:
             verb = _starts_with_verb(value)
             if verb:
                 return f"the {key} parameter '{value[:60]}' starts with '{verb}'"
+    if method == "POST":
+        for segment in path.split("/"):
+            words = [w for w in _tokens(segment) if w not in EXTENSIONS]
+            if len(words) >= 2 and words[-2] in ACCESS_WORDS and words[-1] in REQUEST_WORDS:
+                return f"a POST to '{segment[:60]}' requests access"
     if body and method == "POST":
         if SQLLAB.search(path):
             return sql_problem(body)
+        mutation = _graphql_mutation(body)
+        if mutation:
+            return mutation
         if "=" in body[:2000] and not body.lstrip().startswith(("<", "{", "[")):
             for key, value in parse_qsl(body[:20_000], keep_blank_values=True):
                 if key.casefold() in ACTION_PARAMS:
@@ -226,6 +282,22 @@ def write_reason(method: str, url: str, body: str | None = None) -> str | None:
             verb = _starts_with_verb(name)
             if verb:
                 return f"the service '{name[:60]}' starts with '{verb}'"
+    return None
+
+
+def _graphql_mutation(body: str) -> str | None:
+    """A GraphQL request that changes data (a mutation), as a data catalog's API may send one."""
+    stripped = body.lstrip()
+    if not stripped.startswith(("{", "[")) or "mutation" not in body[:100_000]:
+        return None
+    try:
+        value = json.loads(body)
+    except ValueError:
+        return None
+    for item in value if isinstance(value, list) else [value]:
+        query = item.get("query") if isinstance(item, dict) else None
+        if isinstance(query, str) and GRAPHQL_MUTATION.match(query):
+            return "the GraphQL request is a mutation"
     return None
 
 

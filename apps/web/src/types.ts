@@ -321,7 +321,8 @@ export interface PortalStatus {
   signing_in: boolean;
   running: boolean;
   last_sign_in: string | null;
-  portals: {id: string; name: string; host: string}[];
+  /** parts: the applications of a portal that has several (the Big Data Portal's Superset and information catalog). */
+  portals: {id: string; name: string; host: string; parts?: {id: string; name: string; host: string}[]}[];
 }
 
 export interface PortalCheck {

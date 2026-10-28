@@ -61,7 +61,8 @@ relayed to gemini to use for its own scripts in the best way possible."
 - New: `portals.py` (settings and rules), `portal_browser.py` (the browser thread), `portal_helpers.js`,
   `portal_capture.js`, `portal_guides/`, `tools/portal_tools.py`, `PortalSignIn.tsx`; API `GET /api/v1/portals`,
   `POST /api/v1/portals/sign-in`, `.../sign-in/done`, `.../check`; settings `WIZARD_PORTAL_ASAP_URL`,
-  `WIZARD_PORTAL_GSCM_URL`, `WIZARD_PORTAL_BDP_URL`, `WIZARD_BROWSER`, `WIZARD_PORTAL_HOSTS` (and
+  `WIZARD_PORTAL_GSCM_URL`, `WIZARD_PORTAL_BDP_URL` (and since 28 October `WIZARD_PORTAL_BDP_CATALOG_URL`,
+  [decision](2026-10-28-bdp-information-catalog.md)), `WIZARD_BROWSER`, `WIZARD_PORTAL_HOSTS` (and
   `WIZARD_BROWSER_EXECUTABLE` for tests, never from a company file).
 - WizardSetup.exe carries Playwright (38 MB wheel with its Node driver) and greenlet; no browser is downloaded. The
   desktop workflow publishes the portable runtime release when the locks name a new one.

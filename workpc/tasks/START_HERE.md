@@ -11,8 +11,9 @@ Three tracks:
   coverage (25), then send expert quizzes (30) and apply the answers (31). The user can run one track with, for
   example, `/wizard:tasks 20-25`. Each task names the model it works best with; ask the user to switch with `/model`
   when the status bar shows another one.
-- **40: the Big Data Portal (BDP).** Discovery before any connection is built: what BDP is, the engines behind its
-  Superset SQL tool, and how Superset signs people in. Run it on its own with `/wizard:tasks 40`.
+- **40: the Big Data Portal (BDP).** Discovery before any connection is built: what BDP is, its information catalog
+  (where tables are found and access is requested), the engines behind its Superset SQL tool, and how they sign people
+  in. Run it on its own with `/wizard:tasks 40`.
 - **50: the knowledge base in a private GitHub repository** that every user's Wizard desktop app reads, published from
   this PC, plus the company settings file for users. Run it on its own with `/wizard:tasks 50` after the notes exist
   (tasks 20-25).
