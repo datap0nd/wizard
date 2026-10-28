@@ -3,7 +3,30 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-28 (latest) — The Big Data Portal: its information catalog and Superset, both in Settings → Portals
+## 2026-10-28 (latest) — The portal sign-in outlives its window
+
+The owner: "I filled in portal addresses. I signed in to them. Closed the browser. When I click check sign in I still
+get that the sign in wasn't done. Possible that the browser headless profile is not the same as the one where we sign
+in?" [Decision update](decisions/2026-10-23-portal-browser.md#update-28-october-2026--the-sign-in-outlives-its-window).
+- **Cause.** The profile is the same folder. Chrome drops session-only cookies (no expiry date) when it closes, and
+  most portal and sign-in sessions use them, so the sign-in ended when the person closed the window. Reproduced in
+  Chromium: a session-only sign-in cookie fails Check sign-in after the window closes, a lasting one passes.
+- **Fix.** As Metronome's Flows do with their browser's sign-in: Wizard notes its own browser's cookies while a window
+  is open (once the last window closes, Chrome has already dropped them), keeps the session-only ones the portals and
+  the sign-in hosts receive in `session.bin` through the secret store (DPAPI on Windows), and puts them back whenever
+  its browser starts, also after a restart. The background browser's are kept after every call, so a renewed session
+  is kept too. No password is stored; Gemini still never types one.
+- **Check sign-in** names the page it ended on when a portal is not signed in: "GSCM: asks for a sign-in (Sign in ·
+  login.company.example)".
+- AGENTS.md's portal exception, the decision record, README and `docs/desktop.md` say the session cookies are kept.
+
+**Tests.**
+- `tests/integration/test_portal_browser.py` (11, 1 new), real Chromium, a portal whose sign-in is a session-only
+  cookie beside a lasting one: signed in in the window, window closed, Check sign-in passes; after a Wizard restart it
+  passes again; only the session-only cookie is kept. On the previous code it fails as the owner saw it (`Sign in`).
+- The real portals are first checked on the work PC.
+
+## 2026-10-28 — The Big Data Portal: its information catalog and Superset, both in Settings → Portals
 
 The owner: "For bigdata portal, there's two things: the information catalog, where we search for tables and request
 access to them. Then we have superset, the actual query tool." And: "In the wizard menu, we should have both links."

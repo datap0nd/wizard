@@ -62,7 +62,9 @@ around a precomputed result is withdrawn. Its credential, entitlement, DLP and h
   sign-in hosts are reachable; requests named for a write (save, delete, submit, upload, logout...) and PUT/PATCH/DELETE
   (except MicroStrategy prompt answers) are aborted; SQL Lab runs one SELECT; Metronome's forbidden controls are never
   clicked; confirmations are answered No; downloads are off; secrets are redacted from what Gemini sees; a sign-in page
-  stops the read and Gemini never types credentials; evidence is `LIVE` / `BROWSER_SESSION`, never verified.
+  stops the read and Gemini never types credentials, and Wizard stores no password (only its own browser's session-only
+  sign-in cookies, which Chrome drops on closing, kept through the secret store); evidence is `LIVE` /
+  `BROWSER_SESSION`, never verified.
 - Change a file the person attached in place. `wizard_edit_attachment` writes an edited copy the person downloads
   ([decision](docs/decisions/2026-10-23-edited-attachments.md)); the original is opened read-only. On the person's own
   PC, Download saves the copy into their Downloads folder (Excel writes it; never over an existing file).

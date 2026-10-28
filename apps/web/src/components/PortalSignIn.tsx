@@ -11,6 +11,12 @@ export function portalLabel(portal: PortalStatus['portals'][number]): string {
   return portal.parts?.length ? `${portal.name} (${portal.parts.map(p => p.name).join(', ')})` : portal.name;
 }
 
+/** Where a check that found no sign-in ended up: the page's title and host say whether it is the sign-in page. */
+function landed(p: PortalCheck['portals'][number]): string {
+  const where = [p.title, p.host].filter(Boolean).join(' · ');
+  return where ? ` (${where})` : '';
+}
+
 /** Signing in to the company portals in Wizard's own browser: a visible window opens on this PC with one tab per
  * portal; the person signs in and closes it, and Gemini then reads the portals in the background with that sign-in. */
 export function PortalSignIn({compact = false}: {compact?: boolean}) {
@@ -68,7 +74,7 @@ export function PortalSignIn({compact = false}: {compact?: boolean}) {
           {check.portals.map(p => (
             <li key={p.id} className={cn('flex items-center gap-1.5', p.signed_in ? 'text-emerald-800' : 'text-danger')}>
               {p.signed_in ? <CheckCircle2 className="size-3.5" /> : <XCircle className="size-3.5" />}
-              {p.name}: {p.signed_in ? 'signed in' : p.error ?? 'asks for a sign-in'}
+              {p.name}: {p.signed_in ? 'signed in' : p.error ?? `asks for a sign-in${landed(p)}`}
             </li>
           ))}
         </ul>
