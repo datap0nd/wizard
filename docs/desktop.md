@@ -235,7 +235,9 @@ never on a server behind SSO.
 
 1. Download `WizardSetup.exe` from the
    [desktop-continuous release](https://github.com/datap0nd/wizard/releases/tag/desktop-continuous) (or a CI run's
-   `WizardSetup` artifact).
+   `WizardSetup` artifact). Behind a proxy that times out on release downloads, take
+   [desktop-download.zip](https://github.com/datap0nd/wizard/archive/refs/heads/desktop-download.zip): the same
+   installer, mirrored to the `desktop-download` branch on every release and served by `codeload.github.com`.
 2. Put `WizardSetup.exe` and `wizard.provision` in one folder: a shared drive, or a zip sent internally.
 3. They run `WizardSetup.exe`. SmartScreen may warn about an unsigned app ("More info → Run anyway"), as with Scribble.
    Setup copies `wizard.provision` along, and Wizard starts.

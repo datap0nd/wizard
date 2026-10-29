@@ -203,6 +203,7 @@ jobs:
           name: WizardSetup
           path: dist
       - name: Publish to the desktop-continuous release
+        id: release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -219,3 +220,35 @@ jobs:
           # Installer first, manifest last: an updater reading the new manifest then finds the matching installer.
           gh release upload desktop-continuous dist/WizardSetup.exe --clobber
           gh release upload desktop-continuous dist/wizard-desktop.json --clobber
+          echo "published=true" >> "$GITHUB_OUTPUT"
+      # Some office proxies open github.com but time out on release downloads (release-assets.githubusercontent.com).
+      # A branch zip comes from codeload.github.com instead, so the README links this branch as the alternative. One
+      # force-pushed commit: older installers drop out of the branch.
+      - name: Mirror the installer to the desktop-download branch
+        if: steps.release.outputs.published == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          mirror=$(mktemp -d)
+          cp dist/WizardSetup.exe dist/wizard-desktop.json "$mirror"/
+          cat > "$mirror/README.md" <<'EOF'
+          # Wizard desktop installer (download mirror)
+
+          `WizardSetup.exe` from the newest `main`, the same file as the
+          [desktop-continuous release](https://github.com/datap0nd/wizard/releases/tag/desktop-continuous);
+          `wizard-desktop.json` names its version, commit and SHA-256.
+
+          Download: <https://github.com/datap0nd/wizard/archive/refs/heads/desktop-download.zip>
+
+          This branch is for networks that open github.com but time out on release downloads
+          (`release-assets.githubusercontent.com`): the branch zip comes from `codeload.github.com` instead. The `desktop`
+          workflow replaces the branch with a single commit on every release, so do not commit here.
+          EOF
+          version=$(python3 -c 'import json; print(json.load(open("dist/wizard-desktop.json"))["version"])')
+          cd "$mirror"
+          git init -q -b desktop-download
+          git add -A
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "WizardSetup.exe $version (${GITHUB_SHA::7})"
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GH_REPO}.git" desktop-download
