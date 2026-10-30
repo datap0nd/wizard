@@ -80,11 +80,13 @@ def probe_gemini_cli(settings: Settings) -> tuple[bool, str]:
         while not server.started and time.time() < deadline:
             time.sleep(0.05)
         try:
-            runtime, registry = app.state.manager.runtime, app.state.registry
+            runtime = app.state.manager.runtime
             identity = IdentityDirectory.load(probe_settings.identities_file).get("u-ceo")
             if identity is None:
                 return False, "the synthetic probe identity u-ceo is missing from the identities file"
-            app.state.manager.active["run_probe"] = ActiveRun("run_probe", identity, "cnv", "ask", "q", None, "gemini-cli")
+            probe = ActiveRun("run_probe", identity, "cnv", "ask", "q", None, "gemini-cli")
+            app.state.manager.active["run_probe"] = probe
+            served = [t["name"] for t in app.state.manager.describe(probe)]  # what Wizard offers an Auto run
             user_home = probe_settings.user_home("u-ceo")
             home = runtime.prepare_home(user_home)
             request = AgentRequest(run_id="run_probe", user_id="u-ceo", user_email="ceo@wizard.test", user_home=user_home,
@@ -110,7 +112,7 @@ def probe_gemini_cli(settings: Settings) -> tuple[bool, str]:
         from wizard_connectors.gemini_rules import function_problems
         functions = [f for t in sent.get("config", {}).get("tools", []) for f in t.get("functionDeclarations", [])]
         declared = sorted(f["name"] for f in functions)
-        expected = sorted(f"mcp_{s.name}" for s in registry.list())
+        expected = sorted(f"mcp_{name}" for name in served)
         problems = [f"Gemini would reject this request (400): {p}" for f in functions
                     for p in function_problems(f["name"], f.get("parametersJsonSchema") or f.get("parameters"))]
         if declared != expected:

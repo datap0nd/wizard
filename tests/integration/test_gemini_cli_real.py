@@ -71,8 +71,9 @@ def test_cli_declares_only_wizard_tools_and_uses_per_user_file_credentials(live_
     assert not other.exists(), "running as one user must not create or touch another user's Gemini home"
 
 
-def test_cli_tool_declarations(live_server, tmp_path):
-    """The model-facing declarations: exactly 15 Wizard tools, no shell/file/web tools."""
+def sent_to_google(live_server, tmp_path, choice=None):
+    """Start the real CLI for a run (Auto, or the person's choice of systems) and return the request it would send
+    Google: its tool declarations come from Wizard's MCP servers for that run."""
     import subprocess
 
     from wizard_agent.runtime import AgentRequest
@@ -84,7 +85,9 @@ def test_cli_tool_declarations(live_server, tmp_path):
     app = live_server(WIZARD_AGENT_RUNTIME="gemini-cli", WIZARD_GEMINI_FAKE_RESPONSES=str(empty))
     runtime, settings = app.state.manager.runtime, app.state.settings
     identity = IdentityDirectory.load(ROOT / "fixtures" / "identities.json").get("u-ceo")
-    app.state.manager.active["run_decl"] = ActiveRun("run_decl", identity, "cnv", "ask", "q", None, "gemini-cli")
+    run = ActiveRun("run_decl", identity, "cnv", "ask", "q", None, "gemini-cli", choice=choice,
+                    ever_on=None if choice is None else choice.on, offers_ask=bool(choice and choice.off()))
+    app.state.manager.active["run_decl"] = run
     user_home = settings.user_home("u-ceo")
     home = runtime.prepare_home(user_home)
     request = AgentRequest(run_id="run_decl", user_id="u-ceo", user_email="ceo@wizard.test", user_home=user_home, prompt="hi",
@@ -96,9 +99,15 @@ def test_cli_tool_declarations(live_server, tmp_path):
                             capture_output=True, timeout=180)
     final = [json.loads(line) for line in result.stdout.decode().splitlines() if '"type":"result"' in line][-1]
     message = final["error"]["message"]
-    sent = json.loads(message[message.index("{"):message.rindex("}") + 1])
+    return app, json.loads(message[message.index("{"):message.rindex("}") + 1])
+
+
+def test_cli_tool_declarations(live_server, tmp_path):
+    """The model-facing declarations: exactly the Wizard tools an Auto run offers, no shell/file/web tools."""
+    app, sent = sent_to_google(live_server, tmp_path)
     names = sorted(f["name"] for t in sent["config"]["tools"] for f in t["functionDeclarations"])
-    assert names == sorted(f"mcp_{s.name}" for s in app.state.registry.list())
+    # Auto offers every tool but the one that asks to switch a system on (nothing is off).
+    assert names == sorted(f"mcp_{s.name}" for s in app.state.registry.list() if s.name != "wizard_ask_for_system")
     assert not [n for n in names if any(w in n for w in ("shell", "write", "file", "web", "fetch", "memory"))]
     assert sent["config"]["systemInstruction"].startswith("You are Wizard")
     assert sent["config"]["thinkingConfig"]["thinkingLevel"] == "HIGH"
@@ -111,6 +120,17 @@ def test_cli_tool_declarations(live_server, tmp_path):
     visual = next(f for f in declarations if f["name"] == "mcp_wizard_render_visual")
     schema = visual.get("parametersJsonSchema") or visual.get("parameters")
     assert "title" in schema["required"] and "title" in schema["properties"]
+
+
+def test_cli_offers_only_the_systems_the_person_chose(live_server, tmp_path):
+    """The person's choice reaches the real CLI: its MCP servers list only the chosen systems' tools and Wizard's own."""
+    from wizard_connectors.tools.systems import SystemChoice
+    names = {"asap": "ASAP", "gscm": "GSCM", "nerp": "NERP", "knowledge": "Knowledge base", "attachment": "Attached files"}
+    _, sent = sent_to_google(live_server, tmp_path, SystemChoice(frozenset({"nerp", "knowledge"}), names))
+    offered = sorted(f["name"] for t in sent["config"]["tools"] for f in t["functionDeclarations"])
+    assert "mcp_nerp_run_report" in offered and "mcp_wizard_read_knowledge" in offered and "mcp_wizard_calculate" in offered
+    assert "mcp_wizard_ask_for_system" in offered
+    assert not [n for n in offered if n.startswith(("mcp_asap_", "mcp_gscm_")) or "attachment" in n], offered
 
 
 def test_installation_probe_passes_and_ignores_parent_gemini_md(tmp_path):

@@ -39,7 +39,10 @@ runtime that takes notes as Code Assist does: only the chosen systems offered an
 refused, a live note and Not this (events and report validated against the contracts), an answer citing a rejected
 step flagged, switching systems mid-run, Not this after the answer with the steps in the follow-up's prompt, a note
 stopping a replay run and asking again, Check my data keeping the systems, a file switching Attached files on,
-remembered notes per person. `apps/web/src/components/Steering.test.tsx` (9). E2E (both viewports): the picker and
+remembered notes per person. Real Gemini CLI 0.62: a run limited to NERP and the knowledge base is offered only their
+tools and Wizard's own over MCP; an Auto run is offered every tool but `wizard_ask_for_system`, and the installation
+probe (`run.py --check`) now compares the CLI's declarations with what Wizard offers the run, not the whole catalog.
+`apps/web/src/components/Steering.test.tsx` (9). E2E (both viewports): the picker and
 "Only:" through a reload; Not this after an answer, Remember, and the note in the account dialog. Seen in Chromium at
 1280×900 and in the 420×640 panel with a scripted note-taking runtime (not committed); the real Code Assist route is
 first steered on a work PC.
