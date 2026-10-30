@@ -13,6 +13,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -270,6 +271,10 @@ def test_metronome(settings: Settings, proposed: dict[str, Any],
 
 
 RELEASE = "https://github.com/datap0nd/wizard/releases/download/desktop-continuous/"
+# The mirror branch CI force-pushes with every release (desktop.yml), read from api.github.com as setup.ps1 reads.
+MIRROR_MANIFEST = "https://api.github.com/repos/datap0nd/wizard/contents/wizard-desktop.json?ref=desktop-download"
+UPDATE_ATTEMPTS = 20  # as Metronome's setup.ps1 retries GitHub downloads; WizardBar's Updater.Attempts is the same
+UPDATE_PAUSE = 5.0    # seconds between attempts
 
 
 def installed_build() -> dict[str, Any]:
@@ -307,49 +312,83 @@ def _read_release(url: str, proxy: str | None, transport: httpx.BaseTransport | 
     raise httpx.TooManyRedirects("Too many redirects.", request=response.request)
 
 
-def _read_release_with_windows(url: str) -> Any:
-    """The manifest read by Windows itself: Windows PowerShell's Invoke-WebRequest, as setup.ps1 downloads GitHub
-    releases on work PCs. Windows applies its proxy settings to every hop and signs in to the proxy as the person, as
-    WizardBar's updater does."""
+def _read_release_once_with_windows(url: str, accept: str = "") -> Any:
+    """One read, the way Metronome's setup.ps1 downloads on work PCs: Windows PowerShell's Invoke-WebRequest
+    -UseBasicParsing over TLS 1.2, with Windows' proxy settings (PAC included) and the person's proxy sign-in. The address,
+    the file and the Accept header reach PowerShell as data. Setting TLS 1.2 or the sign-in may be refused under a
+    locked-down PowerShell; the read then goes ahead with Windows' defaults. The error is written to standard output,
+    readable in any mode."""
     with tempfile.TemporaryDirectory(prefix="wizard-update-") as folder:
         target = Path(folder) / "wizard-desktop.json"
-        script = ("$ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue';"
-                  "try { [System.Net.WebRequest]::DefaultWebProxy.Credentials = "
-                  "[System.Net.CredentialCache]::DefaultNetworkCredentials } catch {};"
-                  "Invoke-WebRequest -Uri $env:WIZARD_RELEASE_URL -OutFile $env:WIZARD_RELEASE_FILE -UseBasicParsing "
-                  "-UserAgent Wizard -TimeoutSec 30")
+        script = ("$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue'; "
+                  "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}; "
+                  "try { [Net.WebRequest]::DefaultWebProxy.Credentials = [Net.CredentialCache]::DefaultNetworkCredentials } "
+                  "catch {}; $headers = @{}; "
+                  "if ($env:WIZARD_RELEASE_ACCEPT) { $headers['Accept'] = $env:WIZARD_RELEASE_ACCEPT }; "
+                  "try { Invoke-WebRequest -Uri $env:WIZARD_RELEASE_URL -OutFile $env:WIZARD_RELEASE_FILE -UseBasicParsing "
+                  "-UserAgent Wizard -Headers $headers -TimeoutSec 30 } catch { Write-Output $_.Exception.Message; exit 1 }")
         result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
-                                env={**os.environ, "WIZARD_RELEASE_URL": url, "WIZARD_RELEASE_FILE": str(target)},
+                                env={**os.environ, "WIZARD_RELEASE_URL": url, "WIZARD_RELEASE_FILE": str(target),
+                                     "WIZARD_RELEASE_ACCEPT": accept},
                                 capture_output=True, text=True, timeout=60, creationflags=0x08000000)
         if result.returncode != 0 or not target.is_file():
-            lines = [line.strip() for line in (result.stderr or result.stdout or "").splitlines() if line.strip()]
+            lines = [line.strip() for text in (result.stdout, result.stderr) for line in (text or "").splitlines()
+                     if line.strip() and not line.strip().startswith(("#< CLIXML", "<Objs"))]
             raise OSError(lines[0] if lines else f"PowerShell exited with {result.returncode}")
-        return json.loads(target.read_text(encoding="utf-8-sig"))
+        manifest = json.loads(target.read_text(encoding="utf-8-sig"))
+        if not isinstance(manifest, dict) or not _version(manifest.get("version")):
+            raise ValueError("The answer is not a release manifest.")
+        return manifest
+
+
+def _read_release_with_windows(url: str, sleep: Callable[[float], None] = time.sleep) -> Any:
+    """The manifest read by Windows itself where Metronome's setup.ps1 reads, as often as it retries (owner, 30 Oct 2026:
+    GitHub downloads were tightened on the work network). Each of up to UPDATE_ATTEMPTS attempts, UPDATE_PAUSE seconds
+    apart, asks api.github.com for the manifest on the mirror branch CI keeps of every release (as setup.ps1 asks it for
+    its branch), then the release itself at a fresh address (nocache), so no proxy answers with an old manifest.
+    PowerShell that cannot start at all is not retried."""
+    errors: list[str] = []
+    for attempt in range(1, UPDATE_ATTEMPTS + 1):
+        errors = []
+        for address, accept in ((MIRROR_MANIFEST, "application/vnd.github.raw+json"),
+                                (f"{url}?nocache={time.time_ns() // 1_000_000}", "")):
+            try:
+                return _read_release_once_with_windows(address, accept)
+            except (FileNotFoundError, PermissionError):
+                raise
+            except (OSError, subprocess.SubprocessError, ValueError) as error:
+                errors.append(f"{httpx.URL(address).host}: {error}")
+        if attempt < UPDATE_ATTEMPTS:
+            sleep(UPDATE_PAUSE)
+    raise OSError(f"{'; '.join(errors)} (tried {UPDATE_ATTEMPTS} times)")
 
 
 def check_update(settings: Settings, transport: httpx.BaseTransport | None = None,
                  windows: Callable[[str], Any] | None = None) -> dict[str, Any]:
-    """The newest desktop release against this build. Only reads the public release manifest. When Wizard's own
-    connection fails on Windows, Windows reads it (`windows`, by default only on Windows and without a test transport)."""
+    """The newest desktop release against this build. Only reads the public release manifest. On Windows, Windows reads
+    it first, as Metronome's setup.ps1 downloads (`windows`, by default only on Windows and without a test transport);
+    when that fails, Wizard's own connection tries once."""
     build = installed_build()
     installed = build.get("version")
     url = RELEASE + "wizard-desktop.json"
     result: dict[str, Any] = {"installed": installed, "commit": build.get("commit"), "download": RELEASE + "WizardSetup.exe"}
     if windows is None and transport is None and os.name == "nt":
         windows = _read_release_with_windows
-    try:
-        manifest = _read_release(url, settings.proxy, transport)
-    except httpx.TransportError as error:
-        failed = outbound.explain(error, str(error.request.url), settings.proxy)
-        if windows is None:
-            return {**result, "ok": False, "message": f"Could not read the release: {failed}"}
+    first = ""
+    manifest: Any = None
+    if windows is not None:
         try:
             manifest = windows(url)
-        except (OSError, subprocess.SubprocessError, ValueError) as second:
-            return {**result, "ok": False, "message": f"Could not read the release: {failed} Windows could not read it "
-                                                      f"either: {second}"}
-    except (httpx.HTTPError, ValueError) as error:
-        return {**result, "ok": False, "message": f"Could not read the release: {error}"}
+        except (OSError, subprocess.SubprocessError, ValueError) as error:
+            first = f"Windows could not read it: {error} "
+    if manifest is None:
+        try:
+            manifest = _read_release(url, settings.proxy, transport)
+        except (httpx.HTTPError, ValueError) as error:
+            failed = (outbound.explain(error, str(error.request.url), settings.proxy)
+                      if isinstance(error, httpx.TransportError) else str(error))
+            mine = f"Wizard's own connection could not either: {failed}" if first else failed
+            return {**result, "ok": False, "message": f"Could not read the release: {first}{mine}"}
     latest = manifest.get("version") if isinstance(manifest, dict) else None
     available = bool(_version(latest)) and (not _version(installed) or _version(latest) > _version(installed))
     return {**result, "ok": True, "latest": latest, "latest_commit": manifest.get("commit"), "available": available,

@@ -183,9 +183,8 @@ def test_update_check_compares_with_the_installed_build(tmp_path, monkeypatch):
     assert newer["available"] and newer["latest"] == "1.0.9.0" and newer["download"].endswith("/WizardSetup.exe")
     monkeypatch.setattr(settings_pane, "installed_build", lambda: {"version": "1.0.9.0"})
     assert settings_pane.check_update(settings, transport=transport)["available"] is False
-    offline = settings_pane.check_update(settings, transport=httpx.MockTransport(lambda request: httpx.Response(503)),
-                                         windows=lambda url: pytest.fail("an HTTP answer is not a route problem"))
-    assert offline["ok"] is False and "Could not read the release" in offline["message"]
+    offline = settings_pane.check_update(settings, transport=httpx.MockTransport(lambda request: httpx.Response(503)))
+    assert offline["ok"] is False and "Could not read the release" in offline["message"] and "503" in offline["message"]
     with TestClient(create_app(settings)) as client:
         owner(client)
         monkeypatch.setattr(settings_pane, "check_update", lambda s: {"ok": True, "available": False, "message": "latest"})
@@ -226,50 +225,106 @@ def test_update_check_routes_each_redirect_hop_on_its_own(monkeypatch):
     assert routed == [start, f"http://localhost:{server.server_port}/asset/wizard-desktop.json"]
 
 
-def test_update_check_asks_windows_when_wizards_connection_fails(tmp_path, monkeypatch):
-    """The owner's 1.0.59: "Could not read the release: _ssl.c:1015: The handshake operation timed out"."""
+def test_update_check_reads_with_windows_first_as_metronome_does(tmp_path, monkeypatch):
+    """Owner, 30 Oct 2026: GitHub downloads were tightened on the work network; check the way Metronome's setup.ps1
+    downloads. Windows reads the manifest first; Wizard's own connection tries only when Windows could not."""
     settings = install(tmp_path)
     monkeypatch.setattr(settings_pane, "installed_build", lambda: {"version": "1.0.59.0"})
-
-    def handshake_timeout(request):
-        raise httpx.ConnectTimeout("_ssl.c:1015: The handshake operation timed out", request=request)
-
-    stuck = httpx.MockTransport(handshake_timeout)
+    unused = httpx.MockTransport(lambda request: pytest.fail("Windows read it; Wizard's own connection is not needed"))
     asked: list[str] = []
-    found = settings_pane.check_update(settings, transport=stuck,
+    found = settings_pane.check_update(settings, transport=unused,
                                        windows=lambda url: (asked.append(url), {"version": "1.0.66.0", "commit": "f" * 40})[1])
     assert asked == [settings_pane.RELEASE + "wizard-desktop.json"]
     assert found["ok"] and found["available"] and found["latest"] == "1.0.66.0"
 
     def blocked(url):
-        raise OSError("Unable to connect to the remote server")
+        raise OSError("The remote server returned an error: (403) Forbidden. (tried 20 times)")
 
+    def handshake_timeout(request):
+        raise httpx.ConnectTimeout("_ssl.c:1015: The handshake operation timed out", request=request)
+
+    stuck = httpx.MockTransport(handshake_timeout)
     failed = settings_pane.check_update(settings, transport=stuck, windows=blocked)
-    assert failed["ok"] is False and failed["message"].startswith("Could not read the release: Wizard could not reach github.com")
-    assert "timed out" in failed["message"] and "Windows could not read it either: Unable to connect" in failed["message"]
+    assert failed["ok"] is False and failed["message"].startswith("Could not read the release: Windows could not read it: "
+                                                                  "The remote server returned an error: (403) Forbidden.")
+    assert "Wizard's own connection could not either: Wizard could not reach github.com" in failed["message"]
+    assert "timed out" in failed["message"]
+    manifest = {"version": "1.0.66.0", "commit": "f" * 40}
+    rescued = settings_pane.check_update(settings, transport=httpx.MockTransport(lambda request: httpx.Response(200, json=manifest)),
+                                         windows=blocked)
+    assert rescued["ok"] and rescued["latest"] == "1.0.66.0", "Wizard's own connection still helps when Windows cannot"
     alone = settings_pane.check_update(settings, transport=stuck)["message"]
     assert "_ssl.c:1015" in alone and "Windows" not in alone, "off Windows (and with a test transport) Windows is not asked"
 
 
-def test_windows_reads_the_release_with_invoke_webrequest(monkeypatch):
+def test_windows_reads_the_release_with_invoke_webrequest_as_setup_ps1_does(monkeypatch):
     calls: list[dict] = []
+    down: set[str] = set()
 
     def powershell(command, **kwargs):
         calls.append({"command": command, **kwargs})
         env = kwargs["env"]
-        if "fail" in env["WIZARD_RELEASE_URL"]:
-            return settings_pane.subprocess.CompletedProcess(command, 1, "", "Invoke-WebRequest : The operation has timed out.\r\nAt line:1\r\n")
-        settings_pane.Path(env["WIZARD_RELEASE_FILE"]).write_text('{"version": "1.0.66.0"}', encoding="utf-8-sig")
+        host = settings_pane.httpx.URL(env["WIZARD_RELEASE_URL"]).host
+        if host in down:
+            return settings_pane.subprocess.CompletedProcess(command, 1, "The operation has timed out.\r\n", "#< CLIXML\r\n")
+        settings_pane.Path(env["WIZARD_RELEASE_FILE"]).write_text(f'{{"version": "1.0.66.0", "from": "{host}"}}',
+                                                                  encoding="utf-8-sig")
         return settings_pane.subprocess.CompletedProcess(command, 0, "", "")
 
     monkeypatch.setattr(settings_pane.subprocess, "run", powershell)
     url = settings_pane.RELEASE + "wizard-desktop.json"
-    assert settings_pane._read_release_with_windows(url) == {"version": "1.0.66.0"}, "a byte-order mark is fine"
-    command = calls[0]["command"]
-    assert command[0] == "powershell.exe" and "Invoke-WebRequest -Uri $env:WIZARD_RELEASE_URL" in command[-1]
-    assert calls[0]["env"]["WIZARD_RELEASE_URL"] == url and url not in command[-1], "the address is passed as data"
-    with pytest.raises(OSError, match="^Invoke-WebRequest : The operation has timed out.$"):
-        settings_pane._read_release_with_windows("https://fail.example/wizard-desktop.json")
+    assert settings_pane._read_release_with_windows(url) == {"version": "1.0.66.0", "from": "api.github.com"}, \
+        "the mirror first, where setup.ps1 reads; a byte-order mark is fine"
+    command, script, env = calls[0]["command"], calls[0]["command"][-1], calls[0]["env"]
+    assert command[0] == "powershell.exe" and "Invoke-WebRequest -Uri $env:WIZARD_RELEASE_URL" in script
+    assert "-UseBasicParsing" in script and "[Net.SecurityProtocolType]::Tls12" in script, "setup.ps1's method"
+    assert env["WIZARD_RELEASE_URL"] == settings_pane.MIRROR_MANIFEST and env["WIZARD_RELEASE_ACCEPT"] == "application/vnd.github.raw+json"
+    assert "api.github.com" not in script, "the address is passed as data"
+
+    calls.clear()
+    down.add("api.github.com")
+    assert settings_pane._read_release_with_windows(url)["from"] == "github.com", "then the release itself"
+    assert calls[1]["env"]["WIZARD_RELEASE_URL"].startswith(url + "?nocache=") and calls[1]["env"]["WIZARD_RELEASE_ACCEPT"] == ""
+
+    calls.clear()
+    down.add("github.com")
+    pauses: list[float] = []
+    with pytest.raises(OSError, match=r"^api\.github\.com: The operation has timed out\.; github\.com: The operation has "
+                                      r"timed out\. \(tried 20 times\)$"):
+        settings_pane._read_release_with_windows(url, sleep=pauses.append)
+    assert len(calls) == 2 * settings_pane.UPDATE_ATTEMPTS == 40 and pauses == [5.0] * 19, "20 attempts, 5 seconds apart"
+
+    tries: list[str] = []
+
+    def flaky(address, accept=""):
+        tries.append(address)
+        if len(tries) < 13:
+            raise OSError("Unable to connect to the remote server")
+        return {"version": "1.0.66.0"}
+
+    monkeypatch.setattr(settings_pane, "_read_release_once_with_windows", flaky)
+    assert settings_pane._read_release_with_windows(url, sleep=lambda seconds: None) == {"version": "1.0.66.0"}
+    assert len(tries) == 13, "the seventh attempt got through, at the mirror"
+
+    def missing(address, accept=""):
+        tries.append(address)
+        raise FileNotFoundError("powershell.exe")
+
+    tries.clear()
+    monkeypatch.setattr(settings_pane, "_read_release_once_with_windows", missing)
+    with pytest.raises(FileNotFoundError):
+        settings_pane._read_release_with_windows(url, sleep=lambda seconds: pytest.fail("PowerShell that cannot start is not retried"))
+    assert len(tries) == 1
+
+
+def test_windows_refuses_an_answer_that_is_not_a_manifest(monkeypatch):
+    def proxy_page(command, **kwargs):
+        settings_pane.Path(kwargs["env"]["WIZARD_RELEASE_FILE"]).write_text('{"message": "Blocked by policy"}', encoding="utf-8")
+        return settings_pane.subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(settings_pane.subprocess, "run", proxy_page)
+    with pytest.raises(ValueError, match="not a release manifest"):
+        settings_pane._read_release_once_with_windows(settings_pane.MIRROR_MANIFEST)
 
 
 @pytest.mark.parametrize("key", [f.key for f in settings_pane.FIELDS])

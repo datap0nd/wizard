@@ -3,7 +3,41 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-30 (latest) — "List the reports in GSCM" in a few steps instead of 28
+## 2026-10-30 (latest) — Updates download the way Metronome's setup.ps1 does, up to 20 attempts
+
+The owner: "it seems github downloads got tightened on work pc. can you make it so the check for updates does the same
+thing or uses the same method as metronome setup.ps1 does? and it retries 20 times. I keep having to switch to personal
+network to update."
+- **What setup.ps1 does.** Windows PowerShell's `Invoke-WebRequest -UseBasicParsing` after setting TLS 1.2, retried
+  (10 attempts, 5 seconds apart), against `api.github.com` (the newest commit of its branch) and a branch zip from
+  `github.com/.../archive/...zip`, which `codeload.github.com` serves. Wizard read `release-assets.githubusercontent.com`
+  through .NET's `HttpClient` (WizardBar) and Python (the Settings check), with Windows PowerShell only as a one-try
+  fallback for the check.
+- **WizardBar** (`Updater.cs`): every read is one Windows PowerShell `Invoke-WebRequest -UseBasicParsing` over TLS 1.2
+  (the person's proxy sign-in when it is allowed; the address and file passed as data), up to **20 attempts, 5 seconds
+  apart**. Each attempt tries, in order: for the check, the manifest on the `desktop-download` mirror branch from
+  `api.github.com`, then the release's manifest at a fresh address (`?nocache=`); for the installer, the mirror branch's
+  zip from `codeload.github.com` (WizardSetup.exe taken out of it), then the release's installer. A download that is cut
+  short, a proxy's page or another release's file counts as a failed attempt; size, SHA-256 and version are checked as
+  before. Each failed attempt is logged in `bar.log`; the first one shows a notification that Wizard keeps trying.
+- **Settings → Check for updates** (`settings_pane.check_update`): on Windows the same reads, mirror then release, up to
+  20 attempts; Wizard's own connection tries once only when Windows could not. PowerShell that cannot start is not
+  retried. Off Windows nothing changes.
+- The mirror branch already existed for "proxies that time out on release downloads" (`desktop.yml` force-pushes it
+  with every release). One more update has to arrive the old way: the WizardBar installed now still downloads as before.
+
+**Tests.** `tests/unit/test_settings_pane.py`: Windows is asked first and Wizard's own connection only after it fails
+(both errors named; the own connection still rescues); the PowerShell read uses setup.ps1's method, passes the address
+as data, asks the mirror with the raw Accept header first and the release with `?nocache=` second; 20 attempts 5 seconds
+apart (40 reads when both fail, both hosts named); a later attempt that gets through wins; PowerShell that cannot start
+is not retried; a JSON answer that is not a manifest is refused. `tests/unit/test_desktop.py`: the updater's mirror
+addresses are the branch CI pushes, and WizardBar's attempts equal the Settings check's. WizardBar built with
+`dotnet build -c Release` (warnings are errors) on Linux with the .NET 8 SDK. The updater's PowerShell script was run with
+PowerShell 7.4 against the real mirror manifest (`api.github.com`, raw), the real mirror zip (`codeload.github.com`,
+46,570,057 bytes, its WizardSetup.exe matching the release's SHA-256) and a missing release file (exit 1 with the
+404 message). Windows PowerShell 5.1 on the work network is the owner's next update.
+
+## 2026-10-30 — "List the reports in GSCM" in a few steps instead of 28
 
 The owner shared Gemini's review of a 29 October run on the work PC (before the map shipped): "go to gscm. Read me the list of reports" took 28 tool calls
 and 13 minutes. [Decision update](decisions/2026-10-30-portal-maps.md#update-30-october-2026--list-the-reports-in-gscm-took-28-steps).

@@ -15,7 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 from tests.helpers import HEADERS
 
-from wizard_api import desktop, knowledge_sync, provisioning
+from wizard_api import desktop, knowledge_sync, provisioning, settings_pane
 from wizard_api.app import create_app
 from wizard_api.config import ConfigError, kb_source, load_settings
 
@@ -424,6 +424,11 @@ def test_the_desktop_pieces_agree_with_each_other():
     tag = re.search(r"releases/download/([a-z-]+)/", updater).group(1)
     assert f"gh release upload {tag} dist/WizardSetup.exe" in workflow and f"gh release upload {tag} dist/wizard-desktop.json" in workflow
     assert '"wizard-desktop.json"' in updater and '"WizardSetup.exe"' in updater and "OutputBaseFilename=WizardSetup" in setup
+    # The mirror the updater reads first (as Metronome's setup.ps1 reads its branch) is the branch CI pushes.
+    assert "git init -q -b desktop-download" in workflow and "cp dist/WizardSetup.exe dist/wizard-desktop.json" in workflow
+    assert "contents/wizard-desktop.json?ref=desktop-download" in updater and "archive/refs/heads/desktop-download.zip" in updater
+    assert "contents/wizard-desktop.json?ref=desktop-download" in settings_pane.MIRROR_MANIFEST
+    assert f"public const int Attempts = {settings_pane.UPDATE_ATTEMPTS};" in updater
     assert f"RestartExitCode = {desktop.RESTART_EXIT_CODE};" in (bar / "Backend.cs").read_text(encoding="utf-8")
     assert f"return {desktop.DEFAULT_PORT};" in (bar / "Paths.cs").read_text(encoding="utf-8")
     assert f'"{provisioning.FILENAME}"' in (bar / "Paths.cs").read_text(encoding="utf-8")
