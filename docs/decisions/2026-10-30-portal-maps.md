@@ -103,3 +103,35 @@ the reply; a `request` step's writes, PUTs and other hosts are refused before an
 `tests/unit/test_portals.py`: component paths and routes stay whole, while a JWT, a session id with a route suffix and
 base64 values are still shortened. `apps/web/src/components/PortalMaps.test.tsx` (3). The real GSCM is first mapped on
 the work PC.
+
+## Update 30 October 2026 — "list the reports in GSCM" took 28 steps
+
+**Context.** On 29 October, before this decision shipped, the owner asked "go to gscm. Read me the list of reports". The answer was right but
+took 28 tool calls, about 2 million input tokens and 13 minutes. Gemini's own review of the run, on the work PC,
+found five causes. (1) The company's GSCM platform note says to navigate with `gscm_search_reports`, and five calls
+searched a catalog that is not the portal's menu. (2) `W.nexacro.bookmarks()` returns a table
+(`{columns, rows, total_rows}`), and a script that treated it as an array crashed (`bookmarks.slice is not a
+function`). (3) Only results shaped as tables got an evidence id, so Gemini spent 16 steps re-reading menu summaries
+as tables to have something to cite. (4) Two stray calls. (5) Google's capacity limits, made worse by the context
+growing over 28 steps.
+
+**Decision.**
+- **Every read is evidence.** An `evaluate`, `read_table` or `request` result that is not a table (a list of names, a
+  summary object) is recorded as it is, as (field, value) rows with dotted paths, and gets an id
+  (`portals.key_values`). A one-value status (`{done: true}`) is not. The guide and the system prompt say never to
+  reshape a result only to get an id.
+- **The menu in one call.** `W.nexacro.menu()` returns the menu Dataset as one table: GSCM's `gds_topMenu`, which the
+  29 October run found on the work PC, else the biggest application Dataset named like a menu, with `other_menu_datasets`.
+  `W.objects(table)` turns any table into row objects. The guide spells out that tables are objects, not arrays.
+- **The catalog says it is not the portal.** `gscm_search_reports` (and every catalog search for a system that is also
+  a live portal) and `wizard_list_sources` add `live_portal`: this is the catalog of documented reports; the portal is
+  read with `portal_map` and `portal_run`. The system prompt says a platform note telling Gemini to navigate a portal
+  with the catalog tools predates the live portal, and the platform-guide authoring command (`/wizard:platform-guide`)
+  now writes portal notes that point to the portal tools.
+- Not changed: the stray calls (no rule added for one observation) and Google's capacity limits. A mapped portal needs
+  far fewer steps, which is the real fix for both.
+
+**Evidence.** `tests/integration/test_portal_browser.py::test_the_menu_is_one_citable_table_and_every_other_read_is_evidence_too`
+(real Chromium: `gds_topMenu` chosen and cited, a list of bookmark names and a summary object cited as they are, a
+status not), `tests/unit/test_portals.py::test_a_result_that_is_not_a_table_becomes_key_value_rows`,
+`tests/unit/test_portal_map.py::test_the_catalog_tools_say_the_portal_itself_is_read_live`.

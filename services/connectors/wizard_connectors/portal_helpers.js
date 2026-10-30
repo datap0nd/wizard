@@ -31,6 +31,10 @@ const W = (() => {
     return out;
   };
 
+  // A table ({columns, rows}: what W.nexacro.read, readGrid, bookmarks and menu return) as a list of row objects, to
+  // filter or map in a script. Return the table itself to cite it.
+  W.objects = table => (table && Array.isArray(table.rows) ? table.rows.map(r => Object.fromEntries((table.columns || []).map((c, i) => [c, r[i]]))) : []);
+
   W.text = el => (el ? (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim() : '');
   W.visible = el => {
     if (!el || !el.getBoundingClientRect) return false;
@@ -393,6 +397,18 @@ const W = (() => {
       if (!ds) return null;
       const columns = ['userreportid', 'userreportname', 'publicscope', 'scope', 'gbm', 'menuscope', 'menuid', 'menuname', 'menugroupid', 'menugroupname'];
       return W.nexacro.read(ds, {columns, unfiltered: true});
+    },
+    // The menu tree as one table to return and cite: the application Dataset of menus, every row. GSCM keeps it in
+    // gds_topMenu (seen on the work PC, 29 Oct 2026); otherwise the biggest application Dataset named like a menu.
+    // other_menu_datasets names the rest (a left or favourite menu). menu(name) reads a named one.
+    menu: (name = null) => {
+      const app = W.nexacro.app();
+      const menus = W.nexacro.appDatasets().filter(s => /menu/i.test(s.name));
+      const chosen = name || (menus.find(s => /^gds_?top_?menu$/i.test(s.name)) || menus[0] || {}).name;
+      const ds = chosen ? W.nexacro.lookup(app, chosen) : null;
+      if (!ds) throw new Error(`no menu Dataset${name ? ` named ${name}` : ''}: W.nexacro.appDatasets() lists the application's Datasets`);
+      return {...W.nexacro.read(ds), dataset: chosen,
+              other_menu_datasets: menus.filter(s => s.name !== chosen).map(s => `${s.name} (${s.rows} rows)`)};
     },
     // A Dataset by name as a component sees it: its own form, then each parent, then the application.
     lookup: (owner, name) => {

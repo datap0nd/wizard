@@ -268,3 +268,12 @@ def test_without_portals_there_are_no_portal_tools(client):
     login(client, "u-ceo")
     assert client.get("/api/v1/portals").status_code == 404
     assert client.post("/api/v1/portals/sign-in", headers=HEADERS).status_code == 404
+
+
+def test_a_result_that_is_not_a_table_becomes_key_value_rows():
+    assert portals.key_values(["Sales", "Stock"]) == (["value"], [["Sales"], ["Stock"]], 2)
+    assert portals.key_values({"count": 3, "top": [{"name": "SCM"}, {"name": "MDM"}]}) == (
+        ["field", "value"], [["count", 3], ["top.0.name", "SCM"], ["top.1.name", "MDM"]], 3)
+    assert portals.key_values({"done": True}) is None and portals.key_values([]) is None
+    columns, rows, total = portals.key_values(list(range(10)), limit=4)
+    assert rows == [[0], [1], [2], [3]] and total == 10

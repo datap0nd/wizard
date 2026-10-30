@@ -25,9 +25,11 @@ last page between calls, so you can explore step by step.
    `W.replay(index or /pattern/, {replace: [["2026-W40", "2026-W41"]]})` sends a captured request again with your
    changes, and `W.parse(text)` reads JSON, Nexacro SSV or XML replies into tables. `fetch()` also works directly: it
    carries the person's session cookies. Click through screens only to discover a request or when no request exists.
-4. **Return tables.** An `evaluate` (or `read_table`) result shaped as `{columns: [...], rows: [[...]]}` or as a list
-   of objects is recorded as evidence and gets an id: cite it next to every number (`[E3]`). Aggregate inside the
-   script when a report has thousands of rows; you see at most `max_rows` rows, but all are counted.
+4. **Everything you read is evidence.** An `evaluate`, `read_table` or `request` result gets an evidence id: cite it
+   next to every number or list that comes from it (`[E3]`). A table (`{columns: [...], rows: [[...]]}` or a list of
+   objects) is kept as its rows; anything else (a list of names, a summary object) as key/value rows, so never reshape
+   a result only to get an id. Aggregate inside the script when a report has thousands of rows; you see at most
+   `max_rows` rows, but all are counted.
 5. **Keep what worked.** `portal_save_script` keeps your steps under a name with parameters (`P.name` in scripts,
    `{{name}}` elsewhere). Next time, `portal_run(script=..., params=[...])` answers without exploring. Put it in the
    map too (`portal_map_save`: the report, its filters, its request, the script's name), so any question finds it.
@@ -40,6 +42,9 @@ last page between calls, so you can explore step by step.
 - `W.parse(text)`, `W.parseSSV(text)`, `W.parseXML(text)`: `{parameters, datasets: {name: {columns, rows}}}`.
 - `W.fetchText(url, options)`, `W.fetchJson(url, options)`.
 - `W.nexacro.*` (GSCM), `W.mstr.*` (ASAP), `W.superset.*` (BDP's Superset): see the portal's own section.
+- **Tables are objects, not arrays.** `W.readTable`, `W.nexacro.read`, `readGrid`, `bookmarks` and `menu` return
+  `{columns, rows, total_rows}` with `rows` a list of lists: return it as it is, use `.rows.length` for a count, and
+  `W.objects(table)` for a list of `{column: value}` objects to filter or map (never `table.slice` or `table.map`).
 - In a `request` step's script, `R` is the reply: `R.status`, `R.contentType`, `R.text`, `R.data` (parsed).
 - `P` holds the parameters you passed.
 

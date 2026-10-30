@@ -3,7 +3,21 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-30 (latest) — Wizard maps the portals, keeps the map, and reads them by their own requests
+## 2026-10-30 (latest) — "List the reports in GSCM" in a few steps instead of 28
+
+The owner shared Gemini's review of a 29 October run on the work PC (before the map shipped): "go to gscm. Read me the list of reports" took 28 tool calls
+and 13 minutes. [Decision update](decisions/2026-10-30-portal-maps.md#update-30-october-2026--list-the-reports-in-gscm-took-28-steps).
+- Every portal read gets an evidence id, tables and anything else (as field/value rows), so Gemini cites a menu
+  summary as it is instead of re-reading it as tables (16 of the 28 steps).
+- `W.nexacro.menu()`: the menu tree (`gds_topMenu` on the work PC) as one citable table; `W.objects(table)`; the guide
+  says tables are objects, not arrays (the `bookmarks.slice is not a function` crash).
+- Catalog searches and `wizard_list_sources` say the catalog is not the portal's menu and point to `portal_map` /
+  `portal_run`; the system prompt says an old platform note's catalog route predates the live portal; the
+  `/wizard:platform-guide` command writes portal notes that point to the portal tools.
+
+**Tests.** 3 new (one in real Chromium); contracts re-exported. The real GSCM is first read on the work PC.
+
+## 2026-10-30 — Wizard maps the portals, keeps the map, and reads them by their own requests
 
 The owner: "I want this tool to be super agile ... I would love for gemini 3.8 flash to FULLY explore GSCM and get ALL
 the technical details and shortcuts and save them in the knowledge base ... Then, wizard picks it up and QUICKLY uses

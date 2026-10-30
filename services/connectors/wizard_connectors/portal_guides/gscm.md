@@ -57,9 +57,11 @@ screen.
 
 ## Mapping GSCM (what the map needs, and the helpers that find it)
 
-- **The menu without clicking.** `W.nexacro.appDatasets()` lists the application's own Datasets, biggest first, with
-  their columns: the menu tree is one of them (a name like `gds_menu`, columns such as a menu id, its name, its parent
-  and level, the form it opens). Read it with `W.nexacro.read(name)` and save every report as `todo` with its path and
+- **The menu without clicking.** `W.nexacro.menu()` returns the menu tree as one table: every menu with its id, name,
+  parent and level and the form it opens. On the work PC GSCM keeps it in the application Dataset `gds_topMenu`;
+  `other_menu_datasets` names the others. "Which reports are there" is this one call after the client is up: `goto`
+  the start page, `W.nexacro.idle()`, return `W.nexacro.menu()`. `W.nexacro.appDatasets()` lists every application
+  Dataset with its columns when the menu is elsewhere. When mapping, save every report as `todo` with its path and
   menu id.
 - **Opening a report directly.** `W.nexacro.functions()` lists the client's own functions (`gfn_*`, `fn_*`) on the
   application, the top, left and toolbar forms and the active report, with the start of each source. Look for the one
@@ -77,7 +79,7 @@ screen.
 ## Bookmarks (Setting > Favorite)
 
 - The person's saved reports ("bookmarks") are in the application dataset `gds_bookmark`; `W.nexacro.bookmarks()`
-  reads it. Columns: `userreportid` (the stable id, like `RC_123456`), `userreportname` (exact name, case and spaces
+  reads it as a table (`{columns, rows, total_rows}`, not an array). Columns: `userreportid` (the stable id, like `RC_123456`), `userreportname` (exact name, case and spaces
   matter), `publicscope` (Private / Public / Custom tab), `scope` (module code, `AS` = SCM, `MT` = MDM), `gbm`,
   `menuscope`, `menuid` (e.g. `AS470`), `menuname`, `menugroupid`, `menugroupname` (folder path).
 - Rows of a scope tab load only after that tab is opened once in the Favorite dialog: an empty Public list may just
