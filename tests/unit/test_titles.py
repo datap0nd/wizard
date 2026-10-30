@@ -45,9 +45,10 @@ def answering(text: str | None) -> tuple[FakeGoogle, list[dict[str, Any]], Any]:
     return fake, asked, handler
 
 
-def test_the_name_is_asked_of_the_quicker_model_under_the_persons_own_project(tmp_path: Path):
+def test_the_name_is_asked_of_flash_not_pro_under_the_persons_own_project(tmp_path: Path):
+    # Shipped with Pro, the fallback, answering every name (owner, 30 Oct: Pro's quota was used up while Flash was at 20 %).
     fake, asked, handler = answering("Title: Best return on marketing investment by market")
-    rt, request = make(tmp_path, fake, model="gemini-3.1-pro", fallback="gemini-3.8-flash")
+    rt, request = make(tmp_path, fake, model="gemini-3.8-flash", fallback="gemini-3.1-pro-preview")  # the defaults
     rt.transport = httpx.MockTransport(handler)
     title = asyncio.run(rt.title(request.user_home, request.user_id, "run_1", CEO_QUESTION))
     assert title == "Best return on marketing investment by market"

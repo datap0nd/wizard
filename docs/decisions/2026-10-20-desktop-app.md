@@ -98,6 +98,18 @@ refused once and never went back. Now Pro hands back to Flash in the same way, s
 on Flash. Wizard waits only when both refuse. While a question runs, Wizard also keeps the PC from going to sleep when
 idle, since a sleeping PC stops the answer.
 
+**Addendum (30 October): Pro for a step, not for the rest of the answer.** The owner's Pro quota was used up for the
+day while Flash was at 20 %, and then an answer failed: "Google has no capacity for gemini-3.8-flash or
+gemini-3.1-pro-preview right now. This is on Google's side, not your quota. Google said: You have exhausted your
+capacity on this model. Your quota will reset after 30s." A run that moved to Pro had stayed on Pro until Pro refused,
+and Pro refuses mostly once its quota is gone. Now:
+- Pro keeps only the steps Flash cannot answer. The next step is Flash's again, once the wait Google asked of Flash has
+  passed.
+- A refusal that reads as no capacity (or a per-minute limit) is checked against the person's own quota numbers
+  (`retrieveUserQuota`, as the quota ring reads them). A model with nothing left is a used-up quota until its reset
+  time: not waited on, not switched to, and named apart in a failure ("Your quota for … is used up").
+- A chat's name is asked of Flash (the fallback only while Flash's quota is used up), not of Pro.
+
 **Addendum (same day): files dropped on the button.** The owner asked that a file dropped on the Ask Wizard button be
 attached to the conversation.
 - **From this PC** reads only files in Downloads, Desktop and Documents. That limit keeps a page, or any local process

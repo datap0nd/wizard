@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import parse_qs
 
@@ -17,10 +18,13 @@ from wizard_api.config import load_settings
 
 
 class FakeGoogle:
-    def __init__(self, turns: list[list[dict] | dict], capacity_errors: int = 0, refusals: dict[str, list[dict | None]] | None = None):
+    def __init__(self, turns: list[list[dict] | dict], capacity_errors: int = 0, refusals: dict[str, list[dict | None]] | None = None,
+                 buckets: list[dict] | None = None):
         self.turns = turns
         self.capacity_errors = capacity_errors
         self.refusals = refusals or {}  # model -> per request: an error body Google answers with (HTTP 429), or None
+        self.buckets = buckets  # retrieveUserQuota's buckets (the person's quota numbers); None: Google does not answer
+        self.quota_checks = 0
         self.requests: list[dict] = []
         self.models: list[str] = []
 
@@ -33,6 +37,10 @@ class FakeGoogle:
         assert request.headers["authorization"] == "Bearer ya29.access"
         if url.endswith(":loadCodeAssist"):
             return httpx.Response(200, json={"currentTier": {"id": "standard-tier"}, "cloudaicompanionProject": "corp-gemini"})
+        if url.endswith(":retrieveUserQuota") and self.buckets is not None:
+            assert json.loads(request.content) == {"project": "corp-gemini"}
+            self.quota_checks += 1
+            return httpx.Response(200, json={"buckets": self.buckets})
         if ":streamGenerateContent" in url:
             if self.capacity_errors:
                 self.capacity_errors -= 1
@@ -297,20 +305,39 @@ PRO = "gemini-3.1-pro-preview"
 FLASH = "gemini-3.8-flash"
 
 
-def test_a_run_on_pro_goes_back_to_flash_when_pro_has_no_capacity(tmp_path, waits):
-    # The owner's 22 Oct run: Flash had no room once, the run moved to Pro, and then every step waited on Pro ("Gemini is
-    # busy" 3-4 times, about a minute per step). Now Pro's refusal hands the step back to Flash after two quick tries.
-    fake = FakeGoogle([
-        [{"functionCall": {"name": "nerp_run_report", "args": {"report_id": "r"}}, "thoughtSignature": "sig-pro"}],
-        [{"text": "EG [E1]."}],
-    ], refusals={FLASH: [FLASH_CAPACITY] * 3, PRO: [None] + [CAPACITY] * 3})
+def call_turn(signature: str) -> list[dict]:
+    return [{"functionCall": {"name": "nerp_run_report", "args": {"report_id": "r"}}, "thoughtSignature": signature}]
+
+
+def test_pro_answers_only_the_step_flash_could_not(tmp_path, waits):
+    # The owner, 30 Oct: Pro's quota was used up for the day while Flash was at 20 %. Flash had no room once, and the run
+    # stayed on Pro for every step after it. Now Pro takes that step only, and the next step is Flash's again.
+    fake = FakeGoogle([call_turn("sig-pro"), call_turn("sig-flash"), [{"text": "EG [E1]."}]],
+                      refusals={FLASH: [FLASH_CAPACITY] * 3})
     rt, req = make(tmp_path, fake, fallback=PRO)
     events = run_and_collect(rt, req)
-    assert fake.models == [FLASH] * 3 + [PRO] + [PRO] * 3 + [FLASH]
-    assert waits == [1.0, 3.0, 1.0, 3.0], "quick tries only: no step waits while the other model can answer"
+    assert fake.models == [FLASH] * 3 + [PRO] + [FLASH, FLASH], "one step on Pro, then back to Flash"
+    assert waits == [1.0, 3.0], "Flash's two quick tries, then Pro, with no waiting"
     assert [p["model"] for k, p in events if k == "agent_session"] == [FLASH, PRO, FLASH]
     assert not any(k in ("warning", "status") for k, _ in events), "silent, as Gemini CLI"
-    assert fake.requests[-1]["request"]["contents"][1]["parts"][0]["thoughtSignature"] == "skip_thought_signature_validator"
+    assert fake.requests[1]["model"] == FLASH and fake.requests[1]["request"]["generationConfig"]["thinkingConfig"] == {
+        "thinkingLevel": "HIGH"}
+    assert fake.requests[1]["request"]["contents"][1]["parts"][0]["thoughtSignature"] == "skip_thought_signature_validator"
+    assert [p["text"] for k, p in events if k == "text_delta"] == ["EG [E1]."]
+
+
+def test_a_run_on_pro_stays_only_while_google_asks_flash_to_wait_and_goes_back_when_pro_refuses(tmp_path, waits):
+    # The owner's 22 Oct run: every step waited on Pro once Pro had no room. Flash asked for 23 s, so the next step is
+    # still Pro's; Pro refuses, and after its two quick tries Flash takes the step back instead of a wait.
+    later = google_error("MODEL_CAPACITY_EXHAUSTED", "No capacity available for model gemini-3.8-flash", delay="23s")
+    fake = FakeGoogle([call_turn("sig-pro"), [{"text": "EG [E1]."}]],
+                      refusals={FLASH: [later], PRO: [None] + [CAPACITY] * 3})
+    rt, req = make(tmp_path, fake, fallback=PRO)
+    events = run_and_collect(rt, req)
+    assert fake.models == [FLASH, PRO] + [PRO] * 3 + [FLASH]
+    assert waits == [1.0, 3.0], "quick tries only: no step waits while the other model can answer"
+    assert [p["model"] for k, p in events if k == "agent_session"] == [FLASH, PRO, FLASH]
+    assert not any(k in ("warning", "status") for k, _ in events)
     assert [p["text"] for k, p in events if k == "text_delta"] == ["EG [E1]."]
 
 
@@ -352,6 +379,58 @@ def test_a_model_whose_quota_is_used_up_is_not_gone_back_to(tmp_path, waits):
     statuses = [p["message"] for k, p in events if k == "status"]
     assert len(statuses) == 1 and "quota for gemini-3.8-flash is used up" in statuses[0], "the quota is told, the wait is not"
     assert [p["reason"] for k, p in events if k == "model_wait"] == ["capacity"]
+
+
+# The owner's 30 Oct failure: "Google has no capacity for gemini-3.8-flash or gemini-3.1-pro-preview right now. This is on
+# Google's side, not your quota. Google said: You have exhausted your capacity on this model. Your quota will reset after
+# 30s." Pro's quota was used up for the day; Google words that as no capacity, with a 30 s wait.
+EXHAUSTED = google_error(message="You have exhausted your capacity on this model. Your quota will reset after 30s.",
+                         delay="30s")
+
+
+def quota_numbers(pro_left: float) -> list[dict]:
+    reset = (datetime.now(UTC) + timedelta(hours=9)).isoformat().replace("+00:00", "Z")
+    return [{"modelId": FLASH, "tokenType": "REQUESTS", "remainingFraction": 0.8, "resetTime": reset},
+            {"modelId": PRO, "tokenType": "REQUESTS", "remainingFraction": pro_left, "resetTime": reset}]
+
+
+def test_a_used_up_quota_google_words_as_no_capacity_is_told_by_the_quota_numbers(tmp_path, waits):
+    fake = FakeGoogle([[{"text": "ok"}], [{"text": "again"}]], refusals={FLASH: [EXHAUSTED] * 2, PRO: [EXHAUSTED]},
+                      buckets=quota_numbers(pro_left=0.0))
+    rt, req = make(tmp_path, fake, fallback=PRO)
+    events = run_and_collect(rt, req)
+    assert fake.models == [FLASH, PRO, FLASH, FLASH], "Pro, used up, is not waited on: only Flash is"
+    assert len(waits) == 1 and 30 <= waits[0] <= 36, "Google's 30 s for Flash"
+    assert [(p["reason"], p["models"]) for k, p in events if k == "model_wait"] == [("capacity", [FLASH])]
+    [status] = [p["message"] for k, p in events if k == "status"]
+    assert status.startswith(f"Your Gemini quota for {PRO} is used up (back in about 9 h). Wizard continues with {FLASH}.")
+    assert fake.quota_checks == 1, "the numbers are read once, not at every refusal"
+    # The next question does not turn to Pro either while its quota is used up.
+    fake.refusals[FLASH] = [EXHAUSTED]
+    run_and_collect(rt, req)
+    assert fake.models[4:] == [FLASH, FLASH]
+
+
+def test_flash_with_quota_left_is_still_googles_side_and_the_failure_names_pros_quota(tmp_path, waits):
+    fake = FakeGoogle([[{"text": "ok"}]], refusals={FLASH: [EXHAUSTED] * 50, PRO: [EXHAUSTED] * 50},
+                      buckets=quota_numbers(pro_left=0.0))
+    rt, req = make(tmp_path, fake, fallback=PRO)
+    with pytest.raises(AgentFailure) as error:
+        run_and_collect(rt, req)
+    assert error.value.code == "model_capacity" and fake.models.count(PRO) == 1
+    assert error.value.message.startswith(f"Google has no capacity for {FLASH} right now. This is on Google's side")
+    assert f"Your quota for {PRO} is used up (back in about 9 h). Google said:" in error.value.message
+    assert error.value.details["Models tried"] == f"{FLASH}, {PRO}"
+
+
+def test_a_refusal_stands_when_the_quota_numbers_show_quota_left_or_cannot_be_read(tmp_path, waits):
+    for buckets in (quota_numbers(pro_left=0.4), None):
+        fake = FakeGoogle([[{"text": "ok"}]], refusals={FLASH: [EXHAUSTED], PRO: [EXHAUSTED]}, buckets=buckets)
+        rt, req = make(tmp_path, fake, fallback=PRO)
+        events = run_and_collect(rt, req)
+        assert fake.models == [FLASH, PRO, PRO], "both kept as no capacity: after the wait, the run's model is asked again"
+        assert [p["models"] for k, p in events if k == "model_wait"] == [[FLASH, PRO]]
+        assert not any(k == "status" for k, _ in events)
 
 
 def empty_turn(reason: str | None = "STOP", **extra) -> dict:
