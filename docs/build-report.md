@@ -3,7 +3,33 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-30 (latest) — Updates no longer start PowerShell (Defender flagged it)
+## 2026-10-30 (latest) — The Brain page draws the knowledge base the way graphify does
+
+The owner, showing a graphify graph: "the knowledge base brain looks rough, was hoping it looked like this".
+[Decision update](decisions/2026-10-28-brain-page.md).
+- `graph3d.ts`: no knowledge-base root or area hubs; **communities** by Louvain modularity over every edge (weighted:
+  related 2, shared tags 0.4, the rest 1; a fixed visiting order, so the same graph gives the same communities), named
+  by their most linked note, largest first, the points without a link gathered last. The layout runs in 2D (every z
+  stays 0) or 3D, with a weak pull towards each community's centre and longer spokes from a hub to its terms, tags and
+  news categories. Statistics over the whole graph, with the communities' modularity (and the areas' on hover).
+- `Graph3D.tsx`: 3D and turning by default (the owner, after a first 2D version: "but it needs to be 3D and rotate";
+  a narrower lens, 0.5 rad, so near points do not swell; framed tighter, as a cloud never fills its sphere), 2D on a click
+  (drag moves, the wheel zooms at the pointer); small points
+  sized by their links; thin, slightly curved edges in the hub's colour; no rings, floor grid or axis triad; labels only
+  on hover, on a pick, for a tour step's notes, or with **Labels** (each community's hub and the most linked points).
+- `BrainPage.tsx`: a **Communities** panel (Select all, a check box per community to show or hide it, its colour, name
+  and count; a click on the name lights it up and frames it), switchable to **Areas**; layers as check boxes; 2D | 3D,
+  Labels, Rotate (3D) and zoom along the bottom. The search box lets go of the keyboard after a pick. Two screenshots 5 s
+  apart differ at every size: it turns.
+- Colours: the validated dark palette for the eight largest groups, grey after; graphify's Tableau 10 fails the
+  `validate_palette.js --mode dark` checks on `#0f1117` (lightness band, chroma floor, green↔teal ΔE 14.0 below 15).
+
+**Tests.** `apps/web/src/graph3d.test.ts` (14), e2e "the Brain page draws the knowledge base as a graph of
+communities…" and the demo arrival, in both viewports on Chromium. Screenshots at 1280×720, 1600×900 and 1920×1080 over a
+synthetic 101-note knowledge base (12 areas, 507 links, 198 glossary terms, mapped by the real `knowledge_map`) and
+synthetic news: 356 points, 1,497 edges, 10 communities, Q 0.485 (not committed).
+
+## 2026-10-30 — Updates no longer start PowerShell (Defender flagged it)
 
 The owner: "I'm getting malware name execution/mdp.powershell.m4192 repeatedly since I updated wizard." The update of
 the same day ("Updates download the way Metronome's setup.ps1 does", below) made every update read a hidden
