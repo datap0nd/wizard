@@ -394,6 +394,105 @@ const W = (() => {
       const columns = ['userreportid', 'userreportname', 'publicscope', 'scope', 'gbm', 'menuscope', 'menuid', 'menuname', 'menugroupid', 'menugroupname'];
       return W.nexacro.read(ds, {columns, unfiltered: true});
     },
+    // A Dataset by name as a component sees it: its own form, then each parent, then the application.
+    lookup: (owner, name) => {
+      name = String(name || '').replace(/^@/, '');
+      let o = owner, ds = null;
+      for (let d = 0; o && d < 12 && !ds; d++) { ds = W.nexacro.dataset(o, name); try { o = o.parent; } catch (e) { o = null; } }
+      try { ds = ds || W.nexacro.app()[name]; } catch (e) { /* none */ }
+      return ds && typeof ds.getRowCount === 'function' ? ds : null;
+    },
+    // The application's own Datasets (gds_*: the menu tree, codes, the user, bookmarks), biggest first: the menu
+    // Dataset lists every report with its menu id, so the reports are found without clicking through menus.
+    appDatasets: () => {
+      const app = W.nexacro.app();
+      const out = [], seen = new Set();
+      const consider = (name, ds) => {
+        if (!ds || typeof ds !== 'object' || typeof ds.getRowCount !== 'function' || seen.has(ds)) return;
+        seen.add(ds);
+        out.push({name: String(ds.name || ds.id || name), rows: ds.getRowCount(), columns: W.nexacro.columns(ds).slice(0, 80)});
+      };
+      for (const key of Object.keys(app)) { try { consider(key, app[key]); } catch (e) { /* a getter that throws */ } }
+      try {
+        const all = app.all;
+        if (all && typeof all.length === 'number') for (let i = 0; i < all.length && i < 2000; i++) { try { const item = all[i]; consider(item && (item.name || item.id), item); } catch (e) { /* skip */ } }
+      } catch (e) { /* no collection */ }
+      return out.sort((a, b) => b.rows - a.rows);
+    },
+    // The client's own functions (gfn_/fn_ by Nexacro convention): shortcuts such as opening a report by menu id. On
+    // the application, the top, left and toolbar forms and the active report, with the start of each source to read
+    // its parameters. pattern: a RegExp or text to choose other names.
+    functions: (pattern = /^(g|l|c)?fn_|^gfn|^fn[A-Z]/, limit = 150) => {
+      const re = pattern instanceof RegExp ? pattern : new RegExp(String(pattern), 'i');
+      const places = [['application', W.nexacro.app()]];
+      for (const path of ['mainframe.VFrameSet.TopFrame.form', 'mainframe.VFrameSet.LeftFrame.form', 'mainframe.VFrameSet.MdiFrame.form', ...W.nexacro.activeForms()]) {
+        const form = W.nexacro.resolve(path);
+        if (form) places.push([path, form]);
+      }
+      const out = [];
+      for (const [where, owner] of places) {
+        const names = new Set();
+        let o = owner;
+        for (let d = 0; o && d < 2 && o !== Object.prototype; d++) { try { Object.getOwnPropertyNames(o).forEach(n => names.add(n)); } catch (e) { /* none */ } o = Object.getPrototypeOf(o); }
+        for (const name of names) {
+          if (!re.test(name)) continue;
+          let fn; try { fn = owner[name]; } catch (e) { continue; }
+          if (typeof fn !== 'function') continue;
+          out.push({where, name, source: String(fn).replace(/\s+/g, ' ').slice(0, 240)});
+          if (out.length >= limit) return out;
+        }
+      }
+      return out;
+    },
+    // A report form's inputs (filters, buttons, grids): type, name, caption, value, and a combo's options from its
+    // inner Dataset as "code = label" (the first `options`, with the count). What a question needs to set filters.
+    inputs: (formPath = null, {options = 30} = {}) => {
+      const start = formPath || W.nexacro.activeForms()[0];
+      const root = start ? W.nexacro.resolve(start) : null;
+      if (!root) throw new Error(`no form at ${start || 'the active report'}; open a report first`);
+      const out = [], seen = new Set();
+      const kinds = /Combo|Calendar|Edit|TextArea|Radio|CheckBox|ListBox|Spin|Button|Grid|DateField|ListView/i;
+      const get = (c, k) => { try { const g = c['get_' + k]; return typeof g === 'function' ? g.call(c) : c[k]; } catch (e) { return undefined; } };
+      const visit = (c, path, d) => {
+        if (!c || typeof c !== 'object' || d > 14 || seen.has(c) || out.length >= 300) return;
+        seen.add(c);
+        const type = String(c._type_name || (c.constructor && c.constructor.name) || '');
+        if (kinds.test(type) && !/Frame|Form$/i.test(type)) {
+          const item = {path, type, name: String(c.name || c.id || '')};
+          const text = get(c, 'text');
+          if (text != null && text !== '') item.text = String(text).slice(0, 120);
+          const value = get(c, 'value');
+          if (value != null && value !== '') item.value = W.plain(value);
+          if (get(c, 'visible') === false) item.visible = false;
+          if (get(c, 'enable') === false) item.enable = false;
+          let inner = null;
+          try { inner = typeof c.getInnerDataset === 'function' ? c.getInnerDataset() : null; } catch (e) { /* none */ }
+          if (!inner) { const name = get(c, 'innerdataset'); if (name) inner = typeof name === 'string' ? W.nexacro.lookup(c.parent || root, name) : name; }
+          if (inner && typeof inner.getRowCount === 'function') {
+            const code = get(c, 'codecolumn'), label = get(c, 'datacolumn');
+            item.options_dataset = String(inner.name || inner.id || '');
+            item.options_count = inner.getRowCount();
+            const columns = [code, label].filter(Boolean);
+            if (columns.length) item.options = W.nexacro.read(inner, {columns, limit: options}).rows.map(r => r.join(' = '));
+          }
+          if (/Grid/i.test(type)) {
+            const ds = W.nexacro.boundDataset(c);
+            if (ds) { item.dataset = String(ds.name || ds.id || ''); item.rows = ds.getRowCount(); item.columns = W.nexacro.columns(ds).slice(0, 80); }
+          }
+          out.push(item);
+        }
+        for (const k of ['components', 'frames']) {
+          let children; try { children = c[k]; } catch (e) { continue; }
+          if (!children || typeof children.length !== 'number') continue;
+          for (let i = 0; i < children.length && i < 400; i++) {
+            try { const child = children[i]; visit(child, `${path}.${child.name || child.id || i}`, d + 1); } catch (e) { /* skip */ }
+          }
+        }
+        try { if (c.form) visit(c.form, `${path}.form`, d + 1); } catch (e) { /* none */ }
+      };
+      visit(root, start, 0);
+      return out;
+    },
   };
 
   // ---- ASAP: a portal shell with MicroStrategy Web in iframe#content-frame (from Metronome's ASAP adapter) -----------

@@ -47,6 +47,36 @@ probe (`run.py --check`) now compares the CLI's declarations with what Wizard of
 1280×900 and in the 420×640 panel with a scripted note-taking runtime (not committed); the real Code Assist route is
 first steered on a work PC.
 
+## 2026-10-30 — Wizard maps the portals, keeps the map, and reads them by their own requests
+
+The owner: "I want this tool to be super agile ... I would love for gemini 3.8 flash to FULLY explore GSCM and get ALL
+the technical details and shortcuts and save them in the knowledge base ... Then, wizard picks it up and QUICKLY uses
+that", "add these functions to wizard itself", and "add a box for me to add the PAT token so that wizard can make
+changes to wizard-content github repo". [Decision](decisions/2026-10-30-portal-maps.md).
+- **Map GSCM** (Settings → Portals, every configured portal): Gemini explores in rounds (run kind `explore`, at most 80
+  tool calls each, a fresh session that continues from the map), in a conversation of its own; rounds follow until
+  nothing is left to map, two rounds add nothing, the person stops it, or 30 rounds ran. A question runs beside it.
+- **The map** (`portal_map.py`): overview, topics (shortcuts with the calls that worked), and per report menu path and
+  id, how to open it, filters, datasets, requests with `{{param}}` placeholders, saved script, status. Tools
+  `portal_map` (summary, find, report, topic, todo) and `portal_map_save`; `portal_guide` shows the map; the system
+  prompt and guides say to read it first.
+- **`request` step**: a portal's data request sent with the person's session from a page on its own origin (a light
+  `/robots.txt` page when the browser is elsewhere, never the portal's start page), with the write and host rules
+  checked before sending and applied to the request; one dataset in the reply comes back as evidence.
+- **Nexacro helpers**: `W.nexacro.appDatasets()`, `functions()`, `inputs()`, `lookup()`.
+- **Redaction fix**: Nexacro component paths and long routes were shortened as if they were tokens, in everything
+  Gemini saw; they now stay whole (JWTs, session ids and base64 values are still shortened).
+- **Write token (PAT)** in Settings → Knowledge base (`WIZARD_KB_WRITE_TOKEN`, never in a company file); Test
+  connection checks it can write; after a run that added to a map, Wizard commits `portal-maps/<portal>.json` and `.md`
+  (one commit, only those files, private repository only, nothing when unchanged). **Publish now**, **Start over**.
+- AGENTS.md: the ban on copied browser cookies, `/mstr` event URLs and a debugging browser is lifted (TLS checks stay);
+  the portal exception and the company-content rule describe the map and the write token.
+
+**Tests.** `tests/unit/test_portal_map.py` (13, new), `tests/unit/test_kb_publish.py` (2 new),
+`tests/integration/test_portal_browser.py` (3 new, real Chromium), `tests/unit/test_portals.py` (redaction of names vs
+secrets), `apps/web/src/components/PortalMaps.test.tsx` (3, new). Contracts re-exported (`tool-catalog.json`,
+`openapi.json`). The real GSCM is first mapped on the work PC.
+
 ## 2026-10-28 — The Brain page: a simple and an advanced view, and more room for the news
 
 The owner: "in the /brain, create a simple/adavnced toggle, advanced is current view (more mephasis on the news on the

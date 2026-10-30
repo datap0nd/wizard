@@ -24,7 +24,8 @@ Browsing a report and reading its rows are separate states. Navigation alone nev
 - Browse: `GET /api/folders/{id}`; definition: `GET /api/v2/reports/{id}`.
 - Rows: `POST /api/v2/reports/{id}/instances` → prompts `GET/PUT /api/reports/{id}/instances/{iid}/prompts[/answers]` →
   paged `GET /api/v2/reports/{id}/instances/{iid}?offset&limit`; `normalise_grid` flattens attribute headers and metric values.
-- HTTPS only; no TLS bypass; no `/mstr` event URLs; no write endpoints.
+- HTTPS only; no TLS bypass; no write endpoints. (MicroStrategy's `/mstr` task and event URLs are read in the person's
+  own session through the portal browser instead: [decision](decisions/2026-10-30-portal-maps.md).)
 
 Dossiers need a specific approved **visualization** (chapter/page/viz key) rather than the whole dossier; this is not
 implemented until one is approved.

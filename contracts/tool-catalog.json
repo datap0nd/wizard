@@ -1653,7 +1653,7 @@
     },
     {
       "name": "portal_run",
-      "description": "Read a company portal live, in the person's own signed-in Wizard browser (Chrome, in the background): your own steps (open pages, click, fill, wait, look around, read tables) and JavaScript evaluated in the page, where W.* helpers read Nexacro datasets, walk ASAP's menu, replay the portal's own data requests (W.requests, W.replay), search the Big Data Portal's information catalog and query Superset. Prefer the portal's data requests over clicking through screens. Every table you return (a {columns, rows} object or a list of objects) is recorded as evidence with an id such as E3: cite it next to its numbers. The result also lists the data requests the page made, with secrets removed. Wizard refuses saves, deletes, submissions, uploads, access requests, sign-outs and other hosts.",
+      "description": "Read a company portal live, in the person's own signed-in Wizard browser (Chrome, in the background): your own steps (open pages, click, fill, wait, look around, read tables) and JavaScript evaluated in the page, where W.* helpers read Nexacro datasets, walk ASAP's menu, replay the portal's own data requests (W.requests, W.replay), search the Big Data Portal's information catalog and query Superset, and request steps that send a portal's data request straight from the browser with the person's session. Prefer the portal's data requests over clicking through screens, and the map's (portal_map) routes and saved scripts over exploring. Every table you return (a {columns, rows} object or a list of objects) is recorded as evidence with an id such as E3: cite it next to its numbers. The result also lists the data requests the page made, with secrets removed. Wizard refuses saves, deletes, submissions, uploads, access requests, sign-outs and other hosts.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1667,7 +1667,7 @@
               "additionalProperties": false,
               "properties": {
                 "action": {
-                  "description": "goto: open url (a path on the portal, or a portal address). click / fill / select: the element named by selector, role (+ name) or text; fill and select take value. press: a key (value, e.g. Enter). wait: for the element to be visible (or value 'hidden'), or value 'load'/'networkidle', or timeout_ms alone. evaluate: run script, JavaScript in the page (an async function body ending in return; W helpers and P parameters are defined). read_table: an HTML table as rows (selector, default the first table). look: the page's controls, tables, frames and text, to explore. back: browser back. use_page: switch to open page number nth (popups).",
+                  "description": "goto: open url (a path on the portal, or a portal address). click / fill / select: the element named by selector, role (+ name) or text; fill and select take value. press: a key (value, e.g. Enter). wait: for the element to be visible (or value 'hidden'), or value 'load'/'networkidle', or timeout_ms alone. evaluate: run script, JavaScript in the page (an async function body ending in return; W helpers and P parameters are defined). read_table: an HTML table as rows (selector, default the first table). look: the page's controls, tables, frames and text, to explore. back: browser back. use_page: switch to open page number nth (popups). request: send one data request (url, method, body, headers) straight from the browser with the person's session cookies, without opening or waiting for a page: the fastest way to call a portal route the map knows. The reply is parsed (Nexacro SSV or XML, JSON); a reply with one dataset comes back as a table, else give script, a JavaScript body that gets R = {status, contentType, text, data} and returns a table.",
                   "enum": [
                     "goto",
                     "click",
@@ -1679,13 +1679,34 @@
                     "read_table",
                     "look",
                     "back",
-                    "use_page"
+                    "use_page",
+                    "request"
                   ],
                   "type": "string"
                 },
                 "url": {
-                  "description": "goto: '/path?query' on the portal application the page is on, or a full portal address (portal_guide lists them; the Big Data Portal's information catalog and Superset have one each) (0-2000 characters)",
+                  "description": "goto / request: '/path?query' on the portal application the page is on, or a full portal address (portal_guide lists them; the Big Data Portal's information catalog and Superset have one each) (0-4000 characters)",
                   "type": "string"
+                },
+                "method": {
+                  "description": "request: the HTTP method (default POST with a body, else GET).",
+                  "enum": [
+                    "GET",
+                    "POST",
+                    "PUT"
+                  ],
+                  "type": "string"
+                },
+                "body": {
+                  "description": "request: the request body exactly as the portal sends it (a Nexacro SSV or XML body, form fields, JSON); {{name}} parameters are filled in (0-200000 characters)",
+                  "type": "string"
+                },
+                "headers": {
+                  "description": "request: headers the route needs, such as Content-Type (cookies are the browser's own).",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
                 },
                 "selector": {
                   "description": "Playwright selector: CSS ('[id=\"…btn_search\"]', '#content-frame'), 'text=Run', or 'role=button[name=\"Go\"]' (0-500 characters)",
@@ -1718,7 +1739,7 @@
                   "type": "string"
                 },
                 "script": {
-                  "description": "evaluate: JavaScript body, e.g. 'const d = W.nexacro.read(\"ds_list\"); return d;'. Return a table as {columns, rows} or a list of objects to cite it (0-30000 characters)",
+                  "description": "evaluate: JavaScript body, e.g. 'const d = W.nexacro.read(\"ds_list\"); return d;'. request: what to return from the reply R, e.g. 'return R.data.datasets.ds_out;'. Return a table as {columns, rows} or a list of objects to cite it (0-30000 characters)",
                   "type": "string"
                 },
                 "timeout_ms": {
@@ -1818,7 +1839,7 @@
               "additionalProperties": false,
               "properties": {
                 "action": {
-                  "description": "goto: open url (a path on the portal, or a portal address). click / fill / select: the element named by selector, role (+ name) or text; fill and select take value. press: a key (value, e.g. Enter). wait: for the element to be visible (or value 'hidden'), or value 'load'/'networkidle', or timeout_ms alone. evaluate: run script, JavaScript in the page (an async function body ending in return; W helpers and P parameters are defined). read_table: an HTML table as rows (selector, default the first table). look: the page's controls, tables, frames and text, to explore. back: browser back. use_page: switch to open page number nth (popups).",
+                  "description": "goto: open url (a path on the portal, or a portal address). click / fill / select: the element named by selector, role (+ name) or text; fill and select take value. press: a key (value, e.g. Enter). wait: for the element to be visible (or value 'hidden'), or value 'load'/'networkidle', or timeout_ms alone. evaluate: run script, JavaScript in the page (an async function body ending in return; W helpers and P parameters are defined). read_table: an HTML table as rows (selector, default the first table). look: the page's controls, tables, frames and text, to explore. back: browser back. use_page: switch to open page number nth (popups). request: send one data request (url, method, body, headers) straight from the browser with the person's session cookies, without opening or waiting for a page: the fastest way to call a portal route the map knows. The reply is parsed (Nexacro SSV or XML, JSON); a reply with one dataset comes back as a table, else give script, a JavaScript body that gets R = {status, contentType, text, data} and returns a table.",
                   "enum": [
                     "goto",
                     "click",
@@ -1830,13 +1851,34 @@
                     "read_table",
                     "look",
                     "back",
-                    "use_page"
+                    "use_page",
+                    "request"
                   ],
                   "type": "string"
                 },
                 "url": {
-                  "description": "goto: '/path?query' on the portal application the page is on, or a full portal address (portal_guide lists them; the Big Data Portal's information catalog and Superset have one each) (0-2000 characters)",
+                  "description": "goto / request: '/path?query' on the portal application the page is on, or a full portal address (portal_guide lists them; the Big Data Portal's information catalog and Superset have one each) (0-4000 characters)",
                   "type": "string"
+                },
+                "method": {
+                  "description": "request: the HTTP method (default POST with a body, else GET).",
+                  "enum": [
+                    "GET",
+                    "POST",
+                    "PUT"
+                  ],
+                  "type": "string"
+                },
+                "body": {
+                  "description": "request: the request body exactly as the portal sends it (a Nexacro SSV or XML body, form fields, JSON); {{name}} parameters are filled in (0-200000 characters)",
+                  "type": "string"
+                },
+                "headers": {
+                  "description": "request: headers the route needs, such as Content-Type (cookies are the browser's own).",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
                 },
                 "selector": {
                   "description": "Playwright selector: CSS ('[id=\"…btn_search\"]', '#content-frame'), 'text=Run', or 'role=button[name=\"Go\"]' (0-500 characters)",
@@ -1869,7 +1911,7 @@
                   "type": "string"
                 },
                 "script": {
-                  "description": "evaluate: JavaScript body, e.g. 'const d = W.nexacro.read(\"ds_list\"); return d;'. Return a table as {columns, rows} or a list of objects to cite it (0-30000 characters)",
+                  "description": "evaluate: JavaScript body, e.g. 'const d = W.nexacro.read(\"ds_list\"); return d;'. request: what to return from the reply R, e.g. 'return R.data.datasets.ds_out;'. Return a table as {columns, rows} or a list of objects to cite it (0-30000 characters)",
                   "type": "string"
                 },
                 "timeout_ms": {
@@ -1980,6 +2022,312 @@
             },
             "maxItems": 20,
             "type": "array"
+          }
+        },
+        "required": [
+          "system"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "portal_map",
+      "description": "The map Wizard keeps of a company portal (GSCM, ASAP, the Big Data Portal): what Gemini learned exploring it. Without arguments: how the portal works, its proven shortcuts, and the index of mapped reports. find: the reports that match business words, in full: menu path and id, how to open it fastest, its filters and their values, the datasets and columns, and the data requests that return its rows with the filters as parameters. Read it before exploring a portal: a mapped report is read in one portal_run.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "system": {
+            "description": "The portal: asap, gscm or bdp (pattern ^[a-z][a-z0-9]{1,15}$)",
+            "type": "string"
+          },
+          "find": {
+            "description": "Business words or a report name: returns the best matching reports in full (0-300 characters)",
+            "type": "string"
+          },
+          "report": {
+            "description": "One report's id or menu id: returns it in full (0-120 characters)",
+            "type": "string"
+          },
+          "topic": {
+            "description": "One topic's id: returns its full text (0-80 characters)",
+            "type": "string"
+          },
+          "todo": {
+            "description": "True: the reports still to map (todo, partial, failed), for exploring (default false)",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "system"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "portal_map_save",
+      "description": "Add what you learned about a portal to its map, so later questions go straight to the data: the overview, topics (technical details and shortcuts you proved), and reports by id (menu path and id, how to open it, filters and their values, datasets and columns, data requests with {{param}} placeholders, status). Only the fields you give change. Metadata only: never data rows or secrets. Saved on this PC and published to the knowledge base when this PC can write to it; it changes nothing in the portal.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "system": {
+            "type": "string",
+            "description": "(pattern ^[a-z][a-z0-9]{1,15}$)"
+          },
+          "overview": {
+            "description": "How the portal works as a whole (replaces the old overview): the client, frames, sign-in and session, how menus and reports open, the data request format, waits and popups (0-30000 characters)",
+            "type": "string"
+          },
+          "topics": {
+            "description": "Technical details and shortcuts, added or updated by id.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "description": "Short stable id, e.g. open-report-by-menu-id, transactions, weeks (pattern ^[a-z0-9][a-z0-9_.-]{0,79}$)",
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string",
+                  "description": "(3-160 characters)"
+                },
+                "text": {
+                  "description": "What a later script needs: how it works, the exact calls, selectors, routes and formats, and the steps or JavaScript that proved it (10-20000 characters)",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "title",
+                "text"
+              ],
+              "type": "object"
+            },
+            "maxItems": 30,
+            "type": "array"
+          },
+          "reports": {
+            "description": "Reports added or updated by id; only the fields you give change.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "description": "Stable id: the menu id or a short kebab-case name, e.g. as470 or weekly-sellout (pattern ^[a-z0-9][a-z0-9_.-]{0,79}$)",
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string",
+                  "description": "(0-200 characters)"
+                },
+                "path": {
+                  "description": "Menu path, top level first.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 8,
+                  "type": "array"
+                },
+                "menu_id": {
+                  "type": "string",
+                  "description": "(0-120 characters)"
+                },
+                "status": {
+                  "description": "todo: listed, not mapped yet. mapped: open, filters, data and a proven fast route are known. partial: some of it. failed / skipped: say why in notes.",
+                  "enum": [
+                    "todo",
+                    "mapped",
+                    "partial",
+                    "failed",
+                    "skipped"
+                  ],
+                  "type": "string"
+                },
+                "summary": {
+                  "description": "What the report shows in business words: measures, grain, period, units (0-3000 characters)",
+                  "type": "string"
+                },
+                "open": {
+                  "description": "The fastest proven way to open it (a call, steps or JavaScript), and how to tell it has loaded (0-6000 characters)",
+                  "type": "string"
+                },
+                "filters": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "name": {
+                        "description": "The filter's label on screen, e.g. Week, Market, Plan version (0-160 characters)",
+                        "type": "string"
+                      },
+                      "component": {
+                        "description": "Its component path or selector (0-400 characters)",
+                        "type": "string"
+                      },
+                      "kind": {
+                        "description": "Combo, MultiCombo, Calendar, Edit, Radio, CheckBox, popup (0-60 characters)",
+                        "type": "string"
+                      },
+                      "values": {
+                        "description": "Its options (code = label, at most about 100) or format (e.g. YYYYWW, Sunday-start weeks), and where the options come from (an inner dataset, a lookup request) (0-6000 characters)",
+                        "type": "string"
+                      },
+                      "default": {
+                        "type": "string",
+                        "description": "(0-400 characters)"
+                      },
+                      "required": {
+                        "type": "boolean"
+                      },
+                      "param": {
+                        "description": "The request parameter or body field this filter sets (0-120 characters)",
+                        "type": "string"
+                      },
+                      "notes": {
+                        "type": "string",
+                        "description": "(0-2000 characters)"
+                      }
+                    },
+                    "required": [
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 60,
+                  "type": "array"
+                },
+                "data": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "dataset": {
+                        "description": "The dataset name, e.g. ds_list (0-160 characters)",
+                        "type": "string"
+                      },
+                      "component": {
+                        "description": "The grid (or chart) showing it (0-400 characters)",
+                        "type": "string"
+                      },
+                      "columns": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "maxItems": 300,
+                        "type": "array"
+                      },
+                      "labels": {
+                        "description": "Column ids with their screen headers and units, e.g. QTY = Sell-out units (0-6000 characters)",
+                        "type": "string"
+                      },
+                      "rows_seen": {
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "notes": {
+                        "type": "string",
+                        "description": "(0-2000 characters)"
+                      }
+                    },
+                    "required": [
+                      "dataset"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 30,
+                  "type": "array"
+                },
+                "requests": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "name": {
+                        "description": "What it does, e.g. search, combo-markets (0-120 characters)",
+                        "type": "string"
+                      },
+                      "method": {
+                        "type": "string",
+                        "description": "(0-10 characters; default \"POST\")"
+                      },
+                      "url": {
+                        "description": "The route, as a path on the portal (e.g. /gscm/xyz/selectList.do) (0-2000 characters)",
+                        "type": "string"
+                      },
+                      "body": {
+                        "description": "The body with the filter values as {{param}} placeholders, otherwise exactly as captured (0-60000 characters)",
+                        "type": "string"
+                      },
+                      "headers": {
+                        "description": "Headers it needs (Content-Type...).",
+                        "additionalProperties": {
+                          "type": "string"
+                        },
+                        "type": "object"
+                      },
+                      "params": {
+                        "description": "The {{param}} names in url and body, each matching a filter's param.",
+                        "items": {
+                          "type": "string"
+                        },
+                        "maxItems": 40,
+                        "type": "array"
+                      },
+                      "reply": {
+                        "description": "What comes back: dataset names, columns, paging (0-2000 characters)",
+                        "type": "string"
+                      },
+                      "verified": {
+                        "description": "True only when you sent it again with a changed filter and the reply matched what the screen shows (default false)",
+                        "type": "boolean"
+                      },
+                      "notes": {
+                        "type": "string",
+                        "description": "(0-2000 characters)"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "url"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 20,
+                  "type": "array"
+                },
+                "script": {
+                  "description": "A saved script (portal_save_script) that reads it with parameters (pattern ^[a-z0-9][a-z0-9-]{1,59}$)",
+                  "type": "string"
+                },
+                "notes": {
+                  "description": "Pitfalls: waits, popups, paging, limits, why it failed (0-6000 characters)",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "type": "object"
+            },
+            "maxItems": 300,
+            "type": "array"
+          },
+          "remove": {
+            "description": "Report ids to drop (duplicates, entries that are not reports).",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "note": {
+            "description": "One line for the map's log: what this save adds (0-600 characters)",
+            "type": "string"
           }
         },
         "required": [

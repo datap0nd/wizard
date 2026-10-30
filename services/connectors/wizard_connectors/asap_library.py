@@ -5,8 +5,9 @@ prompts, paged grid results). It has only been exercised with recorded-shape fak
 tenant-supported login route and one owner-approved report passes same-user, same-filter parity, ASAP stays
 NAVIGATION_ONLY in Wizard and no ASAP number is labelled LIVE_VERIFIED.
 
-Deliberately absent: copied browser cookies, TLS verification bypass, arbitrary /mstr event URLs, password handling in
-Wizard, and any write endpoint."""
+Deliberately absent: TLS verification bypass, password handling in Wizard, and any write endpoint. Reading ASAP in the
+person's own session, MicroStrategy's /mstr task and event URLs included, is the portal browser's job (portal_tools.py;
+owner, 30 Oct 2026: docs/decisions/2026-10-30-portal-maps.md)."""
 from __future__ import annotations
 
 from dataclasses import dataclass

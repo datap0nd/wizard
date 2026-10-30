@@ -11,7 +11,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
-PORTAL_TOOLS = frozenset({"portal_run", "portal_guide", "portal_save_script", "portal_request_access"})
+PORTAL_TOOLS = frozenset({"portal_run", "portal_guide", "portal_save_script", "portal_request_access", "portal_map",
+                          "portal_map_save"})
 KNOWLEDGE_TOOLS = frozenset({"wizard_lookup_definitions", "wizard_browse_knowledge", "wizard_read_knowledge"})
 ATTACHMENT_TOOLS = frozenset({"wizard_read_attachment", "wizard_query_attachment", "wizard_edit_attachment"})
 CATALOG_TOOL = re.compile(r"^([a-z0-9]+)_(search_reports|get_report_schema|run_report)$")

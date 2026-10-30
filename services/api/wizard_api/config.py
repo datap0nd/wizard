@@ -117,6 +117,8 @@ class Settings:
     kb_ref: str = "main"
     kb_path: str = ""
     kb_token: str | None = None
+    # The knowledge base's write token, entered on this PC only: Wizard publishes its portal maps with it.
+    kb_write_token: str | None = None
     kb_sync_minutes: int = 30
     # Google accounts allowed to link for Gemini (company domains); empty: any account that matches the user's email rule.
     # Also the only domains a recurring extraction may be emailed to (else the requester's own).
@@ -288,6 +290,7 @@ def load_settings(env: dict[str, str] | None = None, env_file: Path | None = Non
     if settings.kb_path and (".." in settings.kb_path.replace("\\", "/").split("/") or not KB_PATH.match(settings.kb_path)):
         raise ConfigError("WIZARD_KB_PATH must be a folder inside the repository, for example content")
     settings.kb_token = get("WIZARD_KB_TOKEN")
+    settings.kb_write_token = get("WIZARD_KB_WRITE_TOKEN")
     settings.kb_sync_minutes = _int(get("WIZARD_KB_SYNC_MINUTES", "30") or "30", "WIZARD_KB_SYNC_MINUTES", 0, 1440)
     if settings.kb_repo and settings.content_dir:
         raise ConfigError("Set either WIZARD_KB_REPO (synced knowledge base) or WIZARD_CONTENT_DIR (a local folder), not both")

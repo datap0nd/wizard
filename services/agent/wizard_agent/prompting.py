@@ -37,6 +37,25 @@ RECURRING_UNCHOSEN = (" They did not say how often: ask only that, in one short 
 RECURRING_CHOICES = {"daily": "every day", "weekly": "every Monday", "monthly": "on the 1st of every month"}
 
 
+# Mapping a portal (owner, 30 Oct 2026): "FULLY explore GSCM and get ALL the technical details and shortcuts", so a
+# later question navigates, filters and extracts quickly. Each round is a fresh session that continues from the map.
+EXPLORE_REQUEST = """You are mapping {name} (portal '{system}') for Wizard. This is round {round}; the map on this PC holds what earlier rounds learned. Nobody is waiting for an answer: work through the portal on your own until the tools say this round's budget or time is used up.
+
+The goal: a map complete and exact enough that a later question about any {name} report goes straight to it, sets its filters and reads its data in one or two portal_run calls, without exploring. Record what you prove, not guesses.
+
+1. Read portal_guide(system='{system}') and portal_map(system='{system}', todo=true). Continue from there; never redo what is mapped, except entries marked partial or failed when you know how to finish them.
+2. If the map has no overview yet, learn how the application itself works and save it first (portal_map_save: overview, plus one topic per technical detail or shortcut, each with the exact calls that worked): how the client starts and keeps its session, its frames, its application datasets (W.nexacro.appDatasets() for Nexacro: the menu dataset and its columns), how a report opens without clicking through menus (the client's own functions, W.nexacro.functions(); try one with a report's menu id and record the call that works), how to tell a report has loaded, the busy overlay, popups, the data request format and the routes (from the requests a screen makes), common filter formats (weeks, dates, markets, plants, versions) and how codes map to names.
+3. If the map lists no reports yet, list them all from the menu dataset or menu requests, not by clicking: save each as status todo with its name, menu path and menu id (portal_map_save, up to 300 reports per call). Leave out folders and entries that are not reports.
+4. Then map reports one at a time from the todo list, in menu order: open it the fastest way; inventory its filters (W.nexacro.inputs() for Nexacro: type, values, a combo's options and where they come from), defaults and required ones; run its search with the defaults; capture the data request it sent (the result's requests, W.requests()); read the datasets it filled (names, columns, row count, and what each column means on screen). Then prove the fast route: send that request again with one filter changed (a request step with the body as a template, or W.replay) and check the reply has the same columns and changes as the screen would. Save the report right away with status mapped (or partial / failed with the reason in notes), its filters with the request parameter each one sets, its data, its request with the filter values as {{{{param}}}} placeholders and verified true only when proven, and keep a script that reads it with parameters (portal_save_script) and name it in the report's script field. Then the next report.
+5. Only read: never click save, delete, submit or anything that changes the portal, and never type a password. A refused request or click is a rule, not a puzzle: note it and move on. A report that fails twice: mark it failed with why, and continue with the next.
+6. The map holds metadata, never data rows: columns, filter options (up to about 100 values each) and counts are fine.
+7. When the tools say the budget or time is nearly used up, save what you have, then end with a short summary: the shortcuts you proved, the reports mapped this round, the ones that failed and why, and how many remain. Wizard starts the next round by itself."""
+
+
+def explore_request(system: str, name: str, round_number: int) -> str:
+    return EXPLORE_REQUEST.format(system=system, name=name, round=round_number)
+
+
 def recurring_question(cadence: str | None) -> str:
     return "Make this recurring" + (f": {RECURRING_CHOICES[cadence]}" if cadence else "")
 
@@ -185,7 +204,8 @@ def squeeze(text: str, limit: int) -> str:
 
 
 def compose(question: str, history: list[Turn], kind: str, today: date, files: list[dict[str, Any]] | None = None,
-            systems: tuple[list[str], list[str]] | None = None, remembered: list[str] | None = None) -> str:
+            explore: dict[str, Any] | None = None, systems: tuple[list[str], list[str]] | None = None,
+            remembered: list[str] | None = None) -> str:
     """systems: (names on, names off) when the person chose the systems for this request; None is Auto."""
     parts = [calendar_block(today)]
     if remembered:
@@ -203,6 +223,9 @@ def compose(question: str, history: list[Turn], kind: str, today: date, files: l
         lines.append("</conversation_so_far>")
         lines.append("Evidence ids from earlier turns (E1, E2, ...) remain valid in this conversation.")
         parts.append("\n\n".join(lines))
-    request = recurring_request(question) if kind == "recurring" else CHECK_REQUEST if kind == "check" else question
+    if kind == "explore" and explore:
+        request = explore_request(explore["system"], explore["name"], int(explore.get("round") or 1))
+    else:
+        request = recurring_request(question) if kind == "recurring" else CHECK_REQUEST if kind == "check" else question
     parts.append(f"<request>\n{request}\n</request>")
     return "\n\n".join(parts)

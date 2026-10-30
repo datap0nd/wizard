@@ -578,7 +578,7 @@ class PortalBrowser:
             stopped: PortalError | None = None
             started = time.monotonic()
             try:
-                if page.url in ("", "about:blank") and steps and steps[0].get("action") != "goto":
+                if page.url in ("", "about:blank") and steps and steps[0].get("action") not in ("goto", "request"):
                     page.goto(portal.url, wait_until="domcontentloaded", timeout=60_000)
                 for index, step in enumerate(steps):
                     if time.monotonic() - started > CALL_LIMIT_S - 20:
@@ -743,6 +743,8 @@ class PortalBrowser:
             frame = self._frame(page, step.get("frame"))
             value = frame.evaluate(_script(step["script"], params, timeout))
             return {"value": value}
+        if action == "request":
+            return self._send(page, portal, step, params, timeout)
         if action == "read_table":
             frame = self._frame(page, step.get("frame"))
             target = step.get("selector") or (f"text={step['text']}" if step.get("text") else "table")
@@ -762,6 +764,58 @@ class PortalBrowser:
                               "url": portals.redact_url(frame.url)[:200], **(found if isinstance(found, dict) else {})})
             return {"value": {"frames": looks}}
         raise PortalError("invalid_step", f"Unknown action {action}.")
+
+    def _send(self, page: Any, portal: Portal, step: dict[str, Any], params: dict[str, Any], timeout: int) -> dict[str, Any]:
+        """One data request from the browser itself, with the person's session: fetch() in a page on the request's own
+        origin, so Chrome's network stack (proxy, certificates, single sign-on) and every rule on page requests apply.
+        The page the browser is on is used when it is on that origin (GSCM's client keeps running); otherwise a light
+        page of that origin opens first, never the portal's heavy start page."""
+        target = _address(portal, step["url"], page.url)
+        parts = urlsplit(target)
+        if not self.policy.allowed(parts.hostname):
+            raise PortalError("host_not_allowed", f"{parts.hostname} is not a portal address.")
+        method = str(step.get("method") or ("POST" if step.get("body") is not None else "GET")).upper()
+        body = step.get("body")
+        reason = portals.write_reason(method, target, body)
+        if reason:
+            if self._log is not None and len(self._log.blocked) < 40:
+                self._log.blocked.append({"method": method, "url": portals.redact_url(target)[:300], "why": reason})
+            raise PortalError("request_refused", f"Wizard refused {method} {portals.redact_url(target)[:200]}: {reason}.")
+        here = urlsplit(page.url)
+        if (here.scheme, here.netloc) != (parts.scheme, parts.netloc):
+            page.goto(f"{parts.scheme}://{parts.netloc}/robots.txt", wait_until="commit", timeout=max(timeout, 30_000))
+            if urlsplit(page.url).netloc != parts.netloc:
+                raise PortalError("session_needed", f"{portal.name} sent the browser to {urlsplit(page.url).hostname}: its "
+                                                    "session needs renewing. Open the portal first (goto its start page, "
+                                                    "which signs in again through single sign-on), then send the request.")
+        headers = {k: str(v) for k, v in (step.get("headers") or {}).items()
+                   if k.lower() not in ("cookie", "host", "content-length")}
+        request = {"url": target, "method": method, "headers": headers, "body": body}
+        script = step.get("script") or DEFAULT_REPLY
+        value = page.main_frame.evaluate(_script(script, params, timeout, prelude=SEND), request)
+        return {"value": value}
+
+
+# The request step: send it from the page, keep the reply as R ({status, contentType, text, data}) for the script.
+SEND = """const __q = __arg;
+const __reply = await fetch(__q.url, {method: __q.method, headers: __q.headers, credentials: 'include', redirect: 'manual',
+  body: __q.method === 'GET' ? undefined : __q.body});
+if (__reply.type === 'opaqueredirect') throw new Error('the portal answered with a redirect: its session needs renewing (goto its start page, then send the request again)');
+const __text = await __reply.text();
+const R = {status: __reply.status, contentType: (__reply.headers.get('content-type') || '').split(';')[0], text: __text};
+R.data = W.parse(__text);
+"""
+# Without a script: one dataset with rows comes back as a table (evidence); otherwise an outline to write a script from.
+DEFAULT_REPLY = """const sets = (R.data && R.data.datasets) || null;
+if (sets) {
+  const full = Object.keys(sets).filter(name => sets[name].rows.length);
+  const code = Number((R.data.parameters || {}).ErrorCode || 0);
+  if (R.status < 400 && code >= 0 && full.length === 1) return {...sets[full[0]], total_rows: sets[full[0]].rows.length, dataset: full[0]};
+  return {status: R.status, parameters: R.data.parameters, datasets: Object.fromEntries(Object.entries(sets).map(
+    ([name, d]) => [name, {columns: d.columns, total_rows: d.rows.length, first_rows: d.rows.slice(0, 5)}]))};
+}
+if (R.data && R.data.json !== undefined && R.status < 400) return R.data.json;
+return {status: R.status, contentType: R.contentType, text: R.text.slice(0, 4000)};"""
 
 
 def _first_line(error: BaseException) -> str:
@@ -784,12 +838,13 @@ def _address(portal: Portal, url: str, current: str = "") -> str:
     return portal.origin + url
 
 
-def _script(body: str, params: dict[str, Any], timeout_ms: int) -> str:
+def _script(body: str, params: dict[str, Any], timeout_ms: int, prelude: str = "") -> str:
     """Gemini's JavaScript as the body of an async function, with Wizard's helpers (W) and the parameters (P), and a
-    time limit so a script that never settles cannot hold the browser."""
+    time limit so a script that never settles cannot hold the browser. `prelude` runs first, inside the time limit,
+    with the evaluate argument as __arg."""
     return (
-        "async () => {\n" + HELPERS + "\nconst P = " + json.dumps(params, ensure_ascii=False) + ";\n"
-        "const __run = async () => {\n" + body + "\n};\n"
+        "async (__arg) => {\n" + HELPERS + "\nconst P = " + json.dumps(params, ensure_ascii=False) + ";\n"
+        "const __run = async () => {\n" + prelude + body + "\n};\n"
         f"const __limit = new Promise((_, reject) => setTimeout(() => reject(new Error('the script did not finish within "
         f"{timeout_ms // 1000} s')), {timeout_ms}));\n"
         "const __value = await Promise.race([__run(), __limit]);\n"

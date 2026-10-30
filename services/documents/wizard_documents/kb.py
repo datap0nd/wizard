@@ -19,6 +19,7 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -189,6 +190,60 @@ def publish(content: Path, repo: str, token: str, *, branch: str | None = None, 
         outcome.commit = commit["sha"]
         outcome.lines.append(f"PASS  published {summary}: {WEB}/{repo}/commit/{commit['sha']}")
     return outcome
+
+
+def check_write(repo: str, token: str, *, proxy: str | None = None, client: httpx.Client | None = None) -> tuple[bool, str]:
+    """Can this token write to the repository (the settings pane's write token)? Reads the repository's permissions;
+    writes nothing."""
+    with client or _client(proxy) as http:
+        gh = GitHub(repo, token, http)
+        try:
+            info = gh.call("GET", "")
+        except PublishError as error:
+            return False, f"Write token: {error}".replace("publishing token", "write token")
+    if not info.get("private"):
+        return False, f"Write token: {repo} is not private; Wizard writes only to a private repository."
+    if not (info.get("permissions") or {}).get("push"):
+        return False, "Write token: it reads the repository but cannot write to it (it needs Contents read and write)."
+    return True, "The write token can write to it."
+
+
+def write_files(repo: str, token: str, files: dict[str, bytes], *, branch: str, message: str,
+                proxy: str | None = None, client: httpx.Client | None = None) -> str | None:
+    """Commit these files in one commit, leaving every other file in the repository alone (Wizard's own files, such as
+    its portal maps). Returns the commit, or None when the repository already has them. Refuses a public repository."""
+    with client or _client(proxy) as http:
+        gh = GitHub(repo, token, http)
+        info = gh.call("GET", "")
+        if not info.get("private"):
+            raise PublishError(f"{repo} is not private: Wizard never writes company notes to a public repository.")
+        if not (info.get("permissions") or {}).get("push"):
+            raise PublishError("The write token cannot write to the repository: it needs Contents read and write.")
+        for attempt in range(2):  # another commit may land in between: start again from the new head once
+            ref = http.get(f"{API}/repos/{repo}/git/ref/heads/{branch}", headers=gh.headers)
+            if ref.status_code != 200:
+                raise PublishError(explain(ref, repo).replace("publishing token", "write token"))
+            parent = ref.json()["object"]["sha"]
+            base_tree = gh.call("GET", f"/git/commits/{parent}")["tree"]["sha"]
+            entries: list[dict[str, Any]] = []
+            for name, data in files.items():
+                current = http.get(f"{API}/repos/{repo}/contents/{quote(name, safe='/')}", params={"ref": parent},
+                                   headers=gh.headers)
+                if current.status_code == 200 and isinstance(current.json(), dict) and current.json().get("sha") == blob_id(data):
+                    continue
+                blob = gh.call("POST", "/git/blobs", {"content": base64.b64encode(data).decode("ascii"), "encoding": "base64"})
+                entries.append({"path": name, "mode": "100644", "type": "blob", "sha": blob["sha"]})
+            if not entries:
+                return None
+            tree = gh.call("POST", "/git/trees", {"base_tree": base_tree, "tree": entries})
+            commit = gh.call("POST", "/git/commits", {"message": message, "tree": tree["sha"], "parents": [parent]})
+            moved = http.patch(f"{API}/repos/{repo}/git/refs/heads/{branch}", headers=gh.headers,
+                               json={"sha": commit["sha"], "force": False})
+            if moved.status_code == 200:
+                return str(commit["sha"])
+            if moved.status_code != 422 or attempt:
+                raise PublishError(explain(moved, repo).replace("publishing token", "write token"))
+    return None
 
 
 def check_read(repo: str, token: str, ref: str = "main", *, proxy: str | None = None,

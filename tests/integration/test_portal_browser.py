@@ -50,13 +50,20 @@ GSCM_PAGE = """<!doctype html><html><head><title>GSCM</title><script>
 const ds = (name, cols, rows) => ({name, getRowCount() { return rows.length; }, getColumn(r, c) { return rows[r][cols.indexOf(c)]; },
   getColCount() { return cols.length; }, getColID(i) { return cols[i]; }});
 const ds_list = ds('ds_list', ['MARKET', 'WEEK', 'UNITS'], [['AE', '2026W40', 120], ['SA', '2026W40', 340], ['KW', '2026W40', null]]);
-const grid = {id: 'grd_list', name: 'grd_list', binddataset: 'ds_list'};
-const form = {components: [grid], grd_list: grid, ds_list};  // Nexacro forms also name each component as a property
-grid.parent = form;
+const ds_market = ds('ds_market', ['CODE', 'NAME'], [['AE', 'UAE'], ['SA', 'Saudi Arabia']]);
+const grid = {id: 'grd_list', name: 'grd_list', binddataset: 'ds_list', _type_name: 'Grid'};
+const cbo = {id: 'cbo_market', name: 'cbo_market', _type_name: 'Combo', value: 'AE', codecolumn: 'CODE', datacolumn: 'NAME',
+             innerdataset: 'ds_market'};
+const btn = {id: 'btn_search', name: 'btn_search', _type_name: 'Button', text: 'Search'};
+// Nexacro forms also name each component as a property, and carry the report's own functions (fn_*).
+const form = {components: [grid, cbo, btn], grd_list: grid, ds_list, ds_market, fn_search(week) { return 'searched ' + week; }};
+for (const c of [grid, cbo, btn]) c.parent = form;
 const APP = {mainframe: {VFrameSet: {WorkFrame0: {form}}},
   gds_bookmark: ds('gds_bookmark', ['userreportid', 'userreportname', 'publicscope', 'scope', 'gbm', 'menuscope', 'menuid', 'menuname',
                                     'menugroupid', 'menugroupname'],
-                   [['RC_1', 'MENA_Actual_sales', 'PUBLIC', 'AS', 'MOBILE', 'MP', 'AS470', 'Actual Sales', 'AS313', 'SCM']])};
+                   [['RC_1', 'MENA_Actual_sales', 'PUBLIC', 'AS', 'MOBILE', 'MP', 'AS470', 'Actual Sales', 'AS313', 'SCM']]),
+  gds_menu: ds('gds_menu', ['MENU_ID', 'MENU_NAME', 'PARENT_ID'], [['AS313', 'SCM', ''], ['AS470', 'Actual Sales', 'AS313']]),
+  gfn_openMenu(menuId) { return 'opened ' + menuId; }};
 window.nexacro = {getApplication: () => APP};
 </script></head><body>
 <div id="mainframe.VFrameSet.WorkFrame0.form.grd_list" style="width:300px;height:60px">grid</div>
@@ -252,6 +259,60 @@ def test_the_asap_menu_is_walked_without_the_token_leaving_the_page(setup):
     error = call(setup, "portal_run", {"system": "asap", "steps": [{"action": "evaluate", "script":
         "throw new Error('bad ' + _SESSION.MSTRWEB_AUTH_TOKEN_ENC);"}]})
     assert not error.ok and TOKEN not in (error.error_message or "")
+
+
+def test_the_nexacro_helpers_find_the_menu_the_shortcuts_and_a_reports_filters(setup):
+    outcome = call(setup, "portal_run", {"system": "gscm", "steps": [
+        {"action": "goto", "url": "/"},
+        {"action": "evaluate", "script": "return {sets: W.nexacro.appDatasets(), fns: W.nexacro.functions(), inputs: W.nexacro.inputs()};"}]})
+    assert outcome.ok, outcome.error_message
+    value = outcome.data["outputs"][-1]["value"]
+    assert value["sets"][0] == {"name": "gds_menu", "rows": 2, "columns": ["MENU_ID", "MENU_NAME", "PARENT_ID"]}
+    assert [s["name"] for s in value["sets"]] == ["gds_menu", "gds_bookmark"]
+    functions = {f["name"]: f for f in value["fns"]}
+    assert functions["gfn_openMenu"]["where"] == "application" and "menuId" in functions["gfn_openMenu"]["source"]
+    assert functions["fn_search"]["where"] == "mainframe.VFrameSet.WorkFrame0.form"
+    inputs = {i["name"]: i for i in value["inputs"]}
+    assert inputs["cbo_market"] == {"path": "mainframe.VFrameSet.WorkFrame0.form.cbo_market", "type": "Combo", "name": "cbo_market",
+                                    "value": "AE", "options_dataset": "ds_market", "options_count": 2,
+                                    "options": ["AE = UAE", "SA = Saudi Arabia"]}
+    assert inputs["btn_search"]["text"] == "Search"
+    assert inputs["grd_list"]["dataset"] == "ds_list" and inputs["grd_list"]["rows"] == 3
+
+
+def test_a_request_step_reads_a_transaction_straight_from_the_browser_without_opening_the_portal(setup, portal_url):
+    away = call(setup, "portal_run", {"system": "bdp", "steps": [{"action": "goto", "url": catalog_address(portal_url)}]},
+                systems=("bdp",))
+    assert away.ok, away.error_message
+    Portal.hits.clear()
+    recorder = MemoryRecorder()
+    body = "SSV:utf-8\x1eweek:string={{week}}\x1f\x1e"
+    outcome = call(setup, "portal_run", {"system": "gscm", "title": "Weekly units", "params": [{"name": "week", "value": "2026W44"}],
+                                         "steps": [{"action": "request", "url": "/svc/selectWeekly.do", "body": body,
+                                                    "headers": {"Content-Type": "text/plain"}}]}, recorder)
+    assert outcome.ok, outcome.error_message
+    table = outcome.data["outputs"][0]
+    assert table["columns"] == ["MARKET", "WEEK", "QTY"] and table["rows"] == [["AE", "2026W44", 10], ["SA", "2026W44", None]]
+    assert table["evidence_id"] == "E1" and recorder.evidence[0]["data_mode"] == "LIVE"
+    assert recorder.evidence[0]["request"]["steps"][0]["body"] == body.replace("{{week}}", "2026W44"), "the request is the query"
+    assert "GET /" not in Portal.hits, "GSCM's start page (its whole client) was never opened"
+    assert Portal.hits[0] == "GET /robots.txt" and Portal.hits[1].startswith("POST /svc/selectWeekly.do")
+    Portal.hits.clear()
+    scripted = call(setup, "portal_run", {"system": "gscm", "steps": [
+        {"action": "request", "url": "/svc/selectWeekly.do", "body": body.replace("{{week}}", "2026W45"),
+         "script": "return {status: R.status, code: R.data.parameters.ErrorCode, weeks: R.data.datasets.ds_out.rows.map(r => r[1])};"}]})
+    assert scripted.ok and scripted.data["outputs"][0]["value"] == {"status": 200, "code": "0", "weeks": ["2026W45", "2026W45"]}
+    assert [h.split(" ")[0] for h in Portal.hits] == ["POST"], "on the portal's origin already: no page opens"
+
+
+def test_a_request_step_follows_the_same_read_only_rules(setup):
+    Portal.hits.clear()
+    for step, code in (({"url": "/svc/saveBookmark.do", "body": "x"}, "request_refused"),
+                       ({"url": "/api/thing", "method": "PUT", "body": "{}"}, "request_refused"),
+                       ({"url": "https://example.com/collect"}, "host_not_allowed")):
+        outcome = call(setup, "portal_run", {"system": "gscm", "steps": [{"action": "request", **step}]})
+        assert refused(outcome) == code, step
+    assert not any("saveBookmark" in hit or "/api/thing" in hit for hit in Portal.hits)
 
 
 def test_writes_other_hosts_and_forbidden_clicks_are_refused(setup):

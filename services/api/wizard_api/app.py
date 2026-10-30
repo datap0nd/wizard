@@ -32,6 +32,7 @@ from wizard_connectors.content import errors, validate_content
 from wizard_connectors.entitlements import Identity, IdentityDirectory, SystemRights
 from wizard_connectors.paths import ROOT
 from wizard_connectors.portal_browser import PortalBrowser, PortalBrowsers, PortalError
+from wizard_connectors.portal_map import PortalMaps, Published
 from wizard_connectors.tools import build_registry, build_services
 from wizard_connectors.tools.systems import SystemChoice
 
@@ -222,6 +223,25 @@ def _is_loopback(host: str | None) -> bool:
         return host == "testclient"
 
 
+def map_writer(settings: Settings) -> Any:
+    """Commits a portal map to the knowledge-base repository with this PC's write token (Settings → Knowledge base)."""
+    from wizard_documents import kb
+
+    def write(files: dict[str, bytes], message: str) -> Published:
+        assert settings.kb_repo and settings.kb_write_token
+        try:
+            commit = kb.write_files(settings.kb_repo, settings.kb_write_token, files, branch=settings.kb_ref,
+                                    message=message, proxy=settings.proxy)
+        except kb.PublishError as error:
+            return Published("failed", str(error))
+        except httpx.HTTPError as error:
+            return Published("failed", outbound.explain(error, kb.API, settings.proxy))
+        if commit is None:
+            return Published("unchanged", f"{settings.kb_repo} already has this map.")
+        return Published("published", f"Committed to {settings.kb_repo} ({settings.kb_ref}).", commit)
+    return write
+
+
 def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = None,
                google_transport: httpx.AsyncBaseTransport | None = None,
                metronome_transport: httpx.BaseTransport | None = None) -> FastAPI:
@@ -250,6 +270,10 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
     secret_box = SecretBox()
     if settings.portals:
         services.portals = PortalBrowsers(settings.portals, settings.user_home, secrets=secret_box)
+        writer = map_writer(settings) if settings.kb_repo and settings.kb_write_token else None
+        services.portal_maps = PortalMaps(settings.data_dir / "portal-maps",
+                                          settings.content_dir / "portal-maps" if settings.content_dir else None, writer,
+                                          {p.id: p.name for p in settings.portals.portals}, repo_prefix=settings.kb_path)
     portal_ids = [p.id for p in settings.portals.portals] if settings.portals else []
     registry = build_registry(services)
     identities = IdentityDirectory.load(settings.identities_file)
@@ -1152,7 +1176,72 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
 
     @app.get("/api/v1/portals")
     async def portals_status(request: Request) -> dict[str, Any]:
-        return await portal_action(request, "status")
+        status = await portal_action(request, "status")
+        identity = me(request)
+        if services.portal_maps is not None:
+            status["maps"] = {p["id"]: services.portal_maps.status(p["id"]) for p in status.get("portals", [])}
+            exploration = manager.explorations.get(identity.id)
+            status["mapping"] = exploration.public() if exploration else None
+        return status
+
+    # Portal maps: Gemini explores a portal in rounds and keeps what it learns (owner, 30 Oct 2026) --------------------
+    def map_portal(request: Request, system: str) -> tuple[Identity, Any]:
+        identity, browser = portal_browser(request)
+        portal = browser.settings.portal(system)
+        if portal is None or services.portal_maps is None or not identity.can_use_system(system):
+            raise HTTPException(404, f"'{system}' is not a portal configured here (Settings → Portals).")
+        return identity, portal
+
+    def map_view(identity: Identity, system: str) -> dict[str, Any]:
+        assert services.portal_maps is not None
+        exploration = manager.explorations.get(identity.id)
+        return {"map": services.portal_maps.status(system),
+                "mapping": exploration.public() if exploration and exploration.system == system else None}
+
+    @app.get("/api/v1/portals/{system}/map")
+    async def portal_map_status(request: Request, system: str) -> dict[str, Any]:
+        identity, portal = map_portal(request, system)
+        assert services.portal_maps is not None
+        return {**map_view(identity, portal.id), "summary": services.portal_maps.summary(portal.id)}
+
+    @app.post("/api/v1/portals/{system}/map")
+    async def start_mapping(request: Request, system: str) -> dict[str, Any]:
+        """Gemini explores the portal in rounds, in a conversation of its own, and keeps what it learns in the map."""
+        identity, portal = map_portal(request, system)
+        try:
+            manager.start_exploration(identity, portal.id, portal.name)
+        except Busy as busy:
+            raise HTTPException(429, str(busy)) from None
+        store.audit(identity.id, "portals:map", system=portal.id)
+        return map_view(identity, portal.id)
+
+    @app.post("/api/v1/portals/{system}/map/stop")
+    async def stop_mapping(request: Request, system: str) -> dict[str, Any]:
+        identity, portal = map_portal(request, system)
+        manager.stop_exploration(identity.id)
+        return map_view(identity, portal.id)
+
+    @app.post("/api/v1/portals/{system}/map/publish")
+    async def publish_map(request: Request, system: str) -> dict[str, Any]:
+        identity, portal = map_portal(request, system)
+        assert services.portal_maps is not None
+        result = await asyncio.to_thread(services.portal_maps.publish, portal.id)
+        if result.outcome in ("failed", "not_configured"):
+            raise HTTPException(409, result.message)
+        store.audit(identity.id, "portals:map_publish", system=portal.id)
+        return {**map_view(identity, portal.id), "message": result.message}
+
+    @app.delete("/api/v1/portals/{system}/map")
+    async def forget_map(request: Request, system: str) -> dict[str, Any]:
+        """The person starts the map again: this PC's copy is deleted (a published copy stays in the knowledge base)."""
+        identity, portal = map_portal(request, system)
+        exploration = manager.explorations.get(identity.id)
+        if exploration and exploration.state == "running" and exploration.system == portal.id:
+            raise HTTPException(409, "Stop the mapping first.")
+        assert services.portal_maps is not None
+        services.portal_maps.forget(portal.id)
+        store.audit(identity.id, "portals:map_forget", system=portal.id)
+        return map_view(identity, portal.id)
 
     @app.post("/api/v1/portals/sign-in")
     async def portals_sign_in(request: Request) -> dict[str, Any]:

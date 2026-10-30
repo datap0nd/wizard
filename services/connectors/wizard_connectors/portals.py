@@ -91,6 +91,11 @@ SECRET_NAME = re.compile(r"(token|auth(?!or)|sess_?id|session_?id|sessid|session
 REDACTED = "<redacted>"
 FORM_BODY = re.compile(r"^[\w.%\[\]-]+=[^&\s]*(&[\w.%\[\]-]+=[^&\s]*)*$")
 TOKEN_VALUE = re.compile(r"(?<![A-Za-z0-9])[A-Za-z0-9_\-+/=.]{40,}(?![A-Za-z0-9])")
+# Long values that are names, not secrets, so a script can use them: a Nexacro component path or a dotted name with at
+# least three parts (mainframe.VFrameSet.WorkFrame0.form.cbo_market) and an address path (/gscm/sales/selectWeekly.do).
+# A JWT (eyJ...) or a session id with a route suffix (3F2A...9C.worker1) is still a secret.
+NAME_PATH = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,39}(\.[A-Za-z_][A-Za-z0-9_]{0,39}){2,}")
+URL_PATH = re.compile(r"/{1,2}[A-Za-z0-9_.\-]{1,40}(/[A-Za-z0-9_.\-]{0,40})*")
 
 
 class PortalConfigError(ValueError):
@@ -363,13 +368,22 @@ def redact_text(text: str, limit: int = 1500) -> str:
     elif FORM_BODY.match(head.strip()):
         head = urlencode([(k, REDACTED if SECRET_NAME.search(k) else v) for k, v in parse_qsl(head, keep_blank_values=True)],
                          safe="<>")
-    head = TOKEN_VALUE.sub(lambda m: m.group(0)[:6] + "…" + REDACTED, head)
+    head = TOKEN_VALUE.sub(_opaque, head)
     return head if len(head) <= limit else head[:limit] + f"… ({len(text):,} characters in all)"
 
 
 def scrub(text: str) -> str:
     """Free text (an error, a dialog) with long opaque values shortened: a script's error can quote a token."""
-    return TOKEN_VALUE.sub(lambda m: m.group(0)[:6] + "…" + REDACTED, text)
+    return TOKEN_VALUE.sub(_opaque, text)
+
+
+def _opaque(match: re.Match[str]) -> str:
+    """A long opaque value shortened, unless it is a component path or an address path."""
+    value = match.group(0)
+    if not value.startswith("eyJ") and (NAME_PATH.fullmatch(value) or
+                                        ("+" not in value and "=" not in value and URL_PATH.fullmatch(value))):
+        return value
+    return value[:6] + "…" + REDACTED
 
 
 def redact_rows(columns: list[str], rows: list[list[Any]]) -> list[list[Any]]:

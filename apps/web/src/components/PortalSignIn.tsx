@@ -5,6 +5,7 @@ import {formatDate} from '@/format';
 import {cn} from '@/lib/utils';
 import {Button} from './ui/button';
 import {AccessRequestForm} from './AccessRequestForm';
+import {PortalMaps} from './PortalMaps';
 import type {PortalCheck, PortalStatus} from '@/types';
 
 /** A portal's name, with its applications when it has several: "Big Data Portal (Superset, information catalog)". */
@@ -85,6 +86,7 @@ export function PortalSignIn({compact = false}: {compact?: boolean}) {
       )}
       {error && <p className="text-xs text-danger" role="alert">{error}</p>}
     </div>
+    {!compact && <PortalMaps status={status} onChange={setStatus} />}
     {!compact && status.portals.filter(p => p.access_requests).map(p => <AccessRequestForm key={p.id} system={p.id} name={p.name} />)}
   </>);
 }

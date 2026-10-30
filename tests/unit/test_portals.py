@@ -181,6 +181,13 @@ def test_tables_and_errors_lose_their_secrets():
     assert portals.redact_rows(["market", "sessionId", "note"], [["AE", "abc", f"x {token}"], ["SA", None, "short"]]) == \
         [["AE", "<redacted>", "x ZZZZZZ…<redacted>"], ["SA", None, "short"]]
     assert token not in portals.scrub(f"Error: bad {token}")
+    # Names a script needs stay whole: Nexacro component paths and long routes are not secrets.
+    for name in ("mainframe.VFrameSet.MdiFrame.form.div_frameButton.form.btn_exceldown",
+                 "/gscm/scm/sales/weekly/selectWeeklySellOutList.do", "https://gscm.corp.example.com/gscm/scm/selectPlanVersionList.do"):
+        assert portals.scrub(f"open {name} now") == f"open {name} now", name
+    jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJvd25lckBleGFtcGxlLmNvbSJ9.c2lnbmF0dXJlLXZhbHVlLWhlcmU"
+    for secret in (jwt, "3F2A9C8B7D6E5F4A3B2C1D0E9F8A7B6C5D4E3F2A.worker1", "/" + "Ab+cD" * 10, "QWxhZGRpbjpvcGVuIHNlc2FtZQ/" * 3):
+        assert secret not in portals.scrub(f"x {secret} y"), secret
     configured = settings_from({"WIZARD_PORTAL_GSCM_URL": "https://gscm.corp.example.com/"})
     assert configured is not None
     policy = HostPolicy(configured, {"login.idp.example.org", "gscm.corp.example.com"})

@@ -85,7 +85,7 @@ def test_a_note_reads_as_the_persons_instruction_about_one_step():
 def test_each_tool_reads_one_system_and_wizards_own_work_reads_none():
     assert system_of("wizard_query_postgresql") == "postgresql"
     assert system_of("asap_run_report") == "asap" and system_of("nerp_search_reports") == "nerp"
-    assert system_of("portal_run", {"system": "gscm"}) == "gscm"
+    assert system_of("portal_run", {"system": "gscm"}) == "gscm" and system_of("portal_map", {"system": "asap"}) == "asap"
     assert system_of("wizard_read_knowledge") == "knowledge" and system_of("wizard_query_attachment") == "attachment"
     for own in ("wizard_calculate", "wizard_render_visual", "wizard_check_my_data", "wizard_schedule_brief",
                 "wizard_search_catalog", "wizard_list_sources", ASK_FOR_SYSTEM):

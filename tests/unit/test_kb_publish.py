@@ -78,6 +78,10 @@ class FakeGitHub:
         if request.method == "PUT" and path == "/contents/README.md":
             self._commit({"README.md": self._blob(base64.b64decode(body["content"]))}, body["message"], None)
             return httpx.Response(201, json={})
+        if request.method == "GET" and path.startswith("/contents/"):
+            ref = request.url.params.get("ref") or self.head
+            found = self.trees[self.commits[ref]["tree"]].get(path.removeprefix("/contents/")) if ref else None
+            return httpx.Response(200, json={"sha": found}) if found else httpx.Response(404, json={"message": "Not Found"})
         if request.method == "GET" and (m := re.fullmatch(r"/git/commits/(\w+)", path)):
             return httpx.Response(200, json={"tree": {"sha": self.commits[m.group(1)]["tree"]}})
         if request.method == "GET" and (m := re.fullmatch(r"/git/trees/(\w+)", path)):
@@ -197,3 +201,32 @@ def test_the_command_reads_repo_and_tokens_from_env_and_never_prints_them(tmp_pa
     assert docs_main(["kb-publish", str(root), "--dry-run"]) == 0
     out = capsys.readouterr().out
     assert "added    knowledge/company/overview.md" in out and TOKEN not in out and github.writes == []
+
+
+def test_wizard_writes_only_its_own_files_in_one_commit_and_skips_unchanged_ones():
+    """The settings pane's write token: Wizard commits its portal maps and leaves every other file alone."""
+    github = FakeGitHub(empty=False)
+    client = httpx.Client(transport=httpx.MockTransport(github))
+    files = {"portal-maps/gscm.json": b'{"system": "gscm"}', "portal-maps/gscm.md": b"# GSCM map\n"}
+    commit = kb.write_files("acme/kb", TOKEN, files, branch="main", message="Wizard: GSCM map", client=client)
+    assert commit and github.head == commit and github.commits[commit]["message"] == "Wizard: GSCM map"
+    assert github.files() == {"README.md": b"# hand-written readme\n", ".github/CODEOWNERS": b"* @owner\n", **files}
+    writes = list(github.writes)
+    again = kb.write_files("acme/kb", TOKEN, files, branch="main", message="again",
+                           client=httpx.Client(transport=httpx.MockTransport(github)))
+    assert again is None and github.writes == writes, "an unchanged map makes no commit"
+    changed = kb.write_files("acme/kb", TOKEN, {**files, "portal-maps/gscm.md": b"# GSCM map v2\n"}, branch="main",
+                             message="v2", client=httpx.Client(transport=httpx.MockTransport(github)))
+    assert changed and [w for w in github.writes[len(writes):] if w == "POST /git/blobs"] == ["POST /git/blobs"]
+
+
+def test_wizard_never_writes_to_a_public_repository_or_without_write_access():
+    for github, words in ((FakeGitHub(private=False, empty=False), "not private"), (FakeGitHub(push=False, empty=False), "cannot write")):
+        with pytest.raises(kb.PublishError, match=words):
+            kb.write_files("acme/kb", TOKEN, {"portal-maps/x.json": b"{}"}, branch="main", message="m",
+                           client=httpx.Client(transport=httpx.MockTransport(github)))
+        assert not github.writes
+    ok, message = kb.check_write("acme/kb", TOKEN, client=httpx.Client(transport=httpx.MockTransport(FakeGitHub(empty=False))))
+    assert ok and "can write" in message
+    ok, message = kb.check_write("acme/kb", TOKEN, client=httpx.Client(transport=httpx.MockTransport(FakeGitHub(push=False))))
+    assert not ok and "cannot write" in message

@@ -63,6 +63,9 @@ FIELDS = [
     Field("WIZARD_KB_REPO", "Repository", "knowledge", "owner/name of the private repository.", "acme/wizard-content"),
     Field("WIZARD_KB_TOKEN", "Read-only token", "knowledge", "Fine-grained token: that repository only, Contents read.",
           "github_pat_…"),
+    Field("WIZARD_KB_WRITE_TOKEN", "Write token (PAT)", "knowledge",
+          "Lets Wizard save what it learns, such as the portal maps, to this repository: a token with Contents read and "
+          "write on it. Kept on this PC only.", "github_pat_…"),
     Field("WIZARD_KB_REF", "Branch", "knowledge", "", "main"),
     Field("WIZARD_KB_PATH", "Folder in the repository", "knowledge", "Leave empty when the notes are at the root.", ""),
     Field("WIZARD_KB_SYNC_MINUTES", "Check for changes every (minutes)", "knowledge", "0 checks only at start-up.", "30"),
@@ -242,8 +245,15 @@ def test_knowledge(settings: Settings, proposed: dict[str, Any],
         return {"ok": False, "message": "Fill in the repository and the token."}
     source = knowledge_sync.Source(repo, values.get("WIZARD_KB_REF") or "main", (values.get("WIZARD_KB_PATH") or "").strip("/\\"),
                                    token)
-    result = knowledge_sync.check(source, proxy=values.get("WIZARD_PROXY") or settings.proxy, transport=transport)
-    return {"ok": result.ok, "message": result.message}
+    proxy = values.get("WIZARD_PROXY") or settings.proxy
+    result = knowledge_sync.check(source, proxy=proxy, transport=transport)
+    writer = values.get("WIZARD_KB_WRITE_TOKEN")
+    if not writer or not result.ok:
+        return {"ok": result.ok, "message": result.message}
+    from wizard_documents import kb
+    client = httpx.Client(transport=transport, timeout=30) if transport is not None else None
+    ok, message = kb.check_write(repo, writer, proxy=proxy, client=client)
+    return {"ok": ok, "message": f"{result.message} {message}"}
 
 
 def test_metronome(settings: Settings, proposed: dict[str, Any],
