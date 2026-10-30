@@ -135,3 +135,31 @@ growing over 28 steps.
 (real Chromium: `gds_topMenu` chosen and cited, a list of bookmark names and a summary object cited as they are, a
 status not), `tests/unit/test_portals.py::test_a_result_that_is_not_a_table_becomes_key_value_rows`,
 `tests/unit/test_portal_map.py::test_the_catalog_tools_say_the_portal_itself_is_read_live`.
+
+## Update 30 October 2026 — what each mapped report is for
+
+**Context.** Reviewing a mapped ASAP report, the owner asked: "I see the elements + the report names, but I dont see
+business logic saying: THIS report is used for THESE terms". The mapping round recorded how to open a report, its
+filters, data and requests, but never asked for its `summary`, so mapped reports carried no business meaning: a
+question was matched to them by menu words alone. Two reports that both say "share" (a retail panel share and a
+shipment share) could not be told apart. The owner also asked how adding this would change the reports already
+mapped.
+
+**Decision.**
+- **Routing on every report.** `use_for` (the business questions and terms it answers), `not_for` (near misses, each
+  with the report to use instead: an id in the same map or `portal:id`) and `definitions` (the knowledge notes for its
+  terms). `portal_map(find=...)` weighs `use_for` just below the name; the readable page shows them; the knowledge
+  tools list, with each note, the mapped reports that name it (`portal_reports`). The link is written once, on the
+  report.
+- **New reports** get a business summary and routing when they are mapped (step 5 of the mapping request).
+- **Reports mapped earlier** get them through `portal_map_route`, which can set only `use_for`, `not_for`,
+  `definitions`, a `routing_note` and a summary where there is none. It cannot change a menu path, how to open a report,
+  filters, data, requests, script or status, and it cannot add or remove a report: a routing pass cannot undo what
+  mapping proved. Unknown reports, `use_instead` targets and note ids are refused and nothing is written.
+- **The next mapping does it first.** `portal_map(todo=true)` lists the mapped reports still to route (`to_route`,
+  with their name, path, summary, filters and data, so they are routed without opening the portal). A mapping is not
+  finished while any remain, so pressing **Map** on a finished map routes it.
+
+**Evidence.** `tests/unit/test_portal_map.py`: routing changes nothing but routing; refusals write nothing; the tool
+rejects other fields and unknown notes; a definition lists its mapped reports; a finished map is routed by the next
+mapping in one round.

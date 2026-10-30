@@ -486,7 +486,7 @@
     },
     {
       "name": "wizard_lookup_definitions",
-      "description": "Search the company knowledge base: business definitions (sell-through, share, investment-efficiency proxy, observed switchers), fiscal calendar, markets and models, platform guides, and company notes on the organisation, products, processes and internal acronyms. Use it whenever a term, acronym, team, product or process matters to the answer. Returns the best-matching notes (long notes: the matching sections), each showing whether an owner has signed it and when an expert last confirmed it.",
+      "description": "Search the company knowledge base: business definitions (sell-through, share, investment-efficiency proxy, observed switchers), fiscal calendar, markets and models, platform guides, and company notes on the organisation, products, processes and internal acronyms. Use it whenever a term, acronym, team, product or process matters to the answer. Returns the best-matching notes (long notes: the matching sections), each showing whether an owner has signed it, when an expert last confirmed it, and the mapped portal reports that measure the term (portal_reports).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -533,7 +533,7 @@
     },
     {
       "name": "wizard_read_knowledge",
-      "description": "Read up to 5 knowledge notes in full by id (ids come from wizard_browse_knowledge or wizard_lookup_definitions), with their approval status, expert check and related note ids.",
+      "description": "Read up to 5 knowledge notes in full by id (ids come from wizard_browse_knowledge or wizard_lookup_definitions), with their approval status, expert check, related note ids and the mapped portal reports that measure the term.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2037,7 +2037,7 @@
     },
     {
       "name": "portal_map",
-      "description": "The map Wizard keeps of a company portal (GSCM, ASAP, the Big Data Portal): what Gemini learned exploring it. Without arguments: how the portal works, its proven shortcuts, and the index of mapped reports. find: the reports that match business words, in full: menu path and id, how to open it fastest, its filters and their values, the datasets and columns, and the data requests that return its rows with the filters as parameters. Read it before exploring a portal: a mapped report is read in one portal_run.",
+      "description": "The map Wizard keeps of a company portal (GSCM, ASAP, the Big Data Portal): what Gemini learned exploring it. Without arguments: how the portal works, its proven shortcuts, and the index of mapped reports. find: the reports that match business words, in full: what each is for (use_for) and not for (not_for, with the report to use instead), the knowledge notes defining its terms, menu path and id, how to open it fastest, its filters and their values, the datasets and columns, and the data requests that return its rows with the filters as parameters. Read it before exploring a portal: a mapped report is read in one portal_run.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2058,7 +2058,7 @@
             "type": "string"
           },
           "todo": {
-            "description": "True: the reports still to map (todo, partial, failed), for exploring (default false)",
+            "description": "True: the reports still to map (todo, partial, failed), for exploring, and the mapped reports still to route (portal_map_route) (default false)",
             "type": "boolean"
           }
         },
@@ -2075,7 +2075,7 @@
     },
     {
       "name": "portal_map_save",
-      "description": "Add what you learned about a portal to its map, so later questions go straight to the data: the overview, topics (technical details and shortcuts you proved), and reports by id (menu path and id, how to open it, filters and their values, datasets and columns, data requests with {{param}} placeholders, status). Only the fields you give change. Metadata only: never data rows or secrets. Saved on this PC and published to the knowledge base when this PC can write to it; it changes nothing in the portal.",
+      "description": "Add what you learned about a portal to its map, so later questions go straight to the data: the overview, topics (technical details and shortcuts you proved), and reports by id (menu path and id, a business summary, what it is for and not for, how to open it, filters and their values, datasets and columns, data requests with {{param}} placeholders, status). Only the fields you give change. Metadata only: never data rows or secrets. Saved on this PC and published to the knowledge base when this PC can write to it; it changes nothing in the portal.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2120,6 +2120,44 @@
             "items": {
               "additionalProperties": false,
               "properties": {
+                "use_for": {
+                  "description": "2-5 short phrases: the business questions and terms the report answers, in the words people use, with the acronyms in its name (e.g. 'MS' = market share): 'shipment market share by vendor', 'foldable share by price tier'.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 8,
+                  "type": "array"
+                },
+                "not_for": {
+                  "description": "Near misses, above all a report that measures the same term differently (retail panel share vs shipment share, sell-in vs sell-out, plan vs actual).",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "question": {
+                        "description": "A question this report looks right for but must not answer, e.g. 'retail sell-out share' (3-300 characters)",
+                        "type": "string"
+                      },
+                      "use_instead": {
+                        "description": "The report that does answer it: its id in this map, or 'portal:id' for another portal's map. Leave it out when no mapped report does (pattern ^([a-z][a-z0-9]{1,15}:)?[a-z0-9][a-z0-9_.-]{0,79}$)",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "question"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 8,
+                  "type": "array"
+                },
+                "definitions": {
+                  "description": "Ids of the knowledge notes that define its terms (wizard_lookup_definitions / wizard_browse_knowledge), e.g. 'market-share'.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 8,
+                  "type": "array"
+                },
                 "id": {
                   "description": "Stable id: the menu id or a short kebab-case name, e.g. as470 or weekly-sellout (pattern ^[a-z0-9][a-z0-9_.-]{0,79}$)",
                   "type": "string"
@@ -2332,6 +2370,98 @@
         },
         "required": [
           "system"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "portal_map_route",
+      "description": "Say what reports already in a portal's map are for: use_for (the business questions and terms each answers), not_for (near misses, with the report to use instead) and definitions (the knowledge notes for its terms), plus a business summary where a report has none. It changes nothing else: not the menu path, how to open it, filters, data, requests, script or status, and it adds or removes no report. Use it for the reports portal_map(todo=true) lists under to_route.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "system": {
+            "type": "string",
+            "description": "(pattern ^[a-z][a-z0-9]{1,15}$)"
+          },
+          "reports": {
+            "description": "Reports already in the map, each with its routing; what you give replaces its earlier routing.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "use_for": {
+                  "description": "2-5 short phrases: the business questions and terms the report answers, in the words people use, with the acronyms in its name (e.g. 'MS' = market share): 'shipment market share by vendor', 'foldable share by price tier'.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 8,
+                  "type": "array"
+                },
+                "not_for": {
+                  "description": "Near misses, above all a report that measures the same term differently (retail panel share vs shipment share, sell-in vs sell-out, plan vs actual).",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "question": {
+                        "description": "A question this report looks right for but must not answer, e.g. 'retail sell-out share' (3-300 characters)",
+                        "type": "string"
+                      },
+                      "use_instead": {
+                        "description": "The report that does answer it: its id in this map, or 'portal:id' for another portal's map. Leave it out when no mapped report does (pattern ^([a-z][a-z0-9]{1,15}:)?[a-z0-9][a-z0-9_.-]{0,79}$)",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "question"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 8,
+                  "type": "array"
+                },
+                "definitions": {
+                  "description": "Ids of the knowledge notes that define its terms (wizard_lookup_definitions / wizard_browse_knowledge), e.g. 'market-share'.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 8,
+                  "type": "array"
+                },
+                "id": {
+                  "description": "The id of a report already in the map (pattern ^[a-z0-9][a-z0-9_.-]{0,79}$)",
+                  "type": "string"
+                },
+                "summary": {
+                  "description": "What the report shows in business words: measures, grain, period, units. Kept only when the report has no summary yet (0-3000 characters)",
+                  "type": "string"
+                },
+                "routing_note": {
+                  "description": "Only when the map says too little to tell what the report is for: what is missing (0-600 characters)",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "type": "object"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "type": "array"
+          },
+          "note": {
+            "description": "One line for the map's log (0-600 characters)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "system",
+          "reports"
         ],
         "type": "object"
       },

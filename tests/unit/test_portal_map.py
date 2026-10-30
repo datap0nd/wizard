@@ -174,6 +174,86 @@ def test_the_catalog_tools_say_the_portal_itself_is_read_live(tmp_path: Path):
     assert any(s["system"] == "gscm" and s["connector_status"] == "BROWSER_SESSION" for s in listed)
 
 
+# Business routing: what each mapped report is for --------------------------------------------------------------------
+MAPPED = [{"id": "as470", "name": "Actual Sales", "path": ["SCM", "Sales", "Actual Sales"], "menu_id": "AS470",
+           "status": "mapped", "open": "application.gfn_openMenu('AS470')",
+           "filters": [{"name": "Market", "kind": "Combo", "param": "market"}],
+           "data": [{"dataset": "ds_list", "columns": ["MKT", "QTY"], "labels": "QTY = Sell-in units"}],
+           "requests": [{"name": "search", "url": "/gscm/selectActual.do", "params": ["market"], "verified": True}]},
+          {"id": "ms100", "name": "Shipment share", "path": ["Market", "Share"], "menu_id": "MS100", "status": "mapped",
+           "summary": "Shipment share by vendor and quarter.", "notes": "Slow on Mondays."}]
+
+
+def mapped_maps(tmp_path: Path) -> PortalMaps:
+    maps = PortalMaps(tmp_path / "maps", names={"gscm": "GSCM"})
+    maps.save("gscm", overview="A Nexacro client.", reports=MAPPED)
+    return maps
+
+
+def without_routing(report: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in report.items() if k not in ("use_for", "not_for", "definitions", "routed", "summary")}
+
+
+def test_routing_says_what_mapped_reports_are_for_and_changes_nothing_else(tmp_path: Path):
+    maps = mapped_maps(tmp_path)
+    before = {r["id"]: dict(r) for r in maps.load("gscm")["reports"]}
+    assert maps.status("gscm")["reports_to_route"] == 2
+    listed = maps.to_route("gscm")
+    assert [r["id"] for r in listed] == ["as470", "ms100"] and listed[0]["filters"] == ["Market"]
+    assert listed[0]["data"][0]["labels"] == "QTY = Sell-in units", "enough to route without opening the report"
+    result = maps.route("gscm", [
+        {"id": "ms100", "use_for": ["shipment market share by vendor"], "summary": "Something else.",
+         "not_for": [{"question": "our own sell-in units", "use_instead": "as470"}], "definitions": ["market-share"]},
+        {"id": "as470", "use_for": ["sell-in units by market"], "summary": "Sell-in units by market.",
+         "definitions": ["sell-in-sell-out"]}], note="Routed the mapped reports.")
+    assert result == {"routed": ["ms100", "as470"], "summary_kept": ["ms100"], "left": 0}
+    after = {r["id"]: r for r in maps.load("gscm")["reports"]}
+    assert all(without_routing(after[i]) == without_routing(before[i]) for i in before), "mapping proved it: untouched"
+    assert after["ms100"]["summary"] == "Shipment share by vendor and quarter.", "an existing summary is kept"
+    assert after["as470"]["summary"] == "Sell-in units by market.", "a missing one is filled"
+    assert after["as470"]["routed"] and maps.unrouted(maps.load("gscm")) == []
+    assert [r["id"] for r in maps.find("gscm", "shipment share by vendor")][:1] == ["ms100"]
+    assert [(s, r["id"]) for s, r in maps.defined_by("market-share")] == [("gscm", "ms100")]
+    page = render(maps.load("gscm"))
+    assert "- Use for: shipment market share by vendor" in page and "- Not for: our own sell-in units (use as470)" in page
+
+
+def test_routing_refuses_what_would_change_the_map_beyond_routing(tmp_path: Path):
+    maps = mapped_maps(tmp_path)
+    saved = maps.load("gscm")
+    with pytest.raises(Exception, match="Not in the gscm map: as999"):
+        maps.route("gscm", [{"id": "as999", "use_for": ["anything"]}])
+    with pytest.raises(Exception, match="no map holds: ms100 → nope"):
+        maps.route("gscm", [{"id": "ms100", "not_for": [{"question": "x", "use_instead": "nope"}]}])
+    with pytest.raises(Exception, match="asap:ms1"):
+        maps.route("gscm", [{"id": "ms100", "not_for": [{"question": "x", "use_instead": "asap:ms1"}]}])
+    assert maps.load("gscm") == saved, "a refused routing writes nothing"
+    maps.route("gscm", [{"id": "ms100", "routing_note": "The map does not say what the share is of."}])
+    assert maps.report("gscm", "ms100")["routed"] and "Routing: The map does not say" in render(maps.load("gscm"))
+
+
+def test_the_route_tool_takes_routing_only_and_checks_its_notes(tmp_path: Path):
+    registry, context = tools(tmp_path)
+    context.services.portal_maps.save("gscm", overview="A Nexacro client.", reports=MAPPED)
+    todo = registry.execute("portal_map", {"system": "gscm", "todo": True}, context).data
+    assert [r["id"] for r in todo["to_route"]] == ["as470", "ms100"] and todo["to_route_left"] == 2
+    sneaky = registry.execute("portal_map_route", {"system": "gscm", "reports": [{"id": "as470", "status": "todo"}]}, context)
+    assert sneaky.error_code == "invalid_arguments", "status, filters, requests... are not routing"
+    unknown = registry.execute("portal_map_route", {"system": "gscm", "reports": [
+        {"id": "as470", "use_for": ["sell-in"], "definitions": ["no-such-note"]}]}, context)
+    assert unknown.error_code == "unknown_note"
+    routed = registry.execute("portal_map_route", {"system": "gscm", "reports": [
+        {"id": "ms100", "use_for": ["shipment market share by vendor"], "definitions": ["market-share"]}]}, context)
+    assert routed.ok and routed.data["left"] == 1
+    share = registry.execute("wizard_lookup_definitions", {"query": "market share"}, context).data["definitions"]
+    note = next(d for d in share if d["id"] == "market-share")
+    assert note["portal_reports"] == [{"system": "gscm", "report": "ms100", "name": "Shipment share",
+                                       "use_for": ["shipment market share by vendor"]}]
+    saved = registry.execute("portal_map_save", {"system": "gscm", "reports": [
+        {"id": "mt100", "name": "Model master", "status": "mapped", "use_for": ["model codes and names"]}]}, context)
+    assert saved.ok and context.services.portal_maps.report("gscm", "mt100")["routed"], "mapping a report routes it too"
+
+
 # Mapping rounds through the API, with a scripted Gemini --------------------------------------------------------------
 class Mapper:
     """Each mapping round maps one more report; a question answers at once. `stall` makes rounds add nothing, `hold`
@@ -206,11 +286,16 @@ class Mapper:
             raise AgentFailure("cancelled", "cancelled")
         if not self.stall:
             ok, text = await tools.call("portal_map", {"system": "gscm", "todo": True})
-            todo = json.loads(text)["todo"] if ok else []
-            if "This is round 1;" in request.prompt:
+            reply = json.loads(text) if ok else {}
+            todo, to_route = reply.get("todo", []), reply.get("to_route", [])
+            if to_route:
+                await tools.call("portal_map_route", {"system": "gscm", "reports": [
+                    {"id": r["id"], "use_for": [f"{r['name']} by market"]} for r in to_route]})
+            elif "This is round 1;" in request.prompt:
                 await tools.call("portal_map_save", {"system": "gscm", "overview": "A Nexacro client.", "reports": REPORTS})
             elif todo:
-                await tools.call("portal_map_save", {"system": "gscm", "reports": [{"id": todo[0]["id"], "status": "mapped"}]})
+                await tools.call("portal_map_save", {"system": "gscm", "reports": [
+                    {"id": todo[0]["id"], "status": "mapped", "use_for": [f"{todo[0]['name']} by market"]}]})
         await emit("text_delta", {"text": "Round done."})
 
 
@@ -246,6 +331,21 @@ def test_mapping_runs_in_rounds_until_nothing_is_left_and_a_question_can_run_mea
         assert [r["question"] for r in runs] == ["Map GSCM", "Map GSCM (round 2)", "Map GSCM (round 3)", "Map GSCM (round 4)"]
         assert all(r["status"] == "succeeded" for r in runs)
         assert client.get("/api/v1/portals").json()["mapping"]["state"] == "finished"
+
+
+def test_a_finished_map_is_routed_by_the_next_mapping_before_anything_else(tmp_path: Path):
+    runtime = Mapper()
+    with mapping_app(tmp_path, runtime) as client:
+        maps = client.app.state.manager.services.portal_maps
+        maps.save("gscm", overview="A Nexacro client.", reports=MAPPED)
+        before = {r["id"]: without_routing(r) for r in maps.load("gscm")["reports"]}
+        login(client, "local-owner")
+        assert client.get("/api/v1/portals").json()["maps"]["gscm"]["reports_to_route"] == 2
+        assert client.post("/api/v1/portals/gscm/map", headers=HEADERS).status_code == 200
+        view = wait_mapping(client, lambda v: v["mapping"]["state"] != "running")
+        assert view["mapping"]["state"] == "finished" and view["mapping"]["round"] == 1, view
+        assert view["map"]["reports_to_route"] == 0 and "step 4" in runtime.prompts[0]
+        assert {r["id"]: without_routing(r) for r in maps.load("gscm")["reports"]} == before
 
 
 def test_mapping_stops_when_rounds_add_nothing(tmp_path: Path):

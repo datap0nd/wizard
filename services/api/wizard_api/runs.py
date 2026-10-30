@@ -48,6 +48,7 @@ WORK_LINES = 15  # steps of an earlier answer a follow-up prompt carries: what w
 # until nothing is left to map, a round makes no progress twice, the person stops it, or EXPLORE_ROUNDS have run.
 EXPLORE_TOOL_CALLS = 80
 EXPLORE_ROUNDS = 30
+MAP_WRITES = ("portal_map_save", "portal_map_route")  # still allowed once a round's budget is used, to save its work
 EXPLORE_STALLS = 2
 # A new chat's name from Gemini (owner, 30 Oct 2026): asked beside the first answer; the answer waits at most this long
 # for it before it is shown finished, so the chat list it refreshes already has the name.
@@ -326,6 +327,9 @@ def tool_label(name: str, args: dict[str, Any], services: Services) -> str:
         what = (str(reports[0].get("name") or reports[0].get("id")) if len(reports) == 1 else
                 f"{len(reports)} reports" if reports else "how it works")
         return f"Added to Wizard's map of {portal_name(services, args.get('system'))}: {what}"
+    if name == "portal_map_route":
+        count = len([r for r in args.get("reports") or [] if isinstance(r, dict)])
+        return f"Said what {count} report(s) in Wizard's map of {portal_name(services, args.get('system'))} are for"
     if name == "portal_request_access":
         tables = ", ".join(str(t) for t in args.get("tables") or [])
         return f"Prepared an access request in {portal_name(services, args.get('system'))}" + (f": {tables}" if tables else "")
@@ -379,6 +383,8 @@ def tool_summary(name: str, outcome: ToolOutcome) -> str:
         counts = data.get("counts") or {}
         return (f"{len(data.get('added', []))} added, {len(data.get('updated', []))} updated · map: {counts.get('mapped', 0)} "
                 f"mapped, {counts.get('todo', 0)} to do")
+    if name == "portal_map_route":
+        return f"{len(data.get('routed', []))} routed · {data.get('left', 0)} still to route"
     if name == "portal_map":
         if "report" in data:
             return f"{data['report'].get('name') or data['report'].get('id')} ({data['report'].get('status')})"
@@ -664,7 +670,7 @@ class RunManager:
         if outcome.ok and "schedule" in outcome.data:
             schedule = next(s for s in self.store.schedules(run.conversation_id, run.id) if s["label"] == outcome.data["schedule"])
             await self.emit(run, "schedule_proposed", {"schedule": public_schedule(schedule)})
-        if outcome.ok and name == "portal_map_save":
+        if outcome.ok and name in MAP_WRITES:
             run.maps_changed.add(str(outcome.data.get("system")))
         if not outcome.ok and outcome.error_code == "sign_in_required":
             run.needs_sign_in = True
@@ -687,7 +693,7 @@ class RunManager:
         repeating or nears its time limit, refuse further research so Gemini answers with what it has. A refusal is a
         tool error Gemini reads; the run goes on. None means the call may run."""
         limit = min(EXPLORE_TOOL_CALLS, self.settings.max_tool_calls) if run.kind == "explore" else self.settings.max_tool_calls
-        if run.tool_calls > limit and not (run.kind == "explore" and name == "portal_map_save"):
+        if run.tool_calls > limit and not (run.kind == "explore" and name in MAP_WRITES):
             return ToolOutcome(False, {}, 0, "tool_budget_exhausted",
                                f"This run reached its limit of {limit} tool calls. " + (
                                    "Save what you learned with portal_map_save if you have not, then summarise this round; "
@@ -802,6 +808,7 @@ class RunManager:
         progressed = after != exploration.before or bool(run.maps_changed)
         exploration.stalls = 0 if progressed else exploration.stalls + 1
         waiting = after.get("todo", 0) + after.get("partial", 0)
+        to_route = len(maps.unrouted(data)) if maps and data else 0  # mapped before the map kept business routing
         if status == "cancelled":
             exploration.state, exploration.message = "stopped", f"Round {exploration.round} was cancelled."
         elif code in ("gemini_signin_required", "runtime_unavailable", "model_quota", "model_permission_denied",
@@ -812,7 +819,7 @@ class RunManager:
             exploration.state = "failed"
             exploration.message = (f"{exploration.name} asks for a sign-in: press Sign in to the portals, sign in in the "
                                    "window that opens and close it, then Continue mapping.")
-        elif data is not None and data.get("overview") and data["reports"] and not waiting:
+        elif data is not None and data.get("overview") and data["reports"] and not waiting and not to_route:
             exploration.state = "finished"
             exploration.message = f"Mapped: {after.get('mapped', 0)} report(s), {after.get('failed', 0)} failed."
         elif exploration.stalls >= EXPLORE_STALLS:
@@ -821,8 +828,8 @@ class RunManager:
                                    "to the map. Open the Map conversation to see why.")
         elif exploration.round >= EXPLORE_ROUNDS:
             exploration.state = "finished"
-            exploration.message = (f"Paused after {EXPLORE_ROUNDS} rounds with {waiting} report(s) still to map: press "
-                                   "Continue mapping to go on.")
+            exploration.message = (f"Paused after {EXPLORE_ROUNDS} rounds with {waiting} report(s) still to map"
+                                   + (f" and {to_route} to route" if to_route else "") + ": press Continue mapping to go on.")
         if exploration.state != "running":
             log.info("portal map %s for %s: %s", exploration.system, run.identity.id, exploration.message)
             return

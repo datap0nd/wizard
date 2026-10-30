@@ -156,7 +156,22 @@ class MapRequest(Args):
     notes: str | None = Field(default=None, max_length=2000)
 
 
-class MapReport(Args):
+NOTE_ID = r"^[a-z0-9][a-z0-9-]{0,80}$"
+TARGET = r"^([a-z][a-z0-9]{1,15}:)?[a-z0-9][a-z0-9_.-]{0,79}$"
+
+
+class MapNotFor(Args):
+    question: str = Field(min_length=3, max_length=300, description="A question this report looks right for but must not answer, e.g. 'retail sell-out share'.")
+    use_instead: str | None = Field(default=None, pattern=TARGET, description="The report that does answer it: its id in this map, or 'portal:id' for another portal's map. Leave it out when no mapped report does.")
+
+
+class MapRouting(Args):
+    use_for: list[str] | None = Field(default=None, max_length=8, description="2-5 short phrases: the business questions and terms the report answers, in the words people use, with the acronyms in its name (e.g. 'MS' = market share): 'shipment market share by vendor', 'foldable share by price tier'.")
+    not_for: list[MapNotFor] | None = Field(default=None, max_length=8, description="Near misses, above all a report that measures the same term differently (retail panel share vs shipment share, sell-in vs sell-out, plan vs actual).")
+    definitions: list[str] | None = Field(default=None, max_length=8, description="Ids of the knowledge notes that define its terms (wizard_lookup_definitions / wizard_browse_knowledge), e.g. 'market-share'.")
+
+
+class MapReport(MapRouting):
     id: str = Field(pattern=MAP_ID, description="Stable id: the menu id or a short kebab-case name, e.g. as470 or weekly-sellout.")
     name: str | None = Field(default=None, max_length=200)
     path: list[str] | None = Field(default=None, max_length=8, description="Menu path, top level first.")
@@ -171,12 +186,24 @@ class MapReport(Args):
     notes: str | None = Field(default=None, max_length=6000, description="Pitfalls: waits, popups, paging, limits, why it failed.")
 
 
+class MapRoute(MapRouting):
+    id: str = Field(pattern=MAP_ID, description="The id of a report already in the map.")
+    summary: str | None = Field(default=None, max_length=3000, description="What the report shows in business words: measures, grain, period, units. Kept only when the report has no summary yet.")
+    routing_note: str | None = Field(default=None, max_length=600, description="Only when the map says too little to tell what the report is for: what is missing.")
+
+
+class MapRouteArgs(Args):
+    system: str = Field(pattern=SYSTEM)
+    reports: list[MapRoute] = Field(min_length=1, max_length=50, description="Reports already in the map, each with its routing; what you give replaces its earlier routing.")
+    note: str | None = Field(default=None, max_length=600, description="One line for the map's log.")
+
+
 class MapArgs(Args):
     system: str = Field(pattern=SYSTEM, description="The portal: asap, gscm or bdp.")
     find: str | None = Field(default=None, max_length=300, description="Business words or a report name: returns the best matching reports in full.")
     report: str | None = Field(default=None, max_length=120, description="One report's id or menu id: returns it in full.")
     topic: str | None = Field(default=None, max_length=80, description="One topic's id: returns its full text.")
-    todo: bool = Field(default=False, description="True: the reports still to map (todo, partial, failed), for exploring.")
+    todo: bool = Field(default=False, description="True: the reports still to map (todo, partial, failed), for exploring, and the mapped reports still to route (portal_map_route).")
 
 
 class MapSaveArgs(Args):
@@ -238,7 +265,8 @@ def guide(ctx: ToolContext, args: GuideArgs) -> dict[str, Any]:
     if maps is not None:
         data["map"] = {**maps.summary(portal.id),
                        "how_to_use": "What Wizard learned exploring this portal. Look here first: portal_map(find=...) "
-                                     "returns a report's menu id, how to open it, its filters and the data request with "
+                                     "returns a report's menu id, what it is for and not for (use_for, not_for with the "
+                                     "report to use instead), how to open it, its filters and the data request with "
                                      "the filters as parameters, so one portal_run (a request step or the saved script) "
                                      "reads it. Add what you learn with portal_map_save."}
     if portal.parts:
@@ -427,15 +455,29 @@ def read_map(ctx: ToolContext, args: MapArgs) -> dict[str, Any]:
     elif args.todo:
         data["todo"] = maps.todo(portal.id)
         data["counts"] = maps.counts(maps.load(portal.id))
+        unrouted = len(maps.unrouted(maps.load(portal.id)))
+        if unrouted:
+            data["to_route"] = maps.to_route(portal.id)
+            data["to_route_left"] = unrouted
+            data["to_route_note"] = ("Mapped reports that do not say yet what they are for. Route them first with "
+                                     "portal_map_route, a batch at a time; it changes nothing else in the map.")
     else:
         data.update(maps.summary(portal.id))
     return data
+
+
+def _check_definitions(ctx: ToolContext, reports: list[MapReport] | list[MapRoute]) -> None:
+    unknown = sorted({d for r in reports for d in r.definitions or [] if d not in ctx.services.knowledge.by_id})
+    if unknown:
+        raise ToolError("unknown_note", f"No knowledge note with id {', '.join(unknown)}. Find note ids with "
+                                        "wizard_lookup_definitions or wizard_browse_knowledge, or leave definitions out.")
 
 
 def save_map(ctx: ToolContext, args: MapSaveArgs) -> dict[str, Any]:
     portal = _portal(ctx, args.system)
     if args.overview is None and not (args.topics or args.reports or args.remove):
         raise ToolError("invalid_arguments", "Give an overview, topics, reports or report ids to remove.")
+    _check_definitions(ctx, args.reports)
     try:
         result = _maps(ctx).save(portal.id, overview=args.overview, topics=[t.model_dump() for t in args.topics],
                                  reports=[r.model_dump(exclude_none=True) for r in args.reports], remove=args.remove,
@@ -445,6 +487,18 @@ def save_map(ctx: ToolContext, args: MapSaveArgs) -> dict[str, Any]:
     return {"system": portal.id, **result,
             "note": f"Saved in the {portal.name} map on this PC; Wizard publishes it to the knowledge base after this run "
                     "when this PC has the knowledge base's write token."}
+
+
+def route_map(ctx: ToolContext, args: MapRouteArgs) -> dict[str, Any]:
+    portal = _portal(ctx, args.system)
+    _check_definitions(ctx, args.reports)
+    try:
+        result = _maps(ctx).route(portal.id, [r.model_dump(exclude_none=True) for r in args.reports], note=args.note)
+    except portal_map.MapError as error:
+        raise ToolError("invalid_arguments", str(error)) from None
+    return {"system": portal.id, **result,
+            "note": "Only the routing changed: use_for, not_for, definitions, and a summary where there was none."
+                    + (" These kept their own summary: " + ", ".join(result["summary_kept"]) + "." if result["summary_kept"] else "")}
 
 
 def request_access(ctx: ToolContext, args: RequestAccessArgs) -> dict[str, Any]:
@@ -506,15 +560,25 @@ PORTAL_TOOLS = [
     ToolSpec("portal_map",
              "The map Wizard keeps of a company portal (GSCM, ASAP, the Big Data Portal): what Gemini learned exploring "
              "it. Without arguments: how the portal works, its proven shortcuts, and the index of mapped reports. find: "
-             "the reports that match business words, in full: menu path and id, how to open it fastest, its filters and "
-             "their values, the datasets and columns, and the data requests that return its rows with the filters as "
-             "parameters. Read it before exploring a portal: a mapped report is read in one portal_run.",
+             "the reports that match business words, in full: what each is for (use_for) and not for (not_for, with "
+             "the report to use instead), the knowledge notes defining its terms, menu path and id, how to open it "
+             "fastest, its filters and their values, the datasets and columns, and the data requests that return its "
+             "rows with the filters as parameters. Read it before exploring a portal: a mapped report is read in one "
+             "portal_run.",
              MapArgs, read_map, "portal", "knowledge"),
     ToolSpec("portal_map_save",
              "Add what you learned about a portal to its map, so later questions go straight to the data: the "
-             "overview, topics (technical details and shortcuts you proved), and reports by id (menu path and id, how "
-             "to open it, filters and their values, datasets and columns, data requests with {{param}} placeholders, "
-             "status). Only the fields you give change. Metadata only: never data rows or secrets. Saved on this PC "
-             "and published to the knowledge base when this PC can write to it; it changes nothing in the portal.",
+             "overview, topics (technical details and shortcuts you proved), and reports by id (menu path and id, a "
+             "business summary, what it is for and not for, how to open it, filters and their values, datasets and "
+             "columns, data requests with {{param}} placeholders, status). Only the fields you give change. Metadata "
+             "only: never data rows or secrets. Saved on this PC and published to the knowledge base when this PC can "
+             "write to it; it changes nothing in the portal.",
              MapSaveArgs, save_map, "portal", "present"),
+    ToolSpec("portal_map_route",
+             "Say what reports already in a portal's map are for: use_for (the business questions and terms each "
+             "answers), not_for (near misses, with the report to use instead) and definitions (the knowledge notes for "
+             "its terms), plus a business summary where a report has none. It changes nothing else: not the menu path, "
+             "how to open it, filters, data, requests, script or status, and it adds or removes no report. Use it for "
+             "the reports portal_map(todo=true) lists under to_route.",
+             MapRouteArgs, route_map, "portal", "present"),
 ]

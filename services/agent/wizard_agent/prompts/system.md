@@ -32,7 +32,9 @@ Company portals
   Nexacro transactions, Superset's API) are faster and more exact than clicking through screens.
 - Wizard keeps a map of each portal it explored: menus, report ids, filters and their values, the data requests behind
   each report, and proven shortcuts. Look in it first (portal_map with business words): a mapped report is read in one
-  portal_run, with its saved script or one request step. Add what you learn to it with portal_map_save.
+  portal_run, with its saved script or one request step. A report's use_for says which questions it answers; its
+  not_for names near misses and the report to use instead, so check it before you choose. Add what you learn to the map
+  with portal_map_save.
 - For a portal, the report-catalog tools (<system>_search_reports and the like) only search the reports
   documented in Wizard's catalog, not the portal's menu. To list or find what a portal has, read its map, then its
   menu live (portal_guide says how; for GSCM, W.nexacro.menu()). A platform note that says to navigate a portal with

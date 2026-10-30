@@ -8,7 +8,8 @@ last page between calls, so you can explore step by step.
 
 0. **Read the map first.** `portal_guide` shows the portal's map (what Wizard learned exploring it: how it works, the
    shortcuts that were proved, and the mapped reports). `portal_map(system, find="business words")` returns the
-   matching reports in full: menu id, how to open it fastest, its filters and their values, its datasets and columns,
+   matching reports in full: what each is for (`use_for`) and not for (`not_for`, with the report to use instead), menu
+   id, how to open it fastest, its filters and their values, its datasets and columns,
    and its data request with the filters as `{{param}}` placeholders, often with a saved script. When a report is
    mapped, read it straight away: run its script with `params`, or one `request` step with the request's url and body
    and your filter values. Explore only what the map does not know, and add what you learn with `portal_map_save`.
@@ -32,7 +33,8 @@ last page between calls, so you can explore step by step.
    `max_rows` rows, but all are counted.
 5. **Keep what worked.** `portal_save_script` keeps your steps under a name with parameters (`P.name` in scripts,
    `{{name}}` elsewhere). Next time, `portal_run(script=..., params=[...])` answers without exploring. Put it in the
-   map too (`portal_map_save`: the report, its filters, its request, the script's name), so any question finds it.
+   map too (`portal_map_save`: the report, a business summary, what it is for and not for, its filters, its request,
+   the script's name), so any question finds it.
 
 ## The W helpers (in every evaluate step)
 

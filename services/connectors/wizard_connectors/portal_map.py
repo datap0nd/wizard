@@ -32,9 +32,15 @@ MAX_TOPICS = 100
 MAX_LOG = 60
 INDEX_LIMIT = 400        # reports listed in the map summary; the rest are found with portal_map(find=...)
 TOPICS_INLINE = 16_000   # topic texts shown in full in the summary up to this many characters in all
-# How much each part of a report counts when a question's words are matched against the map.
-WEIGHTS = (("name", 4.0), ("path", 2.5), ("summary", 2.0), ("menu_id", 3.0), ("id", 2.0), ("filters", 1.0),
-           ("data", 1.0), ("notes", 0.5))
+# How much each part of a report counts when a question's words are matched against the map. use_for is written for
+# exactly this match: the business questions and terms the report answers.
+WEIGHTS = (("name", 4.0), ("use_for", 3.0), ("path", 2.5), ("summary", 2.0), ("menu_id", 3.0), ("id", 2.0),
+           ("definitions", 1.0), ("filters", 1.0), ("data", 1.0), ("notes", 0.5))
+# Business routing (owner, 30 Oct 2026: "I dont see business logic saying: THIS report is used for THESE terms"): what a
+# report answers, its near misses with the report to use instead, and the knowledge notes that define its terms.
+ROUTING = ("use_for", "not_for", "definitions")
+ROUTED = ("mapped", "partial")  # reports that need routing; a todo report gets it when it is mapped
+TO_ROUTE_LIMIT = 15
 
 
 def now() -> str:
@@ -103,11 +109,16 @@ class PortalMaps:
             counts[report.get("status") or "todo"] = counts.get(report.get("status") or "todo", 0) + 1
         return counts
 
+    def unrouted(self, data: dict[str, Any]) -> list[dict[str, Any]]:
+        """Mapped reports that do not say yet what they are for (mapped before the map kept business routing)."""
+        return [r for r in data["reports"] if r.get("status") in ROUTED and not r.get("routed")]
+
     def status(self, system: str) -> dict[str, Any]:
         data = self.load(system)
         counts = self.counts(data)
         return {"system": system, "updated": data.get("updated"), "has_overview": bool(data.get("overview")),
                 "topics": len(data["topics"]), "reports": len(data["reports"]), **{f"reports_{k}": v for k, v in counts.items()},
+                "reports_to_route": len(self.unrouted(data)),
                 "published": data.get("published"), "source": self._source(system),
                 "can_publish": self.writer is not None}
 
@@ -138,11 +149,7 @@ class PortalMaps:
         return out
 
     def report(self, system: str, report_id: str) -> dict[str, Any] | None:
-        key = report_id.strip().lower()
-        for report in self.load(system)["reports"]:
-            if report["id"] == key or str(report.get("menu_id") or "").lower() == key:
-                return report
-        return None
+        return _match(self.load(system)["reports"], report_id)
 
     def topic(self, system: str, topic_id: str) -> dict[str, Any] | None:
         return next((t for t in self.load(system)["topics"] if t["id"] == topic_id.strip().lower()), None)
@@ -153,6 +160,21 @@ class PortalMaps:
         waiting.sort(key=lambda r: order[r.get("status") or "todo"])
         return [{"id": r["id"], "name": r.get("name"), "path": r.get("path"), "menu_id": r.get("menu_id"),
                  "status": r.get("status"), **({"notes": r["notes"]} if r.get("notes") else {})} for r in waiting[:limit]]
+
+    def to_route(self, system: str, limit: int = TO_ROUTE_LIMIT) -> list[dict[str, Any]]:
+        """The next mapped reports without routing, with what says what they hold: enough to route them without
+        opening each one."""
+        return [{"id": r["id"], "name": r.get("name"), "path": " > ".join(r.get("path") or []),
+                 **{k: r[k] for k in ("summary", "notes") if r.get(k)},
+                 "filters": [f.get("name") for f in r.get("filters") or [] if isinstance(f, dict)],
+                 "data": [{k: d[k] for k in ("dataset", "columns", "labels") if d.get(k)}
+                          for d in r.get("data") or [] if isinstance(d, dict)]}
+                for r in self.unrouted(self.load(system))[:limit]]
+
+    def defined_by(self, note_id: str) -> list[tuple[str, dict[str, Any]]]:
+        """Reports in the maps of this PC's portals whose `definitions` name this knowledge note."""
+        return [(system, r) for system in self.names for r in self.load(system)["reports"]
+                if note_id in (r.get("definitions") or [])]
 
     def find(self, system: str, query: str, limit: int = 8) -> list[dict[str, Any]]:
         words = set(terms(query))
@@ -207,6 +229,10 @@ class PortalMaps:
                 else:
                     old.update(report, updated=stamp)
                     updated.append(old["id"])
+            routed = [r["id"] for r in reports or [] if any(k in r for k in ROUTING)]
+            for report_id in routed:
+                by_id[report_id]["routed"] = stamp
+            self._check_targets(system, data, routed)
             gone = set(remove or [])
             if gone:
                 data["reports"] = [r for r in data["reports"] if r["id"] not in gone]
@@ -216,6 +242,53 @@ class PortalMaps:
             data["name"] = self.names.get(system, data.get("name") or system)
             self._write(system, data)
             return {"added": added, "updated": updated, "removed": sorted(gone), "counts": self.counts(data)}
+
+    def route(self, system: str, reports: list[dict[str, Any]], note: str | None = None) -> dict[str, Any]:
+        """Add business routing to reports already in the map, and nothing else. use_for, not_for and definitions are
+        set, a summary only where the report has none, and the report is marked routed. The menu path, how to open it,
+        filters, data, requests, script and status are never touched and no report is added or removed, so a routing
+        pass over reports mapped earlier cannot undo what their mapping proved."""
+        with self._lock:
+            data = self.load(system)
+            by_id = {r["id"]: r for r in data["reports"]}
+            unknown = [r["id"] for r in reports if r["id"] not in by_id]
+            if unknown:
+                raise MapError(f"Not in the {system} map: {', '.join(unknown[:10])}. Routing only adds to reports the "
+                               "map already holds; map a new report with portal_map_save.")
+            stamp, kept = now(), []
+            for report in reports:
+                report = clean(report)
+                old = by_id[report["id"]]
+                old.update({key: report.get(key) or [] for key in ROUTING})
+                if report.get("summary"):
+                    if old.get("summary"):
+                        kept.append(old["id"])
+                    else:
+                        old["summary"] = report["summary"]
+                if report.get("routing_note"):
+                    old["routing_note"] = report["routing_note"]
+                old["routed"] = stamp
+            self._check_targets(system, data, [r["id"] for r in reports])
+            if note:
+                data["log"] = [*data.get("log", []), {"at": stamp, "note": clean(note.strip())[:600]}][-MAX_LOG:]
+            data["updated"] = stamp
+            self._write(system, data)
+            return {"routed": [r["id"] for r in reports], "summary_kept": kept, "left": len(self.unrouted(data))}
+
+    def _check_targets(self, system: str, data: dict[str, Any], ids: list[str]) -> None:
+        """A not_for written now must name a report that exists: in this map by id or menu id, or 'portal:id' in
+        another portal's map. Older entries are not rechecked, so a report removed later never blocks a save."""
+        missing = []
+        for report in (r for r in data["reports"] if r["id"] in set(ids)):
+            for item in report.get("not_for") or []:
+                target = str(item.get("use_instead") or "") if isinstance(item, dict) else ""
+                other, _, report_id = target.rpartition(":")
+                reports = data["reports"] if other in ("", system) else self.load(other)["reports"]
+                if target and _match(reports, report_id) is None:
+                    missing.append(f"{report['id']} → {target}")
+        if missing:
+            raise MapError("not_for names reports no map holds: " + ", ".join(missing[:10]) + ". Use a report id from "
+                           "this map, 'portal:id' for another portal's map, or leave use_instead empty.")
 
     def forget(self, system: str) -> bool:
         with self._lock:
@@ -269,6 +342,11 @@ class MapError(ValueError):
     pass
 
 
+def _match(reports: list[dict[str, Any]], report_id: str) -> dict[str, Any] | None:
+    key = report_id.strip().lower()
+    return next((r for r in reports if r["id"] == key or str(r.get("menu_id") or "").lower() == key), None)
+
+
 def render(data: dict[str, Any]) -> str:
     """The map as a page people can read in the repository."""
     counts: dict[str, int] = {}
@@ -291,6 +369,15 @@ def render(data: dict[str, Any]) -> str:
                      + (f", path {path}" if path else ""))
         if report.get("summary"):
             lines.append(f"- {report['summary']}")
+        if report.get("use_for"):
+            lines.append(f"- Use for: {'; '.join(str(u) for u in report['use_for'])}")
+        for item in report.get("not_for") or []:
+            lines.append(f"- Not for: {item.get('question')}"
+                         + (f" (use {item['use_instead']})" if item.get("use_instead") else ""))
+        if report.get("definitions"):
+            lines.append(f"- Terms defined in: {', '.join(str(d) for d in report['definitions'])}")
+        if report.get("routing_note"):
+            lines.append(f"- Routing: {report['routing_note']}")
         if report.get("open"):
             lines.append(f"- Open: {report['open']}")
         for item in report.get("filters") or []:

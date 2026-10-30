@@ -3,7 +3,33 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-30 (latest) — Pro for a step, not the rest of the answer; a used-up quota is known by the quota numbers
+## 2026-10-30 (latest) — Mapped reports say what they are for; earlier ones are routed without being changed
+
+The owner, reviewing a mapped ASAP report: "I dont see business logic saying: THIS report is used for THESE terms", and
+how adding it would change the reports already mapped. The mapping request never asked for a report's `summary`, so
+mapped reports carried no business meaning and were found by menu words alone.
+
+**What changed** ([decision update](decisions/2026-10-30-portal-maps.md)).
+- Map reports gain `use_for`, `not_for` (with `use_instead`: an id in the map or `portal:id`) and `definitions`
+  (knowledge note ids, checked). `portal_map(find=...)` weighs `use_for` at 3 (name 4); the readable page shows them;
+  `wizard_lookup_definitions` / `wizard_read_knowledge` list the mapped reports that name a note (`portal_reports`).
+- Mapping a report now asks for a business summary and routing (step 5). Already-mapped reports are listed under
+  `to_route` by `portal_map(todo=true)` and routed with the new `portal_map_route` (step 4, before mapping more). It sets
+  only routing, a `routing_note` and a missing summary; it cannot touch filters, requests, status or anything else, or
+  add or remove a report; refusals write nothing. A mapping is not finished while reports remain to route.
+- System prompt and portal guide: check a report's `not_for` before choosing it.
+
+**Tests.**
+- New in `tests/unit/test_portal_map.py`: routing leaves every mapped field as it was; refusals (unknown report,
+  target, cross-portal target) write nothing; the tool rejects a `status` and unknown notes; a note lists its mapped
+  reports; a finished map is routed by the next mapping in one round. The scripted mapper now routes what it maps.
+- Python suite: 615 tests, 600 passed, 14 skipped, 1 failed:
+  `test_kb_publish.py::test_first_publish_of_an_empty_repository_sends_only_what_wizard_reads` fails on a PC with
+  `core.autocrlf=true` (CRLF read back), before and after this change. Also passed: ruff, `verify_spec.py`,
+  `export_contracts.py --check` (tool catalog regenerated); mypy reports only the 4 earlier errors in `outbound.py`.
+- Not verified: a real mapping round with Gemini on the work PC; Settings → Portals does not show "to route" yet.
+
+## 2026-10-30 — Pro for a step, not the rest of the answer; a used-up quota is known by the quota numbers
 
 The owner: "today, I ran out of pro already and flash is at 20%", then an answer failed with "Google has no capacity for
 gemini-3.8-flash or gemini-3.1-pro-preview right now. This is on Google's side, not your quota. Google said: You have

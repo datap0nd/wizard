@@ -438,6 +438,15 @@ def _knowledge_note(notes: list[Note], partial: bool = False) -> str | None:
     return " ".join(parts) or None
 
 
+def _portal_reports(ctx: ToolContext, note: Note) -> list[dict[str, Any]]:
+    """Mapped portal reports whose `definitions` name this note: the link is written once, on the report."""
+    maps = ctx.services.portal_maps
+    if maps is None:
+        return []
+    return [_compact({"system": s, "report": r["id"], "name": r.get("name"), "use_for": r.get("use_for")})
+            for s, r in maps.defined_by(note.id)][:20]
+
+
 def lookup_definitions(ctx: ToolContext, args: DefinitionArgs) -> dict[str, Any]:
     knowledge = ctx.services.knowledge
     hits = knowledge.find(args.query, args.limit)
@@ -447,7 +456,8 @@ def lookup_definitions(ctx: ToolContext, args: DefinitionArgs) -> dict[str, Any]
         text, left_out = knowledge.excerpt(hit)
         definitions.append(_compact({"id": note.id, "title": note.title, "area": note.area, "type": note.type,
                                      **_review(note), "summary": note.summary, "text": text,
-                                     "other_sections": left_out, "related": list(note.related)}))
+                                     "other_sections": left_out, "related": list(note.related),
+                                     "portal_reports": _portal_reports(ctx, note)}))
     if not hits:
         return {"definitions": [], "note": "Nothing matched. Try other words, an acronym or a synonym, or "
                                            "wizard_browse_knowledge to see every documented topic."}
@@ -478,7 +488,7 @@ def read_knowledge(ctx: ToolContext, args: ReadArgs) -> dict[str, Any]:
                                         "wizard_lookup_definitions to find note ids.")
     return {"notes": [_compact({"id": n.id, "title": n.title, "area": n.area, "type": n.type, **_review(n),
                                 "summary": n.summary, "aliases": list(n.aliases), "updated": n.updated, "text": n.body,
-                                "related": list(n.related)}) for n in found],
+                                "related": list(n.related), "portal_reports": _portal_reports(ctx, n)}) for n in found],
             "missing": missing or None, "note": _knowledge_note(found)}
 
 
@@ -843,14 +853,16 @@ CORE_TOOLS = [
              "investment-efficiency proxy, observed switchers), fiscal calendar, markets and models, platform guides, and "
              "company notes on the organisation, products, processes and internal acronyms. Use it whenever a term, "
              "acronym, team, product or process matters to the answer. Returns the best-matching notes (long notes: the "
-             "matching sections), each showing whether an owner has signed it and when an expert last confirmed it.",
+             "matching sections), each showing whether an owner has signed it, when an expert last confirmed it, and "
+             "the mapped portal reports that measure the term (portal_reports).",
              DefinitionArgs, lookup_definitions, "wizard", "knowledge"),
     ToolSpec("wizard_browse_knowledge", "Table of contents of the company knowledge base: every area (company, "
              "processes, glossary, metrics, platforms...) and note with a one-line summary. Use it to see what is "
              "documented, or when a search finds nothing.", BrowseArgs, browse_knowledge, "wizard", "knowledge"),
     ToolSpec("wizard_read_knowledge", "Read up to 5 knowledge notes in full by id (ids come from "
-             "wizard_browse_knowledge or wizard_lookup_definitions), with their approval status, expert check and related "
-             "note ids.", ReadArgs, read_knowledge, "wizard", "knowledge"),
+             "wizard_browse_knowledge or wizard_lookup_definitions), with their approval status, expert check, related "
+             "note ids and the mapped portal reports that measure the term.", ReadArgs, read_knowledge, "wizard",
+             "knowledge"),
     ToolSpec("wizard_read_attachment", "Read a file the user attached to this conversation (PowerPoint, Excel, Word, "
              "email, CSV), converted to text: slides with their charts' values and notes, sheets with column profiles "
              "and formulas. Use the label listed in the request (F1, F2...). The first call lists the file's parts; "
