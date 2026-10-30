@@ -220,12 +220,17 @@ of Wizard on this PC:
   reload is needed (the panel has no reload button).
 - **Sleep:** while a question runs, Wizard keeps the PC from going to sleep when idle (as a download does), so a long
   answer is not stopped half-way. The screen still turns off; closing the lid or choosing Sleep still sleeps.
-- **Update:** Check for updates reads the public release manifest, routing GitHub's redirect to its download host
-  (`release-assets.githubusercontent.com`) by that host's own proxy. When Wizard's own connection fails on Windows,
-  Windows reads the manifest itself (Windows PowerShell's `Invoke-WebRequest`, with Windows' proxy settings and the
-  person's proxy sign-in, as `setup.ps1` downloads releases). **Update to 1.0.N** has WizardBar download it, check
-  size, SHA-256 and version, install it silently and start again. If the check still fails in the desktop app,
-  **Check with Windows** has WizardBar check and update with its own connection (the tray's **Check for updates…**).
+- **Update:** Check for updates reads the public release manifest the way Metronome's `setup.ps1` downloads on the
+  work PCs (owner, 30 October 2026, after GitHub downloads were tightened on the work network): on Windows, Windows
+  PowerShell's `Invoke-WebRequest -UseBasicParsing` over TLS 1.2 (Windows' proxy settings and the person's proxy
+  sign-in), up to 20 attempts, 5 seconds apart. Each attempt asks `api.github.com` for the manifest on the
+  `desktop-download` mirror branch first (as `setup.ps1` asks it for its branch), then the release itself at a fresh
+  address. Only when Windows cannot read it does Wizard's own connection try once. **Update to 1.0.N** has WizardBar
+  do the same: the manifest as above, then the installer from the mirror branch's zip (`codeload.github.com`, the host
+  `setup.ps1` downloads Metronome from), else from the release; it checks size, SHA-256 and version, installs it
+  silently and starts again. A failed attempt is logged in `bar.log`, and the first one says in a notification that
+  Wizard keeps trying. If the check still fails in the desktop app, **Check with Windows** has WizardBar check and
+  update (the tray's **Check for updates…**).
   In a normal browser it offers the download instead.
 
 The settings pane exists only on a person's own install (desktop app or work-PC install), for the person at that PC:
@@ -250,8 +255,10 @@ Someone who already has Wizard can import a new file from the tray menu: **Impor
 
 - **Program:** every push to `main` builds a new `WizardSetup.exe` (version `1.0.<CI run>`) and publishes it to
   `desktop-continuous`. Wizard checks two minutes after start and every six hours. When a newer version exists, the tray
-  shows "Install update…"; Settings → Version and updates has the same as a button. Wizard downloads it, checks its size, SHA-256 and version against the manifest, installs it
-  silently and starts again. It never downgrades.
+  shows "Install update…"; Settings → Version and updates has the same as a button. Wizard downloads it as Metronome's
+  `setup.ps1` downloads (Windows PowerShell, the `desktop-download` mirror first, up to 20 attempts; see **Update**
+  above), checks its size, SHA-256 and version against the manifest, installs it silently and starts again. It never
+  downgrades.
 - **Knowledge:** `.\docs.ps1 kb-publish` from the work PC (task 50, step 10). PCs pick the change up within 30 minutes and switch to it after
   10 minutes without use, or at once with **Sync the knowledge base now**.
 - **Settings or credentials:** make a new `wizard.provision` and have people import it (or run setup again next to

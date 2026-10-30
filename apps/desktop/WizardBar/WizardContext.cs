@@ -287,8 +287,9 @@ namespace WizardBar
         {
             try
             {
-                using (var cancel = new CancellationTokenSource(TimeSpan.FromMinutes(1)))
-                    pendingUpdate = await Updater.Newer(cancel.Token);
+                // Up to Updater.Attempts attempts (two addresses of at most a minute each), as Metronome's setup.ps1 retries.
+                using (var cancel = new CancellationTokenSource(TimeSpan.FromMinutes(45)))
+                    pendingUpdate = await Updater.Newer(cancel.Token, asked ? Retrying("Wizard update") : null);
                 settings.LastUpdateCheck = DateTime.UtcNow.ToString("o");
                 settings.Save();
                 if (pendingUpdate != null)
@@ -316,8 +317,8 @@ namespace WizardBar
             {
                 Balloon("Wizard update", "Downloading version " + release.Version + "…");
                 string installer;
-                using (var cancel = new CancellationTokenSource(TimeSpan.FromMinutes(15)))
-                    installer = await Updater.Download(release, cancel.Token);
+                using (var cancel = new CancellationTokenSource(TimeSpan.FromMinutes(60)))
+                    installer = await Updater.Download(release, cancel.Token, Retrying("Wizard update"));
                 Log.Write("installing update " + release.Version + " from " + installer);
                 await Task.Run(() => backend.Stop());
                 Updater.Install(installer, paths);
@@ -328,6 +329,16 @@ namespace WizardBar
                 Log.Error("update", error);
                 MessageBox.Show("The update was not installed: " + error.Message, "Wizard update", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
+        }
+
+        /// <summary>Says once, on the first failed attempt, that Wizard keeps trying (the attempts run off the UI thread).</summary>
+        private Action<int, string> Retrying(string title)
+        {
+            return (attempt, error) =>
+            {
+                if (attempt == 1) ui.Post(_ => Balloon(title, "GitHub did not answer (" + error + "). Wizard keeps trying, up to "
+                    + Updater.Attempts + " times."), null);
+            };
         }
 
         private void Balloon(string title, string text, bool forUpdate = false)
