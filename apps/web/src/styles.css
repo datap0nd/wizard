@@ -117,9 +117,13 @@
     to { opacity: 1; transform: none; clip-path: inset(0 0 0 0); }
   }
   @keyframes panel-glint { to { transform: translateX(100%); } }
-  /* The Brain page (components/brain, /brain): a dark stage for a meeting-room screen. Its motion is decoration;
-     reduced motion turns it off through the base rule above. */
-  .brain-page { color-scheme: dark; background: radial-gradient(1400px 900px at 42% 46%, #0f1c58 0%, #080e30 42%, #04061a 100%); }
+  /* The Brain page (components/brain, /brain): the knowledge graph on a flat dark surface, made for a meeting-room
+     screen. Reduced motion turns its transitions off through the base rule above. */
+  .brain-page { color-scheme: dark; background: #0c1016; }
+  .brain-stage { background: radial-gradient(1200px 820px at 58% 46%, #121823 0%, #0c1016 62%, #0a0d12 100%); }
+  .brain-panel { border-radius: 0.75rem; border: 1px solid rgb(255 255 255 / 0.07); background: rgb(17 22 31 / 0.86);
+    padding: 0.625rem 0.75rem; backdrop-filter: blur(6px); }
+  /* The roadmap page's starfield (components/roadmap). */
   .brain-stars { opacity: 0.55; background-size: 260px 260px;
     background-image: radial-gradient(1px 1px at 24px 34px, rgb(255 255 255 / 0.55), transparent),
       radial-gradient(1px 1px at 132px 86px, rgb(255 255 255 / 0.35), transparent),
@@ -133,12 +137,9 @@
   .brain-arrive { animation: brain-arrive 0.9s cubic-bezier(0.2, 0.9, 0.3, 1.1) both; box-shadow: 0 0 0 1px rgb(251 113 133 / 0.35), 0 0 22px rgb(251 113 133 / 0.25); }
   .brain-pop { animation: stage-pop 0.3s ease-out both; }
   .brain-caption { animation: brain-caption 0.5s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
-  .brain-halo { box-shadow: 0 0 0 2px rgb(142 162 255 / 0.7), 0 0 26px 6px rgb(91 124 255 / 0.45); animation: brain-live 2s ease-in-out infinite; }
   .brain-spotlight > section { box-shadow: 0 0 0 1px rgb(251 113 133 / 0.5), 0 0 40px rgb(251 113 133 / 0.25); transition: box-shadow 0.5s; }
   .brain-fade { mask-image: linear-gradient(to bottom, black 85%, transparent); }
-  /* The simple view (and reduced motion): nothing moves, and what an animation would draw in is drawn. */
-  .brain-still *, .brain-still *::before, .brain-still *::after { animation: none !important; transition: none !important; }
-  .brain-still .brain-draw { stroke-dashoffset: 0; }
+  /* Reduced motion: what an animation would draw in is drawn. */
   @media (prefers-reduced-motion: reduce) { .brain-draw { stroke-dashoffset: 0; } }
   @keyframes brain-live { 50% { opacity: 0.45; } }
   @keyframes brain-draw { to { stroke-dashoffset: 0; } }

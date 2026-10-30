@@ -199,7 +199,7 @@ test('the compact desktop view answers and tells its Windows host what happened'
   await expect(page).toHaveURL(/\/$/);
 });
 
-test('the Brain page maps what Wizard knows and walks a presenter through it, beside the app', async ({page}) => {
+test('the Brain page shows the knowledge base as a 3D graph and walks a presenter through it, beside the app', async ({page}) => {
   await signIn(page, 'u-ceo');
   await page.goto('/brain');
   await expect(page.getByTestId('brain-page')).toBeVisible();
@@ -207,7 +207,8 @@ test('the Brain page maps what Wizard knows and walks a presenter through it, be
   await expect(page.getByTestId('brain-canvas')).toBeVisible();
   await expect(page.getByTestId('brain-cluster').filter({hasText: 'Platforms'})).toBeVisible();
   await expect(page.locator('[data-testid=brain-system][data-system=asap]')).toContainText('reports');
-  await expect(page.getByTestId('brain-stat').first()).toContainText('notes');
+  await expect(page.getByTestId('brain-stat').first()).toContainText('Nodes');
+  await expect(page.getByTestId('brain-layout')).toContainText('settled', {timeout: 20_000});
   // Without a company database there is no news to show, and the page says why.
   await expect(page.getByTestId('news-missing')).toContainText('No company database');
   await page.keyboard.press('ArrowRight');
@@ -218,20 +219,17 @@ test('the Brain page maps what Wizard knows and walks a presenter through it, be
   await expect(page.getByTestId('brain-caption')).toHaveCount(0);
   await page.getByTestId('brain-cluster').filter({hasText: 'Metrics'}).click();
   await expect(page.getByTestId('brain-cluster').filter({hasText: 'Metrics'})).toHaveAttribute('aria-pressed', 'true');
-  // Simple: no wizard in the middle, no counters, nothing moving; the browser keeps the choice; V switches back.
-  await expect(page.getByTestId('brain-wizard')).toBeVisible();
-  await page.getByTestId('brain-view-simple').click();
-  await expect(page.getByTestId('brain-page')).toHaveAttribute('data-view', 'simple');
-  await expect(page.getByTestId('brain-wizard')).toHaveCount(0);
-  await expect(page.getByTestId('brain-stats')).toHaveCount(0);
-  await expect(page.getByTestId('brain-canvas')).toBeVisible();
-  await page.reload();
-  await expect(page.getByTestId('brain-page')).toHaveAttribute('data-view', 'simple');
-  await expect(page.getByTestId('brain-view-simple')).toHaveAttribute('aria-pressed', 'true');
-  await page.keyboard.press('v');
-  await expect(page.getByTestId('brain-page')).toHaveAttribute('data-view', 'advanced');
-  await expect(page.getByTestId('brain-wizard')).toBeVisible();
-  await expect(page.getByTestId('brain-stat').first()).toBeVisible();
+  // Layers switch on and off; search finds a note and opens it with what it links to.
+  const tags = page.locator('[data-testid=brain-layer][data-layer=tags]');
+  await expect(tags).toHaveAttribute('aria-pressed', 'true');
+  await tags.click();
+  await expect(tags).toHaveAttribute('aria-pressed', 'false');
+  await page.getByTestId('brain-search').fill('GSCM platform');
+  await expect(page.getByTestId('brain-results')).toContainText('GSCM platform guide');
+  await page.getByTestId('brain-search').press('Enter');
+  await expect(page.getByTestId('brain-card')).toContainText('GSCM platform guide');
+  await expect(page.getByTestId('brain-neighbours')).toContainText('GSCM');
+  await expect(page.getByTestId('brain-cluster').filter({hasText: 'Metrics'})).toHaveAttribute('aria-pressed', 'false');
   await page.getByRole('link', {name: 'Ask Wizard'}).click();
   await expect(page.getByTestId('conversation-title')).toBeVisible();
 });

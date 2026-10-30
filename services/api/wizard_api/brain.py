@@ -1,12 +1,12 @@
-"""The Brain page (/brain): a map of what Wizard can draw on, made to show Wizard to people.
+"""The Brain page (/brain): the knowledge base as a 3D graph, made to show Wizard to people.
 
-Everything on it is read, never written for the occasion: the knowledge base's areas, notes and the links between them,
-the systems this person may use and the reports catalogued in each, and, from the company PostgreSQL server, how many
-tables and views the read-only account can read and the news table an automation keeps filling. The database is read
-with Wizard's own fixed catalog and news queries, under the protections of every database read (postgres_query.py: one
-statement as a subquery, a READ ONLY transaction that is always rolled back, a fresh connection closed after each call,
-the read-only account). None of this is a Gemini tool, and the page never says Wizard is reading something: its motion
-is decoration.
+Everything on it is read, never written for the occasion: the knowledge base's areas, notes and the links between them
+(each note's own `related` links, the notes it names in its text, the notes it shares most tags with), its glossary
+terms, the systems this person may use and the reports catalogued in each, and, from the company PostgreSQL server, how
+many tables and views the read-only account can read and the news table an automation keeps filling. The database is
+read with Wizard's own fixed catalog and news queries, under the protections of every database read (postgres_query.py:
+one statement as a subquery, a READ ONLY transaction that is always rolled back, a fresh connection closed after each
+call, the read-only account). None of this is a Gemini tool, and the page never says Wizard is reading something.
 
 The news table is found by name: WIZARD_NEWS_TABLE (schema.name, optionally in WIZARD_NEWS_DATABASE), else the readable
 table or view called news, else the one whose name contains "news" with the most news-like columns, in the default
@@ -31,9 +31,16 @@ from wizard_connectors.postgres_query import DATABASES, RELATIONS, PostgresQuery
 AREA_NAMES = {"company": "Company", "org": "Organisation", "products": "Products", "markets": "Markets",
               "processes": "Processes", "platforms": "Platforms", "datasets": "Data dictionary", "metrics": "Metrics",
               "glossary": "Glossary", "faq": "Executive questions", "decisions": "Decisions", "general": "Foundations"}
-MAX_LINKS = 6000
+MAX_LINKS = 9000
 SHARED_PER_NOTE = 3      # topic links kept per note: its notes with the most tags in common
 COMMON_TAG = 60          # a tag on more notes than this says little about how two notes relate
+MENTION_CHARS = 4        # a shorter name (BI, PG) names too many things to count as a mention
+MENTION_WORDS = 8        # longer titles are matched by their id and aliases only
+MENTIONS_PER_NOTE = 12   # mention links kept per note: the notes it names most often
+COMMON_NAME = 0.25       # a name found in more than this share of notes (8 or more) is an ordinary word there
+MAX_TERMS = 3000         # glossary entries drawn as points of their own
+MAX_TAGS = 15            # the knowledge standard's most tags per note
+WORD = re.compile(r"[a-z0-9]+")
 TABLE_NAME = re.compile(r"^(?:([A-Za-z_][A-Za-z0-9_$]{0,62})\.)?([A-Za-z_][A-Za-z0-9_$]{0,62})$")
 DATABASE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_$-]{0,62}$")
 LIVE_SECONDS = 45.0      # the page polls; the server is read at most this often
@@ -74,14 +81,54 @@ def stage(note: Note) -> str:
     return "SIGNED" if note.status == "SIGNED" else "EXPERT_CHECKED" if note.reviewed else "DRAFT"
 
 
-def links(notes: list[Note]) -> list[dict[str, str]]:
-    """The notes' own `related` links, then, for each note, the few notes it shares most tags with (at least two)."""
+def mentions(notes: list[Note]) -> dict[tuple[str, str], int]:
+    """Notes whose text names another note: by its id, its title or one of its aliases, as whole words. A name two notes
+    share, a name shorter than MENTION_CHARS and a name found in more than COMMON_NAME of the notes are left out. For
+    each note, the MENTIONS_PER_NOTE notes it names most often; the count is how often."""
+    owner: dict[tuple[str, ...], str | None] = {}
+    for note in notes:
+        for name in {note.id, note.title, *note.aliases}:
+            words = tuple(WORD.findall(name.casefold()))
+            if not words or len(words) > MENTION_WORDS or len("".join(words)) < MENTION_CHARS:
+                continue
+            owner[words] = note.id if owner.get(words, note.id) == note.id else None  # shared by two notes: ambiguous
+    longest = max((len(words) for words in owner), default=0)
+    found: dict[str, Counter[str]] = {}
+    seen_in: Counter[tuple[str, ...]] = Counter()
+    for note in notes:
+        text = WORD.findall(note.body.casefold())
+        named: Counter[str] = Counter()
+        names: set[tuple[str, ...]] = set()
+        for i in range(len(text)):
+            for size in range(min(longest, len(text) - i), 0, -1):
+                target = owner.get(tuple(text[i:i + size]))
+                if target and target != note.id:
+                    named[target] += 1
+                    names.add(tuple(text[i:i + size]))
+                    break
+        seen_in.update(names)
+        found[note.id] = named
+    common = {owner[name] for name, count in seen_in.items() if len(notes) >= 8 and count > COMMON_NAME * len(notes)}
+    pairs: dict[tuple[str, str], int] = {}
+    for source, named in found.items():
+        kept = [(target, count) for target, count in named.items() if target not in common]
+        for target, count in sorted(kept, key=lambda item: (-item[1], item[0]))[:MENTIONS_PER_NOTE]:
+            pair = (min(source, target), max(source, target))
+            pairs[pair] = pairs.get(pair, 0) + count
+    return pairs
+
+
+def links(notes: list[Note]) -> list[dict[str, Any]]:
+    """The notes' own `related` links; then the notes each one names in its text (mentions); then, for each note, the few
+    notes it shares most tags with (at least two). A pair is listed once, under the first of these that joins it."""
     ids = {note.id for note in notes}
-    found: dict[tuple[str, str], str] = {}
+    found: dict[tuple[str, str], tuple[str, int]] = {}
     for note in notes:
         for other in note.related:
             if other in ids and other != note.id:
-                found.setdefault((min(note.id, other), max(note.id, other)), "related")
+                found.setdefault((min(note.id, other), max(note.id, other)), ("related", 1))
+    for pair, count in mentions(notes).items():
+        found.setdefault(pair, ("mention", count))
     by_tag: dict[str, list[str]] = {}
     for note in notes:
         for tag in {t.casefold() for t in note.tags}:
@@ -96,10 +143,11 @@ def links(notes: list[Note]) -> list[dict[str, str]]:
             for end in pair:
                 best.setdefault(end, []).append((count, pair))
     for note_id in sorted(best):
-        for _, pair in sorted(best[note_id], key=lambda item: (-item[0], item[1]))[:SHARED_PER_NOTE]:
-            found.setdefault(pair, "shared")
-    ordered = sorted(found.items(), key=lambda item: (item[1] != "related", item[0]))[:MAX_LINKS]
-    return [{"source": a, "target": b, "kind": kind} for (a, b), kind in ordered]
+        for count, pair in sorted(best[note_id], key=lambda item: (-item[0], item[1]))[:SHARED_PER_NOTE]:
+            found.setdefault(pair, ("shared", count))
+    rank = {"related": 0, "mention": 1, "shared": 2}
+    ordered = sorted(found.items(), key=lambda item: (rank[item[1][0]], item[0]))[:MAX_LINKS]
+    return [{"source": a, "target": b, "kind": kind, "weight": weight} for (a, b), (kind, weight) in ordered]
 
 
 def documents(system: dict[str, Any], note: Note) -> bool:
@@ -131,16 +179,21 @@ def knowledge_map(kb: KnowledgeBase, systems: list[dict[str, Any]], reports: dic
         out_systems.append({**system, "reports": reports.get(str(system["id"])), "documented_by": documented[:300]})
     found = links(notes)
     stages = Counter(stage(note) for note in notes)
+    ordered = sorted(notes, key=lambda n: (n.area, n.title.casefold()))
+    entries = [{"note": n.id, "term": section.heading[:80]} for n in ordered for section in kb.sections.get(n.id, ())
+               if section.entry][:MAX_TERMS]
     return {
         "content": content,
         "areas": areas,
         "notes": [{"id": n.id, "title": n.title, "area": n.area, "type": n.type or None, "stage": stage(n),
-                   "summary": n.summary[:220], "tags": list(n.tags[:8]), "terms": terms[n.id] or None,
-                   "updated": n.updated or None} for n in sorted(notes, key=lambda n: (n.area, n.title.casefold()))],
+                   "summary": n.summary[:220], "tags": list(n.tags[:MAX_TAGS]), "terms": terms[n.id] or None,
+                   "words": len(WORD.findall(n.body.casefold())), "updated": n.updated or None} for n in ordered],
         "links": found,
+        "terms": entries,
         "systems": out_systems,
         "counts": {"notes": len(notes), "areas": len(areas), "links": len(found),
                    "related": sum(1 for link in found if link["kind"] == "related"),
+                   "mentions": sum(1 for link in found if link["kind"] == "mention"),
                    "glossary_terms": sum(terms.values()),
                    "datasets": sum(1 for n in notes if n.type == "dataset" or n.area == "datasets"),
                    "metrics": sum(1 for n in notes if n.type == "metric" or n.area == "metrics"),
