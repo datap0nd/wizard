@@ -3,7 +3,29 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-30 (latest) — Export settings for another PC; a write token that reads but may not write says how to fix it
+## 2026-10-30 (latest) — A refused write names the token, the repository's visibility, and whether GitHub refused at all
+
+The owner, after the previous change named Contents "Read-only" as the likely cause: "Checked. My token already has all
+contents read and write." The refusal comes at the first upload (`POST /git/blobs`), before any commit or branch move,
+so branch protection, rulesets, server hooks and push protection (all checked when a branch moves) are not it. What was
+left: GitHub not letting this token write to this repository, or something between the PC and the server refusing the
+upload. And reading the repository proved less than it seemed: on GitHub Enterprise an **internal** repository is
+readable by every account in the company, so a token whose resource owner is the person, or whose repositories leave
+this one out, reads it and is refused its first write.
+- A 403 without `X-GitHub-Request-Id` (which every answer from GitHub's API carries) is reported as refused on the way,
+  by the proxy or a security gateway, with the answering server and page title: the token is not the cause.
+- A refused write names the token: "a classic token (scopes: …)" from `X-OAuth-Scopes`, which GitHub sends for classic
+  tokens only; otherwise the fine-grained checks.
+- The repository's visibility is kept from the first read. When it is internal (or public), a refused write says that
+  reading it showed nothing, and lists what to check on the token's page: resource owner the organisation (it cannot be
+  changed: a new token if it is wrong), repository access including it, Contents "Read and write", approval.
+- Test connection's write check says the same. Desktop docs: the troubleshooting line.
+
+**Tests.** `tests/unit/test_kb_publish.py`: an internal repository with a refused upload (and Test connection), a classic
+token named with its scopes, a refusal without GitHub's request id named as not GitHub's; the GitHub double now answers
+with `X-GitHub-Request-Id` and the repository's visibility, as GitHub does.
+
+## 2026-10-30 — Export settings for another PC; a write token that reads but may not write says how to fix it
 
 The owner: "I want to set exactly the same app on a different PC... I want to export my settings file basically. and
 imkport it there", then "yes build the export settings button. Also, github refused the write token HTTP 403 while

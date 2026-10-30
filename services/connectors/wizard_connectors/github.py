@@ -18,15 +18,26 @@ FINE_GRAINED_STEPS = ('On GitHub: Settings → Developer settings → Personal a
                       'approves tokens, an owner approves the change first.')
 
 
-def refused(message: str, headers: dict[str, str] | None, repo: str, write: bool = False, write_request: bool = False) -> str:
+def token_kind(headers: dict[str, str]) -> str | None:
+    """"a classic token (scopes: repo)" when GitHub listed the token's scopes (it does for classic tokens only)."""
+    scopes = {k.lower(): v for k, v in headers.items()}.get("x-oauth-scopes")
+    return None if scopes is None else f"a classic token (scopes: {scopes.strip() or 'none'})"
+
+
+def refused(message: str, headers: dict[str, str] | None, repo: str, write: bool = False, write_request: bool = False,
+            visibility: str | None = None) -> str:
     """Why GitHub answered 403, from its own message and headers, and what to do about it. A guess at the cause is
     worse than none (owner, 30 Oct 2026: publishing a map with a classic token was refused, and Wizard named Contents
     read and write and SSO approval, neither of which a classic token on this server has to do with). `write_request`:
-    the refused request was a write by a token that had just read the repository, so the token reads but may not write."""
+    the refused request was a write by a token that had just read the repository. `visibility`: the repository's, as
+    GitHub reported it; an internal repository is readable by every account in the company, so a token reading it shows
+    nothing about the token's own access (owner, 30 Oct 2026: "My token already has all contents read and write")."""
     text = message.lower()
     headers = {k.lower(): v for k, v in (headers or {}).items()}
     access = "Contents: Read and write" if write else "Contents: Read-only"
     fine_grained = f"a fine-grained token instead: resource owner = the organisation, only {repo}, {access}"
+    classic = token_kind(headers)
+    owner = repo.split("/")[0]
     if "lifetime" in text:
         cause = "the organisation refuses tokens that live this long: make one with a shorter expiry."
     elif "classic" in text:
@@ -40,13 +51,25 @@ def refused(message: str, headers: dict[str, str] | None, repo: str, write: bool
         cause = "the token waits for an organisation owner to approve it."
     elif "archived" in text:
         cause = f"{repo} is archived, so GitHub keeps it read-only: a repository admin can unarchive it."
+    elif write and write_request and visibility in ("internal", "public"):
+        checks = (f"It is {classic}: a classic token writes only with the whole repo scope, and only where the "
+                  "organisation accepts classic tokens; a fine-grained token avoids both."
+                  if classic else
+                  f"On the token's page (Settings → Developer settings → Personal access tokens → Fine-grained tokens → "
+                  f"the token) check that Resource owner is {owner}, not your own account (it cannot be changed: make a "
+                  f"new token if it is), that Repository access includes {repo}, and that Contents is \"Read and "
+                  f"write\". If the organisation approves tokens, an owner must have approved this one.")
+        cause = (f"the token may not write to {repo}. {repo} is {visibility}, so every account in the company can read "
+                 f"it: that the token reads it does not show the token has access to it. {checks}")
     elif "x-accepted-github-permissions" in headers or "not accessible by" in text:
         wanted = headers.get("x-accepted-github-permissions")
         cause = (f"the token lacks a permission{f' (GitHub asks for {wanted})' if wanted else ''}: give it {access} on "
-                 f"{repo}." + (f" {FINE_GRAINED_STEPS}" if write else ""))
+                 f"{repo}." + (f" {FINE_GRAINED_STEPS}" if write and not classic else ""))
     elif write and write_request:
-        cause = (f"the token reads {repo} but may not write to it. A fine-grained token needs {access}. "
-                 f"{FINE_GRAINED_STEPS} A classic token needs the whole repo scope.")
+        cause = (f"the token reads {repo} but may not write to it. " +
+                 (f"It is {classic}: a classic token writes only with the whole repo scope, and only where the "
+                  "organisation accepts classic tokens for writing." if classic else
+                  f"A fine-grained token needs {access}. {FINE_GRAINED_STEPS} A classic token needs the whole repo scope."))
     else:
         cause = (f"the token, or the organisation's rules for tokens, does not allow this. A classic token needs the repo "
                  f"scope, and some organisations refuse classic tokens: then make {fine_grained}.")

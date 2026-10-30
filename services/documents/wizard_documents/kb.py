@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import re
 import shutil
 import tempfile
 from dataclasses import dataclass, field
@@ -94,14 +95,18 @@ ARCHIVED = "{repo} is archived, so GitHub keeps it read-only: a repository admin
 class GitHub:
     def __init__(self, repo: str, token: str, client: httpx.Client, label: str = "publishing token"):
         self.repo, self.client, self.label = repo, client, label
+        self.visibility: str | None = None  # private, internal or public, once the repository was read
         self.headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json",
                         "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "Wizard-Knowledge-Publish"}
 
     def call(self, method: str, path: str, body: dict[str, Any] | None = None, ok: tuple[int, ...] = (200, 201)) -> Any:
         response = self.client.request(method, f"{API}/repos/{self.repo}{path}", headers=self.headers, json=body)
         if response.status_code not in ok:
-            raise PublishError(explain(response, self.repo, self.label))
-        return response.json() if response.content else None
+            raise PublishError(explain(response, self.repo, self.label, self.visibility))
+        found = response.json() if response.content else None
+        if method == "GET" and path == "" and isinstance(found, dict):
+            self.visibility = found.get("visibility") or ("private" if found.get("private") else "public")
+        return found
 
 
 # What Wizard was doing, by the request GitHub refused: (method, path under /repos/{repo}, words). First match wins.
@@ -123,7 +128,7 @@ def _step(response: httpx.Response, repo: str) -> str:
     return f" while {words} ({request.method} {path or '/'})" if words else ""
 
 
-def explain(response: httpx.Response, repo: str, label: str = "publishing token") -> str:
+def explain(response: httpx.Response, repo: str, label: str = "publishing token", visibility: str | None = None) -> str:
     code = response.status_code
     try:
         body = response.json()
@@ -141,8 +146,19 @@ def explain(response: httpx.Response, repo: str, label: str = "publishing token"
             writing = response.request.method in ("POST", "PUT", "PATCH", "DELETE")
         except RuntimeError:  # a response built by hand
             writing = False
+        if "x-github-request-id" not in response.headers:
+            # Every answer from GitHub's API carries X-GitHub-Request-Id: without it, something on the way refused.
+            server = response.headers.get("server", "")
+            title = re.search(r"<title>([^<]{1,120})</title>", response.text, re.IGNORECASE) if response.content else None
+            said = "; ".join(x for x in (f"server {server}" if server else "", f'page "{title.group(1).strip()}"' if title else "") if x)
+            return (f"Wizard's request was refused (HTTP 403){step}, but not by GitHub: GitHub's answers carry an "
+                    f"X-GitHub-Request-Id, and this one has none{f' ({said})' if said else ''}. Something between this PC "
+                    f"and {WEB} refused it, such as the proxy or a security gateway that blocks uploads; the token is "
+                    f"not the cause. Ask IT to let this PC send {response.request.method if writing else 'requests'} to "
+                    f"{WEB}/api/v3, or try from another network.")
         return f"GitHub refused the {label} (HTTP 403){step}: " + refused(detail, dict(response.headers), repo,
-                                                                         write=label != "read-only token", write_request=writing)
+                                                                         write=label != "read-only token", write_request=writing,
+                                                                         visibility=visibility)
     if code == 409 and "empty" in detail.lower():
         return f"{repo} is empty: nothing has been published to it yet. Run .\\docs.ps1 kb-publish first."
     if code in (409, 422) and ("protected" in detail.lower() or "rule" in detail.lower()):
@@ -247,7 +263,7 @@ def check_write(repo: str, token: str, *, proxy: str | None = None, client: http
                           json={"ref": "refs/heads/wizard-write-check", "sha": "0" * 40})
     if probe.status_code == 422:
         return True, "The write token can write to it."
-    return False, f"Write token: {explain(probe, repo, 'write token')}"
+    return False, f"Write token: {explain(probe, repo, 'write token', gh.visibility)}"
 
 
 def write_files(repo: str, token: str, files: dict[str, bytes], *, branch: str, message: str,
@@ -266,7 +282,7 @@ def write_files(repo: str, token: str, files: dict[str, bytes], *, branch: str, 
         for attempt in range(2):  # another commit may land in between: start again from the new head once
             ref = http.get(f"{API}/repos/{repo}/git/ref/heads/{branch}", headers=gh.headers)
             if ref.status_code != 200:
-                raise PublishError(explain(ref, repo, gh.label))
+                raise PublishError(explain(ref, repo, gh.label, gh.visibility))
             parent = ref.json()["object"]["sha"]
             base_tree = gh.call("GET", f"/git/commits/{parent}")["tree"]["sha"]
             entries: list[dict[str, Any]] = []
@@ -286,7 +302,7 @@ def write_files(repo: str, token: str, files: dict[str, bytes], *, branch: str, 
             if moved.status_code == 200:
                 return str(commit["sha"])
             if moved.status_code != 422 or attempt:
-                raise PublishError(explain(moved, repo, gh.label))
+                raise PublishError(explain(moved, repo, gh.label, gh.visibility))
     return None
 
 

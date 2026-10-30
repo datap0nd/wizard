@@ -34,8 +34,10 @@ TOKEN = "github_pat_" + "w" * 40
 class FakeGitHub:
     def __init__(self, private: bool = True, push: bool = True, empty: bool = True,
                  refuse: dict[str, tuple[str, dict[str, str]]] | None = None, protected: tuple[int, str] | None = None,
-                 archived: bool = False):
+                 archived: bool = False, visibility: str | None = None, gateway: set[str] | None = None):
         self.private, self.push, self.archived = private, push, archived
+        self.visibility = visibility or ("private" if private else "public")
+        self.gateway = gateway or set()  # "METHOD path" refused on the way, by a proxy, not by GitHub
         self.refuse = refuse or {}  # "METHOD path": (GitHub's message, headers) answered with 403
         self.protected = protected  # (status, message) for moving main
         self.blobs: dict[str, bytes] = {}
@@ -66,6 +68,14 @@ class FakeGitHub:
         return {path: self.blobs[sha] for path, sha in self.trees[self.commits[self.head]["tree"]].items()}
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
+        if f"{request.method} {request.url.path.removeprefix('/api/v3/repos/acme/kb')}" in self.gateway:
+            return httpx.Response(403, text="<html><head><title>Access Denied</title></head><body>Upload blocked</body></html>",
+                                  headers={"Server": "Proxy-Gateway"})
+        response = self.answer(request)
+        response.headers["X-GitHub-Request-Id"] = "ABCD:1234:5678"  # every answer from GitHub's API carries one
+        return response
+
+    def answer(self, request: httpx.Request) -> httpx.Response:
         assert request.headers["authorization"] == f"Bearer {TOKEN}"
         self.hosts.add(request.url.host)
         path = request.url.path.removeprefix("/api/v3/repos/acme/kb")
@@ -83,7 +93,7 @@ class FakeGitHub:
             return httpx.Response(self.protected[0], json={"message": self.protected[1]})
         if request.method == "GET" and path == "":
             return httpx.Response(200, json={"private": self.private, "default_branch": "main", "permissions": {"push": self.push},
-                                             "archived": self.archived})
+                                             "archived": self.archived, "visibility": self.visibility})
         if request.method == "GET" and path == "/git/ref/heads/main":
             if self.head is None:
                 return httpx.Response(409, json={"message": "Git Repository is empty."})
@@ -319,3 +329,43 @@ def test_an_archived_repository_is_named_before_any_write():
     assert github.writes == []
     ok, message = kb.check_write("acme/kb", TOKEN, client=httpx.Client(transport=httpx.MockTransport(FakeGitHub(empty=False, archived=True))))
     assert not ok and "is archived" in message
+
+
+
+def write(github: FakeGitHub) -> str:
+    with pytest.raises(kb.PublishError) as refused:
+        kb.write_files("acme/kb", TOKEN, {"portal-maps/x.json": b"{}"}, branch="main", message="m",
+                       client=httpx.Client(transport=httpx.MockTransport(github)))
+    return str(refused.value)
+
+
+def test_an_internal_repository_proves_nothing_about_the_tokens_access():
+    """Owner, 30 Oct 2026: "My token already has all contents read and write." On GitHub Enterprise every account reads an
+    internal repository, so a token whose resource owner is the person (or whose repositories leave this one out) reads
+    it and is refused its first write."""
+    message = write(FakeGitHub(empty=False, visibility="internal", refuse={"POST /git/blobs": READ_ONLY}))
+    assert "while uploading a file (POST /git/blobs): the token may not write to acme/kb. acme/kb is internal, so every " \
+           "account in the company can read it: that the token reads it does not show the token has access to it." in message
+    assert "Resource owner is acme, not your own account" in message and "Repository access includes acme/kb" in message
+    assert 'GitHub said: "Resource not accessible by personal access token"' in message
+    ok, tested = kb.check_write("acme/kb", TOKEN, client=httpx.Client(transport=httpx.MockTransport(
+        FakeGitHub(empty=False, visibility="internal", refuse={"POST /git/refs": READ_ONLY}))))
+    assert not ok and "acme/kb is internal" in tested and "Resource owner is acme" in tested, "Test connection says the same"
+
+
+def test_a_classic_token_is_named_with_its_scopes():
+    message = write(FakeGitHub(empty=False, refuse={"POST /git/blobs": ("Forbidden", {"X-OAuth-Scopes": "repo, workflow"})}))
+    assert "the token reads acme/kb but may not write to it. It is a classic token (scopes: repo, workflow)" in message
+    assert "Fine-grained tokens" not in message
+
+
+def test_a_refusal_that_did_not_come_from_github_says_so():
+    """A proxy or security gateway that blocks uploads answers 403 itself: no X-GitHub-Request-Id, and the token is not
+    the cause."""
+    github = FakeGitHub(empty=False, gateway={"POST /git/blobs"})
+    message = write(github)
+    assert message.startswith("Wizard's request was refused (HTTP 403) while uploading a file (POST /git/blobs), but not by "
+                              "GitHub: GitHub's answers carry an X-GitHub-Request-Id, and this one has none (server "
+                              'Proxy-Gateway; page "Access Denied").')
+    assert "the token is not the cause" in message and "send POST to https://github.sec.samsung.net/api/v3" in message
+    assert "POST /git/trees" not in github.calls, "nothing after the refused upload"
