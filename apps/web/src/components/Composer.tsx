@@ -6,6 +6,8 @@ import {SystemsPicker} from './SystemsPicker';
 import {DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, Hint} from './ui/menu';
 import type {SystemInfo} from '@/types';
 
+/** What the box holds, a question or a note while an answer runs (the API's MAX_QUESTION_CHARS). */
+export const MAX_QUESTION_CHARS = 100_000;
 const ACCEPT = '.pptx,.pptm,.ppsx,.ppt,.xlsx,.xlsm,.xls,.xlsb,.docx,.docm,.doc,.rtf,.csv,.tsv,.txt,.md,.json,.eml,.msg';
 
 interface Props {
@@ -48,6 +50,7 @@ export function Composer({onSubmit, busy, draft, onDraftChange, placeholder, dis
   useEffect(() => { ref.current?.focus({preventScroll: true}); }, [focusSignal]);
 
   const steering = busy && !!steer;
+  const full = draft.length >= MAX_QUESTION_CHARS;  // a paste past the limit is cut there: say so
   async function submit() {
     const text = draft.trim();
     if (!text || (busy && !steer) || reading || submitting.current || disabledReason) return;
@@ -84,7 +87,7 @@ export function Composer({onSubmit, busy, draft, onDraftChange, placeholder, dis
           <input ref={picker} type="file" multiple accept={ACCEPT} className="hidden" data-testid="file-input"
             onChange={e => { const picked = Array.from(e.target.files ?? []); e.target.value = ''; if (picked.length) onFiles?.(picked); }} />
           {onChoose && <SystemsPicker systems={systems} chosen={chosen} onChange={onChoose} disabled={!!disabledReason} running={busy} />}
-          <textarea ref={ref} value={draft} rows={1} maxLength={steering ? 2000 : 4000} data-steering={steering || undefined}
+          <textarea ref={ref} value={draft} rows={1} maxLength={MAX_QUESTION_CHARS} data-steering={steering || undefined}
             placeholder={disabledReason ?? (steering ? (steer!.live ? 'Tell Wizard while it works, e.g. use the weekly sell-out view'
               : 'Stop and ask again with a note, e.g. use the weekly sell-out view') : placeholder ?? 'Ask about markets, models, spend, share or switching')}
             aria-label={steering ? 'A note to Wizard while it works' : 'Your question'} disabled={!!disabledReason} onChange={e => onDraftChange(e.target.value)}
@@ -99,7 +102,8 @@ export function Composer({onSubmit, busy, draft, onDraftChange, placeholder, dis
           </button>
         </div>
       </div>
-      <p className="mt-1.5 text-center text-[11.5px] text-ink-3">{reading ? 'Reading your files…' : steering
+      <p className="mt-1.5 text-center text-[11.5px] text-ink-3" data-testid="composer-hint">{reading ? 'Reading your files…'
+        : full ? `The box holds ${MAX_QUESTION_CHARS.toLocaleString('en-US')} characters. Attach longer text as a file.` : steering
         ? (steer!.live ? 'Wizard reads your note before its next step, without starting over.' : 'Your note stops this answer and asks again with it.')
         : 'Check the evidence before acting on a number.'}</p>
     </form>
