@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 from tests.helpers import CEO_QUESTION, HEADERS, ask, login, make_settings, wait_run
 
 from wizard_agent.runtime import AgentRequest, Emit, ToolBridge
-from wizard_api.app import create_app
+from wizard_api.app import MAX_QUESTION_CHARS, create_app
 from wizard_connectors.paths import ROOT
 
 Script = Callable[[AgentRequest, Emit, ToolBridge], Awaitable[None]]
@@ -160,6 +160,35 @@ def test_a_note_reaches_gemini_while_it_works_and_not_this_leaves_the_step_out(s
     for event in client.app.state.store.events(run["id"]):
         jsonschema.validate(event, event_schema)
     jsonschema.validate(report, json.loads((contracts / "report.schema.json").read_text(encoding="utf-8")))
+
+
+def test_the_box_takes_a_long_paste_as_a_question_or_a_note(scripted):
+    client, runtime = scripted
+    heard: list[list[str]] = []
+
+    async def script(request, emit, tools):
+        if request.history:  # the follow-up waits for a note
+            heard.append(await until_note(tools))
+        await say(emit, "Read it all.")
+
+    runtime.script = script
+    pasted = ("Model A55 sell-out by market;" * 4000)[:MAX_QUESTION_CHARS]
+    assert client.post("/api/v1/runs", json={"question": pasted + "x"}, headers=HEADERS).status_code == 422
+    first = wait_run(client, client.post("/api/v1/runs", json={"question": pasted}, headers=HEADERS).json()["run_id"])
+    assert first["status"] == "succeeded" and runtime.requests[0].question == pasted
+    assert f"<request>\n{pasted}\n</request>" in runtime.requests[0].prompt
+    started = client.post("/api/v1/runs", json={"question": "Only the Gulf?", "conversation_id": first["conversation_id"]},
+                          headers=HEADERS).json()
+    wait_for(client, started["run_id"], "run_started")
+    note = "Gulf means " + ", ".join(["AE", "SA", "KW", "QA", "BH", "OM"] * 400)
+    assert len(note) > 2000, "longer than a note could be before"
+    sent = client.post(f"/api/v1/runs/{started['run_id']}/steer", json={"text": note}, headers=HEADERS)
+    assert sent.status_code == 200, sent.text
+    assert wait_run(client, started["run_id"])["status"] == "succeeded"
+    assert f"Their words: {note}\n" in heard[0][0]
+    assert runtime.requests[1].history[0].question == pasted, "a follow-up still has the whole paste"
+    assert client.post(f"/api/v1/runs/{started['run_id']}/steer", json={"text": "x" * (MAX_QUESTION_CHARS + 1)},
+                       headers=HEADERS).status_code == 422
 
 
 def test_an_answer_citing_a_step_marked_not_this_is_flagged(scripted):

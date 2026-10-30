@@ -55,6 +55,10 @@ BACKGROUND_PATHS = {"/api/v1/health", "/api/v1/ready", "/api/v1/account/gemini/q
 # A session in use is signed again once it is this old, so a Wizard left open (WizardBar keeps the page for days) is
 # never signed out between two questions. It still lapses session_hours after the page last reached Wizard.
 SESSION_RENEW_S = 3600
+# The question box, and a note typed in it while an answer runs (owner, 30 Oct 2026: "nearly unlimited"): room to paste
+# a long list or email thread. Each earlier question goes back to Gemini in full with every follow-up (six at most), so
+# this keeps a conversation well inside its context window; longer text goes in as an attached file.
+MAX_QUESTION_CHARS = 100_000
 log = logging.getLogger("wizard.api")
 
 
@@ -109,7 +113,7 @@ class LoginBody(Body):
 
 
 class RunBody(Body):
-    question: str = Field(min_length=1, max_length=4000)
+    question: str = Field(min_length=1, max_length=MAX_QUESTION_CHARS)
     conversation_id: str | None = Field(default=None, max_length=64)
     attachment_ids: list[str] = Field(default_factory=list, max_length=5)
     # The systems picker: the ids of the systems this question may use; None (or absent) is Auto.
@@ -117,7 +121,7 @@ class RunBody(Body):
 
 
 class SteerBody(Body):
-    text: str = Field(default="", max_length=2000)
+    text: str = Field(default="", max_length=MAX_QUESTION_CHARS)
     call_id: str | None = Field(default=None, max_length=20, pattern=r"^c\d{1,4}$")  # a step of the run (Not this)
     reason: Literal["table", "filter", "period", "other"] | None = None
 
@@ -852,7 +856,7 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         if active:
             manager.cancel(identity.id, run_id)
             await manager.finished(run_id)
-        question = correction_question(text, about, body.reason)[:4000]
+        question = correction_question(text, about, body.reason)[:MAX_QUESTION_CHARS]
         try:  # the systems as they are now: the picker may have changed while the run worked
             follow = manager.start(identity, run["conversation_id"], question,
                                    choice=inherited(identity, store.run(identity.id, run_id) or run))
