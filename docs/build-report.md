@@ -3,7 +3,32 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-30 (latest) — Brain and Cases on the company GitHub's Pages; Gemini names each chat; mapped reports in /brain
+## 2026-10-30 (latest) — Pro for a step, not the rest of the answer; a used-up quota is known by the quota numbers
+
+The owner: "today, I ran out of pro already and flash is at 20%", then an answer failed with "Google has no capacity for
+gemini-3.8-flash or gemini-3.1-pro-preview right now. This is on Google's side, not your quota. Google said: You have
+exhausted your capacity on this model. Your quota will reset after 30s." Once Flash refused a step, the run stayed on
+Pro until Pro refused, which Pro does mostly once its quota is gone; each step is a request, so a long answer or a
+portal-map round spent Pro's quota. Google words some used-up quotas as no capacity, so Wizard kept switching to Pro,
+waited on it, and called it Google's side. Chat names were asked of the fallback, Pro. [Decision
+addendum](decisions/2026-10-20-desktop-app.md).
+- `CodeAssistRuntime._run`: before each step, a run on the fallback goes back to the chosen model when `_Models.ready`
+  allows it: its quota is not used up and the wait Google asked of it (`not_before`, set when it refused) has passed.
+- `CodeAssistRuntime._check_quota`: a refusal read as `capacity` or `rate` becomes `quota` (reset time from the bucket)
+  when `retrieveUserQuota` shows the model with nothing left (`summarize_quota`, as the quota ring). The numbers are
+  read at most once a minute per project; without them the refusal stands.
+- `_step`: models whose quota is used up are not waited on (`model_wait` lists only the others), and a failure names
+  them apart: "Google has no capacity for gemini-3.8-flash right now. … Your quota for gemini-3.1-pro-preview is used
+  up (back in about 9 h)."
+- `CodeAssistRuntime.title` asks the chosen model (the fallback only while its quota is used up).
+
+**Tests.** `tests/unit/test_code_assist.py`: Pro answers only the step Flash could not; a run stays on Pro only while
+Google's wait for Flash runs and goes back when Pro refuses; the owner's failure (Pro used up, worded as no capacity)
+waits on Flash only, says Pro's quota is used up, and reads the numbers once; with quota left, or no numbers, the
+refusal stands. `tests/unit/test_titles.py`: the name is asked of Flash under the shipped defaults. All against the
+scripted fake of Google's endpoints; the work PC's next answers are the first against Google.
+
+## 2026-10-30 — Brain and Cases on the company GitHub's Pages; Gemini names each chat; mapped reports in /brain
 
 The owner asked for /brain on the company GitHub's Pages "for other people to see", and /cases: "when I make a prompt,
 and get a response, I can put the cases there ... on the left the prompt, an arrow to the right, a window with the

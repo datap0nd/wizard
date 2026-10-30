@@ -188,16 +188,21 @@ of Wizard on this PC:
   the environment can set others (`WIZARD_GEMINI_MODEL`, `WIZARD_GEMINI_FALLBACK_MODEL`; `none` turns the fallback off).
 - **When Gemini says no.** Wizard handles Google's refusal the way Gemini CLI does:
   - *No capacity for the model* (Google's side, not your quota): two quick tries (1 s, 3 s), then the other model takes
-    the step and the answer continues on it: Flash hands over to Pro, and Pro hands back to Flash. As with Gemini
-    CLI's default, this is silent: no message on the stage (the owner did not want "Google has no capacity" on every
-    question), and the answer's report names the model that answered. Every new question starts on Flash. Only when
+    the step: Flash hands over to Pro, and Pro hands back to Flash. Pro keeps only the steps Flash cannot answer: the
+    next step is Flash's again once the wait Google asked of Flash has passed (owner, 30 October: a run that stayed on
+    Pro used up the day's Pro quota while Flash was at 20 %). As with Gemini CLI's default, this is silent: no message
+    on the stage (the owner did not want "Google has no capacity" on every question), and the answer's report names the
+    model that answered. Every new question starts on Flash. Only when
     both models refuse (or no fallback is set) does Wizard wait: 5 to 30 s, then one more try on each, for up to 10
     rounds (about 4 minutes). The wait is not shown either: the stage keeps the wizard at work, with no "Gemini is
     busy" (owner, 23 October). `logs\wizard.log` records each wait (`waiting 12 s for Gemini`), and if the answer
     fails, Error details says how often and how long Wizard waited. Only if every round fails does the answer stop,
     with Google's reason.
   - *Your quota for the model is used up* (often the daily quota): no waiting. The answer continues on the other
-    model, and Wizard does not go back to the first one until Google's reset time.
+    model, and Wizard does not go back to the first one until Google's reset time. Google words some used-up quotas
+    as no capacity ("You have exhausted your capacity on this model. Your quota will reset after 30s."), so Wizard
+    checks a refusal that reads as no capacity against the person's own quota numbers (the ones the quota ring shows):
+    a model with nothing left is a used-up quota, not waited on, and a failed answer says so.
   - *Per-minute limit* (Wizard asks Gemini once per step, so a long answer can reach it): the other model takes the
     step; if it refuses too, Wizard waits as long as Google asks, without a message, then continues.
   - `logs\wizard.log` also records each step's model and size (`run … step 12 on gemini-3.8-flash: 48210 prompt
@@ -314,7 +319,7 @@ imported: anyone with it can use the passwords. Conversations stay on the first 
 | No tab, but the tray icon is there | The tab hides during full-screen apps and slide shows, or was turned off in the menu |
 | Ctrl+Alt+W does nothing | Another program owns it (`bar.log` says "taken by another program"); use the tab or the tray icon |
 | The panel is blank and mentions WebView2 | The Edge WebView2 runtime is missing; it ships with Windows 10/11 and Edge |
-| "Google has no capacity for …" | Google had no capacity for Flash or for Pro, the fallback (not your quota). Wizard already waited about 4 minutes; try again a little later. The message quotes Google's reason, and `logs\wizard.log` has it for each refusal |
+| "Google has no capacity for …" | Google had no capacity for the models it names (your quota numbers show quota left for them). Wizard already waited about 4 minutes; try again a little later. A model whose quota is used up is named separately ("Your quota for … is used up"). The message quotes Google's reason, and `logs\wizard.log` has it for each refusal |
 | "Wizard could not finish this answer" | **Error details** under the message says why: Google's finish reason and words, the models tried, the last tool call. **Copy details** to send it on. The same run id is in `logs\wizard.log` |
 | A dropped file shows "Could not read" | Point at the file in the panel for the reason (type, size, a protected file Office would not open). `bar.log` has drop errors |
 

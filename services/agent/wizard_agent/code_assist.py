@@ -9,10 +9,13 @@ them through the same registry, rights checks and evidence capture as the MCP pa
 Limits are read the way Gemini CLI reads them (packages/core/src/utils/googleQuotaErrors.ts): Google's error details
 tell apart a model with no capacity on Google's side, a used-up (daily) quota, and a per-minute rate limit. A used-up
 quota is not waited for. When the model a run is on cannot answer, the other one (the chosen model or the fallback)
-takes the step and the run stays on it, as Gemini CLI does (within Gemini 3, Flash and Pro stand in for each other).
-It goes both ways: a run that moved to Pro goes back to Flash when Pro refuses. Like the CLI's default (errorVerbosity
-low), a lack of capacity that Wizard handles is not shown: the quick tries and the switches go to the log only, and the
-run records the model that answered. Only when both models have refused (or there is no other) does Wizard wait, like
+takes the step, as Gemini CLI does (within Gemini 3, Flash and Pro stand in for each other). The fallback keeps only the
+steps the chosen model cannot answer: the next step is the chosen model's again once the wait Google asked of it has
+passed (owner, 30 Oct 2026: a run that stayed on Pro used up the day's Pro quota while Flash was at 20 %). Google words
+some used-up quotas as "You have exhausted your capacity on this model. Your quota will reset after 30s.", so a refusal
+that reads as no capacity is checked against the person's own quota numbers (retrieveUserQuota): a model with nothing
+left is a used-up quota. Like the CLI's default (errorVerbosity low), a lack of capacity that Wizard handles is not
+shown: the quick tries and the switches go to the log only, and the run records the model that answered. Only when both models have refused (or there is no other) does Wizard wait, like
 for a busy server (Google's capacity usually comes back within a minute or two). The wait is not shown either (owner, 23
 October: people see Wizard working through the data, not Gemini being busy): it goes to the log and, as a `model_wait`
 event, into Error details. The person reads "no capacity" only when an answer stops for it.
@@ -29,6 +32,7 @@ import random
 import re
 import time
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -50,6 +54,7 @@ MAX_RETRIES = 10             # Gemini CLI's DEFAULT_MAX_ATTEMPTS: with 5-30 s ba
 CAPACITY_RETRIES = 2         # quick tries before leaving a model Google has no room for (Gemini CLI: 1 s, then 3 s)
 QUICK_TRY_S = 3.0            # the longest quick try; a longer wait Google asks for goes to the other model instead
 MAX_RETRYABLE_DELAY_S = 300  # a longer suggested wait means the quota will not come back within the run
+QUOTA_CHECK_S = 60.0         # how long the person's quota numbers are reused while models keep refusing
 RETRY_STATUSES = (429, 499, 500, 502, 503, 504)
 EMPTY_TRIES = 2              # tries per model for a turn with neither text nor a tool call (Gemini CLI asks again once)
 # Google's finishReason for a turn that ended, in words (google.genai FinishReason).
@@ -210,6 +215,17 @@ def _about(seconds: float | None) -> str:
     return f" (back in about {minutes} min)" if minutes < 90 else f" (back in about {minutes / 60:.0f} h)"
 
 
+def seconds_until(stamp: Any) -> float | None:
+    """Seconds from now to a time Google sent (a quota bucket's resetTime, RFC 3339), or None."""
+    try:
+        when = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if when.tzinfo is None:
+        return None
+    return max(0.0, (when - datetime.now(UTC)).total_seconds())
+
+
 def google_says(limit: Limit) -> str:
     """Google's own words, short and on one line, so the person (and whoever helps them) sees the real reason."""
     text = " ".join(limit.detail.split())
@@ -218,8 +234,9 @@ def google_says(limit: Limit) -> str:
     return f' Google said: "{text[:177] + "..." if len(text) > 180 else text}"'
 
 
-def limit_message(limit: Limit, model: str, fallback: str | None = None) -> str:
-    """What the person reads when a model cannot answer, and what Wizard does about it."""
+def limit_message(limit: Limit, model: str, fallback: str | None = None, also: str = "") -> str:
+    """What the person reads when a model cannot answer, and what Wizard does about it (`also`: what else stood in the
+    way, before Google's own words)."""
     then = f" Wizard continues with {fallback}." if fallback else ""
     if limit.kind == "capacity":
         text = (f"Google has no capacity for {model} right now. This is on Google's side, not your quota."
@@ -230,7 +247,7 @@ def limit_message(limit: Limit, model: str, fallback: str | None = None) -> str:
     else:
         text = (f"Gemini kept refusing requests for {model} ({'per-minute limit' if limit.kind == 'rate' else 'busy'})."
                 + (then or " Try again in a few minutes."))
-    return text + google_says(limit)
+    return text + also + google_says(limit)
 
 
 LIMIT_KINDS = {"capacity": "no capacity for the model on Google's side", "quota": "your quota is used up",
@@ -318,6 +335,7 @@ class CodeAssistRuntime:
         self.model = model
         self.fallback_model = fallback_model
         self._resting: dict[str, tuple[float, Limit]] = {}  # model -> (until, why): later runs start on the fallback
+        self._quota_seen: dict[str, tuple[float, dict[str, Any]]] = {}  # project -> (when, retrieveUserQuota's answer)
         self.proxy = proxy
         self.secret_box = secret_box
         self.project_override = project
@@ -455,23 +473,26 @@ class CodeAssistRuntime:
                     ) -> Reply:
         """One step of the run, answered by whichever of the two models (the chosen one and the fallback) can.
 
-        A model Google has no room for gets Gemini CLI's two quick tries; then the other model takes the step, silently,
-        and the run stays on it. So a run that moved to Pro goes back to Flash as soon as Pro refuses, instead of
-        waiting on Pro at every step. Wizard waits (5 to 30 s, not shown) only once both have refused, and then tries
-        both again after each wait, up to MAX_RETRIES rounds. A used-up quota is not waited for."""
+        A model Google has no room for gets Gemini CLI's two quick tries; then the other model takes the step, silently.
+        It keeps only this step: the run loop hands the next one back to the chosen model. A run on Pro goes back to
+        Flash as soon as Pro refuses, instead of waiting on Pro. Wizard waits (5 to 30 s, not shown) only once both have
+        refused, and then tries both again after each wait, up to MAX_RETRIES rounds. A used-up quota is not waited for."""
         quick: dict[str, int] = {}
         refused: list[str] = []  # models that refused since the last wait
-        tried: list[str] = []    # every model that refused in this step, for the failure message
+        tried: list[str] = []    # every model that refused in this step, for the failure details
+        spent: list[str] = []    # those whose quota is used up: not waited on
         waits = 0
         while True:
             result = await self._request(http, token, run.envelope(contents), emit)
             if not isinstance(result, Limit):
                 return result
-            limit, model = result, run.model
+            model = run.model
+            limit = await self._check_quota(http, token, run.project, model, result)
             tried = list(dict.fromkeys([*tried, model]))
             other = run.other(self._resting)
             if limit.kind == "quota":
                 self._resting[model] = (time.monotonic() + min(limit.delay or 3600, 6 * 3600), limit)
+                spent.append(model)
                 if other is None:
                     raise AgentFailure("model_quota", limit_message(limit, model), limit_details(limit, tried))
                 await emit("status", {"message": limit_message(limit, model, other)})
@@ -484,20 +505,45 @@ class CodeAssistRuntime:
                 await sleep(limit.delay if limit.delay is not None else (1.0 if quick[model] == 1 else QUICK_TRY_S))
                 continue
             refused.append(model)
+            run.not_before[model] = time.monotonic() + (limit.delay or 0.0)
             if other and other not in refused:
                 await run.switch(other, contents, emit, limit_message(limit, model, other))  # as Gemini CLI, silent
                 continue
+            waiting = [m for m in tried if m not in spent]
             if waits + 1 >= MAX_RETRIES:  # no wait after the last round
-                raise AgentFailure("model_capacity", limit_message(limit, " or ".join(tried)),
+                also = "".join(f" Your quota for {m} is used up{_about(self._resting[m][1].delay)}." for m in spent)
+                raise AgentFailure("model_capacity", limit_message(limit, " or ".join(waiting), also=also),
                                    limit_details(limit, tried, waits + 1))
             delay = retry_delay(limit.delay, waits)
             # Not a status line: the stage keeps Wizard at work. The log and Error details keep the wait.
             log.info("run %s: waiting %.0f s for Gemini (%s for %s, round %d of %d)", run.request.run_id, delay, limit.kind,
-                     " and ".join(tried), waits + 1, MAX_RETRIES)
-            await emit("model_wait", {"seconds": round(delay, 1), "reason": limit.kind, "models": tried, "round": waits + 1})
+                     " and ".join(waiting), waits + 1, MAX_RETRIES)
+            await emit("model_wait", {"seconds": round(delay, 1), "reason": limit.kind, "models": waiting,
+                                      "round": waits + 1})
             await sleep(delay)
             waits += 1
             refused.clear()
+
+    async def _check_quota(self, http: httpx.AsyncClient, token: str, project: str, model: str, limit: Limit) -> Limit:
+        """A refusal read as no capacity (or a per-minute limit) is a used-up quota when the person's own quota numbers
+        (retrieveUserQuota, as the quota ring reads them) show nothing left for the model. Google words some used-up
+        quotas as "You have exhausted your capacity on this model. Your quota will reset after 30s." (owner, 30 Oct
+        2026: Pro was used up, and Wizard kept waiting on it and called it Google's side). Without the numbers, the
+        refusal stands as Google sent it."""
+        if limit.kind not in ("capacity", "rate"):
+            return limit
+        seen = self._quota_seen.get(project)
+        if not seen or time.monotonic() - seen[0] > QUOTA_CHECK_S:
+            try:
+                seen = (time.monotonic(), await self._post(http, token, "retrieveUserQuota", {"project": project}))
+            except (AgentFailure, httpx.HTTPError, ValueError) as error:
+                log.info("no quota numbers to check %s's refusal against (%s)", model, error)
+                seen = (time.monotonic(), {})  # not asked again at every refusal
+            self._quota_seen[project] = seen
+        bucket = summarize_quota(seen[1], model)["selected"]
+        if not bucket or bucket["remaining_fraction"] > 0:
+            return limit
+        return Limit("quota", seconds_until(bucket.get("reset_time")), limit.detail, limit.status)
 
     def _start_model(self) -> tuple[str, Limit | None]:
         """The chosen model, unless its quota was used up a short while ago (then the fallback, and why). Google's lack of
@@ -546,10 +592,11 @@ class CodeAssistRuntime:
 
     async def title(self, user_home: Path, user_id: str, run_id: str, question: str) -> str | None:
         """A short name for a new chat, written by Gemini from its first question (owner, 30 Oct 2026: "there's no title
-        generated by gemini for each chat"). One small request under the person's own sign-in, on the fallback model
-        (the quicker one) with little thinking; it runs beside the answer, so it costs the answer no time. None when
-        Gemini cannot say: the chat keeps its question as its name."""
-        model = self.fallback_model or self.model
+        generated by gemini for each chat"). One small request under the person's own sign-in, on the chosen model
+        (Flash; the fallback only while Flash's quota is used up, so a name never spends Pro's quota) with little
+        thinking; it runs beside the answer, so it costs the answer no time. None when Gemini cannot say: the chat keeps
+        its question as its name."""
+        model, _ = self._start_model()
         thinking = thinking_config(model, "low")
         body = {"contents": [{"role": "user", "parts": [{"text": TITLE_PROMPT.format(question=question[:4000])}]}],
                 "generationConfig": {"maxOutputTokens": 256, **({"thinkingConfig": thinking} if thinking else {})}}
@@ -593,6 +640,9 @@ class CodeAssistRuntime:
                 # on mid-run brings its tools. Tools are never taken away mid-run: a switched-off system's tools refuse.
                 contents[-1]["parts"].extend({"text": note} for note in await tools.take_steers())
                 run.declarations = declarations(tools)
+                if run.model != chosen and run.ready(chosen, self._resting):
+                    # The fallback answered a step the chosen model could not; the next one is the chosen model's again.
+                    await run.switch(chosen, contents, emit, f"{chosen} may answer again")
                 reply = await self._step(http, token, run, contents, emit)
                 tries = [run.model]
                 while reply.empty:
@@ -659,11 +709,17 @@ class _Models:
         self.models = [m for m in dict.fromkeys([chosen, fallback or chosen]) if m]
         self.model = model
         self.generation = runtime._generation(model)
+        self.not_before: dict[str, float] = {}  # a model that refused -> when Google said to ask it again
 
     def other(self, resting: dict[str, tuple[float, Limit]]) -> str | None:
         """The model to turn to when the current one refuses: the other of the two, unless its quota is used up."""
         now = time.monotonic()
         return next((m for m in self.models if m != self.model and not (m in resting and resting[m][0] > now)), None)
+
+    def ready(self, model: str, resting: dict[str, tuple[float, Limit]]) -> bool:
+        """Whether a model that refused may be asked again: its quota is not used up, and Google's wait has passed."""
+        now = time.monotonic()
+        return not (model in resting and resting[model][0] > now) and self.not_before.get(model, 0.0) <= now
 
     def envelope(self, contents: list[dict[str, Any]]) -> dict[str, Any]:
         return {"model": self.model, "project": self.project, "user_prompt_id": self.request.run_id, "request": {
