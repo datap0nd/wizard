@@ -92,6 +92,7 @@ namespace WizardBar
                 new ToolStripSeparator(),
                 new ToolStripMenuItem("Settings…", null, (s, e) => { ShowPanel(); panel.OpenSettings(); }),
                 new ToolStripMenuItem("Import a settings file…", null, (s, e) => ImportProvision()),
+                new ToolStripMenuItem("Export settings…", null, async (s, e) => await ExportProvision()),
                 update,
                 new ToolStripMenuItem("Open the log folder", null, (s, e) => PanelForm.OpenFolder(paths.Logs)),
                 new ToolStripMenuItem("Restart Wizard", null, (s, e) => backend.Restart()),
@@ -241,6 +242,49 @@ namespace WizardBar
                 {
                     Log.Error("import", error);
                     MessageBox.Show("The settings file could not be copied: " + error.Message, "Wizard", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            }
+        }
+
+        /// <summary>This PC's settings as a settings file for another PC (owner, 30 Oct 2026): the service builds it from
+        /// the company file and Settings, WizardBar saves it where the person chooses. It holds the passwords in plain
+        /// text, so the person is told first; the knowledge base's write token and the Gemini sign-in stay here.</summary>
+        private async Task ExportProvision()
+        {
+            if (MessageBox.Show("Wizard writes this PC's settings to a file you can import on another PC (tray menu: Import a " +
+                    "settings file…, or put it next to WizardSetup.exe).\r\n\r\nIt holds the passwords and tokens in plain " +
+                    "text: anyone with the file can use them. Keep it only until it is imported, then delete it.",
+                    "Export Wizard settings", MessageBoxButtons.OKCancel, MessageBoxIcon.Information) != DialogResult.OK) return;
+            using (var dialog = new SaveFileDialog { Title = "Export Wizard settings", FileName = "wizard.provision",
+                       Filter = "Wizard settings (*.provision)|*.provision", OverwritePrompt = true })
+            {
+                if (dialog.ShowDialog() != DialogResult.OK) return;
+                try
+                {
+                    var result = await backend.Control("export", HttpMethod.Post);
+                    var error = Backend.Text(result, "error");
+                    var text = Backend.Text(result, "text");
+                    if (error != null || string.IsNullOrEmpty(text))
+                    {
+                        MessageBox.Show("The settings could not be exported: " + (error ?? "Wizard is not running yet."), "Wizard",
+                            MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return;
+                    }
+                    File.WriteAllText(dialog.FileName, text, new System.Text.UTF8Encoding(false));
+                    var settings = result.TryGetValue("settings", out var s) && s is ArrayList plain ? plain.Count : 0;
+                    var secrets = result.TryGetValue("secrets", out var k) && k is ArrayList hidden ? hidden.Count : 0;
+                    var leftOut = result.TryGetValue("left_out", out var l) && l is ArrayList left && left.Count > 0;
+                    Log.Write("settings exported to " + dialog.FileName + ": " + settings + " setting(s), " + secrets + " secret(s)");
+                    MessageBox.Show("Saved " + dialog.FileName + ": " + settings + " setting(s) and " + secrets + " password(s) or token(s).\r\n\r\n" +
+                        "On the other PC: Import a settings file… in Wizard's tray menu (or put the file next to WizardSetup.exe and " +
+                        "run it). Then link your Gemini account and sign in to the portals there" +
+                        (leftOut ? ", and enter the knowledge base's write token again in Settings (a settings file never carries it)." : ".") +
+                        "\r\n\r\nDelete this file once it is imported.", "Wizard settings exported", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                catch (Exception error)
+                {
+                    Log.Error("export", error);
+                    MessageBox.Show("The settings could not be exported: " + error.Message, "Wizard", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
             }
         }

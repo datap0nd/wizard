@@ -424,6 +424,8 @@ def test_the_desktop_pieces_agree_with_each_other():
     tag = re.search(r"releases/download/([a-z-]+)/", updater).group(1)
     assert f"gh release upload {tag} dist/WizardSetup.exe" in workflow and f"gh release upload {tag} dist/wizard-desktop.json" in workflow
     assert '"wizard-desktop.json"' in updater and '"WizardSetup.exe"' in updater and "OutputBaseFilename=WizardSetup" in setup
+    context = (bar / "WizardContext.cs").read_text(encoding="utf-8")
+    assert 'Control("export", HttpMethod.Post)' in context and '"/internal/v1/desktop/export"' in (ROOT / "services" / "api" / "wizard_api" / "app.py").read_text(encoding="utf-8")
     # The mirror the updater reads first (as Metronome's setup.ps1 reads its branch) is the branch CI pushes.
     assert "git init -q -b desktop-download" in workflow and "cp dist/WizardSetup.exe dist/wizard-desktop.json" in workflow
     assert "contents/wizard-desktop.json?ref=desktop-download" in updater and "archive/refs/heads/desktop-download.zip" in updater
@@ -481,3 +483,13 @@ def test_bootstrap_lists_the_systems_for_the_stage_with_the_database_display_nam
         ids = [s["id"] for s in client.get("/api/v1/bootstrap").json()["systems"]]
         assert "postgresql" not in ids, "only systems this person may use"
         assert client.app.state.manager.services.postgres_name == "Sales Data Hub"
+
+
+def test_export_settings_is_only_for_wizardbar_on_this_pc(tmp_path):
+    app = desktop_app(tmp_path)
+    provisioning.update_local(app.state.settings.data_dir, {"WIZARD_PG_HOST": "db.corp", "WIZARD_PG_PASSWORD": "pg-secret"})
+    with TestClient(app) as client:
+        assert client.post("/internal/v1/desktop/export", headers=HEADERS).status_code == 401, "plaintext passwords: WizardBar only"
+        exported = client.post("/internal/v1/desktop/export", headers={**HEADERS, "X-Wizard-Control": CONTROL}).json()
+    assert provisioning.parse(exported["text"]).values()["WIZARD_PG_PASSWORD"] == "pg-secret"
+    assert exported["secrets"] == ["WIZARD_PG_PASSWORD"]

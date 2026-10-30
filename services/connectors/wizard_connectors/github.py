@@ -9,10 +9,20 @@ WEB = "https://github.sec.samsung.net"
 API = f"{WEB}/api/v3"
 
 
-def refused(message: str, headers: dict[str, str] | None, repo: str, write: bool = False) -> str:
+# Where a fine-grained token's permissions are changed. GitHub preselects "Read-only" when Contents is added, so a write
+# token made in a hurry reads the repository and is refused its first write (owner, 30 Oct 2026: "github refused the
+# write token HTTP 403 while uploading a file (POST /git/blobs)").
+FINE_GRAINED_STEPS = ('On GitHub: Settings → Developer settings → Personal access tokens → Fine-grained tokens → this '
+                      'token → Edit → Repository permissions → Contents: "Read and write" (GitHub preselects "Read-only") '
+                      '→ Update. The token itself stays the same, so nothing changes in Wizard; if the organisation '
+                      'approves tokens, an owner approves the change first.')
+
+
+def refused(message: str, headers: dict[str, str] | None, repo: str, write: bool = False, write_request: bool = False) -> str:
     """Why GitHub answered 403, from its own message and headers, and what to do about it. A guess at the cause is
     worse than none (owner, 30 Oct 2026: publishing a map with a classic token was refused, and Wizard named Contents
-    read and write and SSO approval, neither of which a classic token on this server has to do with)."""
+    read and write and SSO approval, neither of which a classic token on this server has to do with). `write_request`:
+    the refused request was a write by a token that had just read the repository, so the token reads but may not write."""
     text = message.lower()
     headers = {k.lower(): v for k, v in (headers or {}).items()}
     access = "Contents: Read and write" if write else "Contents: Read-only"
@@ -28,10 +38,15 @@ def refused(message: str, headers: dict[str, str] | None, repo: str, write: bool
         cause = "GitHub's rate limit was reached: try again in a few minutes."
     elif "approv" in text or "pending" in text:
         cause = "the token waits for an organisation owner to approve it."
+    elif "archived" in text:
+        cause = f"{repo} is archived, so GitHub keeps it read-only: a repository admin can unarchive it."
     elif "x-accepted-github-permissions" in headers or "not accessible by" in text:
         wanted = headers.get("x-accepted-github-permissions")
         cause = (f"the token lacks a permission{f' (GitHub asks for {wanted})' if wanted else ''}: give it {access} on "
-                 f"{repo}.")
+                 f"{repo}." + (f" {FINE_GRAINED_STEPS}" if write else ""))
+    elif write and write_request:
+        cause = (f"the token reads {repo} but may not write to it. A fine-grained token needs {access}. "
+                 f"{FINE_GRAINED_STEPS} A classic token needs the whole repo scope.")
     else:
         cause = (f"the token, or the organisation's rules for tokens, does not allow this. A classic token needs the repo "
                  f"scope, and some organisations refuse classic tokens: then make {fine_grained}.")

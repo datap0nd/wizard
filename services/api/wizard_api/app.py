@@ -36,7 +36,7 @@ from wizard_connectors.portal_map import PortalMaps, Published
 from wizard_connectors.tools import build_registry, build_services
 from wizard_connectors.tools.systems import SystemChoice
 
-from . import __version__, brain, knowledge_sync, settings_pane, systems
+from . import __version__, brain, knowledge_sync, provisioning, settings_pane, systems
 from .attachments import AttachmentError, public
 from .config import Settings, kb_source, load_settings
 from .metronome_client import MetronomeClient, MetronomeError
@@ -1429,6 +1429,18 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         """Files the person dropped on the button or the panel: the page may attach each once, from where it is."""
         desktop_control(request)
         return {"files": [manager.attachments.grant(path[:1000]) for path in body.paths]}
+
+    @app.post("/internal/v1/desktop/export")
+    def desktop_export(request: Request) -> dict[str, Any]:
+        """Export settings… in WizardBar's menu: this PC's settings as a provisioning file, which WizardBar saves where the
+        person chooses. It holds passwords in plain text, so only WizardBar on this PC may ask (the control token)."""
+        desktop_control(request)
+        try:
+            exported = settings_pane.export(settings)
+        except (settings_pane.PaneError, provisioning.ProvisionError) as error:
+            return {"error": str(error)}
+        log.info("settings exported: %d setting(s), %d secret(s)", len(exported["settings"]), len(exported["secrets"]))
+        return exported
 
     @app.post("/internal/v1/desktop/stop")
     def desktop_stop(request: Request) -> dict[str, Any]:

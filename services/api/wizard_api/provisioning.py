@@ -90,6 +90,16 @@ def parse(text: str) -> Provision:
     return Provision(name=name.strip()[:80] if isinstance(name, str) else "", settings=settings, secrets=secrets)
 
 
+def render(values: dict[str, str], name: str) -> str:
+    """A provisioning file with these settings, checked as Wizard checks one when it imports it."""
+    text = json.dumps({"wizard_provision": FORMAT, "name": name[:80], "created": datetime.now(UTC).date().isoformat(),
+                       "settings": {k: v for k, v in sorted(values.items()) if v}}, indent=2)
+    parse(text)
+    if len(text.encode("utf-8")) > MAX_BYTES:
+        raise ProvisionError("the provisioning file would be too large")
+    return text
+
+
 def import_file(path: Path, data_dir: Path, box: SecretBox | None = None, delete: bool = True) -> Provision:
     """Store a provisioning file for this PC, replacing any earlier one, and delete the plaintext file."""
     if path.stat().st_size > MAX_BYTES:

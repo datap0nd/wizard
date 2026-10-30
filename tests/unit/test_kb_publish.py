@@ -33,8 +33,9 @@ TOKEN = "github_pat_" + "w" * 40
 
 class FakeGitHub:
     def __init__(self, private: bool = True, push: bool = True, empty: bool = True,
-                 refuse: dict[str, tuple[str, dict[str, str]]] | None = None, protected: tuple[int, str] | None = None):
-        self.private, self.push = private, push
+                 refuse: dict[str, tuple[str, dict[str, str]]] | None = None, protected: tuple[int, str] | None = None,
+                 archived: bool = False):
+        self.private, self.push, self.archived = private, push, archived
         self.refuse = refuse or {}  # "METHOD path": (GitHub's message, headers) answered with 403
         self.protected = protected  # (status, message) for moving main
         self.blobs: dict[str, bytes] = {}
@@ -81,7 +82,8 @@ class FakeGitHub:
         if request.method == "PATCH" and self.protected:
             return httpx.Response(self.protected[0], json={"message": self.protected[1]})
         if request.method == "GET" and path == "":
-            return httpx.Response(200, json={"private": self.private, "default_branch": "main", "permissions": {"push": self.push}})
+            return httpx.Response(200, json={"private": self.private, "default_branch": "main", "permissions": {"push": self.push},
+                                             "archived": self.archived})
         if request.method == "GET" and path == "/git/ref/heads/main":
             if self.head is None:
                 return httpx.Response(409, json={"message": "Git Repository is empty."})
@@ -269,7 +271,14 @@ def test_test_connection_asks_github_whether_the_token_itself_can_write():
       "Make a fine-grained token instead: resource owner = the organisation, only acme/kb, Contents: Read and write.",
       'GitHub said: "The `acme` organization forbids access via a personal access token (classic).']),
     ({"POST /git/blobs": READ_ONLY},
-     ["while uploading a file (POST /git/blobs): the token lacks a permission (GitHub asks for contents=write)"]),
+     ["while uploading a file (POST /git/blobs): the token lacks a permission (GitHub asks for contents=write)",
+      'Fine-grained tokens → this token → Edit → Repository permissions → Contents: "Read and write"']),
+    # Owner, 30 Oct 2026: "github refused the write token HTTP 403 while uploading a file (POST /git/blobs)". The same token
+    # had just read the repository, its branch and its files: it reads but may not write.
+    ({"POST /git/blobs": ("Forbidden", {})},
+     ["while uploading a file (POST /git/blobs): the token reads acme/kb but may not write to it. A fine-grained token "
+      "needs Contents: Read and write.", '(GitHub preselects "Read-only")', "The token itself stays the same",
+      "A classic token needs the whole repo scope.", 'GitHub said: "Forbidden"']),
     ({"GET ": ("Resource protected by organization SAML enforcement. You must grant your Personal Access token access "
                "to this organization.", {"X-GitHub-SSO": "required; url=https://github.example/orgs/acme/sso"})},
      ["Configure SSO → Authorize"]),
@@ -300,3 +309,13 @@ def test_a_protected_branch_is_named_not_called_empty(protected):
                        client=httpx.Client(transport=httpx.MockTransport(github)))
     assert "while moving the branch to the new commit (PATCH /git/refs/heads/main)" in str(refused.value)
     assert "empty" not in str(refused.value)
+
+
+def test_an_archived_repository_is_named_before_any_write():
+    github = FakeGitHub(empty=False, archived=True)
+    with pytest.raises(kb.PublishError, match="acme/kb is archived, so GitHub keeps it read-only"):
+        kb.write_files("acme/kb", TOKEN, {"portal-maps/x.json": b"{}"}, branch="main", message="m",
+                       client=httpx.Client(transport=httpx.MockTransport(github)))
+    assert github.writes == []
+    ok, message = kb.check_write("acme/kb", TOKEN, client=httpx.Client(transport=httpx.MockTransport(FakeGitHub(empty=False, archived=True))))
+    assert not ok and "is archived" in message

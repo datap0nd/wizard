@@ -88,6 +88,9 @@ def blob_id(data: bytes) -> str:
     return hashlib.sha1(b"blob %d\0" % len(data) + data, usedforsecurity=False).hexdigest()
 
 
+ARCHIVED = "{repo} is archived, so GitHub keeps it read-only: a repository admin can unarchive it (Settings → General)."
+
+
 class GitHub:
     def __init__(self, repo: str, token: str, client: httpx.Client, label: str = "publishing token"):
         self.repo, self.client, self.label = repo, client, label
@@ -134,8 +137,12 @@ def explain(response: httpx.Response, repo: str, label: str = "publishing token"
         return (f"GitHub says {repo} does not exist for this token (HTTP 404){step}: check the name, and that the token's "
                 "repository access includes it.")
     if code == 403:
+        try:
+            writing = response.request.method in ("POST", "PUT", "PATCH", "DELETE")
+        except RuntimeError:  # a response built by hand
+            writing = False
         return f"GitHub refused the {label} (HTTP 403){step}: " + refused(detail, dict(response.headers), repo,
-                                                                         write=label != "read-only token")
+                                                                         write=label != "read-only token", write_request=writing)
     if code == 409 and "empty" in detail.lower():
         return f"{repo} is empty: nothing has been published to it yet. Run .\\docs.ps1 kb-publish first."
     if code in (409, 422) and ("protected" in detail.lower() or "rule" in detail.lower()):
@@ -165,6 +172,8 @@ def publish(content: Path, repo: str, token: str, *, branch: str | None = None, 
         if not info.get("private"):
             raise PublishError(f"{repo} is not private. Company notes must never go to a public repository: make it "
                                "private on GitHub (Settings → General → Danger Zone → Change visibility) first.")
+        if info.get("archived"):
+            raise PublishError(ARCHIVED.format(repo=repo))
         if not (info.get("permissions") or {}).get("push"):  # the account's role: a token can still lack write
             raise PublishError("This account cannot write to the repository: ask an organisation owner for write access.")
         branch = branch or info.get("default_branch") or "main"
@@ -230,6 +239,8 @@ def check_write(repo: str, token: str, *, proxy: str | None = None, client: http
             return False, f"Write token: {error}"
         if not info.get("private"):
             return False, f"Write token: {repo} is not private; Wizard writes only to a private repository."
+        if info.get("archived"):
+            return False, f"Write token: {ARCHIVED.format(repo=repo)}"
         if not (info.get("permissions") or {}).get("push"):
             return False, "Write token: this account cannot write to the repository; ask an organisation owner for write access."
         probe = http.post(f"{API}/repos/{repo}/git/refs", headers=gh.headers,
@@ -248,6 +259,8 @@ def write_files(repo: str, token: str, files: dict[str, bytes], *, branch: str, 
         info = gh.call("GET", "")
         if not info.get("private"):
             raise PublishError(f"{repo} is not private: Wizard never writes company notes to a public repository.")
+        if info.get("archived"):
+            raise PublishError(ARCHIVED.format(repo=repo))
         if not (info.get("permissions") or {}).get("push"):
             raise PublishError(f"This account cannot write to {repo}: ask an organisation owner for write access.")
         for attempt in range(2):  # another commit may land in between: start again from the new head once
