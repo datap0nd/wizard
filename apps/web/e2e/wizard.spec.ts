@@ -199,37 +199,52 @@ test('the compact desktop view answers and tells its Windows host what happened'
   await expect(page).toHaveURL(/\/$/);
 });
 
-test('the Brain page shows the knowledge base as a 3D graph and walks a presenter through it, beside the app', async ({page}) => {
+test('the Brain page draws the knowledge base as a graph of communities and walks a presenter through it, beside the app', async ({page}) => {
   await signIn(page, 'u-ceo');
   await page.goto('/brain');
   await expect(page.getByTestId('brain-page')).toBeVisible();
   await expect(page.getByTestId('brain-examples')).toBeVisible();  // the synthetic notes are never shown as company knowledge
   await expect(page.getByTestId('brain-canvas')).toBeVisible();
-  await expect(page.getByTestId('brain-cluster').filter({hasText: 'Platforms'})).toBeVisible();
+  await expect(page.getByTestId('brain-page')).toHaveAttribute('data-dims', '2');
+  await expect(page.getByTestId('brain-community').first()).toBeVisible();
+  await expect(page.getByTestId('brain-select-all')).toBeChecked();
   await expect(page.locator('[data-testid=brain-system][data-system=asap]')).toContainText('reports');
   await expect(page.getByTestId('brain-stat').first()).toContainText('Nodes');
+  await expect(page.getByTestId('brain-stats')).toContainText('Communities');
   await expect(page.getByTestId('brain-layout')).toContainText('settled', {timeout: 20_000});
   // Without a company database there is no news to show, and the page says why.
   await expect(page.getByTestId('news-missing')).toContainText('No company database');
+  // A community can be hidden, and shown again with the rest.
+  await page.getByTestId('brain-community-shown').first().uncheck();
+  await expect(page.getByTestId('brain-select-all')).not.toBeChecked();
+  await page.getByTestId('brain-select-all').check();
+  await expect(page.getByTestId('brain-community-shown').first()).toBeChecked();
   await page.keyboard.press('ArrowRight');
   await expect(page.getByTestId('brain-caption')).toContainText('Everything Wizard knows');
   await page.keyboard.press('ArrowRight');
   await expect(page.getByTestId('brain-caption')).toContainText('Step 2');
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('brain-caption')).toHaveCount(0);
+  // Coloured by area instead, an area lights up.
+  await page.getByTestId('brain-colour-area').click();
+  await expect(page.getByTestId('brain-cluster').filter({hasText: 'Platforms'})).toBeVisible();
   await page.getByTestId('brain-cluster').filter({hasText: 'Metrics'}).click();
   await expect(page.getByTestId('brain-cluster').filter({hasText: 'Metrics'})).toHaveAttribute('aria-pressed', 'true');
   // Layers switch on and off; search finds a note and opens it with what it links to.
   const tags = page.locator('[data-testid=brain-layer][data-layer=tags]');
-  await expect(tags).toHaveAttribute('aria-pressed', 'true');
-  await tags.click();
-  await expect(tags).toHaveAttribute('aria-pressed', 'false');
+  await expect(tags).toBeChecked();
+  await tags.uncheck();
+  await expect(tags).not.toBeChecked();
   await page.getByTestId('brain-search').fill('GSCM platform');
   await expect(page.getByTestId('brain-results')).toContainText('GSCM platform guide');
   await page.getByTestId('brain-search').press('Enter');
   await expect(page.getByTestId('brain-card')).toContainText('GSCM platform guide');
   await expect(page.getByTestId('brain-neighbours')).toContainText('GSCM');
   await expect(page.getByTestId('brain-cluster').filter({hasText: 'Metrics'})).toHaveAttribute('aria-pressed', 'false');
+  // The same graph in 3D.
+  await page.getByTestId('brain-3d').click();
+  await expect(page.getByTestId('brain-page')).toHaveAttribute('data-dims', '3');
+  await expect(page.getByTestId('brain-rotate')).toBeVisible();
   await page.getByRole('link', {name: 'Ask Wizard'}).click();
   await expect(page.getByTestId('conversation-title')).toBeVisible();
 });

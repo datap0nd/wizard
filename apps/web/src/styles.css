@@ -119,9 +119,9 @@
   @keyframes panel-glint { to { transform: translateX(100%); } }
   /* The Brain page (components/brain, /brain): the knowledge graph on a flat dark surface, made for a meeting-room
      screen. Reduced motion turns its transitions off through the base rule above. */
-  .brain-page { color-scheme: dark; background: #0c1016; }
-  .brain-stage { background: radial-gradient(1200px 820px at 58% 46%, #121823 0%, #0c1016 62%, #0a0d12 100%); }
-  .brain-panel { border-radius: 0.75rem; border: 1px solid rgb(255 255 255 / 0.07); background: rgb(17 22 31 / 0.86);
+  .brain-page { color-scheme: dark; background: #0f1117; }
+  .brain-stage { background: #0f1117; }
+  .brain-panel { border-radius: 0.75rem; border: 1px solid rgb(255 255 255 / 0.07); background: rgb(22 26 35 / 0.9);
     padding: 0.625rem 0.75rem; backdrop-filter: blur(6px); }
   /* The roadmap page's starfield (components/roadmap). */
   .brain-stars { opacity: 0.55; background-size: 260px 260px;

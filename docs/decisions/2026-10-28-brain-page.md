@@ -84,6 +84,25 @@ more... serious", "make it scientific, and complex, but not overly ... quirky. k
 - **Kept:** the news panel and its demo arrival (N), and the tour (→, ←, Esc, F), whose steps now frame what they
   speak of and label the notes they name. The intro says how many links are declared and how many are mentions.
 
+**Update (30 October 2026, later): drawn the way graphify draws knowledge graphs.** The owner, showing a graphify
+graph (a 2D force layout of small dots coloured by community, thin edges in the community's colour, a Communities
+sidebar with check boxes and counts): "the knowledge base brain looks rough, was hoping it looked like this".
+- **Communities from the links.** Louvain modularity (Blondel and others, 2008) over every edge (related links count
+  double, shared tags less), visited in a fixed order so the same knowledge base gives the same communities. Each is
+  named by its most linked note and listed largest first; the points without a link are gathered as "Without links".
+- **No made-up hubs.** The knowledge-base root and the area hubs are gone; the structure is the notes' own links, tags,
+  terms, documented systems and the news. Areas stay as a colouring (Communities | Areas) with the same check boxes,
+  and the tour still lights each area.
+- **The look.** 2D by default (a drag moves it, the wheel zooms at the pointer); 3D one click away (it turns, slowly by
+  itself). Small points sized by their links, no rings; thin, slightly curved edges in the colour of the hub they leave;
+  a flat dark surface; no floor grid or axis triad; labels only for the point under the pointer, the picked point and
+  what it joins, the notes a tour step names, and, with **Labels**, each community's hub and the most linked points. A
+  weak pull towards each community's centre lets communities read as groups. Colours: the validated dark palette for the
+  eight largest groups and a grey for the rest. graphify's own palette (Tableau 10) fails the dataviz checks on this dark
+  surface (green and teal too close, three hues read as grey).
+- **The statistics** are now over the whole graph: nodes, edges, communities, modularity Q of the communities (the
+  areas' Q on hover), ⟨k⟩, k max, ρ, ⟨C⟩, components, ⟨ℓ⟩, D and P(k).
+
 **Evidence.** `tests/unit/test_brain.py` (10 since 30 October), `tests/integration/test_brain_postgres_real.py` (2, real PostgreSQL 16),
 `apps/web/src/brain.test.ts` (8), the e2e test "the Brain page maps what Wizard knows…" in `apps/web/e2e/wizard.spec.ts`,
 and screenshots of the page in Chromium at 1280×720, 1600×900 and 1920×1080 over a synthetic knowledge base of 111 notes
@@ -96,3 +115,11 @@ camera, picking, focus, search, the statistics against hand-computed values), th
 knowledge base as a 3D graph…", and screenshots in Chromium at 1280×720, 1600×900 and 1920×1080 over a synthetic
 knowledge base of 101 notes in 12 areas (681 links, 163 glossary terms, mapped by the real `knowledge_map`) and
 synthetic news (not committed).
+
+Evidence for the graphify update: `apps/web/src/graph3d.test.ts` (14: no made-up hubs; communities found from the links
+and named, two triangles joined by one link split in two whatever their folders; the eight largest coloured, then grey;
+2D layouts flat and deterministic with each community together; 3D, carried places; camera; focus by area, community,
+systems, news and point; search; the statistics against hand-computed values), the e2e test "the Brain page draws the
+knowledge base as a graph of communities…" (hide and show a community, colour by area, layers, search, 3D), and
+screenshots in Chromium at 1280×720, 1600×900 and 1920×1080 over a synthetic 101-note knowledge base (507 links, 198
+glossary terms) and synthetic news (not committed).

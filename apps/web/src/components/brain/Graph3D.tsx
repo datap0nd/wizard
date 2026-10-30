@@ -1,75 +1,65 @@
 import {useEffect, useRef} from 'react';
-import {EDGE_STYLE, edgeShown, frame, INK, Layout, nearest, nodeShown, projector, SURFACE, type Camera, type GEdge, type GNode, type Graph,
-  type LayerId} from '@/graph3d';
+import {edgeShown, FOV, frame, INK, Layout, nearest, nodeShown, projector, SURFACE, type Camera, type Graph, type GNode, type LayerId} from '@/graph3d';
 
 export interface GraphControl { zoom: (factor: number) => void; reset: () => void }
 
 const isJsdom = typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent);
-const START = {yaw: 0.65, pitch: 0.52};
+const START_3D = {yaw: 0.65, pitch: 0.38};
 const NEAR = 8;
-const FOG = [1, 0.72, 0.48];
-const GRID = 'rgba(240, 239, 236, 0.07)';
-const AXES: [string, number[], string][] = [['x', [1, 0, 0], '#e66767'], ['y', [0, 1, 0], '#199e70'], ['z', [0, 0, 1], '#3987e5']];
-
-function edgeColor(graph: Graph, edge: GEdge): string {
-  const a = graph.nodes[edge.a], b = graph.nodes[edge.b];
-  if (edge.kind === 'tagged') return a.kind === 'tag' ? a.color : b.color;
-  if (edge.kind === 'documents' || edge.kind === 'news') return INK.secondary;
-  return a.kind === 'note' || a.kind === 'term' ? a.color : b.color;
-}
-
-function shape(ctx: CanvasRenderingContext2D, node: GNode, x: number, y: number, r: number) {
-  ctx.beginPath();
-  if (node.kind === 'system') {
-    const d = r * 1.3;
-    ctx.moveTo(x, y - d); ctx.lineTo(x + d, y); ctx.lineTo(x, y + d); ctx.lineTo(x - d, y); ctx.closePath();
-  } else if (node.kind === 'category' || node.kind === 'news') {
-    const d = r * 0.9;
-    ctx.rect(x - d, y - d, d * 2, d * 2);
-  } else {
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-  }
-}
+const FOG = [1, 0.7, 0.45];
 
 /**
- * The knowledge graph in 3D on a plain canvas: a perspective camera orbiting the graph, edges batched by style and
- * faded with depth, nodes drawn back to front, labels placed where they do not collide, a ground grid and an axis
- * triad for orientation. The layout settles a few ticks per frame (graph3d.ts, Layout). Drag turns the graph, the wheel
- * zooms, a double click frames it again; a point under the pointer is reported, a click picks it.
+ * The knowledge graph on a plain canvas, drawn the way graphify draws one: small points sized by their links, thin
+ * slightly curved edges in the colour of the hub they leave, no labels until a point is pointed at or picked (or the
+ * tour names it). In 2D a drag pans and the wheel zooms at the pointer; in 3D a drag turns the graph, which also turns
+ * slowly by itself. The layout settles a few ticks per frame (graph3d.ts, Layout); a double click frames it again.
  */
-export function Graph3D({graph, layers, lit, frameOn, frameKey, selected, hovered, labelled, reduced, rotate, inset, bottom, control,
-  onHover, onPick, onProgress}: {
-  graph: Graph; layers: ReadonlySet<LayerId>; lit: Set<number> | null; frameOn: number[] | null; frameKey: string;
-  selected: string | null; hovered: string | null; labelled: Set<number>; reduced: boolean; rotate: boolean; inset: number; bottom: number;
-  control?: {current: GraphControl | null};
+export function Graph3D({graph, layers, visible, colors, lit, frameOn, frameKey, selected, hovered, labelled, hubs, dims, reduced, rotate,
+  inset, bottom, control, onHover, onPick, onProgress}: {
+  graph: Graph; layers: ReadonlySet<LayerId>; visible: Uint8Array; colors: string[]; lit: Set<number> | null; frameOn: number[] | null;
+  frameKey: string; selected: string | null; hovered: string | null; labelled: Set<number>; hubs: boolean; dims: 2 | 3; reduced: boolean;
+  rotate: boolean; inset: number; bottom: number; control?: {current: GraphControl | null};
   onHover: (node: GNode | null) => void; onPick: (node: GNode | null) => void; onProgress?: (settled: boolean, ticks: number) => void;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
-  const props = useRef({graph, layers, lit, frameOn, selected, hovered, labelled, reduced, rotate, inset, bottom, onHover, onPick, onProgress});
-  props.current = {graph, layers, lit, frameOn, selected, hovered, labelled, reduced, rotate, inset, bottom, onHover, onPick, onProgress};
-  const state = useRef<{layout: Layout | null; ticks: number; camera: Camera; goal: Pick<Camera, 'tx' | 'ty' | 'tz' | 'distance'>;
-    steered: boolean; touched: number; dirty: boolean; size: {w: number; h: number}; points: {i: number; x: number; y: number; r: number; depth: number}[];
-    hover: number | null}>({
-    layout: null, ticks: 0, camera: {...START, distance: 600, tx: 0, ty: 0, tz: 0}, goal: {tx: 0, ty: 0, tz: 0, distance: 600},
+  const live = {graph, layers, visible, colors, lit, frameOn, selected, hovered, labelled, hubs, dims, reduced, rotate, inset, bottom, onHover, onPick, onProgress};
+  const props = useRef(live);
+  props.current = live;
+  const state = useRef<{layouts: Partial<Record<2 | 3, Layout>>; layout: Layout | null; ticks: number; camera: Camera;
+    goal: Pick<Camera, 'tx' | 'ty' | 'tz' | 'distance'>; steered: boolean; touched: number; dirty: boolean; size: {w: number; h: number};
+    points: {i: number; x: number; y: number; r: number; depth: number}[]; hover: number | null}>({
+    layouts: {}, layout: null, ticks: 0, camera: {yaw: 0, pitch: 0, distance: 600, tx: 0, ty: 0, tz: 0}, goal: {tx: 0, ty: 0, tz: 0, distance: 600},
     steered: false, touched: 0, dirty: true, size: {w: 0, h: 0}, points: [], hover: null,
   });
+  const fit = () => {
+    const s = state.current, p = props.current;
+    if (!s.layout) return;
+    const shown = p.frameOn ?? p.graph.nodes.filter(n => p.visible[n.i] && nodeShown(n, p.layers)).map(n => n.i);
+    s.goal = frame(s.layout.pos, shown.length ? shown : p.graph.nodes.map(n => n.i), aspect(s.size, p.inset, p.bottom));
+  };
 
-  // A new graph keeps the places of the nodes it shares with the one before.
+  // A new graph keeps the places of the points it shares with the one before; 2D and 3D each have their own layout.
   useEffect(() => {
     const s = state.current;
-    s.layout = new Layout(graph, 7, s.layout ? {graph: s.layout.graph, pos: s.layout.pos, alpha: s.layout.alpha} : undefined);
-    s.ticks = 0; s.dirty = true;
-  }, [graph]);
+    for (const d of [2, 3] as const) {
+      const old = s.layouts[d];
+      s.layouts[d] = old || d === dims ? new Layout(graph, 7, old ? {graph: old.graph, pos: old.pos, alpha: old.alpha} : undefined, d) : undefined;
+    }
+    s.layout = s.layouts[dims]!; s.ticks = 0; s.dirty = true;
+  }, [graph]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // A new focus: frame it (the person's own zoom and turns are kept until then).
+  // 2D faces the graph; 3D starts from an angle.
   useEffect(() => {
     const s = state.current;
-    s.steered = false;
-    if (s.layout) s.goal = frame(s.layout.pos, frameOn ?? graph.nodes.map(n => n.i), aspect(s.size, inset, bottom));
-    s.dirty = true;
-  }, [frameKey]); // eslint-disable-line react-hooks/exhaustive-deps
+    s.layout = s.layouts[dims] ??= new Layout(graph, 7, undefined, dims);
+    s.camera = {...s.camera, ...(dims === 2 ? {yaw: 0, pitch: 0} : START_3D)};
+    s.steered = false; s.ticks = 0; s.dirty = true;
+    fit();
+  }, [dims]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { state.current.dirty = true; }, [layers, lit, selected, hovered, labelled, inset, bottom, rotate]);
+  // A new focus: frame it (the person's own zoom and moves are kept until then).
+  useEffect(() => { state.current.steered = false; fit(); state.current.dirty = true; }, [frameKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { state.current.dirty = true; }, [layers, visible, colors, lit, selected, hovered, labelled, hubs, inset, bottom, rotate]);
 
   useEffect(() => {
     if (!control) return;
@@ -80,14 +70,12 @@ export function Graph3D({graph, layers, lit, frameOn, frameKey, selected, hovere
       },
       reset: () => {
         const s = state.current;
-        if (!s.layout) return;
-        s.camera = {...s.camera, ...START}; s.steered = false;
-        s.goal = frame(s.layout.pos, props.current.frameOn ?? props.current.graph.nodes.map(n => n.i), aspect(s.size, props.current.inset, props.current.bottom));
-        s.dirty = true;
+        s.camera = {...s.camera, ...(props.current.dims === 2 ? {yaw: 0, pitch: 0} : START_3D)}; s.steered = false; s.dirty = true;
+        fit();
       },
     };
     return () => { control.current = null; };
-  }, [control]);
+  }, [control]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const el = canvas.current;
@@ -108,7 +96,7 @@ export function Graph3D({graph, layers, lit, frameOn, frameKey, selected, hovere
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(resize);
     observer?.observe(el.parentElement!);
 
-    let raf = 0, last = performance.now(), first = true;
+    let raf = 0, last = performance.now(), first = true, dragging = false;
     const loop = (now: number) => {
       const p = props.current, layout = s.layout;
       const dt = Math.min(0.05, (now - last) / 1000);
@@ -118,8 +106,7 @@ export function Graph3D({graph, layers, lit, frameOn, frameKey, selected, hovere
         const started = performance.now(), budget = first ? 140 : 9;
         do { layout.tick(); s.ticks++; } while (!layout.settled && performance.now() - started < budget);
         first = false; moved = true;
-        // While it settles, keep it framed (unless the person has taken the camera).
-        if (!s.steered) s.goal = frame(layout.pos, p.frameOn ?? p.graph.nodes.map(n => n.i), aspect(s.size, p.inset, p.bottom));
+        if (!s.steered) fit();  // while it settles, keep it framed (unless the person has taken the camera)
         p.onProgress?.(layout.settled, s.ticks);
       }
       const c = s.camera, g = s.goal, k = p.reduced ? 1 : 1 - Math.exp(-dt * 3.2);
@@ -129,173 +116,117 @@ export function Graph3D({graph, layers, lit, frameOn, frameKey, selected, hovere
           distance: c.distance + (g.distance - c.distance) * k};
         moved = true;
       }
-      if (p.rotate && !p.reduced && !dragging && now - s.touched > 2500) { s.camera = {...s.camera, yaw: s.camera.yaw + dt * 0.07}; moved = true; }
-      if ((moved || s.dirty) && layout && (!p.reduced || layout.settled)) { draw(ctx!, dpr); s.dirty = false; }
+      if (p.dims === 3 && p.rotate && !p.reduced && !dragging && now - s.touched > 2500) { s.camera = {...s.camera, yaw: s.camera.yaw + dt * 0.07}; moved = true; }
+      if ((moved || s.dirty) && layout && (!p.reduced || layout.settled)) { draw(ctx!); s.dirty = false; }
       raf = requestAnimationFrame(loop);
     };
 
-    const draw = (ctx: CanvasRenderingContext2D, dpr: number) => {
-      const p = props.current, layout = s.layout!, {graph} = p, pos = layout.pos, {w, h} = s.size;
+    const draw = (ctx: CanvasRenderingContext2D) => {
+      const p = props.current, layout = s.layout!, {graph, colors} = p, pos = layout.pos, {w, h} = s.size;
       const n = graph.nodes.length;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
       const project = projector(s.camera, w, h, p.inset, p.bottom);
-      // Where every node lands.
       const sx = new Float32Array(n), sy = new Float32Array(n), sd = new Float32Array(n), ss = new Float32Array(n);
-      const shown: number[] = [];
-      let dmin = Infinity, dmax = -Infinity, cx = 0, cy = 0, cz = 0, low = Infinity;
+      const on = new Uint8Array(n);
+      let dmin = Infinity, dmax = -Infinity;
       for (let i = 0; i < n; i++) {
         const q = project(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]);
         sx[i] = q.x; sy[i] = q.y; sd[i] = q.depth; ss[i] = q.scale;
-        cx += pos[i * 3] / n; cy += pos[i * 3 + 1] / n; cz += pos[i * 3 + 2] / n; low = Math.min(low, pos[i * 3 + 1]);
-        if (!nodeShown(graph.nodes[i], p.layers) || q.depth < NEAR) continue;
-        shown.push(i);
+        if (!p.visible[i] || !nodeShown(graph.nodes[i], p.layers) || q.depth < NEAR) continue;
+        on[i] = 1;
         dmin = Math.min(dmin, q.depth); dmax = Math.max(dmax, q.depth);
       }
-      const fog = (d: number) => (dmax > dmin ? Math.min(2, Math.floor(((d - dmin) / (dmax - dmin)) * 3)) : 0);
-
-      // The ground: rings and spokes under the graph, for depth.
-      let radius = 0;
-      for (let i = 0; i < n; i++) radius = Math.max(radius, Math.hypot(pos[i * 3] - cx, pos[i * 3 + 2] - cz));
-      const ground = low - 40;
-      ctx.strokeStyle = GRID; ctx.lineWidth = 1; ctx.globalAlpha = 1; ctx.setLineDash([]);
-      ctx.beginPath();
-      for (const share of [0.25, 0.5, 0.75, 1]) {
-        let pen = false;
-        for (let k = 0; k <= 72; k++) {
-          const a = (k / 72) * Math.PI * 2, q = project(cx + Math.cos(a) * radius * share, ground, cz + Math.sin(a) * radius * share);
-          if (q.depth < NEAR) { pen = false; continue; }
-          if (pen) ctx.lineTo(q.x, q.y); else ctx.moveTo(q.x, q.y);
-          pen = true;
-        }
-      }
-      for (let k = 0; k < 12; k++) {
-        const a = (k / 12) * Math.PI * 2, q0 = project(cx, ground, cz), q1 = project(cx + Math.cos(a) * radius, ground, cz + Math.sin(a) * radius);
-        if (q0.depth < NEAR || q1.depth < NEAR) continue;
-        ctx.moveTo(q0.x, q0.y); ctx.lineTo(q1.x, q1.y);
-      }
-      ctx.stroke();
-
-      // Edges, one stroke per colour, weight and fade.
+      const fog = (d: number) => (p.dims === 3 && dmax > dmin ? Math.min(2, Math.floor(((d - dmin) / (dmax - dmin)) * 3)) : 0);
+      const radius = (i: number) => Math.max(1.2, Math.min(14, graph.nodes[i].size * ss[i]));
       const chosen = p.selected ? graph.byKey.get(p.selected)?.i ?? null : null;
-      const buckets = new Map<string, {color: string; alpha: number; width: number; dash: number[]; segments: number[]}>();
+      const pointed = p.hovered ? graph.byKey.get(p.hovered)?.i ?? null : null;
+
+      // Edges, slightly curved, in the colour of the hub they leave; one stroke per colour and strength.
+      const buckets = new Map<string, {color: string; alpha: number; width: number; path: number[]}>();
       for (const edge of graph.edges) {
-        if (!edgeShown(graph, edge, p.layers) || sd[edge.a] < NEAR || sd[edge.b] < NEAR) continue;
-        const style = EDGE_STYLE[edge.kind];
-        const on = !p.lit || (p.lit.has(edge.a) && p.lit.has(edge.b));
-        const picked = chosen !== null && (edge.a === chosen || edge.b === chosen);
-        const level = fog((sd[edge.a] + sd[edge.b]) / 2);
-        const alpha = picked ? Math.min(0.95, style.alpha * 2 + 0.3) : style.alpha * FOG[level] * (on ? (p.lit ? 1.7 : 1) : 0.1);
-        const width = style.width * (picked ? 1.7 : 1);
-        const color = edgeColor(graph, edge);
-        const key = `${color}|${alpha.toFixed(3)}|${width}|${edge.kind === 'documents' ? 1 : 0}`;
+        const {a, b} = edge;
+        if (!on[a] || !on[b] || !edgeShown(graph, edge, p.layers)) continue;
+        const hub = graph.nodes[a].size >= graph.nodes[b].size ? a : b;
+        const picked = chosen !== null && (a === chosen || b === chosen);
+        const inside = !p.lit || (p.lit.has(a) && p.lit.has(b));
+        const alpha = picked ? 0.85 : (inside ? (p.lit ? 0.6 : 0.38) : 0.05) * FOG[fog((sd[a] + sd[b]) / 2)];
+        const width = picked ? 1.3 : 0.8;
+        const color = colors[hub];
+        const key = `${color}|${alpha.toFixed(3)}|${width}`;
         let bucket = buckets.get(key);
-        if (!bucket) buckets.set(key, bucket = {color, alpha, width, dash: style.dash ?? [], segments: []});
-        bucket.segments.push(sx[edge.a], sy[edge.a], sx[edge.b], sy[edge.b]);
+        if (!bucket) buckets.set(key, bucket = {color, alpha, width, path: []});
+        const dx = sx[b] - sx[a], dy = sy[b] - sy[a];
+        bucket.path.push(sx[a], sy[a], (sx[a] + sx[b]) / 2 - dy * 0.08, (sy[a] + sy[b]) / 2 + dx * 0.08, sx[b], sy[b]);
       }
       ctx.lineCap = 'round';
       for (const bucket of buckets.values()) {
-        ctx.strokeStyle = bucket.color; ctx.globalAlpha = Math.min(1, bucket.alpha); ctx.lineWidth = bucket.width; ctx.setLineDash(bucket.dash);
+        ctx.strokeStyle = bucket.color; ctx.globalAlpha = bucket.alpha; ctx.lineWidth = bucket.width;
         ctx.beginPath();
-        for (let k = 0; k < bucket.segments.length; k += 4) { ctx.moveTo(bucket.segments[k], bucket.segments[k + 1]); ctx.lineTo(bucket.segments[k + 2], bucket.segments[k + 3]); }
+        const d = bucket.path;
+        for (let k = 0; k < d.length; k += 6) { ctx.moveTo(d[k], d[k + 1]); ctx.quadraticCurveTo(d[k + 2], d[k + 3], d[k + 4], d[k + 5]); }
         ctx.stroke();
       }
-      ctx.setLineDash([]);
 
-      // Nodes, back to front.
-      shown.sort((a, b) => sd[b] - sd[a]);
-      const hoveredAt = p.hovered ? graph.byKey.get(p.hovered)?.i ?? null : null;
+      // Points: small first so hubs sit on top in 2D; back to front in 3D.
+      const order: number[] = [];
+      for (let i = 0; i < n; i++) if (on[i]) order.push(i);
+      if (p.dims === 3) order.sort((x, y) => sd[y] - sd[x]); else order.sort((x, y) => graph.nodes[x].size - graph.nodes[y].size);
       const points: typeof s.points = [];
-      for (const i of shown) {
-        const node = graph.nodes[i];
-        const r = Math.max(0.7, Math.min(26, node.size * ss[i]));
-        const on = !p.lit || p.lit.has(i);
-        const fade = FOG[fog(sd[i])];
-        ctx.globalAlpha = (on ? 1 : 0.14) * (node.kind === 'term' || node.kind === 'tag' ? 0.75 : 1) * (0.55 + 0.45 * fade);
-        if (node.kind === 'root') {
-          ctx.strokeStyle = node.color; ctx.lineWidth = 1.6;
-          ctx.beginPath(); ctx.arc(sx[i], sy[i], r * 1.4, 0, Math.PI * 2); ctx.stroke();
-          ctx.fillStyle = node.color; ctx.beginPath(); ctx.arc(sx[i], sy[i], r * 0.45, 0, Math.PI * 2); ctx.fill();
-        } else {
-          ctx.fillStyle = node.color;
-          shape(ctx, node, sx[i], sy[i], r);
-          ctx.fill();
-          if (r > 2.2) { ctx.strokeStyle = SURFACE; ctx.lineWidth = 1; ctx.stroke(); }
-          if (node.kind === 'area') {
-            ctx.strokeStyle = node.color; ctx.lineWidth = 1; ctx.globalAlpha *= 0.55;
-            ctx.beginPath(); ctx.arc(sx[i], sy[i], r * 1.7, 0, Math.PI * 2); ctx.stroke();
-          }
-          if (node.note && node.note.stage !== 'DRAFT' && r > 1.6) {
-            ctx.strokeStyle = node.note.stage === 'SIGNED' ? INK.primary : INK.muted; ctx.lineWidth = 1;
-            ctx.beginPath(); ctx.arc(sx[i], sy[i], r + 1.6, 0, Math.PI * 2); ctx.stroke();
-          }
-        }
-        if (i === chosen || i === hoveredAt) {
-          ctx.globalAlpha = 1; ctx.strokeStyle = INK.primary; ctx.lineWidth = i === chosen ? 2 : 1.4;
-          ctx.beginPath(); ctx.arc(sx[i], sy[i], r + 4, 0, Math.PI * 2); ctx.stroke();
+      for (const i of order) {
+        const r = radius(i);
+        const inside = !p.lit || p.lit.has(i);
+        ctx.globalAlpha = (inside ? 1 : 0.13) * (0.5 + 0.5 * FOG[fog(sd[i])]);
+        ctx.fillStyle = colors[i];
+        ctx.beginPath(); ctx.arc(sx[i], sy[i], r, 0, Math.PI * 2); ctx.fill();
+        if (r > 3.5) { ctx.strokeStyle = SURFACE; ctx.lineWidth = 0.75; ctx.globalAlpha *= 0.7; ctx.stroke(); }
+        if (i === chosen || i === pointed) {
+          ctx.globalAlpha = 1; ctx.strokeStyle = INK.primary; ctx.lineWidth = i === chosen ? 1.8 : 1.3;
+          ctx.beginPath(); ctx.arc(sx[i], sy[i], r + 3, 0, Math.PI * 2); ctx.stroke();
         }
         points.push({i, x: sx[i], y: sy[i], r, depth: sd[i]});
       }
       s.points = points;
 
-      // Labels: the hubs always; the picked point, what it joins, the points a step names, the biggest notes otherwise.
+      // Labels only where they are asked for: the picked point and what it joins, the point under the pointer, the
+      // points a tour step names, and (with Labels on) each community's hub and the most linked points.
       const wanted = new Map<number, number>();
-      const want = (i: number, priority: number) => { if (sd[i] >= NEAR && nodeShown(graph.nodes[i], p.layers)) wanted.set(i, Math.max(wanted.get(i) ?? 0, priority)); };
-      for (const node of graph.nodes) {
-        if (node.kind === 'root') want(node.i, 95);
-        else if (node.kind === 'area') want(node.i, 90);
-        else if (node.kind === 'news') want(node.i, 92);
-        else if (node.kind === 'system') want(node.i, 80);
-      }
+      const want = (i: number, priority: number) => { if (on[i]) wanted.set(i, Math.max(wanted.get(i) ?? 0, priority)); };
       if (chosen !== null) { want(chosen, 100); graph.neighbors[chosen].slice(0, 40).forEach(j => want(j, 70)); }
-      if (hoveredAt !== null) want(hoveredAt, 99);
-      p.labelled.forEach(i => want(i, 75));
-      const big = graph.nodes.filter(node => node.kind === 'note' && (!p.lit || p.lit.has(node.i))).sort((a, b) => b.size - a.size).slice(0, p.lit ? 12 : 16);
-      big.forEach(node => want(node.i, p.lit ? 60 : 40));
+      if (pointed !== null) want(pointed, 99);
+      p.labelled.forEach(i => want(i, 80));
+      if (p.hubs) {
+        graph.communities.forEach(c => { if (!c.alone) want(c.hub, 60); });
+        [...graph.nodes].sort((x, y) => y.size - x.size).slice(0, 24).forEach(node => want(node.i, 40));
+      }
       const placed: number[][] = [];
-      const order = [...wanted].sort((a, b) => b[1] - a[1] || sd[a[0]] - sd[b[0]]);
-      ctx.lineJoin = 'round';
-      for (const [i, priority] of order) {
+      ctx.lineJoin = 'round'; ctx.textBaseline = 'middle';
+      for (const [i, priority] of [...wanted].sort((x, y) => y[1] - x[1] || sd[x[0]] - sd[y[0]])) {
         const node = graph.nodes[i];
-        const hub = node.kind === 'area' || node.kind === 'root' || node.kind === 'news' || node.kind === 'system';
-        ctx.font = hub ? '600 12.5px Inter, system-ui, sans-serif' : '11.5px Inter, system-ui, sans-serif';
+        ctx.font = priority >= 99 ? '600 12px Inter, system-ui, sans-serif' : '11px Inter, system-ui, sans-serif';
         const text = node.label.length > 48 ? `${node.label.slice(0, 46)}…` : node.label;
-        const width = ctx.measureText(text).width, r = Math.max(0.7, Math.min(26, node.size * ss[i]));
-        const gap = r + (node.kind === 'area' ? r * 0.8 + 4 : 5), y = sy[i];
-        // To the right of the point, or to its left where the right edge would cut it.
-        const x = sx[i] + gap + width > w - 4 ? sx[i] - gap - width : sx[i] + gap;
+        const width = ctx.measureText(text).width, gap = radius(i) + 5, y = sy[i];
+        const x = sx[i] + gap + width > w - 4 ? sx[i] - gap - width : sx[i] + gap;  // flipped left at the right edge
         const box = [x - 2, y - 8, x + width + 2, y + 8];
         if (box[0] < p.inset || box[1] < 2 || box[3] > h - p.bottom - 2) continue;
-        if (priority < 95 && placed.some(b => b[0] < box[2] && box[0] < b[2] && b[1] < box[3] && box[1] < b[3])) continue;
+        if (priority < 99 && placed.some(b => b[0] < box[2] && box[0] < b[2] && b[1] < box[3] && box[1] < b[3])) continue;
         placed.push(box);
-        const on = !p.lit || p.lit.has(i) || i === chosen;
-        ctx.globalAlpha = on ? 1 : 0.4;
-        ctx.textBaseline = 'middle';
+        ctx.globalAlpha = !p.lit || p.lit.has(i) || i === chosen ? 1 : 0.4;
         ctx.lineWidth = 3.5; ctx.strokeStyle = SURFACE; ctx.strokeText(text, x, y);
-        ctx.fillStyle = hub || priority >= 99 ? INK.primary : INK.secondary;
+        ctx.fillStyle = priority >= 70 ? INK.primary : INK.secondary;
         ctx.fillText(text, x, y);
-      }
-
-      // The axis triad, bottom right, for orientation.
-      const ox = w - 36, oy = h - p.bottom - 34, cyaw = Math.cos(s.camera.yaw), syaw = Math.sin(s.camera.yaw);
-      const cp = Math.cos(s.camera.pitch), sp = Math.sin(s.camera.pitch);
-      ctx.globalAlpha = 0.9; ctx.lineWidth = 1.5; ctx.font = '600 10px Inter, system-ui, sans-serif';
-      for (const [name, [ux, uy, uz], color] of AXES) {
-        const x1 = cyaw * ux - syaw * uz, z1 = syaw * ux + cyaw * uz, y2 = cp * uy - sp * z1;
-        ctx.strokeStyle = color; ctx.fillStyle = color;
-        ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ox + x1 * 18, oy - y2 * 18); ctx.stroke();
-        ctx.fillText(name, ox + x1 * 25 - 3, oy - y2 * 25);
       }
       ctx.globalAlpha = 1;
     };
 
-    // Pointer: drag to turn, wheel to zoom, hover to report, click to pick, double click to frame again.
-    let dragging = false, downX = 0, downY = 0, lastX = 0, lastY = 0, travelled = 0;
+    // Pointer: drag to pan (2D) or turn (3D), wheel to zoom, hover to report, click to pick, double click to frame.
+    let downX = 0, downY = 0, lastX = 0, lastY = 0, travelled = 0;
     const at = (e: PointerEvent | MouseEvent) => {
       const box = el.getBoundingClientRect();
       const found = nearest(s.points, e.clientX - box.left, e.clientY - box.top);
       return found === null ? null : props.current.graph.nodes[found];
     };
+    const scale = () => ((s.size.h - props.current.bottom) / 2) / Math.tan(FOV / 2) / s.camera.distance;
     const down = (e: PointerEvent) => {
       dragging = true; downX = lastX = e.clientX; downY = lastY = e.clientY; travelled = 0;
       el.setPointerCapture?.(e.pointerId);
@@ -305,8 +236,14 @@ export function Graph3D({graph, layers, lit, frameOn, frameKey, selected, hovere
         const dx = e.clientX - lastX, dy = e.clientY - lastY;
         lastX = e.clientX; lastY = e.clientY; travelled = Math.max(travelled, Math.hypot(e.clientX - downX, e.clientY - downY));
         if (travelled > 4) {
-          s.camera = {...s.camera, yaw: s.camera.yaw + dx * 0.006, pitch: Math.max(-1.45, Math.min(1.45, s.camera.pitch + dy * 0.006))};
-          s.touched = performance.now(); s.dirty = true;
+          if (props.current.dims === 2) {
+            const f = scale();
+            s.camera = {...s.camera, tx: s.camera.tx - dx / f, ty: s.camera.ty + dy / f};
+            s.goal = {...s.goal, tx: s.camera.tx, ty: s.camera.ty};
+          } else {
+            s.camera = {...s.camera, yaw: s.camera.yaw + dx * 0.006, pitch: Math.max(-1.45, Math.min(1.45, s.camera.pitch + dy * 0.006))};
+          }
+          s.steered = true; s.touched = performance.now(); s.dirty = true;
         }
         return;
       }
@@ -322,8 +259,18 @@ export function Graph3D({graph, layers, lit, frameOn, frameKey, selected, hovere
     const wheel = (e: WheelEvent) => {
       e.preventDefault();
       const factor = Math.exp(Math.max(-0.5, Math.min(0.5, e.deltaY * 0.0012)));
-      s.goal = {...s.goal, distance: s.goal.distance * factor};
-      s.camera = {...s.camera, distance: s.camera.distance * factor};
+      const p = props.current;
+      if (p.dims === 2) {
+        // Zoom at the pointer: the point under it stays under it.
+        const box = el.getBoundingClientRect(), f = scale();
+        const ox = e.clientX - box.left - (s.size.w + p.inset) / 2, oy = e.clientY - box.top - (s.size.h - p.bottom) / 2;
+        const wx = s.camera.tx + ox / f, wy = s.camera.ty - oy / f, f2 = f / factor;
+        s.camera = {...s.camera, distance: s.camera.distance * factor, tx: wx - ox / f2, ty: wy + oy / f2};
+        s.goal = {tx: s.camera.tx, ty: s.camera.ty, tz: s.camera.tz, distance: s.camera.distance};
+      } else {
+        s.goal = {...s.goal, distance: s.goal.distance * factor};
+        s.camera = {...s.camera, distance: s.camera.distance * factor};
+      }
       s.steered = true; s.touched = performance.now(); s.dirty = true;
     };
     const twice = () => control?.current?.reset();
@@ -349,7 +296,7 @@ export function Graph3D({graph, layers, lit, frameOn, frameKey, selected, hovere
   const notes = graph.nodes.filter(n => n.kind === 'note').length;
   return (
     <canvas ref={canvas} className="absolute inset-0 block h-full w-full cursor-grab touch-none active:cursor-grabbing" data-testid="brain-canvas" role="img"
-      aria-label={`Knowledge graph in 3D: ${graph.nodes.length} points (${notes} notes) joined by ${graph.edges.length} edges. Drag to turn, scroll to zoom.`} />
+      aria-label={`Knowledge graph in ${dims}D: ${graph.nodes.length} points (${notes} notes) in ${graph.communities.length} communities, joined by ${graph.edges.length} edges. ${dims === 2 ? 'Drag to move' : 'Drag to turn'}, scroll to zoom.`} />
   );
 }
 
