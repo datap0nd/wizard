@@ -428,7 +428,9 @@ def test_the_desktop_pieces_agree_with_each_other():
     assert "git init -q -b desktop-download" in workflow and "cp dist/WizardSetup.exe dist/wizard-desktop.json" in workflow
     assert "contents/wizard-desktop.json?ref=desktop-download" in updater and "archive/refs/heads/desktop-download.zip" in updater
     assert "contents/wizard-desktop.json?ref=desktop-download" in settings_pane.MIRROR_MANIFEST
-    assert f"public const int Attempts = {settings_pane.UPDATE_ATTEMPTS};" in updater
+    assert "public const int Attempts = 20;" in updater
+    # Owner, 30 Oct 2026: Defender reported the updater's hidden PowerShell downloads as malware; it reads in-process.
+    assert "powershell.exe" not in updater.lower() and "EncodedCommand" not in updater and "new HttpClient(" in updater
     assert f"RestartExitCode = {desktop.RESTART_EXIT_CODE};" in (bar / "Backend.cs").read_text(encoding="utf-8")
     assert f"return {desktop.DEFAULT_PORT};" in (bar / "Paths.cs").read_text(encoding="utf-8")
     assert f'"{provisioning.FILENAME}"' in (bar / "Paths.cs").read_text(encoding="utf-8")

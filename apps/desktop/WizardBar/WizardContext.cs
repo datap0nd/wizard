@@ -287,7 +287,7 @@ namespace WizardBar
         {
             try
             {
-                // Up to Updater.Attempts attempts (two addresses of at most a minute each), as Metronome's setup.ps1 retries.
+                // Up to Updater.Attempts attempts (two addresses of at most half a minute each), as Metronome's setup.ps1 retries.
                 using (var cancel = new CancellationTokenSource(TimeSpan.FromMinutes(45)))
                     pendingUpdate = await Updater.Newer(cancel.Token, asked ? Retrying("Wizard update") : null);
                 settings.LastUpdateCheck = DateTime.UtcNow.ToString("o");

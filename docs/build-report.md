@@ -26,6 +26,40 @@ communities…" and the demo arrival, in both viewports on Chromium. Screenshots
 synthetic 101-note knowledge base (12 areas, 507 links, 198 glossary terms, mapped by the real `knowledge_map`) and
 synthetic news: 356 points, 1,497 edges, 10 communities, Q 0.485 (not committed).
 
+## 2026-10-30 — Updates no longer start PowerShell (Defender flagged it)
+
+The owner: "I'm getting malware name execution/mdp.powershell.m4192 repeatedly since I updated wizard." The update of
+the same day ("Updates download the way Metronome's setup.ps1 does", below) made every update read a hidden
+`powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ...` running `Invoke-WebRequest
+-OutFile` into `%TEMP%`, started by an unsigned WizardBar.exe: two minutes after start, every six hours, and up to 40
+times per check while GitHub did not answer. The Settings check started `powershell.exe -Command` with the same download
+up to 40 times each time Settings opened. That is how a downloader looks to Microsoft Defender.
+- **WizardBar** (`Updater.cs`): each read runs in WizardBar's own process with `HttpClient`, on the network stack Windows
+  PowerShell's `Invoke-WebRequest` uses (.NET Framework): `WebRequest.DefaultWebProxy` (Windows' proxy settings, a PAC
+  script included) with the person's proxy sign-in (`DefaultNetworkCredentials`), TLS 1.2, the same User-Agent and
+  Accept headers. Everything else stays: mirror first (`api.github.com`, `codeload.github.com`), then the release, up to
+  20 attempts 5 seconds apart, size, SHA-256 and version checks, `bar.log`. A read that outlasts its limit (30 seconds
+  for a manifest, 10 minutes for the installer) is stopped. The logged reason is the innermost error, not HttpClient's
+  "An error occurred while sending the request."
+- **Settings → Check for updates** (`settings_pane.check_update`): Wizard's own connection only, mirror manifest first
+  (raw Accept header), then the release; an answer that is not a manifest is refused. One try each, so the page answers
+  in seconds; when both fail, **Check with Windows** hands the check to WizardBar, which retries.
+- Still started by Wizard on Windows, unchanged since before this update: the Windows proxy lookup for Python
+  (`outbound._windows_system_proxy`, `GetSystemWebProxy().GetProxy`, once per host) and the installer's Stop-Process
+  of Wizard's own processes. Neither downloads anything.
+- One more update has to arrive the PowerShell way: the WizardBar installed now still downloads as it does today, so
+  Defender may report that one download once more.
+
+**Tests.** `tests/unit/test_settings_pane.py`: the mirror is asked first with the raw Accept header and the release only
+when it fails (403, or a proxy's page that is not a manifest); both errors are named when both fail; the service's source
+starts no process. `tests/unit/test_desktop.py`: Updater.cs holds no `powershell.exe` or `-EncodedCommand` and reads
+with `HttpClient`. WizardBar built with `dotnet build -c Release` (warnings are errors; 0 warnings) on Linux with the
+.NET 8 SDK. The new read (Route and Read copied verbatim into a .NET 8 console program) run against the real hosts: the
+mirror manifest (236 bytes, version 1.0.100.0), the release manifest through its redirect, a missing release file
+("The remote server returned an error: (404) Not Found."), the mirror zip with a 2-second limit (stopped: "No answer
+within 2 seconds.") and in full (46,581,972 bytes). The Settings check run against the real hosts: 1.0.100.0. Windows
+on the work network, and whether Defender stays quiet, is the owner's next update.
+
 ## 2026-10-30 — The Brain page is the whole knowledge base as a 3D graph
 
 The owner: "The knowledge base. I want to create a neural network or graphify of the full knowledge base, in 3D", "And
