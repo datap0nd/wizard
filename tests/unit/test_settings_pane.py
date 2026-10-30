@@ -288,3 +288,32 @@ def test_every_pane_field_is_a_setting_wizard_reads(key):
     portals = (pathlib.Path(__file__).resolve().parents[2] / "services" / "connectors" / "wizard_connectors" / "portals.py").read_text(encoding="utf-8")
     assert f'"{key}"' in config or (key.startswith("WIZARD_PG_") and "WIZARD_PG_" in pg) or \
         (key.startswith(("WIZARD_PORTAL_", "WIZARD_BROWSER")) and f'"{key}"' in portals)
+
+
+def test_export_writes_this_pcs_settings_as_a_provisioning_file_for_another_pc(tmp_path):
+    """Owner, 30 Oct 2026: "I want to export my settings file basically. and imkport it there"."""
+    settings = install(tmp_path, "WIZARD_PG_PORT=5433\n")
+    company = tmp_path / "company.provision"
+    company.write_text(provisioning.render({"WIZARD_KB_REPO": "acme/wizard-content", "WIZARD_KB_TOKEN": TOKEN,
+                                            "WIZARD_PG_HOST": "db.corp", "WIZARD_PG_USER": "ro", "WIZARD_PG_PASSWORD": "old",
+                                            "WIZARD_NEWS_TABLE": "public.news"}, "ACME Wizard"), encoding="utf-8")
+    provisioning.import_file(company, settings.data_dir)
+    provisioning.update_local(settings.data_dir, {"WIZARD_PG_PASSWORD": PASSWORD, "WIZARD_KB_WRITE_TOKEN": "github_pat_" + "w" * 40,
+                                                  "WIZARD_PORTAL_GSCM_URL": "https://gscm.corp/", "WIZARD_GEMINI_MODEL": "old-pick"})
+    exported = settings_pane.export(settings)
+    found = provisioning.parse(exported["text"])
+    assert found.name == "ACME Wizard (exported)"
+    assert found.values() == {"WIZARD_KB_REPO": "acme/wizard-content", "WIZARD_KB_TOKEN": TOKEN, "WIZARD_PG_HOST": "db.corp",
+                              "WIZARD_PG_USER": "ro", "WIZARD_PG_PASSWORD": PASSWORD, "WIZARD_PG_PORT": "5433",
+                              "WIZARD_NEWS_TABLE": "public.news", "WIZARD_PORTAL_GSCM_URL": "https://gscm.corp/"}, \
+        "this PC's choice beats the company file, .env beats both; per-PC values, the write token and old picks stay"
+    assert exported["secrets"] == ["WIZARD_KB_TOKEN", "WIZARD_PG_PASSWORD"] and exported["left_out"] == ["WIZARD_KB_WRITE_TOKEN"]
+    assert "WIZARD_PG_HOST" in exported["settings"] and "WIZARD_KB_TOKEN" not in exported["settings"]
+    # The other PC imports it as its company file and ends up with the same values.
+    other = tmp_path / "other"
+    offered = tmp_path / "wizard.provision"
+    offered.write_text(exported["text"], encoding="utf-8")
+    provisioning.import_file(offered, other)
+    assert provisioning.load(other).values() == found.values() and not offered.exists()
+    with pytest.raises(settings_pane.PaneError, match="no settings to export"):
+        settings_pane.export(install(tmp_path / "empty"))

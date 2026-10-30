@@ -252,6 +252,16 @@ never on a server behind SSO.
 
 Someone who already has Wizard can import a new file from the tray menu: **Import a settings file…**.
 
+### Moving to another PC
+
+On the PC that works, tray menu → **Export settings…**: Wizard writes `wizard.provision` where you choose, with every
+value this PC uses from the company file and Settings (Settings, the PC's `.env` and the environment win over the
+company file, as at run time), passwords and tokens included in plain text. Left out, as from any settings file: the
+per-PC values (data folder, port, your name), the knowledge base's **write token** and your Gemini sign-in. On the other
+PC, put the file next to `WizardSetup.exe` and run it, or use **Import a settings file…**; then link Gemini, sign in to
+the portals in Wizard's browser, and enter the write token again in Settings. Delete the exported file once it is
+imported: anyone with it can use the passwords. Conversations stay on the first PC.
+
 ## Updating
 
 - **Program:** every push to `main` builds a new `WizardSetup.exe` (version `1.0.<CI run>`) and publishes it to
@@ -277,6 +287,7 @@ Someone who already has Wizard can import a new file from the tray menu: **Impor
 | Start Wizard when I sign in | The `HKCU\...\Run` entry |
 | Settings… | Opens the panel's settings: model, knowledge base, database, proxy, version and updates |
 | Import a settings file… | A new `wizard.provision`; the service restarts and imports it |
+| Export settings… | This PC's settings as a `wizard.provision` for another PC, passwords in plain text, without the write token (see Moving to another PC) |
 | Check for updates… / Install update… | See Updating |
 | Open the log folder | `%LOCALAPPDATA%\Wizard\logs`: `bar.log` (WizardBar), `wizard.log` (the service), `service-output.log` |
 | Restart Wizard / About Wizard / Quit Wizard | About shows the version, the knowledge-base commit and the last sync problem |

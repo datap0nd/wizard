@@ -24,7 +24,7 @@ from wizard_connectors.pg import PgError, PgSettings
 from wizard_connectors.pg import settings_from as pg_settings
 
 from . import knowledge_sync, provisioning
-from .config import ConfigError, Settings, load_settings, read_env_file
+from .config import PICKER_KEYS, ConfigError, Settings, load_settings, read_env_file
 from .metronome_client import MetronomeClient
 
 
@@ -62,8 +62,8 @@ FIELDS = [
           "github_pat_…"),
     Field("WIZARD_KB_WRITE_TOKEN", "Write token (PAT)", "knowledge",
           "Lets Wizard save what it learns, such as the portal maps, to this repository. Fine-grained token: resource "
-          "owner the organisation, that repository only, Contents read and write (organisations may refuse classic "
-          "tokens). Kept on this PC only.", "github_pat_…"),
+          "owner the organisation, that repository only, Contents read and write (GitHub preselects \"Read-only\": choose "
+          "\"Read and write\"; organisations may refuse classic tokens). Kept on this PC only.", "github_pat_…"),
     Field("WIZARD_KB_REF", "Branch", "knowledge", "", "main"),
     Field("WIZARD_KB_PATH", "Folder in the repository", "knowledge", "Leave empty when the notes are at the root.", ""),
     Field("WIZARD_KB_SYNC_MINUTES", "Check for changes every (minutes)", "knowledge", "0 checks only at start-up.", "30"),
@@ -198,6 +198,29 @@ def save(settings: Settings, changes: dict[str, Any]) -> dict[str, Any]:
     finally:
         shutil.rmtree(backup, ignore_errors=True)
     return {"changed": sorted(updates)}
+
+
+def export(settings: Settings) -> dict[str, Any]:
+    """This PC's settings as a provisioning file for another PC (owner, 30 Oct 2026: "I want to export my settings file
+    basically. and import it there"): the company file's keys and every Settings field, each with the value this PC uses
+    (environment > .env > this PC > company file), passwords and tokens included in plain text: the person saves it and
+    imports it on the other PC. Per-PC values and the knowledge base's write token are left out, as from any
+    provisioning file (provisioning.LOCAL_ONLY, PC_CHOSEN); so is the Gemini sign-in, which is never a setting."""
+    layers = _layers(settings)
+    company = layers[-1][1]
+    wanted = set(company) | set(BY_KEY)
+    values: dict[str, str] = {}
+    for source, layer in reversed(layers):  # weakest first
+        values.update({k: v for k, v in layer.items() if not (source == "this_pc" and k in PICKER_KEYS)})
+    kept = {k: v for k, v in values.items() if k in wanted and v and provisioning.KEY.match(k)
+            and k not in provisioning.LOCAL_ONLY and k not in provisioning.PC_CHOSEN}
+    if not kept:
+        raise PaneError("This PC has no settings to export yet.")
+    name = provisioning.status(settings.data_dir).get("name") or "Wizard"
+    text = provisioning.render(kept, f"{name} (exported)")
+    return {"text": text, "settings": sorted(k for k in kept if not provisioning.is_secret(k)),
+            "secrets": sorted(k for k in kept if provisioning.is_secret(k)),
+            "left_out": sorted(k for k in provisioning.PC_CHOSEN if values.get(k))}
 
 
 def _candidate(settings: Settings, proposed: dict[str, Any]) -> dict[str, str]:

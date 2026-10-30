@@ -2525,6 +2525,27 @@
         }
       }
     },
+    "/internal/v1/desktop/export": {
+      "post": {
+        "summary": "Desktop Export",
+        "description": "Export settings… in WizardBar's menu: this PC's settings as a provisioning file, which WizardBar saves where the\nperson chooses. It holds passwords in plain text, so only WizardBar on this PC may ask (the control token).",
+        "operationId": "desktop_export_internal_v1_desktop_export_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Desktop Export Internal V1 Desktop Export Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/internal/v1/desktop/stop": {
       "post": {
         "summary": "Desktop Stop",

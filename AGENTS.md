@@ -26,7 +26,9 @@ around a precomputed result is withdrawn. Its credential, entitlement, DLP and h
 - Keep company content (knowledge notes, report catalogs) in the owner's private enterprise GitHub repository, which the
   desktop app reads with a read-only token, or in a local `content\` folder. Wizard writes there only its portal maps
   (`portal-maps/`), with the write token the person enters in Settings on their own PC. Company settings and credentials reach a
-  PC only in the provisioning file (`wizard.provision`), stored with DPAPI on import. See
+  PC only in the provisioning file (`wizard.provision`), stored with DPAPI on import; **Export settings…** in the tray
+  writes one from a PC's own settings at the person's click, never with the write token
+  ([decision](docs/decisions/2026-10-30-settings-export.md)). See
   [docs/decisions/2026-10-20-desktop-app.md](docs/decisions/2026-10-20-desktop-app.md) and [docs/desktop.md](docs/desktop.md).
 - Ship every change (owner): merge it into `main`, push, and confirm the `desktop-continuous` release was published
   for that commit. Steps in [CLAUDE.md](CLAUDE.md).

@@ -3,7 +3,32 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-30 (latest) — A refused portal-map publish says which request and why
+## 2026-10-30 (latest) — Export settings for another PC; a write token that reads but may not write says how to fix it
+
+The owner: "I want to set exactly the same app on a different PC... I want to export my settings file basically. and
+imkport it there", then "yes build the export settings button. Also, github refused the write token HTTP 403 while
+uploading a file (POST/git/blobs)." [Decision](decisions/2026-10-30-settings-export.md).
+- **Export settings…** (WizardBar's tray menu, next to Import a settings file…): WizardBar asks the service
+  (`POST /internal/v1/desktop/export`, control token, loopback only) and saves `wizard.provision` where the person
+  chooses, after saying it holds the passwords in plain text. `settings_pane.export`: the company file's keys and every
+  Settings field with the value this PC uses (environment > `.env` > this PC > company file); per-PC values, the write
+  token and old model picks left out; checked as any provisioning file (`provisioning.render`, which
+  `scripts/make_provision.py` now uses too). Afterwards WizardBar says what to do on the other PC and to delete the file.
+- **The 403.** The publish read the repository, its branch and its files with the write token, then GitHub refused the
+  first write (`POST /git/blobs`): the token reads but may not write, which is what a fine-grained token with Contents
+  "Read-only" does (GitHub preselects Read-only when Contents is added). A refused write now says so, with the steps:
+  Settings → Developer settings → Fine-grained tokens → the token → Edit → Contents: "Read and write" → Update; the
+  token stays the same, so nothing changes in Wizard. When GitHub names the missing permission, the same steps follow.
+  An archived repository (read-only on GitHub) is named before any write. The Settings help for the write token says
+  that GitHub preselects Read-only.
+
+**Tests.** `tests/unit/test_settings_pane.py` (export: precedence, left out, round trip through import, nothing to
+export), `tests/unit/test_desktop.py` (export only with the control token; menu item and endpoint agree),
+`tests/unit/test_kb_publish.py` (a plain 403 on the first write names a token that reads but may not write and the
+steps; the permission header case gives the steps; an archived repository is named and nothing is written). WizardBar
+built with `dotnet build -c Release` (warnings are errors).
+
+## 2026-10-30 — A refused portal-map publish says which request and why
 
 The owner: "github refused the request when publishing the portal mapping. The token needs contents read and write and
 sso approval." and "the token I generated is simply classic token with repo access." That message was Wizard's guess

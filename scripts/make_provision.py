@@ -19,9 +19,7 @@ with the file has these credentials, so share it only inside the company."""
 from __future__ import annotations
 
 import argparse
-import json
 import sys
-from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,14 +27,11 @@ for entry in ("services/api", "services/agent", "services/connectors", "services
     sys.path.insert(0, str(ROOT / entry))
 
 from wizard_api.config import read_env_file  # noqa: E402
-from wizard_api.provisioning import FORMAT, ProvisionError, is_secret, parse  # noqa: E402
+from wizard_api.provisioning import ProvisionError, is_secret, render  # noqa: E402
 
 
 def build(values: dict[str, str], name: str) -> str:
-    text = json.dumps({"wizard_provision": FORMAT, "name": name, "created": date.today().isoformat(),
-                       "settings": {k: v for k, v in values.items() if v}}, indent=2)
-    parse(text)  # the same checks Wizard applies when importing
-    return text
+    return render(values, name)  # the same checks Wizard applies when importing
 
 
 def main() -> int:
