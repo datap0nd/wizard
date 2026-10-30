@@ -193,12 +193,12 @@ def check(source: Source, *, proxy: str | None = None, timeout: float = 30.0,
         if transport is not None:
             http = httpx.Client(transport=transport, timeout=timeout)
         else:
-            route, _ = outbound.proxy_for(url, proxy)
+            route, _ = outbound.windows_route(url, proxy)
             http = httpx.Client(timeout=timeout, verify=outbound.ssl_context(), proxy=route, trust_env=False)
         with http:
             response = http.get(url, headers=headers)
     except httpx.HTTPError as error:
-        return Result("failed", outbound.explain(error, url, proxy))
+        return Result("failed", outbound.explain(error, url, proxy, windows=True))
     if response.status_code != 200:
         return Result("failed", _explain(response, source))
     commit = response.text.strip()
@@ -233,7 +233,7 @@ def _sync(source: Source, data_dir: Path, proxy: str | None, timeout: float,
         if transport is not None:
             http = httpx.Client(transport=transport, timeout=timeout, follow_redirects=True)
         else:
-            route, _ = outbound.proxy_for(url, proxy)
+            route, _ = outbound.windows_route(url, proxy)
             http = httpx.Client(timeout=timeout, verify=outbound.ssl_context(), proxy=route, trust_env=False,
                                 follow_redirects=True)
         with http:
@@ -307,6 +307,6 @@ def _sync(source: Source, data_dir: Path, proxy: str | None, timeout: float,
     except (ValueError, BadZipFile, OSError) as error:
         message = f"The knowledge base could not be unpacked: {error}. The previous version stays in use."
     except httpx.HTTPError as error:
-        message = outbound.explain(error, url, proxy) + " The previous knowledge-base version stays in use."
+        message = outbound.explain(error, url, proxy, windows=True) + " The previous knowledge-base version stays in use."
     _record(data_dir, source, checked_at=now, last_error=message)
     return Result("failed", message)

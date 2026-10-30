@@ -104,6 +104,9 @@ class Settings:
     install_mode: bool = False
     # Outbound proxy for Google: a URL, "direct", or None to resolve it (env, Gemini CLI settings, Windows/PAC).
     proxy: str | None = None
+    # The company GitHub (knowledge base, portal maps): a URL, "direct", or None for the route Windows and Edge take
+    # (outbound.windows_route). WIZARD_PROXY and Gemini CLI's proxy are for Google and do not apply there.
+    github_proxy: str | None = None
     # Dev mode: show every run's full diagnostics and the server log in the UI (WIZARD_DIAGNOSTICS=false to hide).
     diagnostics: bool = True
     session_secret: bytes = b""
@@ -241,6 +244,7 @@ def load_settings(env: dict[str, str] | None = None, env_file: Path | None = Non
     settings.local_user_name = get("WIZARD_LOCAL_USER_NAME") or (settings.local_user_email or "").split("@")[0] or None
     settings.install_mode = home is not None
     settings.proxy = get("WIZARD_PROXY") or None
+    settings.github_proxy = get("WIZARD_GITHUB_PROXY") or None
     settings.diagnostics = _bool(get("WIZARD_DIAGNOSTICS", "true") or "true", "WIZARD_DIAGNOSTICS")
     dist = get("WIZARD_WEB_DIST")
     if dist:

@@ -96,13 +96,14 @@ class GitHub:
     def __init__(self, repo: str, token: str, client: httpx.Client, label: str = "publishing token"):
         self.repo, self.client, self.label = repo, client, label
         self.visibility: str | None = None  # private, internal or public, once the repository was read
+        self.route: str | None = None       # how the requests travel, for a refusal that did not come from GitHub
         self.headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json",
                         "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "Wizard-Knowledge-Publish"}
 
     def call(self, method: str, path: str, body: dict[str, Any] | None = None, ok: tuple[int, ...] = (200, 201)) -> Any:
         response = self.client.request(method, f"{API}/repos/{self.repo}{path}", headers=self.headers, json=body)
         if response.status_code not in ok:
-            raise PublishError(explain(response, self.repo, self.label, self.visibility))
+            raise PublishError(explain(response, self.repo, self.label, self.visibility, self.route))
         found = response.json() if response.content else None
         if method == "GET" and path == "" and isinstance(found, dict):
             self.visibility = found.get("visibility") or ("private" if found.get("private") else "public")
@@ -128,7 +129,8 @@ def _step(response: httpx.Response, repo: str) -> str:
     return f" while {words} ({request.method} {path or '/'})" if words else ""
 
 
-def explain(response: httpx.Response, repo: str, label: str = "publishing token", visibility: str | None = None) -> str:
+def explain(response: httpx.Response, repo: str, label: str = "publishing token", visibility: str | None = None,
+            route: str | None = None) -> str:
     code = response.status_code
     try:
         body = response.json()
@@ -152,10 +154,13 @@ def explain(response: httpx.Response, repo: str, label: str = "publishing token"
             title = re.search(r"<title>([^<]{1,120})</title>", response.text, re.IGNORECASE) if response.content else None
             said = "; ".join(x for x in (f"server {server}" if server else "", f'page "{title.group(1).strip()}"' if title else "") if x)
             return (f"Wizard's request was refused (HTTP 403){step}, but not by GitHub: GitHub's answers carry an "
-                    f"X-GitHub-Request-Id, and this one has none{f' ({said})' if said else ''}. Something between this PC "
+                    f"X-GitHub-Request-Id, and this one has none{f' ({said})' if said else ''}"
+                    f"{f'; the request went by {route}' if route else ''}. Something between this PC "
                     f"and {WEB} refused it, such as the proxy or a security gateway that blocks uploads; the token is "
-                    f"not the cause. Ask IT to let this PC send {response.request.method if writing else 'requests'} to "
-                    f"{WEB}/api/v3, or try from another network.")
+                    f"not the cause. Wizard takes the route Windows and Edge take (Settings → Network → Company GitHub "
+                    f"proxy changes it); Edge signs in to a web gateway as you and Wizard cannot, so if Edge gets through "
+                    f"on this route, ask IT to let this PC send {response.request.method if writing else 'requests'} to "
+                    f"{WEB}/api/v3.")
         return f"GitHub refused the {label} (HTTP 403){step}: " + refused(detail, dict(response.headers), repo,
                                                                          write=label != "read-only token", write_request=writing,
                                                                          visibility=visibility)
@@ -168,7 +173,9 @@ def explain(response: httpx.Response, repo: str, label: str = "publishing token"
 
 
 def _client(proxy: str | None) -> httpx.Client:
-    route, _ = outbound.proxy_for(API, proxy)
+    """The company GitHub, reached the way Windows and Edge reach it (outbound.windows_route): `proxy` is Settings'
+    company GitHub proxy, never the one for Google."""
+    route, _ = outbound.windows_route(API, proxy)
     return httpx.Client(timeout=60, verify=outbound.ssl_context(), proxy=route, trust_env=False)
 
 
@@ -184,6 +191,7 @@ def publish(content: Path, repo: str, token: str, *, branch: str | None = None, 
     outcome.lines.append(f"PASS  {len(files)} file(s) pass Wizard's checks")
     with client or _client(proxy) as http:
         gh = GitHub(repo, token, http)
+        gh.route = outbound.describe(API, proxy, windows=True)
         info = gh.call("GET", "")
         if not info.get("private"):
             raise PublishError(f"{repo} is not private. Company notes must never go to a public repository: make it "
@@ -249,6 +257,7 @@ def check_write(repo: str, token: str, *, proxy: str | None = None, client: http
     that may not write (403); one that may is told the commit does not exist (422), and nothing is created."""
     with client or _client(proxy) as http:
         gh = GitHub(repo, token, http, "write token")
+        gh.route = outbound.describe(API, proxy, windows=True)
         try:
             info = gh.call("GET", "")
         except PublishError as error:
@@ -263,7 +272,7 @@ def check_write(repo: str, token: str, *, proxy: str | None = None, client: http
                           json={"ref": "refs/heads/wizard-write-check", "sha": "0" * 40})
     if probe.status_code == 422:
         return True, "The write token can write to it."
-    return False, f"Write token: {explain(probe, repo, 'write token', gh.visibility)}"
+    return False, f"Write token: {explain(probe, repo, 'write token', gh.visibility, gh.route)}"
 
 
 def write_files(repo: str, token: str, files: dict[str, bytes], *, branch: str, message: str,
@@ -272,6 +281,7 @@ def write_files(repo: str, token: str, files: dict[str, bytes], *, branch: str, 
     its portal maps). Returns the commit, or None when the repository already has them. Refuses a public repository."""
     with client or _client(proxy) as http:
         gh = GitHub(repo, token, http, "write token")
+        gh.route = outbound.describe(API, proxy, windows=True)
         info = gh.call("GET", "")
         if not info.get("private"):
             raise PublishError(f"{repo} is not private: Wizard never writes company notes to a public repository.")
@@ -282,7 +292,7 @@ def write_files(repo: str, token: str, files: dict[str, bytes], *, branch: str, 
         for attempt in range(2):  # another commit may land in between: start again from the new head once
             ref = http.get(f"{API}/repos/{repo}/git/ref/heads/{branch}", headers=gh.headers)
             if ref.status_code != 200:
-                raise PublishError(explain(ref, repo, gh.label, gh.visibility))
+                raise PublishError(explain(ref, repo, gh.label, gh.visibility, gh.route))
             parent = ref.json()["object"]["sha"]
             base_tree = gh.call("GET", f"/git/commits/{parent}")["tree"]["sha"]
             entries: list[dict[str, Any]] = []
@@ -302,7 +312,7 @@ def write_files(repo: str, token: str, files: dict[str, bytes], *, branch: str, 
             if moved.status_code == 200:
                 return str(commit["sha"])
             if moved.status_code != 422 or attempt:
-                raise PublishError(explain(moved, repo, gh.label, gh.visibility))
+                raise PublishError(explain(moved, repo, gh.label, gh.visibility, gh.route))
     return None
 
 
