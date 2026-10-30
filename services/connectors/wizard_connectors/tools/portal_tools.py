@@ -305,10 +305,21 @@ def run(ctx: ToolContext, args: RunArgs) -> dict[str, Any]:
     page = result.get("page", {})
     for output in result["outputs"]:
         value = output.pop("value", None)
-        table = portals.table_from(value) if output["action"] in ("evaluate", "read_table", "request") else None
+        readable = output["action"] in ("evaluate", "read_table", "request")
+        table = portals.table_from(value) if readable else None
         if table is None:
             if value is not None:
                 output["value"] = _cap_value(value)
+            # Anything else a script read is evidence too, as (key, value) rows, so it can be cited as it is.
+            pairs = portals.key_values(portals.redact_json(value)) if readable and value is not None else None
+            if pairs is not None:
+                columns, rows, total = pairs
+                rows = portals.redact_rows(columns, [[portals.plain_cell(c) for c in row] for row in rows])
+                evidence_id = _record(ctx, portal, args, steps, output, page, columns, rows, total, retrieved)
+                evidence_ids.append(evidence_id)
+                output.update({"evidence_id": evidence_id, "cite_as": f"[{evidence_id}]", "total_rows": total,
+                               "evidence_note": "Recorded as evidence as it is (key/value rows): cite it, no need to "
+                                                "return it again as a table."})
             shown_outputs.append(output)
             continue
         columns, rows, total = table
@@ -476,8 +487,9 @@ PORTAL_TOOLS = [
              "(W.requests, W.replay), search the Big Data Portal's information catalog and query Superset, and request "
              "steps that send a portal's data request straight from the browser with the person's session. Prefer the "
              "portal's data requests over clicking through screens, and the map's (portal_map) routes and saved scripts "
-             "over exploring. Every table you return (a {columns, rows} object "
-             "or a list of objects) is recorded as evidence with an id such as E3: cite it next to its numbers. The "
+             "over exploring. Everything a step reads is recorded as evidence with an id such as E3 (a table, a "
+             "{columns, rows} object or a list of objects, as its rows; anything else as key/value rows): cite it "
+             "next to its numbers and lists. The "
              "result also lists the data requests the page made, with secrets removed. Wizard refuses saves, deletes, "
              "submissions, uploads, access requests, sign-outs and other hosts.", RunArgs, run, "portal", "source"),
     ToolSpec("portal_save_script",

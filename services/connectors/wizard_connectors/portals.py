@@ -430,6 +430,31 @@ def table_from(value: Any) -> tuple[list[str], list[list[Any]], int] | None:
     return None
 
 
+def key_values(value: Any, limit: int = 5000) -> tuple[list[str], list[list[Any]], int] | None:
+    """A script result that is not a table, as rows a reader can check, so every read has evidence to cite (a 29 Oct
+    2026 run on the work PC spent 16 steps reshaping menu summaries into tables to get an id). A list of plain values is one column;
+    anything else is (field, value) rows with dotted paths ("menus.0.name"). None for fewer than two values (a status)."""
+    if isinstance(value, list) and value and all(not isinstance(v, dict | list) for v in value):
+        return ["value"], [[v] for v in value[:limit]], len(value)
+    rows: list[list[Any]] = []
+    total = 0
+
+    def walk(node: Any, path: str) -> None:
+        nonlocal total
+        if isinstance(node, dict):
+            for key, child in node.items():
+                walk(child, f"{path}.{key}" if path else str(key))
+        elif isinstance(node, list):
+            for index, child in enumerate(node):
+                walk(child, f"{path}.{index}" if path else str(index))
+        else:
+            total += 1
+            if len(rows) < limit:
+                rows.append([path, node])
+    walk(value, "")
+    return (["field", "value"], rows, total) if total >= 2 else None
+
+
 def plain_cell(value: Any) -> Any:
     if value is None or isinstance(value, bool | int | float):
         return value

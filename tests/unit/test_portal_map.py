@@ -137,7 +137,7 @@ def tools(tmp_path: Path) -> tuple[Any, Any]:
     services.portals = PortalBrowsers(settings, lambda user_id: tmp_path / user_id)
     services.portal_maps = PortalMaps(tmp_path / "maps", names={"gscm": "GSCM"})
     identity = Identity(id="owner", email="owner@example.com", name="Owner", role="Owner",
-                        entitlements={"gscm": SystemRights(reports=["*"], markets=["*"])})
+                        entitlements={s: SystemRights(reports=["*"], markets=["*"]) for s in ("gscm", "nerp")})
     return build_registry(services), ToolContext(identity=identity, run_id="run_t", recorder=MemoryRecorder(), services=services)
 
 
@@ -162,6 +162,16 @@ def test_gemini_reads_the_map_first_and_adds_to_it(tmp_path: Path):
     assert registry.execute("portal_map_save", {"system": "gscm"}, context).error_code == "invalid_arguments"
     bad = registry.execute("portal_map_save", {"system": "gscm", "reports": [{"id": "../x"}]}, context)
     assert bad.error_code == "invalid_arguments"
+
+
+def test_the_catalog_tools_say_the_portal_itself_is_read_live(tmp_path: Path):
+    registry, context = tools(tmp_path)
+    found = registry.execute("gscm_search_reports", {"query": "report"}, context)
+    assert found.ok and "not GSCM itself" in found.data["live_portal"] and "portal_map(system='gscm')" in found.data["live_portal"]
+    listed = registry.execute("wizard_list_sources", {}, context).data["sources"]
+    catalogs = {s["system"]: s for s in listed if s["connector_status"] != "BROWSER_SESSION"}
+    assert "portal_run" in catalogs["gscm"]["live_portal"] and "live_portal" not in catalogs["nerp"]
+    assert any(s["system"] == "gscm" and s["connector_status"] == "BROWSER_SESSION" for s in listed)
 
 
 # Mapping rounds through the API, with a scripted Gemini --------------------------------------------------------------

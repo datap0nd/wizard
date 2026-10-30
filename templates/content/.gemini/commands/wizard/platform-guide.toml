@@ -22,9 +22,12 @@ tags: [<platform id>, platform, <8-15 lowercase business keywords people would s
 **How it is organised.** Folders/modules/areas, object types (reports, dossiers, extracts, cubes), prompts or
 parameters and how they behave, security model if documented.
 
-**How to navigate it in Wizard.** Use `<platform id>_search_reports` with business words, then
-`<platform id>_get_report_schema`, then `<platform id>_run_report`. Mention what "navigation only" means for this
-platform (listed and openable by the user, numbers not readable by Wizard until approved).
+**How to navigate it in Wizard.** For a web portal Wizard reads live in the person's own browser (ASAP, GSCM, the
+Big Data Portal): Wizard's map of the portal (`portal_map`) and the portal itself (`portal_guide`, then `portal_run`)
+are where its menus and reports are; the catalog tools only list the reports documented here. For any other
+platform: `<platform id>_search_reports` with business words, then `<platform id>_get_report_schema`, then
+`<platform id>_run_report`, and what "navigation only" means for it (listed and openable by the user, numbers not
+readable by Wizard until approved).
 
 **What lives here.** Bullet list of the main report families or subject areas, by name as documented.
 

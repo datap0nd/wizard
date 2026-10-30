@@ -103,8 +103,12 @@ def make_source_tools(system_id: str, system_name: str) -> list[ToolSpec]:
         if not ctx.identity.can_use_system(system_id):
             raise ToolError("system_not_available", f"{system_name} is not available to you.")
         results = search(ctx, args.query, args.limit, system_id)
-        return {"system": system_id, "results": results,
-                "note": None if results else "No matching reports you can access. Try other words or wizard_search_catalog."}
+        data: dict[str, Any] = {"system": system_id, "results": results,
+                                "note": None if results else "No matching reports you can access. Try other words or wizard_search_catalog."}
+        live = live_portal(ctx, system_id)
+        if live:
+            data["live_portal"] = live
+        return data
 
     def schema_handler(ctx: ToolContext, args: SchemaArgs) -> dict[str, Any]:
         report = _resolve(ctx, system_id, args.report_id)
@@ -174,6 +178,17 @@ def make_source_tools(system_id: str, system_name: str) -> list[ToolSpec]:
                  "500 rows). Each call is recorded as evidence with an id such as E3: cite it as [E3] next to numbers "
                  "that come from it. Missing rows mean no data, not zero.", RunArgs, run_handler, system_id, "source"),
     ]
+
+
+def live_portal(ctx: ToolContext, system_id: str) -> str | None:
+    """When this system is also a portal read live, say so: the catalog is the reports documented in the knowledge base,
+    not the portal's menu (29 Oct 2026 on the work PC: "list the reports in GSCM" spent five calls on the catalog)."""
+    portal = ctx.services.portals.settings.portal(system_id) if ctx.services.portals else None
+    if portal is None or not ctx.identity.can_use_system(system_id):
+        return None
+    return (f"This searches Wizard's catalog of documented {portal.name} reports, not {portal.name} itself. {portal.name} "
+            f"is read live: portal_map(system='{system_id}') lists the reports Wizard mapped, and its menu and any report "
+            f"are read with portal_run (portal_guide('{system_id}') says how).")
 
 
 FAMILIES = {"nerp": "marketing spend and campaign budgets", "gscm": "sell-in, sell-out and channel stock",

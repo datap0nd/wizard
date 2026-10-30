@@ -63,6 +63,8 @@ const APP = {mainframe: {VFrameSet: {WorkFrame0: {form}}},
                                     'menugroupid', 'menugroupname'],
                    [['RC_1', 'MENA_Actual_sales', 'PUBLIC', 'AS', 'MOBILE', 'MP', 'AS470', 'Actual Sales', 'AS313', 'SCM']]),
   gds_menu: ds('gds_menu', ['MENU_ID', 'MENU_NAME', 'PARENT_ID'], [['AS313', 'SCM', ''], ['AS470', 'Actual Sales', 'AS313']]),
+  gds_topMenu: ds('gds_topMenu', ['MENU_ID', 'MENU_NM', 'UP_MENU_ID', 'MENU_LVL'],
+                  [['AS', 'SCM', '', 1], ['AS313', 'Sales', 'AS', 2], ['AS470', 'Actual Sales', 'AS313', 3]]),
   gfn_openMenu(menuId) { return 'opened ' + menuId; }};
 window.nexacro = {getApplication: () => APP};
 </script></head><body>
@@ -267,8 +269,8 @@ def test_the_nexacro_helpers_find_the_menu_the_shortcuts_and_a_reports_filters(s
         {"action": "evaluate", "script": "return {sets: W.nexacro.appDatasets(), fns: W.nexacro.functions(), inputs: W.nexacro.inputs()};"}]})
     assert outcome.ok, outcome.error_message
     value = outcome.data["outputs"][-1]["value"]
-    assert value["sets"][0] == {"name": "gds_menu", "rows": 2, "columns": ["MENU_ID", "MENU_NAME", "PARENT_ID"]}
-    assert [s["name"] for s in value["sets"]] == ["gds_menu", "gds_bookmark"]
+    assert value["sets"][1] == {"name": "gds_menu", "rows": 2, "columns": ["MENU_ID", "MENU_NAME", "PARENT_ID"]}
+    assert [s["name"] for s in value["sets"]] == ["gds_topMenu", "gds_menu", "gds_bookmark"]
     functions = {f["name"]: f for f in value["fns"]}
     assert functions["gfn_openMenu"]["where"] == "application" and "menuId" in functions["gfn_openMenu"]["source"]
     assert functions["fn_search"]["where"] == "mainframe.VFrameSet.WorkFrame0.form"
@@ -278,6 +280,27 @@ def test_the_nexacro_helpers_find_the_menu_the_shortcuts_and_a_reports_filters(s
                                     "options": ["AE = UAE", "SA = Saudi Arabia"]}
     assert inputs["btn_search"]["text"] == "Search"
     assert inputs["grd_list"]["dataset"] == "ds_list" and inputs["grd_list"]["rows"] == 3
+
+
+def test_the_menu_is_one_citable_table_and_every_other_read_is_evidence_too(setup):
+    """A 29 Oct 2026 run on the work PC: "list the reports in GSCM" took 28 steps: the catalog first, a bookmarks script that treated a
+    table as an array, and many steps reshaping menu summaries into tables to get an evidence id."""
+    recorder = MemoryRecorder()
+    outcome = call(setup, "portal_run", {"system": "gscm", "steps": [
+        {"action": "goto", "url": "/"},
+        {"action": "evaluate", "script": "return W.nexacro.menu();"},
+        {"action": "evaluate", "script": "return W.objects(W.nexacro.bookmarks()).map(b => b.userreportname);"},
+        {"action": "evaluate", "script": "const m = W.nexacro.menu(); return {count: m.rows.length, top: W.objects(m).filter(r => r.MENU_LVL === 1).map(r => r.MENU_NM)};"},
+        {"action": "evaluate", "script": "return {done: true};"}]}, recorder)
+    assert outcome.ok, outcome.error_message
+    menu, names, summary, status = outcome.data["outputs"][1:]
+    assert menu["columns"] == ["MENU_ID", "MENU_NM", "UP_MENU_ID", "MENU_LVL"] and menu["total_rows"] == 3, "gds_topMenu first"
+    assert menu["rows"][2] == ["AS470", "Actual Sales", "AS313", 3] and menu["evidence_id"] == "E1"
+    assert names["value"] == ["MENA_Actual_sales"] and names["evidence_id"] == "E2", "a list of names is evidence as it is"
+    assert summary["value"] == {"count": 3, "top": ["SCM"]} and summary["cite_as"] == "[E3]"
+    assert recorder.evidence[2]["columns"][0]["key"] == "field" and recorder.evidence[2]["rows"] == [["count", 3], ["top.0", "SCM"]]
+    assert "evidence_id" not in status, "a one-value status is not a read"
+    assert outcome.data["evidence_ids"] == ["E1", "E2", "E3"]
 
 
 def test_a_request_step_reads_a_transaction_straight_from_the_browser_without_opening_the_portal(setup, portal_url):

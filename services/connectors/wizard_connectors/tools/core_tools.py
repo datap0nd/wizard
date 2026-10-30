@@ -18,7 +18,7 @@ from ..fixture_source import Filter, Sort, SourceError
 from ..knowledge import Note
 from ..postgres_query import one_statement
 from .registry import ToolContext, ToolError, ToolSpec
-from .source_tools import search, visible_reports
+from .source_tools import live_portal, search, visible_reports
 
 EVIDENCE_ID = r"^E[0-9]{1,4}$"
 
@@ -375,7 +375,8 @@ def list_sources(ctx: ToolContext, _: NoArgs) -> dict[str, Any]:
                         "reports_with_rows": sum(1 for _, r in reports if r.row_access == "ROWS"),
                         "your_market_access": "all markets" if markets is None else sorted(markets),
                         "platform_guide": f"wizard_lookup_definitions('{guide.title}')" if guide else None,
-                        "how_to_navigate": f"{system.id}_search_reports → {system.id}_get_report_schema → {system.id}_run_report"})
+                        "how_to_navigate": f"{system.id}_search_reports → {system.id}_get_report_schema → {system.id}_run_report",
+                        **({"live_portal": live} if (live := live_portal(ctx, system.id)) else {})})
     if ctx.services.postgres and _postgres_allowed(ctx) and _on(ctx, "postgresql"):
         systems.append({"system": "postgresql", "name": f"{ctx.services.postgres_name} (the company PostgreSQL database)",
                         "description": f"The company's PostgreSQL server, which people call the {ctx.services.postgres_name}, "
