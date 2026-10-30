@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 import shutil
 import subprocess
 import sys
-import tomllib
 import zipfile
 from pathlib import Path
 
@@ -101,26 +99,13 @@ def test_portable_locks_are_consistent():
     assert {"fastapi", "uvicorn", "pydantic", "pydantic-core", "httpx", "starlette", "playwright", "greenlet", "pyee"} <= names
 
 
-def test_gemini_task_kit_is_complete():
-    tasks = ROOT / "workpc" / "tasks"
-    files = sorted(p for p in tasks.glob("[0-9][0-9]-*.md"))
-    start = (tasks / "START_HERE.md").read_text(encoding="utf-8")
-    for task in files:
-        text = task.read_text(encoding="utf-8")
-        number = task.name[:2]
-        assert text.startswith(f"# Task {number} "), task.name
-        for marker in ("**Goal:**", "**Output", "Shareable", "**Done when:**"):
-            assert marker in text, f"{task.name} lacks {marker}"
-        assert re.search(rf"^\| {number} ", start, re.M), f"START_HERE status table lacks task {number}"
-    command = tomllib.loads((ROOT / "workpc" / ".gemini" / "commands" / "wizard" / "tasks.toml").read_text(encoding="utf-8"))
-    assert "{{args}}" in command["prompt"] and "START_HERE" in command["prompt"]
+def test_the_install_folder_kit_is_complete():
+    # The numbered Gemini CLI tasks are retired (tasks run from Settings → Tasks, test_tasks.py); the kit stays.
     ignore = (ROOT / "workpc" / ".geminiignore").read_text(encoding="utf-8").split()
     assert {"data/", ".env", "releases/"} <= set(ignore), "Gemini sessions must not read sign-ins or secrets"
-    # The documentation track: every file a task names is shipped (setup.ps1 installs them).
-    named = " ".join(t.read_text(encoding="utf-8") for t in files)
-    assert (ROOT / "workpc" / "templates" / "quiz-template.html").is_file() and r"templates\quiz-template.html" in named
+    assert (ROOT / "workpc" / "templates" / "quiz-template.html").is_file()
     assert (ROOT / "templates" / "content" / "schema" / "knowledge-standard.md").is_file()
-    assert "knowledge-standard.md" in named and r".\docs.ps1 extract" in named
+    assert "/wizard:tasks" not in (ROOT / "workpc" / "GEMINI.md").read_text(encoding="utf-8")
     setup = (ROOT / "setup.ps1").read_text(encoding="utf-8")
     assert "'docs.ps1'" in setup and r"workpc\templates" in setup and r"documents\quiz-questions" in setup
 

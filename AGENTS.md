@@ -77,7 +77,10 @@ around a precomputed result is withdrawn. Its credential, entitlement, DLP and h
   `portal_map_route` says what mapped reports are for (use_for, not_for, definitions) and can change nothing else in an
   entry, and Wizard publishes
   it to the knowledge-base repository with the write token the person entered on their own PC. Maps hold metadata only
-  (no rows, secrets removed), and a company provisioning file never carries the write token.
+  (no rows, secrets removed), and a company provisioning file never carries the write token. Tasks (owner decision,
+  [docs/decisions/2026-10-31-tasks.md](docs/decisions/2026-10-31-tasks.md)) are instructions in the repository's
+  `tasks/` folder, run from Settings → Tasks; only a task run may save notes to the knowledge base
+  (`wizard_kb_save_notes`: whole notes, validated, one commit per save). Tasks hold instructions, never company content.
   Access requests in the Big Data Portal's information catalog (owner decision,
   [docs/decisions/2026-10-28-bdp-access-requests.md](docs/decisions/2026-10-28-bdp-access-requests.md)):
   `portal_request_access` only proposes one; the person opens it with a button in a visible window of their Wizard

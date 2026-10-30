@@ -33,7 +33,7 @@ No admin rights are needed. Setup adds a Start-menu entry and, by default, a "st
 
 ## One-time setup (owner)
 
-The work PC's Gemini CLI does this with you: **task 50** (`/wizard:tasks 50` in `C:\Wizard`, after `.\update_app.ps1`).
+The work PC does this with you: Wizard's Settings → Knowledge base, and `.\docs.ps1 kb-publish` in `C:\Wizard`.
 It checks the notes, has you create the repository and two tokens in the browser, publishes, checks the users'
 token and makes the provisioning file. You type the tokens into files yourself; Gemini never sees them. What it does:
 

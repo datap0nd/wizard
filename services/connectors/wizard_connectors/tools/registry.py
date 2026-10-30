@@ -25,7 +25,7 @@ from ..fixture_source import FixtureSource, SourceError
 from ..knowledge import KnowledgeBase
 from ..metronome import MetronomeSettings
 from ..portal_browser import PortalBrowsers
-from ..portal_map import PortalMaps
+from ..portal_map import PortalMaps, Writer
 from ..postgres_query import PostgresQuery
 from .systems import SystemChoice
 
@@ -68,6 +68,9 @@ class Services:
     portals: PortalBrowsers | None = None
     # What Gemini learned about each portal (portal_map.py): on this PC, published to the knowledge base when it can.
     portal_maps: PortalMaps | None = None
+    # Commits files to the company knowledge-base repository with this PC's write token (tasks); None = no token here.
+    kb_writer: Writer | None = None
+    kb_prefix: str = ""  # the knowledge base's folder in that repository (WIZARD_KB_PATH)
     now: Callable[[], datetime] = field(default=lambda: datetime.now(UTC))
 
 

@@ -3,7 +3,34 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-31 (latest) — "Where to get it" names mapped portal reports, not only database objects
+## 2026-10-31 (latest) — Tasks run from Settings and save to the knowledge base; Settings sections start collapsed
+
+The owner: tasks are "pending tasks where you write it for Gemini to execute ... we push them and they stay as tasks",
+appear "without needing to update the app", and "the output of the task is the GitHub repo"; scrap the old ones; and
+"make every section collapsed by default". [Decision](decisions/2026-10-31-tasks.md).
+
+**What changed.**
+- `tasks/` (new, at the repository root): one Markdown file per task, and a README on writing one. The first task adds
+  mapped portal reports to the metric notes' "Where to get it".
+- `wizard_api/tasks.py`: reads the folder from `api.github.com` (conditional request, changed files only, every 5
+  minutes at most unless asked), keeps the last good list, falls back to the bundled copy; keeps each task's last run.
+- `GET /api/v1/tasks`, `POST /api/v1/tasks/{id}/run` (the PC's owner only). A run is kind `task`, one per person
+  beside a question and a mapping, with the task framed by `TASK_REQUEST` (prompting.py).
+- `tools/kb_tools.py`: `wizard_kb_note_source`, `wizard_kb_standard`, `wizard_kb_save_notes` (whole notes, checked by the
+  content validator, id = file name, one commit per save through the portal-map writer). runs.py refuses saving outside
+  a task run.
+- Settings: every section is a collapsed `<details>`; a new Tasks section (TasksPanel) lists tasks with Run, Watch it
+  and status, and says when GitHub did not answer or the write token is missing.
+- Retired: `workpc/tasks/` and `/wizard:tasks`; setup.ps1 removes the installed copies; docs updated.
+
+**Tests.** New `tests/unit/test_tasks.py` (12) and `TasksPanel.test.tsx` (3); tool counts in `test_tools.py` and the
+Gemini CLI probe test updated for the three tools; the old task-kit test replaced. Python suite: 615 passed, 14
+skipped, 1 failed (the `test_kb_publish` line-ending failure under `core.autocrlf=true`, as before). Web: 106 passed;
+typecheck clean. ruff, `verify_spec.py`, `export_contracts.py --check` pass; mypy only the 4 earlier `outbound.py`
+errors. Checked in the browser: sections collapsed; the Tasks section reads GitHub and shows the bundled task.
+Not verified: a real task run with Gemini and a commit to the real knowledge base (work PC).
+
+## 2026-10-31 — "Where to get it" names mapped portal reports, not only database objects
 
 The owner sensed Wizard "heavily prioritizing" the database. The cause was the knowledge standard, not code: section 11
 (7 October, before portals were read live) made every metric note's `## Where to get it` come only from dataset notes,

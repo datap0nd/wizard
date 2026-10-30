@@ -1,5 +1,5 @@
 import {useEffect, useMemo, useState} from 'react';
-import {CheckCircle2, Download, KeyRound, Loader2, PlugZap, RefreshCw, RotateCcw, XCircle} from 'lucide-react';
+import {CheckCircle2, ChevronDown, Download, KeyRound, Loader2, PlugZap, RefreshCw, RotateCcw, XCircle} from 'lucide-react';
 import {api, ApiError} from '@/api';
 import {formatDate} from '@/format';
 import {inHost, toHost} from '@/host';
@@ -7,6 +7,7 @@ import {cn} from '@/lib/utils';
 import {Button} from './ui/button';
 import {Dialog, DialogContent} from './ui/dialog';
 import {PortalSignIn} from './PortalSignIn';
+import {TasksPanel} from './TasksPanel';
 import type {SettingField, SettingsView, UpdateInfo} from '@/types';
 
 const SOURCES: Record<string, string> = {
@@ -14,6 +15,21 @@ const SOURCES: Record<string, string> = {
   company: 'From the company settings file', default: 'Default',
 };
 const TESTS: Record<string, 'postgres' | 'knowledge' | 'metronome'> = {knowledge: 'knowledge', postgres: 'postgres', metronome: 'metronome'};
+
+/** One settings section, collapsed until the person opens it (owner, 31 Oct 2026: "make every section collapsed by default"). */
+function Section({id, title, about, onToggle, children}: {id: string; title: string; about?: string;
+  onToggle?: (open: boolean) => void; children: React.ReactNode}) {
+  return (
+    <details className="group rounded-xl border border-line" data-testid={`settings-${id}`}
+      onToggle={onToggle ? e => onToggle(e.currentTarget.open) : undefined}>
+      <summary className="flex cursor-pointer list-none items-start gap-2 p-4 [&::-webkit-details-marker]:hidden">
+        <div className="flex-1"><h3 className="font-semibold">{title}</h3>{about && <p className="text-xs text-ink-3">{about}</p>}</div>
+        <ChevronDown className="mt-0.5 size-4 shrink-0 text-ink-3 transition-transform group-open:rotate-180" aria-hidden />
+      </summary>
+      <div className="space-y-3 px-4 pb-4">{children}</div>
+    </details>
+  );
+}
 
 type Draft = Record<string, string | null>;
 type Result = {ok: boolean; message: string} | null;
@@ -38,6 +54,7 @@ export function SettingsDialog({open, onClose, onSaved}: {open: boolean; onClose
   const [draft, setDraft] = useState<Draft>({});
   const [editingSecret, setEditingSecret] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
+  const [tasksOpen, setTasksOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [tests, setTests] = useState<Record<string, Result | 'running'>>({});
@@ -122,21 +139,18 @@ export function SettingsDialog({open, onClose, onSaved}: {open: boolean; onClose
               {view.company_file.imported_at ? `, imported ${formatDate(view.company_file.imported_at, true)}` : ''}. What you set here wins over it; clear a field to use the company value again.</p>
           )}
           {view?.sections.map(section => (
-            <section key={section.id} className="rounded-xl border border-line p-4" data-testid={`settings-${section.id}`}>
-              <div className="flex items-start gap-2">
-                <div className="flex-1"><h3 className="font-semibold">{section.title}</h3><p className="text-xs text-ink-3">{section.about}</p></div>
-                {TESTS[section.id] && (
-                  <Button size="xs" variant="outline" onClick={() => void runTest(TESTS[section.id])} disabled={tests[section.id] === 'running'} data-testid={`test-${section.id}`}>
-                    {tests[section.id] === 'running' ? <Loader2 className="animate-spin" /> : <PlugZap />}Test connection
-                  </Button>
-                )}
-              </div>
+            <Section key={section.id} id={section.id} title={section.title} about={section.about}>
+              {TESTS[section.id] && (
+                <Button size="xs" variant="outline" onClick={() => void runTest(TESTS[section.id])} disabled={tests[section.id] === 'running'} data-testid={`test-${section.id}`}>
+                  {tests[section.id] === 'running' ? <Loader2 className="animate-spin" /> : <PlugZap />}Test connection
+                </Button>
+              )}
               {tests[section.id] && tests[section.id] !== 'running' && (() => {
                 const result = tests[section.id] as {ok: boolean; message: string};
-                return <p className={cn('mt-2 flex items-start gap-1.5 rounded-lg px-3 py-2 text-xs', result.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-danger-soft text-danger')} role="status">
+                return <p className={cn('flex items-start gap-1.5 rounded-lg px-3 py-2 text-xs', result.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-danger-soft text-danger')} role="status">
                   {result.ok ? <CheckCircle2 className="mt-px size-3.5 shrink-0" /> : <XCircle className="mt-px size-3.5 shrink-0" />}{result.message}</p>;
               })()}
-              <div className="mt-3 space-y-3">
+              <div className="space-y-3">
                 {view.fields.filter(f => f.section === section.id).map(f => (
                   <label key={f.key} className="block">
                     <span className="mb-1 flex items-center gap-2 text-[13px] font-medium">{f.label}
@@ -152,13 +166,18 @@ export function SettingsDialog({open, onClose, onSaved}: {open: boolean; onClose
                 ))}
               </div>
               {section.id === 'portals' && <PortalSignIn />}
-            </section>
+            </Section>
           ))}
           {view && (
-            <section className="rounded-xl border border-line p-4" data-testid="settings-updates">
-              <h3 className="font-semibold">Version and updates</h3>
-              <p className="mt-1 text-xs text-ink-3">Wizard {view.build.version ?? `${view.version} (development copy)`}{view.build.commit ? ` · ${view.build.commit.slice(0, 12)}` : ''}</p>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Section id="tasks" title="Tasks" onToggle={setTasksOpen}
+              about="Work the Wizard team prepared for Gemini. Run one: it works in a conversation of its own and saves what it produces to the knowledge base.">
+              <TasksPanel active={tasksOpen} />
+            </Section>
+          )}
+          {view && (
+            <Section id="updates" title="Version and updates"
+              about={`Wizard ${view.build.version ?? `${view.version} (development copy)`}${view.build.commit ? ` · ${view.build.commit.slice(0, 12)}` : ''}`}>
+              <div className="flex flex-wrap items-center gap-2">
                 <Button size="sm" variant="outline" onClick={() => void checkUpdate()} disabled={update === 'checking'}>
                   {update === 'checking' ? <Loader2 className="animate-spin" /> : <RefreshCw />}Check for updates</Button>
                 {update && update !== 'checking' && update.available && (inHost()
@@ -168,8 +187,8 @@ export function SettingsDialog({open, onClose, onSaved}: {open: boolean; onClose
                 {update && update !== 'checking' && update.ok === false && inHost() && (
                   <Button size="sm" variant="outline" onClick={() => toHost({type: 'update'})} data-testid="update-with-windows"><Download />Check with Windows</Button>)}
               </div>
-              {update && update !== 'checking' && <p className="mt-2 text-xs text-ink-2" role="status" data-testid="update-message">{update.message}</p>}
-            </section>
+              {update && update !== 'checking' && <p className="text-xs text-ink-2" role="status" data-testid="update-message">{update.message}</p>}
+            </Section>
           )}
         </div>
         {view && (

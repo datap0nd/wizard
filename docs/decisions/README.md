@@ -21,6 +21,7 @@ Evidence**. A decision that changes repository rules also updates [AGENTS.md](..
 - [2026-10-28 Wizard opens the access request form, filled from the person's saved answers](2026-10-28-bdp-access-requests.md)
 - [2026-10-28 The roadmap page: what Wizard does today and what comes next](2026-10-28-roadmap-page.md)
 - [2026-10-30 Wizard maps the portals, keeps the map, and reads them by their own requests](2026-10-30-portal-maps.md)
+- [2026-10-31 Tasks run from Settings and save to the knowledge base](2026-10-31-tasks.md)
 - [2026-10-30 The person steers an answer while it runs, and chooses the systems a question may use](2026-10-30-steering-and-systems.md)
 - [2026-10-30 Export settings: the same Wizard on another PC](2026-10-30-settings-export.md)
 - [2026-10-30 Brain and Cases on the company GitHub's Pages; Gemini names each chat](2026-10-30-pages-site.md)

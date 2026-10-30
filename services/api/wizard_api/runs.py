@@ -22,6 +22,7 @@ from wizard_agent.runtime import AgentFailure, AgentRequest, AgentRuntime, Turn,
 from wizard_connectors.attachment_tables import index as table_index
 from wizard_connectors.entitlements import Identity
 from wizard_connectors.tools import Services, ToolContext, ToolError, ToolOutcome, ToolRegistry
+from wizard_connectors.tools.kb_tools import TASK_ONLY
 from wizard_connectors.tools.systems import ASK_FOR_SYSTEM, SystemChoice, offered, system_of
 
 from .attachments import AttachmentError, Attachments
@@ -49,6 +50,9 @@ WORK_LINES = 15  # steps of an earlier answer a follow-up prompt carries: what w
 EXPLORE_TOOL_CALLS = 80
 EXPLORE_ROUNDS = 30
 MAP_WRITES = ("portal_map_save", "portal_map_route")  # still allowed once a round's budget is used, to save its work
+# Runs that go on in the background beside a question, one of each per person, and what a second one is told.
+LANES = {"explore": "Wizard is already mapping a portal for you. Stop it in Settings → Portals first.",
+         "task": "A task is already running for you. Wait for it or stop it in its conversation."}
 EXPLORE_STALLS = 2
 # A new chat's name from Gemini (owner, 30 Oct 2026): asked beside the first answer; the answer waits at most this long
 # for it before it is shown finished, so the chat list it refreshes already has the name.
@@ -225,6 +229,7 @@ class ActiveRun:
     waited_s: float = 0.0
     files_made: list[str] = field(default_factory=list)  # edited copies made in this run, announced to the page
     explore: dict[str, Any] | None = None  # a mapping round: {system, name, round}
+    work: dict[str, Any] | None = None  # a task from Settings → Tasks: {id, title, body}
     maps_changed: set[str] = field(default_factory=set)  # portals whose map this run added to (published after it)
     needs_sign_in: bool = False  # a portal asked for a sign-in during this run
     task: asyncio.Task[None] | None = None
@@ -327,6 +332,13 @@ def tool_label(name: str, args: dict[str, Any], services: Services) -> str:
         what = (str(reports[0].get("name") or reports[0].get("id")) if len(reports) == 1 else
                 f"{len(reports)} reports" if reports else "how it works")
         return f"Added to Wizard's map of {portal_name(services, args.get('system'))}: {what}"
+    if name == "wizard_kb_save_notes":
+        count = len([n for n in args.get("notes") or [] if isinstance(n, dict)])
+        return f"Saved {count} note(s) to the company knowledge base"
+    if name == "wizard_kb_note_source":
+        return "Read knowledge notes as files: " + ", ".join(str(i) for i in args.get("ids") or [])
+    if name == "wizard_kb_standard":
+        return "Read the knowledge standard"
     if name == "portal_map_route":
         count = len([r for r in args.get("reports") or [] if isinstance(r, dict)])
         return f"Said what {count} report(s) in Wizard's map of {portal_name(services, args.get('system'))} are for"
@@ -459,12 +471,11 @@ class RunManager:
     # Lifecycle ---------------------------------------------------------------------------------------------------------
     def start(self, identity: Identity, conversation_id: str, question: str, kind: str = "ask",
               parent_run_id: str | None = None, explore: dict[str, Any] | None = None,
-              choice: SystemChoice | None = None) -> dict[str, Any]:
-        # A question and a portal being mapped run side by side: one of each per person.
-        mapping = kind == "explore"
-        if any(r.identity.id == identity.id and (r.kind == "explore") == mapping for r in self.active.values()):
-            raise Busy("Wizard is already mapping a portal for you. Stop it in Settings → Portals first." if mapping else
-                       "A question is already running for you. Wait for it or cancel it.")
+              choice: SystemChoice | None = None, work: dict[str, Any] | None = None) -> dict[str, Any]:
+        # A question, a portal being mapped and a task run side by side: one of each per person.
+        lane = kind if kind in LANES else "ask"
+        if any(r.identity.id == identity.id and (r.kind if r.kind in LANES else "ask") == lane for r in self.active.values()):
+            raise Busy(LANES.get(lane, "A question is already running for you. Wait for it or cancel it."))
         if len(self.active) >= self.settings.max_concurrent_runs * 4:
             raise Busy("Wizard is busy. Try again in a minute.")
         run_id = new_id("run")
@@ -475,7 +486,7 @@ class RunManager:
         self.store.create_run(row)
         self.store.touch_conversation(conversation_id, question[:80] if kind == "ask" else None)
         run = ActiveRun(run_id, identity, conversation_id, kind, question, parent_run_id, self.runtime.kind, explore=explore,
-                        choice=choice, ever_on=None if choice is None else choice.on,
+                        work=work, choice=choice, ever_on=None if choice is None else choice.on,
                         offers_ask=bool(choice and choice.off()))
         self.active[run_id] = run
         loop = asyncio.get_running_loop()
@@ -699,6 +710,10 @@ class RunManager:
                                    "Save what you learned with portal_map_save if you have not, then summarise this round; "
                                    "Wizard starts the next round." if run.kind == "explore" else
                                    "Answer with what you have and say what is missing."))
+        if name in TASK_ONLY and run.kind != "task":
+            return ToolOutcome(False, {}, 0, "task_only",
+                               f"{name} changes the company knowledge base, so it runs only in a task from Settings → "
+                               "Tasks. Answer the question without it.")
         system = system_of(name, args)
         if run.choice is not None and system and not run.choice.allows(system):
             on = ", ".join(run.choice.name(s) for s in run.choice.names if s in run.choice.on)
@@ -859,7 +874,7 @@ class RunManager:
                     prompt=compose(run.question, history, run.kind, today,
                                    [{**a, "tables": table_index(Path(a["folder"]))}
                                     for a in self.store.conversation_attachments(run.conversation_id)], explore=run.explore,
-                                   systems=systems, remembered=[] if run.kind == "explore"
+                                   task=run.work, systems=systems, remembered=[] if run.kind in LANES
                                    else [m["text"] for m in self.store.memories(run.identity.id)]),
                     question=run.question, kind=run.kind,  # type: ignore[arg-type]
                     history=history, internal_url=self.settings.internal_url,

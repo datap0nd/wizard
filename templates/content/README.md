@@ -22,8 +22,8 @@ wizard-content/
 
 ## Company documentation
 
-Built by Gemini CLI on the work PC from your Outlook mail and files: Wizard tasks 20-25 collect, digest and write the
-notes, tasks 30-31 send expert quizzes and apply the answers (see `tasks\START_HERE.md` in the Wizard folder).
+Built from your Outlook mail and files with the documentation kit (`.\docs.ps1`) and the tasks in Wizard's
+Settings → Tasks, which save notes to the knowledge base.
 Converted text and digests stay under `inbox/` and are never committed.
 
 ## Workflow per platform

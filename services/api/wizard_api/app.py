@@ -46,6 +46,7 @@ from .security import REQUEST_HEADER, SECURITY_HEADERS, SESSION_COOKIE, session_
 from .site import Site, SiteError, brain_snapshot, build_case, case_id
 from .site import turns as case_turns
 from .store import Store
+from .tasks import TaskBoard
 
 OWNER_ID = "local-owner"
 DOWNLOAD_TYPES = {".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -235,8 +236,9 @@ def _is_loopback(host: str | None) -> bool:
         return host == "testclient"
 
 
-def map_writer(settings: Settings) -> Any:
-    """Commits a portal map to the knowledge-base repository with this PC's write token (Settings → Knowledge base)."""
+def map_writer(settings: Settings, what: str = "this map") -> Any:
+    """Commits files (a portal map, a task's notes) to the knowledge-base repository with this PC's write token
+    (Settings → Knowledge base)."""
     from wizard_documents import kb
 
     def write(files: dict[str, bytes], message: str) -> Published:
@@ -249,7 +251,7 @@ def map_writer(settings: Settings) -> Any:
         except httpx.HTTPError as error:
             return Published("failed", outbound.explain(error, kb.API, settings.github_proxy, windows=True))
         if commit is None:
-            return Published("unchanged", f"{settings.kb_repo} already has this map.")
+            return Published("unchanged", f"{settings.kb_repo} already has {what}.")
         return Published("published", f"Committed to {settings.kb_repo} ({settings.kb_ref}).", commit)
     return write
 
@@ -286,6 +288,9 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         services.portal_maps = PortalMaps(settings.data_dir / "portal-maps",
                                           settings.content_dir / "portal-maps" if settings.content_dir else None, writer,
                                           {p.id: p.name for p in settings.portals.portals}, repo_prefix=settings.kb_path)
+    if settings.kb_repo and settings.kb_write_token:  # what a task produces is committed there (kb_tools.py)
+        services.kb_writer, services.kb_prefix = map_writer(settings, "these notes"), settings.kb_path
+    task_board = TaskBoard(settings.data_dir, ROOT / "tasks", settings.proxy)
     portal_ids = [p.id for p in settings.portals.portals] if settings.portals else []
     registry = build_registry(services)
     identities = IdentityDirectory.load(settings.identities_file)
@@ -357,6 +362,7 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
     app = FastAPI(title="Wizard", version=__version__, lifespan=lifespan, docs_url=None, redoc_url=None,
                   openapi_url="/api/v1/openapi.json")
     app.state.settings, app.state.store, app.state.manager, app.state.registry = settings, store, manager, registry
+    app.state.task_board = task_board
     app.state.restart_if_idle = restart_if_idle
 
     def identity_of(request: Request) -> Identity | None:
@@ -1312,6 +1318,54 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         identity, portal = map_portal(request, system)
         assert services.portal_maps is not None
         return {**map_view(identity, portal.id), "summary": services.portal_maps.summary(portal.id)}
+
+    # Tasks (tasks.py): instructions from the Wizard repository, run by the person at this PC ---------------------------
+    TASK_STATES = {"queued": "running", "running": "running", "succeeded": "done", "failed": "failed", "cancelled": "stopped"}
+
+    def task_owner(request: Request) -> Identity:
+        """Tasks save with this PC's knowledge-base write token, so only the person at a single-person install runs them."""
+        identity = me(request)
+        if not may_publish(identity):
+            raise HTTPException(403, "Tasks run on the Wizard installed on your own PC.")
+        return identity
+
+    def task_view(identity: Identity, cache: dict[str, Any] | None = None) -> dict[str, Any]:
+        found, source = task_board.tasks(cache)
+        runs = task_board.runs()
+        listed = []
+        for task in found:
+            last = runs.get(task.id) or {}
+            row = store.run(identity.id, last["run_id"]) if last.get("run_id") else None
+            state = TASK_STATES.get(str(row["status"]), "running") if row else "todo"
+            listed.append({"id": task.id, "title": task.title, "summary": task.summary, "added": task.added or None,
+                           "state": state, "conversation_id": last.get("conversation_id") if row else None,
+                           "at": (row.get("finished_at") or last.get("started_at")) if row else None,
+                           "message": row.get("error_message") if row and state == "failed" else None})
+        cached = cache or {}
+        return {"tasks": listed, "source": source, "checked": cached.get("checked"), "message": cached.get("message"),
+                "can_save": services.kb_writer is not None}
+
+    @app.get("/api/v1/tasks")
+    async def list_tasks(request: Request, refresh: bool = False) -> dict[str, Any]:
+        identity = task_owner(request)
+        cache = await asyncio.to_thread(task_board.refresh, refresh)
+        return task_view(identity, cache)
+
+    @app.post("/api/v1/tasks/{task_id}/run")
+    async def run_task(request: Request, task_id: str) -> dict[str, Any]:
+        identity = task_owner(request)
+        task = task_board.task(task_id)
+        if task is None:
+            raise HTTPException(404, "No such task.")
+        conversation_id = store.create_conversation(identity.id, f"Task: {task.title}"[:80])
+        try:
+            row = manager.start(identity, conversation_id, f"Task: {task.title}", kind="task",
+                                work={"id": task.id, "title": task.title, "body": task.body})
+        except Busy as busy:
+            raise HTTPException(429, str(busy)) from None
+        task_board.started(task.id, row["id"], conversation_id)
+        store.audit(identity.id, "tasks:run", run_id=row["id"], detail={"task": task.id})
+        return task_view(identity)
 
     @app.post("/api/v1/portals/{system}/map")
     async def start_mapping(request: Request, system: str) -> dict[str, Any]:

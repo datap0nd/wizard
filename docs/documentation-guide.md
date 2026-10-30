@@ -43,32 +43,22 @@ most, because Wizard's tools enforce it.
 - Real content can only *describe* reports: every report is `NAVIGATION_ONLY` with no data file. PostgreSQL is the
   exception, and not through reports: Gemini queries it directly with SQL, guided by the dataset notes.
 
-## How the company documentation is produced (Gemini CLI on the work PC)
+## How the company documentation is produced
 
-Gemini CLI, signed in with the user's work account, does the reading and writing; you follow along and decide. The
-tasks are Markdown prompts in `tasks\` (`/wizard:tasks 20-25`, then `30-31`):
+**Tasks** (owner, 31 October 2026) are instructions the Wizard team writes in the repository's `tasks/` folder. They
+appear in Wizard's **Settings → Tasks** without an update; each runs as a Gemini run in a conversation of its own and
+saves the notes it writes to the company knowledge base (`wizard_kb_save_notes`: whole notes, checked against the knowledge
+standard, one commit per save). The numbered Gemini CLI tasks of earlier versions are retired. The documentation kit
+below still converts files and exports mail on the work PC.
 
-1. **Collect (20).** Outlook folders and dates the user chooses (`.\docs.ps1 outlook-export`; private and confidential
-   items skipped), plus files copied into `content\inbox\files\` or read in place from folders listed in
-   `content\inbox\_sources.txt` (for NASCA files). `.\docs.ps1 extract` converts everything to text.
-2. **Digest (21)**, best with Gemini 3.5 Flash: one short digest per source (summary, facts with locations, terms,
-   ambiguous words, experts, worth, topics). Sensitive sources are marked and not used.
-3. **Plan (22):** topic map and stakeholders, approved by the user.
-4. **Write (23, 24)** with the strongest model: notes, glossaries and ambiguous terms.
-5. **Coverage (25):** every high-worth source is cited by a note or explained.
-6. **Expert quizzes (30, 31):** one HTML page per area and stakeholder, 10-15 questions (confirm a statement,
-   multiple choice, free text where needed). The stakeholder opens it in Edge or Chrome, answers, clicks "Save my
-   answers" and replies with the saved page; `.\docs.ps1 quiz-answers` reads it back and Gemini applies each answer,
-   citing it as a source (`A-<quiz>-<question>`).
-
-**Converting documents.** Gemini CLI cannot open Office files or Outlook mail. `.\docs.ps1` drives Office through
+**Converting documents.** Gemini cannot open Office files or Outlook mail. `.\docs.ps1` drives Office through
 pywin32: it borrows a running application before starting one, opens files read-only where they are, never runs macros
 and never saves a source. PowerPoint gives text, tables, SmartArt, chart values, speaker notes and pictures of mostly
 visual slides; Excel gives a column profile with formulas, pivot tables, charts and named ranges; Word keeps headings
 and tables; Outlook gives display names, the body and attachments. Without Office, plain .docx/.pptx/.xlsx are read with
 the standard library. Email addresses and phone numbers are masked.
 
-**The PostgreSQL server (task 18)** is documented from its own catalog, which is the source of truth for structure.
+**The PostgreSQL server** is documented from its own catalog, which is the source of truth for structure.
 `.\docs.ps1 postgres-catalog` connects with a read-only account (`WIZARD_PG_*` in `.env`, else the scanner's `PG*`
 variables) through pg8000, which is pure Python, so Application Control has no DLL to block. Its session is read-only,
 with a 60-second statement timeout and a 2-second lock timeout. For every materialized view it exports:
@@ -83,7 +73,7 @@ with a 60-second statement timeout and a 2-second lock timeout. For every materi
 Gemini CLI writes `knowledge/platforms/postgresql.md` and one `datasets/` note per view (`type: dataset`, knowledge
 standard section 10). Documents explain meaning; where they contradict the export, the export wins.
 
-**Platform material** (tasks 10-17) uses two Gemini CLI commands shipped in the content template:
+**Platform material** uses two Gemini CLI commands shipped in the content template:
 `/wizard:platform-guide <platform> inbox/<platform>/` and `/wizard:report-catalog <platform> inbox/<platform>/`. For
 ASAP, run `scripts/import_asap_catalog.py` first: it reads ASAP's own metadata and its draft becomes the input.
 

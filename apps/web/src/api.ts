@@ -1,6 +1,6 @@
 import type {BrainLive, BrainMap} from './brain';
 import type {CasePreview, CasePublished, SiteStatus} from './cases';
-import type {AccessForm, Answer, Attachment, Bootstrap, Cadence, ConversationSummary, Evidence, GeminiAccount, GeminiQuota, LocalFile, Memory, PortalCheck, PortalMapView, PortalStatus, RecurringList, Report, RunRecord, SavedFile, Schedule, SettingsSaved, SettingsView, SourceCatalog, SourceSummary, Steer, SteerReason, UpdateInfo} from './types';
+import type {AccessForm, Answer, Attachment, Bootstrap, Cadence, ConversationSummary, Evidence, GeminiAccount, GeminiQuota, LocalFile, Memory, PortalCheck, PortalMapView, PortalStatus, RecurringList, Report, RunRecord, SavedFile, Schedule, SettingsSaved, SettingsView, SourceCatalog, SourceSummary, Steer, SteerReason, TasksView, UpdateInfo} from './types';
 
 /** What a note to Wizard did: reached the running answer (steer), or became the next question (follow_up). */
 export interface SteerResult {
@@ -130,6 +130,8 @@ export const api = {
   stopMapping: (system: string) => request<PortalMapView>(`/api/v1/portals/${encodeURIComponent(system)}/map/stop`, {body: {}}),
   publishMap: (system: string) => request<PortalMapView>(`/api/v1/portals/${encodeURIComponent(system)}/map/publish`, {body: {}}),
   forgetMap: (system: string) => request<PortalMapView>(`/api/v1/portals/${encodeURIComponent(system)}/map`, {method: 'DELETE'}),
+  tasks: (refresh = false) => request<TasksView>(`/api/v1/tasks${refresh ? '?refresh=true' : ''}`),
+  runTask: (id: string) => request<TasksView>(`/api/v1/tasks/${encodeURIComponent(id)}/run`, {body: {}}),
   health: () => request<{status: string; version: string}>('/api/v1/health'),
 };
 

@@ -66,6 +66,23 @@ def explore_request(system: str, name: str, round_number: int) -> str:
     return EXPLORE_REQUEST.format(system=system, name=name, round=round_number)
 
 
+# A task from Settings → Tasks (owner, 31 Oct 2026): instructions the Wizard team wrote, run by the person; what it
+# produces is saved to the company knowledge base.
+TASK_REQUEST = """You are doing a task the Wizard team wrote for this company's Wizard: "{title}". The person started it from Settings → Tasks. Nobody is waiting for an answer: work through it on your own with your tools until it is done.
+
+What the task produces goes to the company's knowledge-base repository. Read wizard_kb_standard before writing a note, read a note's current file with wizard_kb_note_source before changing it, and save whole notes with wizard_kb_save_notes (each save is one commit, checked first). Change only what the task asks for, and never invent a fact: what your tools do not show is UNKNOWN.
+
+When you are done, end with a short summary: what you changed (note ids), what you could not do and why, and anything a person has to decide.
+
+<task>
+{body}
+</task>"""
+
+
+def task_request(title: str, body: str) -> str:
+    return TASK_REQUEST.format(title=title, body=body)
+
+
 def recurring_question(cadence: str | None) -> str:
     return "Make this recurring" + (f": {RECURRING_CHOICES[cadence]}" if cadence else "")
 
@@ -225,7 +242,7 @@ def clean_title(text: str) -> str | None:
 
 def compose(question: str, history: list[Turn], kind: str, today: date, files: list[dict[str, Any]] | None = None,
             explore: dict[str, Any] | None = None, systems: tuple[list[str], list[str]] | None = None,
-            remembered: list[str] | None = None) -> str:
+            remembered: list[str] | None = None, task: dict[str, Any] | None = None) -> str:
     """systems: (names on, names off) when the person chose the systems for this request; None is Auto."""
     parts = [calendar_block(today)]
     if remembered:
@@ -245,6 +262,8 @@ def compose(question: str, history: list[Turn], kind: str, today: date, files: l
         parts.append("\n\n".join(lines))
     if kind == "explore" and explore:
         request = explore_request(explore["system"], explore["name"], int(explore.get("round") or 1))
+    elif kind == "task" and task:
+        request = task_request(str(task["title"]), str(task["body"]))
     else:
         request = recurring_request(question) if kind == "recurring" else CHECK_REQUEST if kind == "check" else question
     parts.append(f"<request>\n{request}\n</request>")

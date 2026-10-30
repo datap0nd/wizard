@@ -382,6 +382,28 @@ export interface PortalMapping {
 
 export interface PortalMapView { map: PortalMapStatus; mapping: PortalMapping | null; message?: string }
 
+/** A task from the Wizard repository's tasks/ folder (Settings → Tasks) and its last run on this PC. */
+export interface TaskItem {
+  id: string;
+  title: string;
+  summary: string;
+  added: string | null;
+  state: 'todo' | 'running' | 'done' | 'failed' | 'stopped';
+  conversation_id: string | null;
+  at: string | null;
+  message: string | null;
+}
+
+export interface TasksView {
+  tasks: TaskItem[];
+  /** github: read from GitHub just now or earlier; bundled: the copy that came with this version. */
+  source: 'github' | 'bundled';
+  checked: number | null;
+  message: string | null;
+  /** This PC has the knowledge base's write token, so a task can save what it produces. */
+  can_save: boolean;
+}
+
 export interface Answer { label: string; value: string }
 
 /** The answers this person gives on every access request in a portal's information catalog, kept on their PC. */

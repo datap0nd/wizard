@@ -8,7 +8,7 @@ git, no pip and no Node build. The PC only ever **pulls** `main` from GitHub; no
  ────────────────────          ───────────────────────────          ─────────────────────────────────────────────
  fix + push main      ───────▶ main  +  release portable-…  ──────▶ .\update_app.ps1   (stop, install, start)
                                                                      .\start.ps1        (open Wizard, give it a go)
- reads feedback       ◀─────── (you paste the file)         ◀────── gemini → /wizard:tasks → outbox\FEEDBACK-FOR-CLAUDE.md
+ reads feedback       ◀─────── (you paste the file)         ◀────── Settings → Tasks → the knowledge base
 ```
 
 ## Prerequisites (once)
@@ -16,7 +16,7 @@ git, no pip and no Node build. The PC only ever **pulls** `main` from GitHub; no
 | Need | Why | Check |
 |---|---|---|
 | Optional: `DG_GITHUB_TOKEN` (the token the B2B / data-governance installers already use) | The repository is public, so setup works without it, but anonymous GitHub API calls are limited to 60 per hour per IP address, which an office network shares. Setup uses 2 or 3 per run (archives come from the public download links, not the API). | setup names a rate-limit refusal (HTTP 403) |
-| Node.js and Gemini CLI, signed in with your enterprise Google account | Wizard's analyst runs through Gemini CLI; you also use Gemini CLI for the documentation tasks | `node --version`, `gemini --version` |
+| Node.js and Gemini CLI, signed in with your enterprise Google account | Wizard's analyst runs through Gemini CLI; you can also use Gemini CLI with the documentation kit | `node --version`, `gemini --version` |
 | Outbound HTTPS to `api.github.com`, `github.com` release downloads, `accounts.google.com`, `oauth2.googleapis.com`, `codeassist.google.com`, `cloudcode-pa.googleapis.com`, `github.sec.samsung.net` | install, Google sign-in, Gemini, the knowledge base | task 00 tests each one |
 
 `GOOGLE_CLOUD_PROJECT`: if your Gemini CLI needs it (enterprise Code Assist), set it in your user environment before
@@ -65,8 +65,7 @@ Setup does, in order:
    - `WIZARD_LOCAL_USER_EMAIL` from `whoami /upn`.
    - The Gemini CLI and Node paths it found.
 5. Creates `content\` (documentation template), `documents\quiz-questions\`, `documents\quiz-answers\`, `outbox\` and
-   `data\`, and refreshes `tasks\`, `templates\` (the quiz page), `docs.ps1`, `GEMINI.md`, `.geminiignore`, the
-   `/wizard:tasks` command and the Wizard-owned parts of `content\` (`schema\`, `.gemini\commands\`). Your notes,
+   `data\`, and refreshes `templates\` (the quiz page), `docs.ps1`, `GEMINI.md`, `.geminiignore` and the Wizard-owned parts of `content\` (`schema\`, `.gemini\commands\`). Your notes,
    catalogs, registers and inbox are never touched.
 6. **Checks the new release** with `run.py --check`:
 
@@ -101,56 +100,18 @@ This opens <http://127.0.0.1:8770>, and the window shows Wizard's log.
 
 No Gemini yet? Set `WIZARD_AGENT_RUNTIME=replay` in `.env` and restart: the recorded answers stream through the same UI.
 
-## Gemini CLI tasks (documentation and checks)
+## Tasks
 
-```powershell
-cd C:\Wizard
-gemini -m gemini-3.8-flash
-```
-
-The first time, Gemini CLI asks whether you trust this folder: choose **Trust folder**. Project commands and
-`GEMINI.md` load only in a trusted folder, so without this `/wizard:tasks` is unknown.
-
-Then type `/wizard:tasks`, or `/wizard:tasks 10-12` to limit the range. Gemini reads `tasks\START_HERE.md`, works
-through the numbered tasks in order, and asks you whenever a task needs a decision. It tracks progress in
-`outbox\STATUS.md`, so you can stop at any time and run `/wizard:tasks` again later to resume.
-
-| Task | What Gemini does | Internal output | Shareable output |
-|---|---|---|---|
-| 00 | Environment report: versions, settings present, installation check, network reachability | — | `outbox\00-environment.md` |
-| 10 | Inventory of the documents you dropped in `content\inbox\<platform>\` | `outbox\10-inventory.md` | its counts table |
-| 11 | One guide per platform (how to navigate it, what its reports are for) | `content\knowledge\platforms\*.md` | — |
-| 12 | Report catalogs (one JSON per platform, every report navigation-only) and the source register | `content\contracts\sources\*.json`, `content\register\source-register.csv` | — |
-| 13 | Business definitions (sell-in, sell-out, switchers, …) | notes under `content\knowledge\` | note ids and status |
-| 14 | Can the catalog answer the three demonstration questions? | `content\register\coverage.md` | `outbox\14-coverage-summary.md` |
-| 15 | Runs Wizard's content validator until it reports 0 errors | — | `outbox\15-validation.md` |
-| 16 | Closed questions for each data owner | `content\register\open-questions.md` | counts |
-| 17 | Switch Wizard to the real catalog (only after your yes) | `.env` | `outbox\17-switch.md` |
-| 18 | Data dictionary of the PostgreSQL materialized views, written from the server's catalog (read-only account) | `content\knowledge\platforms\postgresql.md`, `content\knowledge\datasets\` | counts |
-| 20 | Collect your Outlook mail (folders and dates you choose) and files; convert them to text | `content\inbox\` | `outbox\20-collection.md` |
-| 21 | One digest per source (best with Gemini 3.5 Flash) | `content\inbox\_digests\` | counts |
-| 22 | Topic map and stakeholder list, for you to approve | `content\register\topic-map.md`, `stakeholders.md` | counts |
-| 23 | The company documentation, written to the knowledge standard | `content\knowledge\<area>\*.md` | counts |
-| 24 | Glossaries and the ambiguous terms Wizard should ask about | `content\knowledge\glossary\` | counts |
-| 25 | Coverage: every valuable source cited or explained | `content\register\documentation-coverage.md` | `outbox\25-coverage.md` |
-| 30 | One expert quiz per area and stakeholder (HTML page + email text you send) | `documents\quiz-questions\` | counts |
-| 31 | Apply the answered quizzes to the notes | notes, `content\register\review-log.md` | counts |
-| 90 | Feedback pack for the developer | — | `outbox\FEEDBACK-FOR-CLAUDE.md` |
-
-**Company documentation (tasks 20-31).** Run `/wizard:tasks 20-25`, then `/wizard:tasks 30-31` once you have sent the
-quizzes and the answers are back. Gemini CLI cannot open PowerPoint, Excel, Word or Outlook files itself, so
-`.\docs.ps1` converts them through Office on this PC (pywin32, read-only, macros off; NASCA-protected files open
-because Office opens them as you). `.\docs.ps1 help` lists everything the kit does; it never uses the network or AI.
-Task 21 reads every source and is best run with `gemini -m gemini-3.5-flash`; the writing tasks with the strongest
-model your plan offers. See [documentation-guide.md](documentation-guide.md).
-
-`content\` is internal: it never leaves the PC through Wizard. Make it its own internal Git repository when you are
-ready (see [documentation-guide.md](documentation-guide.md)). Each task states what is shareable; the shareable files
-in `outbox\` are written without internal names, and you read each one before you share it.
+Tasks are instructions the Wizard team writes for Gemini. They live in the Wizard repository's `tasks/` folder and
+appear in **Settings → Tasks** without an update (Wizard reads the folder from GitHub when the section opens; with no
+network it shows the ones that came with the installed version). **Run** starts the task in a conversation of its own
+(**Watch it**); what it produces is saved to the company knowledge base with this PC's write token (Settings →
+Knowledge base). The numbered Gemini CLI tasks of earlier versions are gone: setup removes `tasks\` and the
+`/wizard:tasks` command. The documentation kit (`.\docs.ps1`) is still there for converting files and exporting mail.
 
 ## The loop
 
-1. You run `.\start.ps1`, try Wizard and run the tasks.
+1. You run `.\start.ps1`, try Wizard and run the tasks in Settings → Tasks.
 2. You run task 90, read `outbox\FEEDBACK-FOR-CLAUDE.md`, and paste it (plus anything else you noticed) to Claude.
 3. Claude fixes the issues and pushes `main`.
 4. You run `.\update_app.ps1`. It stops Wizard, installs the new `main`, checks it and starts it again in a new window.

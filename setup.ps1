@@ -274,14 +274,13 @@ try {
     $templates = Join-Path $InstallDir 'templates'
     if (Test-Path -LiteralPath $templates) { Remove-Item -LiteralPath $templates -Recurse -Force }
     Copy-Tree (Join-Path $release 'workpc\templates') $templates
+    # Tasks run from Settings > Tasks in Wizard now (owner, 31 Oct 2026): the Gemini CLI task files of earlier versions go.
     $tasks = Join-Path $InstallDir 'tasks'
     if (Test-Path -LiteralPath $tasks) { Remove-Item -LiteralPath $tasks -Recurse -Force }
-    Copy-Tree (Join-Path $release 'workpc\tasks') $tasks
+    $oldCommand = Join-Path $InstallDir '.gemini\commands\wizard\tasks.toml'
+    if (Test-Path -LiteralPath $oldCommand) { Remove-Item -LiteralPath $oldCommand -Force }
     Copy-Item -LiteralPath (Join-Path $release 'workpc\GEMINI.md') -Destination (Join-Path $InstallDir 'GEMINI.md') -Force
     Copy-Item -LiteralPath (Join-Path $release 'workpc\.geminiignore') -Destination (Join-Path $InstallDir '.geminiignore') -Force
-    $commands = Join-Path $InstallDir '.gemini\commands\wizard'
-    New-Item -ItemType Directory -Force -Path $commands | Out-Null
-    Copy-Item -Path (Join-Path $release 'workpc\.gemini\commands\wizard\*.toml') -Destination $commands -Force
 
     # Check before selecting the release: a release that cannot start never replaces a working one.
     $checkCode = 0
@@ -309,8 +308,8 @@ try {
     Write-Host "Wizard is installed in $InstallDir" -ForegroundColor Green
     Write-Host "Active release: $release"
     if ($checkCode -eq 1) { Write-Host 'Gemini CLI is not ready yet (see the check above). Replay mode works: set WIZARD_AGENT_RUNTIME=replay in .env to demo without Gemini.' -ForegroundColor Yellow }
-    Write-Host 'Next: .\start.ps1   (Gemini CLI tasks: run gemini in this folder, trust the folder, then /wizard:tasks)'
-    Write-Host 'Company documentation: in Gemini CLI, /wizard:tasks 20-25 (then 30-31 for expert quizzes); .\docs.ps1 help lists the kit.'
+    Write-Host 'Next: .\start.ps1   (tasks for Gemini: Settings > Tasks in Wizard)'
+    Write-Host '.\docs.ps1 help lists the documentation kit.'
 } catch {
     Write-Host "Setup failed: $($_.Exception.Message)" -ForegroundColor Red
     exit 1

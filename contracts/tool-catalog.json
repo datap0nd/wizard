@@ -1630,6 +1630,94 @@
       }
     },
     {
+      "name": "wizard_kb_note_source",
+      "description": "The file of knowledge notes as it is in the knowledge base (front matter and body) with its path, to change it with wizard_kb_save_notes.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "ids": {
+            "description": "Note ids, e.g. ['market-share'].",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "ids"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "wizard_kb_standard",
+      "description": "The knowledge standard: how every knowledge note is written (front matter, areas, sections, sources, status). Read it before writing or changing a note.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "wizard_kb_save_notes",
+      "description": "Only in a task run (Settings → Tasks): add or replace whole knowledge notes in the company's knowledge-base repository, in one commit. Each note is checked against the knowledge standard first and nothing is saved when one fails.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "notes": {
+            "description": "Notes to add or replace, whole files.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "path": {
+                  "description": "knowledge/<area>/<note id>.md, e.g. knowledge/metrics/market-share.md. An existing note keeps its path (wizard_kb_note_source shows it) (pattern ^knowledge/([a-z0-9][a-z0-9-]*/){0,2}[a-z0-9][a-z0-9-]{0,80}\\.md$)",
+                  "type": "string"
+                },
+                "text": {
+                  "description": "The whole file: front matter and body, as the knowledge standard says (20-60000 characters)",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "text"
+              ],
+              "type": "object"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "type": "array"
+          },
+          "message": {
+            "description": "The commit message: what this changes and why, e.g. 'Where to get it names mapped portal reports' (5-200 characters)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "notes",
+          "message"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
       "name": "portal_guide",
       "description": "How a company portal (ASAP, GSCM, the Big Data Portal: its information catalog, where tables are found, and Superset, where they are queried) works and how to read it with portal_run: its applications and addresses, its structure, where its data really comes from, the background data requests to call instead of clicking, the W.* JavaScript helpers, pitfalls, and the scripts saved for it on this PC. Read it before writing steps for a portal.",
       "inputSchema": {

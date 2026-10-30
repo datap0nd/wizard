@@ -181,6 +181,7 @@ class KnowledgeBase:
     def __init__(self, notes: list[Note], areas: dict[str, str] | None = None):
         self.notes = notes
         self.areas = areas or {}
+        self.root: Path | None = None  # the folder holding knowledge/, so a note's file is root / note.path
         self.by_id = {note.id: note for note in notes}
         self.sections = {note.id: split_sections(note) for note in notes}
         self._chunks: list[tuple[Note, Section, Counter[str], int]] = []
@@ -224,7 +225,9 @@ class KnowledgeBase:
             text = parsed[1] if parsed else readme.read_text(encoding="utf-8-sig")
             paragraph = next((p.strip() for p in re.split(r"\n\s*\n", text) if p.strip() and not p.lstrip().startswith("#")), "")
             areas[readme.parent.name] = " ".join(paragraph.split())[:240]
-        return cls(notes, areas)
+        base = cls(notes, areas)
+        base.root = directory.parent
+        return base
 
     def find(self, query: str, limit: int = 5) -> list[Hit]:
         wanted = list(dict.fromkeys(terms(query)))
