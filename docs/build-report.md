@@ -3,7 +3,51 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-30 (latest) — Wizard maps the portals, keeps the map, and reads them by their own requests
+## 2026-10-30 (latest) — Steer Wizard while it works, and choose the systems a question may use
+
+The owner: "I want to be able to steer (for example I notice it's using a wrong table)" and "select what systems I want
+it to access ... leave it on Auto as well"; then: both ways of steering, corrections kept per person, the knowledge
+base on when systems are narrowed, and "only these". [Decision](decisions/2026-10-30-steering-and-systems.md).
+- **Notes while Wizard works.** While an answer runs the question box takes a note ("Tell Wizard while it works").
+  Code Assist hands it to Gemini before its next step (`code_assist.py`: after the tool results; the step's calls not
+  yet run come back `not_run`; a note that arrives during the answer reopens the work). Gemini CLI and replay cannot
+  take one: the note stops the run and asks again with it (`POST /api/v1/runs/{id}/steer` answers `follow_up`).
+  The card lists the notes, waiting then read by Wizard.
+- **Not this** on every data step (stage caption, a system's calls, Step by step): wrong table, filter, period or
+  something else, plus what to use instead. Gemini gets the step's SQL or report and is told not to cite its evidence;
+  citing it anyway is a warning. After the answer it asks again with the correction.
+- **Follow-ups carry the work:** up to 15 steps of each earlier answer (SQL, result, evidence id, the person's notes),
+  and stopped answers are part of the conversation.
+- **Remember** under a note or a question keeps the person's own words (Account → What Wizard remembers: list, edit,
+  delete; 50 at most), added to every question they ask (`/api/v1/memories`).
+- **Systems picker** beside the question box: Auto, or only the systems ticked (the knowledge base comes on with the
+  first; a file switches Attached files on; Metronome is not offered). The conversation keeps it, and so do Check my
+  data and Make recurring. The card says "Only: ...", the stage dims switched-off systems. Strict inside the run: only
+  their tools are offered, a call to a switched-off system is refused (`system_off`, MCP path too), the source list and
+  catalog search list only what is on, Check my data does not re-run an off source. `wizard_ask_for_system` (23rd tool)
+  lets Gemini ask; the card offers "Switch on GSCM and continue". Changing the picker mid-run applies at once
+  (`POST /api/v1/runs/{id}/systems`).
+- Contracts: `steer`, `steer_read`, `systems_changed`, `system_requested` (and `access_request_proposed`, emitted
+  since 28 October but missing from the list) in the run-event schema; the report records `systems`, `steers` and
+  `rejected_evidence`. Store: `runs.systems` and a `memories` table, added without a schema version change.
+
+**Tests.** `tests/unit/test_steering_and_systems.py` (9): step naming and the work log, the follow-up prompt with steps,
+systems and remembered notes, a note's wording, tool-to-system mapping and what is offered; Code Assist against the
+scripted Google fake: a note mid-step skips the rest of the step and reaches the next turn, a note during the answer
+reopens it, a system switched on brings its tools. `tests/integration/test_steering_api.py` (11) with a scripted
+runtime that takes notes as Code Assist does: only the chosen systems offered and the others refused, unknown systems
+refused, a live note and Not this (events and report validated against the contracts), an answer citing a rejected
+step flagged, switching systems mid-run, Not this after the answer with the steps in the follow-up's prompt, a note
+stopping a replay run and asking again, Check my data keeping the systems, a file switching Attached files on,
+remembered notes per person. Real Gemini CLI 0.62: a run limited to NERP and the knowledge base is offered only their
+tools and Wizard's own over MCP; an Auto run is offered every tool but `wizard_ask_for_system`, and the installation
+probe (`run.py --check`) now compares the CLI's declarations with what Wizard offers the run, not the whole catalog.
+`apps/web/src/components/Steering.test.tsx` (9). E2E (both viewports): the picker and
+"Only:" through a reload; Not this after an answer, Remember, and the note in the account dialog. Seen in Chromium at
+1280×900 and in the 420×640 panel with a scripted note-taking runtime (not committed); the real Code Assist route is
+first steered on a work PC.
+
+## 2026-10-30 — Wizard maps the portals, keeps the map, and reads them by their own requests
 
 The owner: "I want this tool to be super agile ... I would love for gemini 3.8 flash to FULLY explore GSCM and get ALL
 the technical details and shortcuts and save them in the knowledge base ... Then, wizard picks it up and QUICKLY uses

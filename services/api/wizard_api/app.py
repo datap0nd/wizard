@@ -23,7 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from wizard_agent import google_oauth, outbound
 from wizard_agent.code_assist import CodeAssistRuntime, summarize_quota
 from wizard_agent.gemini_cli import GeminiCliConfig, GeminiCliRuntime, inherited_project, resolve_cli_js
-from wizard_agent.prompting import recurring_question
+from wizard_agent.prompting import correction_question, recurring_question
 from wizard_agent.replay import ReplayRuntime
 from wizard_agent.runtime import AgentFailure, AgentRuntime
 from wizard_agent.secret_box import SecretBox
@@ -34,13 +34,14 @@ from wizard_connectors.paths import ROOT
 from wizard_connectors.portal_browser import PortalBrowser, PortalBrowsers, PortalError
 from wizard_connectors.portal_map import PortalMaps, Published
 from wizard_connectors.tools import build_registry, build_services
+from wizard_connectors.tools.systems import SystemChoice
 
-from . import __version__, brain, knowledge_sync, settings_pane
+from . import __version__, brain, knowledge_sync, settings_pane, systems
 from .attachments import AttachmentError, public
 from .config import Settings, kb_source, load_settings
 from .metronome_client import MetronomeClient, MetronomeError
 from .outlook import DraftError, open_outlook_draft
-from .runs import Busy, RunManager, entitled_to, evidence_summary, public_schedule
+from .runs import Busy, RunManager, decode_systems, entitled_to, evidence_summary, public_schedule, step_about
 from .security import REQUEST_HEADER, SECURITY_HEADERS, SESSION_COOKIE, session_token, verify
 from .store import Store
 
@@ -86,7 +87,7 @@ PUBLIC_PATHS = {"/api/v1/health", "/api/v1/ready", "/api/v1/bootstrap", "/api/v1
                 "/api/v1/session/logout", "/api/v1/session/identities"}
 TIMELINE_EVENTS = {"run_started", "status", "agent_session", "note", "tool_started", "tool_finished", "visual_added",
                    "check_result", "schedule_proposed", "access_request_proposed", "file_made", "warning", "run_failed",
-                   "run_finished"}
+                   "run_finished", "steer", "steer_read", "systems_changed", "system_requested"}
 TERMINAL = {"run_finished", "run_failed"}
 SUGGESTIONS = [
     {"story": "Executive", "question": "Which market gave us the best return on marketing investment last quarter — tie NERP "
@@ -111,6 +112,23 @@ class RunBody(Body):
     question: str = Field(min_length=1, max_length=4000)
     conversation_id: str | None = Field(default=None, max_length=64)
     attachment_ids: list[str] = Field(default_factory=list, max_length=5)
+    # The systems picker: the ids of the systems this question may use; None (or absent) is Auto.
+    systems: list[str] | None = Field(default=None, max_length=30)
+
+
+class SteerBody(Body):
+    text: str = Field(default="", max_length=2000)
+    call_id: str | None = Field(default=None, max_length=20, pattern=r"^c\d{1,4}$")  # a step of the run (Not this)
+    reason: Literal["table", "filter", "period", "other"] | None = None
+
+
+class SystemsBody(Body):
+    systems: list[str] | None = Field(default=None, max_length=30)
+
+
+class MemoryBody(Body):
+    text: str = Field(min_length=1, max_length=500)
+    run_id: str | None = Field(default=None, max_length=64)
 
 
 class LocalFileBody(Body):
@@ -433,29 +451,27 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
                 "secret_store": secret_box.kind, "needs_link": runtime.kind != "replay"}
 
     def systems_for(identity: Identity) -> list[dict[str, Any]]:
-        """The systems this person's Wizard can draw on, for the systems stage: report platforms, the database, the
-        knowledge base and attached files. Only what they may use."""
-        found: list[dict[str, Any]] = [{"id": s.id, "name": s.name, "kind": "reports", "data_mode": s.connector.data_mode}
-                                       for s in services.catalog.systems if identity.can_use_system(s.id)]
-        for portal in settings.portals.portals if settings.portals else ():
-            if not identity.can_use_system(portal.id):
-                continue
-            # A portal read live in the person's browser; it takes over a navigation-only catalog of the same system.
-            found = [s for s in found if s["id"] != portal.id]
-            found.append({"id": portal.id, "name": portal.name, "kind": "portal", "data_mode": "LIVE"})
-        if services.postgres and identity.can_use_system("postgresql"):
-            found.append({"id": "postgresql", "name": services.postgres_name, "kind": "database", "data_mode": "LIVE"})
-        if services.knowledge.notes:
-            found.append({"id": "knowledge", "name": "Knowledge base", "kind": "knowledge", "notes": len(services.knowledge.notes)})
-        found.append({"id": "attachment", "name": "Attached files", "kind": "files"})
-        if can_schedule(identity):
-            found.append({"id": "metronome", "name": "Metronome", "kind": "schedules"})
-        return found
+        """The systems this person's Wizard can draw on, for the systems stage and the systems picker."""
+        return systems.available(settings, services, identity)
 
     def can_schedule(identity: Identity) -> bool:
-        """Recurring extractions: Metronome is connected and the person may query the whole database."""
-        return bool(settings.metronome and services.postgres and identity.can_use_system("postgresql")
-                    and identity.allowed_markets("postgresql") is None)
+        return systems.can_schedule(settings, services, identity)
+
+    def chosen(identity: Identity, ids: list[str] | None) -> SystemChoice | None:
+        """The person's systems for a question (None: Auto); a system they cannot choose is a clear refusal."""
+        try:
+            return systems.choice(settings, services, identity, ids)
+        except systems.UnknownSystem as error:
+            raise HTTPException(400, str(error)) from None
+
+    def inherited(identity: Identity, parent: dict[str, Any]) -> SystemChoice | None:
+        """A Check my data or Make recurring run uses the systems of the answer it follows (those still available)."""
+        ids = decode_systems(parent.get("systems"))
+        if ids is None:
+            return None
+        usable = systems.choosable(settings, services, identity)
+        kept = [s for s in ids if s in usable]
+        return systems.choice(settings, services, identity, kept) if kept else None
 
     @app.get("/api/v1/bootstrap")
     async def bootstrap(request: Request) -> dict[str, Any]:
@@ -472,7 +488,8 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         return {**base, "diagnostics": settings.diagnostics, "desktop": settings.desktop,
                 "settings_editable": identity.id == OWNER_ID and settings_pane.editable(settings),
                 "identity": {"id": identity.id, "name": identity.name, "email": identity.email, "role": identity.role},
-                "runtime": {"kind": runtime.kind, "label": runtime.label(), "model": runtime.model, **readiness},
+                "runtime": {"kind": runtime.kind, "label": runtime.label(), "model": runtime.model,
+                            "steering": runtime.steering, **readiness},
                 "gemini_account": await account_status(identity), "data_modes": modes,
                 "attachments": {"from_this_pc": manager.attachments.local_enabled(), "max_mb": settings.max_attachment_mb},
                 "systems": systems_for(identity),
@@ -521,6 +538,7 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         evidence = [evidence_summary(e) for e in store.evidence(run["conversation_id"]) if e.get("run_id") == run["id"]]
         shown_run = {k: v for k, v in run.items() if k not in ("user_id", "stats")}
         shown_run["stats"] = json.loads(run["stats"]) if run.get("stats") else {}
+        shown_run["systems"] = decode_systems(run.get("systems"))
         files = [public(a) for a in store.conversation_attachments(run["conversation_id"]) if a["run_id"] == run["id"]]
         schedules = [public_schedule(s) for s in store.schedules(run["conversation_id"], run["id"])]
         return {**shown_run, "events": events, "visuals": visuals, "evidence": evidence, "attachments": files,
@@ -575,9 +593,12 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
             if found["status"] != "ok":
                 raise HTTPException(400, f"{found['filename']} could not be read; remove it before sending.")
             files.append(attachment_id)
+        choice = chosen(identity, body.systems)
+        if choice is not None and files and "attachment" not in choice.on:  # attaching a file switches Attached files on
+            choice = systems.choice(settings, services, identity, [*(body.systems or []), "attachment"])
         conversation_id = conversation_id or store.create_conversation(identity.id)
         try:
-            run = manager.start(identity, conversation_id, body.question.strip())
+            run = manager.start(identity, conversation_id, body.question.strip(), choice=choice)
         except Busy as busy:
             raise HTTPException(429, str(busy)) from None
         # Bound before the run's task first runs (no await in between), so its prompt lists these files.
@@ -666,7 +687,8 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         if not parent or parent["status"] != "succeeded":
             raise HTTPException(404, "Only a finished answer can be checked.")
         try:
-            run = manager.start(identity, parent["conversation_id"], "Check my data", kind="check", parent_run_id=run_id)
+            run = manager.start(identity, parent["conversation_id"], "Check my data", kind="check", parent_run_id=run_id,
+                                choice=inherited(identity, parent))
         except Busy as busy:
             raise HTTPException(429, str(busy)) from None
         return {"run_id": run["id"], "conversation_id": parent["conversation_id"]}
@@ -684,7 +706,7 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
                                      "you cannot query the company database.")
         try:
             run = manager.start(identity, parent["conversation_id"], recurring_question(body.cadence), kind="recurring",
-                                parent_run_id=run_id)
+                                parent_run_id=run_id, choice=inherited(identity, parent))
         except Busy as busy:
             raise HTTPException(429, str(busy)) from None
         return {"run_id": run["id"], "conversation_id": parent["conversation_id"], "question": run["question"]}
@@ -806,6 +828,77 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
     @app.post("/api/v1/runs/{run_id}/cancel")
     def cancel(request: Request, run_id: str) -> dict[str, Any]:
         return {"cancelled": manager.cancel(me(request).id, run_id)}
+
+    @app.post("/api/v1/runs/{run_id}/steer")
+    async def steer(request: Request, run_id: str, body: SteerBody) -> dict[str, Any]:
+        """A note to Wizard about a run: free words, or Not this on one of its steps. While the run works on a connection
+        that takes notes, Gemini reads it before its next step. Otherwise (a connection that cannot, or an answer already
+        finished) it becomes the next question, with the run's steps in its context; a running one is stopped first."""
+        identity = me(request)
+        run = store.run(identity.id, run_id)
+        if not run:
+            raise HTTPException(404, "Run not found.")
+        text = body.text.strip()
+        if not text and not body.call_id:
+            raise HTTPException(400, "Write a note for Wizard.")
+        about = step_about(store.events(run_id), body.call_id) if body.call_id else None
+        if body.call_id and about is None:
+            raise HTTPException(404, "That step is not part of this answer.")
+        active = run_id in manager.active
+        if active and runtime.steering:
+            steer = manager.steer(identity.id, run_id, text, body.call_id, body.reason)
+            if steer is not None:
+                return {"steer": steer}
+        if active:
+            manager.cancel(identity.id, run_id)
+            await manager.finished(run_id)
+        question = correction_question(text, about, body.reason)[:4000]
+        try:  # the systems as they are now: the picker may have changed while the run worked
+            follow = manager.start(identity, run["conversation_id"], question,
+                                   choice=inherited(identity, store.run(identity.id, run_id) or run))
+        except Busy as busy:
+            raise HTTPException(429, str(busy)) from None
+        return {"follow_up": {"run_id": follow["id"], "conversation_id": run["conversation_id"], "question": question,
+                              "systems": decode_systems(follow.get("systems"))}}
+
+    @app.post("/api/v1/runs/{run_id}/systems")
+    def change_systems(request: Request, run_id: str, body: SystemsBody) -> dict[str, Any]:
+        """The systems picker changed while this run works."""
+        identity = me(request)
+        if not manager.change_systems(identity.id, run_id, chosen(identity, body.systems)):
+            raise HTTPException(409, "This answer is no longer running.")
+        return {"systems": body.systems}
+
+    # Notes the person asked Wizard to remember ---------------------------------------------------------------------------
+    @app.get("/api/v1/memories")
+    def memories(request: Request) -> dict[str, Any]:
+        return {"memories": [public_memory(m) for m in store.memories(me(request).id)]}
+
+    @app.post("/api/v1/memories")
+    def remember(request: Request, body: MemoryBody) -> dict[str, Any]:
+        identity = me(request)
+        if body.run_id and not store.run(identity.id, body.run_id):
+            raise HTTPException(404, "Run not found.")
+        try:
+            memory = store.add_memory(identity.id, " ".join(body.text.split()), body.run_id)
+        except ValueError as error:
+            raise HTTPException(409, str(error)) from None
+        store.audit(identity.id, "memory:add", run_id=body.run_id)
+        return {"memory": public_memory(memory)}
+
+    @app.patch("/api/v1/memories/{memory_id}")
+    def edit_memory(request: Request, memory_id: str, body: MemoryBody) -> dict[str, Any]:
+        if not store.update_memory(me(request).id, memory_id, " ".join(body.text.split())):
+            raise HTTPException(404, "Note not found.")
+        return {"ok": True}
+
+    @app.delete("/api/v1/memories/{memory_id}")
+    def forget(request: Request, memory_id: str) -> dict[str, Any]:
+        identity = me(request)
+        if not store.delete_memory(identity.id, memory_id):
+            raise HTTPException(404, "Note not found.")
+        store.audit(identity.id, "memory:delete")
+        return {"ok": True}
 
     @app.post("/api/v1/runs/{run_id}/feedback")
     def feedback(request: Request, run_id: str, body: FeedbackBody) -> dict[str, Any]:
@@ -1290,8 +1383,7 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
 
     @app.get("/internal/v1/tools")
     def internal_tools(request: Request, scope: str | None = None) -> dict[str, Any]:
-        internal_run(request)
-        return {"tools": registry.describe(scope)}
+        return {"tools": manager.describe(internal_run(request), scope)}
 
     @app.post("/internal/v1/tools/{name}")
     async def internal_call(request: Request, name: str, body: InternalCall) -> dict[str, Any]:
@@ -1367,6 +1459,10 @@ def _secure(response: Response) -> Response:
     for key, value in SECURITY_HEADERS.items():
         response.headers.setdefault(key, value)
     return response
+
+
+def public_memory(memory: dict[str, Any]) -> dict[str, Any]:
+    return {k: memory[k] for k in ("id", "text", "run_id", "created_at")}
 
 
 def _sse(event: dict[str, Any]) -> str:

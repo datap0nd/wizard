@@ -27,7 +27,13 @@
     "check": {"type": "object", "required": ["status"],
               "properties": {"status": {"enum": ["CHECKED", "NOT_CHECKED", "DISCREPANCY"]}, "summary": {"type": ["string", "null"]}}},
     "warnings": {"type": "array", "items": {"type": "string"}},
-    "timeline": {"type": "array"}
+    "timeline": {"type": "array"},
+    "systems": {"type": ["array", "null"], "items": {"type": "string"},
+                "description": "The systems the person chose for this question; null when Wizard could use every one (Auto)."},
+    "steers": {"type": "array", "items": {"type": "object", "required": ["id", "text", "reason", "about", "at", "state"]},
+               "description": "Notes the person sent while the answer was worked on, in their own words."},
+    "rejected_evidence": {"type": "array", "items": {"type": "string", "pattern": "^E[0-9]+$"},
+                          "description": "Evidence of steps the person marked Not this."}
   },
   "$defs": {
     "evidence": {

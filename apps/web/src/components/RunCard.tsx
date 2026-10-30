@@ -1,5 +1,5 @@
-import {memo, useEffect, useState} from 'react';
-import {AlertTriangle, CalendarClock, ChevronDown, Copy, ExternalLink, Flag, Info, Link2, ListTree, Mail, RotateCcw, ShieldCheck, Square} from 'lucide-react';
+import {memo, useContext, useEffect, useState} from 'react';
+import {AlertTriangle, CalendarClock, ChevronDown, Copy, ExternalLink, Flag, Info, Layers, Link2, ListTree, Mail, RotateCcw, ShieldCheck, Square} from 'lucide-react';
 import {placedVisuals} from '@/citations';
 import {sourceCount, sourceGroups} from '@/sources';
 import {clock, duration} from '@/format';
@@ -13,7 +13,9 @@ import {Diagnostics} from './Diagnostics';
 import {MadeFiles} from './Attachments';
 import {RecurringCard} from './RecurringCard';
 import {AccessRequestCard} from './AccessRequestCard';
-import {SystemsStage} from './SystemsStage';
+import {SteerNotes, SystemRequests} from './Steering';
+import {SystemsContext, SystemsStage} from './SystemsStage';
+import {onlyNames} from '@/systems';
 import {VisualBlock} from './VisualBlock';
 import mark from '@/assets/wizard-mark.svg';
 import type {Cadence, RunView, Schedule} from '@/types';
@@ -75,6 +77,16 @@ function CheckPanel({run}: {run: RunView}) {
   );
 }
 
+/** The systems the person chose for this answer (Auto shows nothing). */
+function OnlySystems({ids}: {ids: string[]}) {
+  const names = onlyNames(ids, useContext(SystemsContext));
+  return <Hint text="You chose the systems for this question; the others were switched off.">
+    <span className="inline-flex max-w-full items-center gap-1 truncate rounded-full border border-accent-line bg-accent-soft px-2 py-0.5 text-[11.5px] font-medium text-accent" data-testid="only-systems">
+      <Layers className="size-3 shrink-0" /><span className="truncate">Only: {names.join(', ')}</span>
+    </span>
+  </Hint>;
+}
+
 /** Why the answer failed, in full: Google's own reason and words, what Gemini sent back, the last tool call and where
  * the run had got to. Copy puts it all on the clipboard with the question, to send to whoever helps. */
 function ErrorDetails({run}: {run: RunView}) {
@@ -119,10 +131,12 @@ export const RunCard = memo(function RunCard({run, onEvidence, onCheck, onCancel
         {run.runtime === 'replay' && <RuntimeBadge kind={run.runtime} label={run.runtimeLabel} />}
         {(run.dataMode || run.status === 'succeeded') && <DataModeBadge mode={run.dataMode} />}
         {run.status === 'succeeded' && run.kind === 'ask' && <CheckBadge status={run.checkStatus} />}
+        {run.systems && <OnlySystems ids={run.systems} />}
         {running ? <Elapsed since={run.createdAt} /> : took && <span className="ml-auto text-xs text-ink-3">{took}</span>}
       </header>
       <div className="space-y-4 px-5 py-4 sm:px-6">
         <SystemsStage run={run} onEvidence={id => onEvidence(run, id)} />
+        <SteerNotes run={run} />
         <ActivityTimeline run={run} onEvidence={id => onEvidence(run, id)} />
         {text && <AnswerMarkdown text={text} visuals={run.visuals} streaming={running} onEvidence={id => onEvidence(run, id)} />}
         {loose.map(v => <VisualBlock key={v.id} visual={v} onEvidence={id => onEvidence(run, id)} />)}
@@ -130,6 +144,7 @@ export const RunCard = memo(function RunCard({run, onEvidence, onCheck, onCancel
         {run.schedules.map(schedule => <RecurringCard key={schedule.id} schedule={schedule}
           onCreate={s => onSchedule?.(run, s, 'create')} onDismiss={s => onSchedule?.(run, s, 'dismiss')} />)}
         {run.accessRequests.map(request => <AccessRequestCard key={request.id} request={request} />)}
+        <SystemRequests run={run} />
         <CheckPanel run={run} />
         {run.warnings.length > 0 && run.status !== 'running' && (
           <ul className="space-y-1 rounded-xl border border-warn-line bg-warn-soft px-4 py-2 text-[13px] text-warn" data-testid="warnings">

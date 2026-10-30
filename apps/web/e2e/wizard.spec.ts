@@ -280,3 +280,51 @@ test('the roadmap shows what Wizard does, and the next Friday on each arrow key'
   await page.getByRole('link', {name: 'Ask Wizard'}).click();
   await expect(page).toHaveURL(/\/$/);
 });
+
+test('the systems picker limits a question to the systems ticked, and the conversation keeps them', async ({page}) => {
+  await signIn(page, 'u-ceo');
+  const picker = page.getByTestId('systems-picker');
+  await expect(picker).toHaveAttribute('data-choice', 'auto');
+  await picker.click();
+  await page.locator('[data-testid=system-option][data-system=nerp]').click();
+  await page.keyboard.press('Escape');
+  // The knowledge base comes on with the first system ticked.
+  await expect(picker).toHaveAttribute('data-choice', 'nerp,knowledge');
+  await page.getByLabel('Your question').fill('Show the campaign notes for Egypt in Q3');
+  await page.getByTestId('send').click();
+  const card = page.getByTestId('run-card').first();
+  await expect(card).toHaveAttribute('data-status', 'succeeded', {timeout: 30_000});
+  await expect(card.getByTestId('only-systems')).toHaveText('Only: NERP, Knowledge base');
+  await page.reload();
+  await expect(page.getByTestId('systems-picker')).toHaveAttribute('data-choice', 'nerp,knowledge');
+  await page.getByTestId('systems-picker').click();
+  await page.getByTestId('system-auto').click();
+  await expect(page.getByTestId('systems-picker')).toHaveAttribute('data-choice', 'auto');
+});
+
+test('Not this on a step of a finished answer asks again, and Remember keeps a note for later questions', async ({page}) => {
+  await signIn(page, 'u-cfo');
+  await page.getByLabel('Your question').fill('Show the campaign notes for Egypt in Q3');
+  await page.getByTestId('send').click();
+  const first = page.getByTestId('run-card').first();
+  await expect(first).toHaveAttribute('data-status', 'succeeded', {timeout: 30_000});
+  await first.getByTestId('timeline').getByRole('button').first().click();
+  await first.getByTestId('not-this').first().click();
+  await first.getByRole('radio', {name: 'Wrong period'}).click();
+  await first.getByLabel('What should Wizard use instead').fill('use Q2 2026');
+  await first.getByTestId('not-this-send').click();
+  await expect(page.getByTestId('user-turn').nth(1)).toContainText('Not this step: Read NERP');
+  await expect(page.getByTestId('user-turn').nth(1)).toContainText('wrong period. use Q2 2026 Redo the answer.');
+  await expect(page.getByTestId('run-card').nth(1)).toHaveAttribute('data-status', 'succeeded', {timeout: 30_000});
+
+  await page.getByTestId('user-turn').first().hover();
+  await page.getByTestId('remember').first().click();
+  await page.getByLabel('What Wizard should remember').fill('Campaign notes: always show Egypt first.');
+  await page.getByTestId('remember-form').getByRole('button', {name: 'Remember'}).click();
+  await expect(page.getByTestId('remembered')).toBeVisible();
+  await page.getByTestId('account-button').click();
+  const notes = page.getByTestId('remembered-notes');
+  await expect(notes.getByTestId('remembered-note')).toHaveText(['Campaign notes: always show Egypt first.']);
+  await notes.getByRole('button', {name: 'Delete the note'}).click();
+  await expect(notes.getByTestId('remembered-note')).toHaveCount(0);
+});

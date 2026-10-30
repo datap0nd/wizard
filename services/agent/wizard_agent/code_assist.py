@@ -43,6 +43,9 @@ API_BASE = "https://cloudcode-pa.googleapis.com/v1internal"
 # Model turns per run: a runaway backstop only. The run's time limit and Wizard's tool checks (runs.py) end a long run
 # with an answer; this guards against a model that keeps calling tools after they refuse.
 MAX_STEPS = 200
+# A call in a step that had not run yet when the person sent a note: Gemini reads the note first and decides again.
+NOT_RUN = {"code": "not_run", "message": "Not run: the person sent you a note while this step was running. Read it and "
+                                        "decide your next calls again."}
 MAX_RETRIES = 10             # Gemini CLI's DEFAULT_MAX_ATTEMPTS: with 5-30 s backoff, about 4 minutes in all
 CAPACITY_RETRIES = 2         # quick tries before leaving a model Google has no room for (Gemini CLI: 1 s, then 3 s)
 QUICK_TRY_S = 3.0            # the longest quick try; a longer wait Google asks for goes to the other model instead
@@ -307,6 +310,7 @@ def summarize_quota(raw: dict[str, Any], model: str) -> dict[str, Any]:
 
 class CodeAssistRuntime:
     kind: RuntimeKind = "code-assist"
+    steering = True  # Wizard runs the loop, so a note joins the conversation before the next step
 
     def __init__(self, model: str, secret_box: SecretBox, project: str | None = None, thinking: str = "high",
                  api_base: str = API_BASE, transport: httpx.AsyncBaseTransport | None = None, proxy: str | None = None,
@@ -556,14 +560,16 @@ class CodeAssistRuntime:
             await emit("agent_session", {"session_id": request.run_id, "model": model, "project": project})
             if rested:  # a used-up quota is the person's to know; Google's capacity is not
                 await emit("status", {"message": limit_message(rested, chosen, model).replace(" continues ", " answers ")})
-            declarations = [{"name": t["name"], "description": t["description"], "parameters": gemini_schema(t["inputSchema"])}
-                            for t in tools.describe()]
-            run = _Models(self, request, project, chosen, self.fallback_model, model, declarations)
+            run = _Models(self, request, project, chosen, self.fallback_model, model, declarations(tools))
             contents: list[dict[str, Any]] = [{"role": "user", "parts": [{"text": request.prompt}]}]
             totals = {"tool_calls": 0, "input_tokens": 0, "output_tokens": 0}
             for step in range(1, MAX_STEPS + 1):
                 if cancelled():
                     raise AgentFailure("cancelled", "The run was cancelled.")
+                # The person's notes join the turn Gemini reads next (after the tool results), and a system they switched
+                # on mid-run brings its tools. Tools are never taken away mid-run: a switched-off system's tools refuse.
+                contents[-1]["parts"].extend({"text": note} for note in await tools.take_steers())
+                run.declarations = declarations(tools)
                 reply = await self._step(http, token, run, contents, emit)
                 tries = [run.model]
                 while reply.empty:
@@ -574,10 +580,16 @@ class CodeAssistRuntime:
                          reply.usage.get("promptTokenCount", "?"), len(reply.calls))
                 contents.append({"role": "model", "parts": reply.parts})
                 if not reply.calls:
+                    if tools.steers_waiting():  # a note came while Gemini wrote: it reads the note and goes on
+                        contents.append({"role": "user", "parts": [{"text": note} for note in await tools.take_steers()]})
+                        continue
                     await emit("agent_stats", {"stats": totals})
                     return
                 responses = []
                 for call in reply.calls:
+                    if tools.steers_waiting():
+                        responses.append({"functionResponse": {"name": call.get("name"), "response": {"error": NOT_RUN}}})
+                        continue
                     totals["tool_calls"] += 1
                     ok, text = await tools.call(str(call.get("name")), dict(call.get("args") or {}))
                     payload = json.loads(text)
@@ -608,6 +620,11 @@ class CodeAssistRuntime:
         again = await self._step(http, token, run, contents, emit)
         tries.append(run.model)  # the model that answered: Google's capacity may have moved the step
         return again
+
+
+def declarations(tools: ToolBridge) -> list[dict[str, Any]]:
+    return [{"name": t["name"], "description": t["description"], "parameters": gemini_schema(t["inputSchema"])}
+            for t in tools.describe()]
 
 
 class _Models:

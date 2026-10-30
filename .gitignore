@@ -40,3 +40,6 @@ apps/web/playwright-report/
 Thumbs.db
 .idea/
 .vscode/
+
+# Scratch the real Gemini CLI tests leave at the repository root (workpc/.gemini and templates/ are real).
+/.gemini/

@@ -132,6 +132,7 @@ def classify(message: str) -> tuple[str, str]:
 
 class GeminiCliRuntime:
     kind: RuntimeKind = "gemini-cli"
+    steering = False  # the prompt goes in once over stdin: a note stops the run and asks again
 
     def __init__(self, config: GeminiCliConfig):
         self.config = config

@@ -1,14 +1,16 @@
 import {useState} from 'react';
-import {AlertTriangle, BookOpen, Calculator, ChartColumn, CheckCircle2, ChevronDown, Database, Globe, Loader2, MessageSquareText, Search, ShieldCheck, XCircle} from 'lucide-react';
+import {AlertTriangle, BookOpen, Calculator, ChartColumn, CheckCircle2, ChevronDown, Clock3, Database, Globe, Loader2, MessageSquareText, Search, ShieldCheck, UserRound, XCircle} from 'lucide-react';
 import {clock, spoken} from '@/format';
 import {cn} from '@/lib/utils';
 import type {RunView, TimelineItem} from '@/types';
 import {PortalSignIn} from './PortalSignIn';
+import {NotThis} from './Steering';
 
 function icon(item: TimelineItem) {
   if (item.kind === 'note') return <MessageSquareText />;
   if (item.kind === 'warning') return <AlertTriangle className="text-warn" />;
   if (item.kind === 'status') return <Loader2 />;
+  if (item.kind === 'steer') return <UserRound className="text-accent" />;
   const name = item.name ?? '';
   if (name === 'portal_run') return <Globe />;
   if (name.endsWith('run_report')) return <Database />;
@@ -21,6 +23,8 @@ function icon(item: TimelineItem) {
 }
 
 function stateIcon(item: TimelineItem) {
+  if (item.kind === 'steer') return item.state === 'ok'
+    ? <CheckCircle2 className="size-3.5 text-ok" aria-label="read by Wizard" /> : <Clock3 className="size-3.5 text-ink-3" aria-label="waiting for the current step" />;
   if (item.kind !== 'tool') return null;
   if (item.state === 'running') return <Loader2 className="size-3.5 animate-spin text-accent" aria-label="running" />;
   if (item.state === 'error') return <XCircle className="size-3.5 text-danger" aria-label="failed" />;
@@ -68,13 +72,14 @@ export function ActivityTimeline({run, onEvidence}: {run: RunView; onEvidence: (
               <span className="mt-0.5 shrink-0 text-ink-3 [&_svg]:size-4">{icon(item)}</span>
               <div className="min-w-0 flex-1">
                 <div className={cn('flex flex-wrap items-center gap-1.5', item.kind === 'note' ? 'italic text-ink-2' : 'text-ink')}>
-                  <span className="break-words">{item.label}</span>{stateIcon(item)}
+                  <span className="break-words">{item.kind === 'steer' ? `You: ${item.label}` : item.label}</span>{stateIcon(item)}
                   {item.evidence && <button type="button" onClick={() => onEvidence(item.evidence!.id)} className="rounded bg-accent-soft px-1.5 text-[11px] font-semibold text-accent hover:bg-accent-line/60">{item.evidence.id}</button>}
                 </div>
                 {item.summary && <p className={cn('text-xs', item.state === 'error' ? 'text-danger' : 'text-ink-3')}>{item.summary}</p>}
                 {item.state === 'error' && item.summary?.startsWith('sign_in_required') && <div className="mt-1.5"><PortalSignIn compact /></div>}
                 {item.evidence?.access_note && <p className="text-xs text-warn">{item.evidence.access_note}</p>}
                 {item.evidence?.warnings?.map(w => <p key={w} className="text-xs text-warn">{w}</p>)}
+                <NotThis run={run} item={item} />
               </div>
               <Timing item={item} startedAt={run.startedAt} />
             </li>

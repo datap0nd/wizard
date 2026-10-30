@@ -32,6 +32,7 @@ def redact(text: str, *secrets: str) -> str:
 class Turn:
     question: str
     answer: str
+    work: list[str] = field(default_factory=list)  # what Wizard read for that answer: tools, SQL, evidence, the person's notes
 
 
 @dataclass
@@ -52,7 +53,8 @@ Emit = Callable[[str, dict[str, Any]], Awaitable[None]]
 
 
 class ToolBridge(Protocol):
-    """In-process tool execution through the run manager (same checks and evidence as the MCP path)."""
+    """In-process tool execution through the run manager (same checks and evidence as the MCP path), and the notes the
+    person sends while the run works."""
 
     async def call(self, name: str, arguments: dict[str, Any]) -> tuple[bool, str]: ...
 
@@ -60,10 +62,19 @@ class ToolBridge(Protocol):
 
     def evidence_index(self) -> list[dict[str, Any]]: ...
 
+    def steers_waiting(self) -> bool:
+        """The person sent a note (a steer) that Gemini has not read yet."""
+        ...
+
+    async def take_steers(self) -> list[str]:
+        """The person's notes not yet handed to Gemini, as Gemini reads them; each is marked read on the page."""
+        ...
+
 
 class AgentRuntime(Protocol):
     kind: RuntimeKind
     model: str
+    steering: bool  # the person's notes reach Gemini while the run works (otherwise a note stops it and asks again)
 
     def label(self) -> str: ...
 

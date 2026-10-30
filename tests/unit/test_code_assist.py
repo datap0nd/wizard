@@ -55,10 +55,21 @@ class FakeGoogle:
 class Bridge:
     def __init__(self):
         self.calls = []
+        self.steers: list[str] = []  # notes the person sent, not yet read by Gemini
+        self.on_call = None  # called with each tool call: a test sends a note mid-step
 
     async def call(self, name, arguments):
         self.calls.append((name, arguments))
+        if self.on_call:
+            self.on_call(name)
         return True, json.dumps({"evidence_id": "E1", "rows": [["EG", 1500000]]})
+
+    def steers_waiting(self):
+        return bool(self.steers)
+
+    async def take_steers(self):
+        taken, self.steers = self.steers, []
+        return taken
 
     def describe(self):
         return [{"name": "nerp_run_report", "description": "d", "inputSchema": {"type": "object", "properties": {

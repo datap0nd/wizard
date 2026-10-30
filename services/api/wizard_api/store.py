@@ -1,6 +1,6 @@
 """SQLite store for development and the restricted pilot: users, conversations, runs, run events, evidence, visuals,
-checks, recurring-extraction proposals, dated reports, attached files, Gemini account links, audit log and evaluation
-feedback.
+checks, recurring-extraction proposals, dated reports, attached files, Gemini account links, the notes each person asked
+Wizard to remember, audit log and evaluation feedback.
 
 SQLite is the development default, not an approved production database (Step 02/15 decide with IT). All reads are
 scoped by user id; there is no query that returns another user's conversation, run, evidence or report."""
@@ -53,7 +53,13 @@ CREATE TABLE IF NOT EXISTS schedules(id TEXT PRIMARY KEY, conversation_id TEXT N
   run_id TEXT NOT NULL, user_id TEXT NOT NULL, status TEXT NOT NULL, payload TEXT NOT NULL, flow TEXT, error TEXT,
   created_at TEXT, updated_at TEXT);
 CREATE INDEX IF NOT EXISTS schedules_conversation ON schedules(conversation_id);
+CREATE TABLE IF NOT EXISTS memories(id TEXT PRIMARY KEY, user_id TEXT NOT NULL, text TEXT NOT NULL, run_id TEXT,
+  created_at TEXT);
+CREATE INDEX IF NOT EXISTS memories_user ON memories(user_id, created_at);
 """
+# Columns added after a database was first created. Nullable, so an older release still reads and writes the table.
+ADDED_COLUMNS = {"runs": {"systems": "TEXT"}}
+MAX_MEMORIES = 50
 
 
 def now() -> str:
@@ -78,6 +84,11 @@ class Store:
             self.db.execute("PRAGMA journal_mode=WAL")
             self.db.execute("PRAGMA foreign_keys=ON")
             self.db.executescript(SCHEMA)
+            for table, added in ADDED_COLUMNS.items():
+                have = {row[1] for row in self.db.execute(f"PRAGMA table_info({table})")}
+                for column, kind in added.items():
+                    if column not in have:
+                        self.db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
             self.db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
 
     def _q(self, sql: str, args: tuple = ()) -> list[sqlite3.Row]:
@@ -349,6 +360,25 @@ class Store:
             return None
         self._x("DELETE FROM attachments WHERE id=? AND user_id=? AND conversation_id IS NULL", (attachment_id, user_id))
         return found
+
+    # Notes the person asked Wizard to remember: their own, in every request they make ----------------------------------
+    def add_memory(self, user_id: str, text: str, run_id: str | None = None) -> dict[str, Any]:
+        with self.lock:
+            count = self.db.execute("SELECT COUNT(*) FROM memories WHERE user_id=?", (user_id,)).fetchone()[0]
+            if count >= MAX_MEMORIES:
+                raise ValueError(f"Wizard keeps up to {MAX_MEMORIES} notes for you. Delete one first.")
+            memory = {"id": new_id("mem"), "user_id": user_id, "text": text, "run_id": run_id, "created_at": now()}
+            self.db.execute("INSERT INTO memories(id,user_id,text,run_id,created_at) VALUES(?,?,?,?,?)", tuple(memory.values()))
+        return memory
+
+    def memories(self, user_id: str) -> list[dict[str, Any]]:
+        return [dict(r) for r in self._q("SELECT * FROM memories WHERE user_id=? ORDER BY created_at", (user_id,))]
+
+    def update_memory(self, user_id: str, memory_id: str, text: str) -> bool:
+        return self._x("UPDATE memories SET text=? WHERE id=? AND user_id=?", (text, memory_id, user_id)) == 1
+
+    def delete_memory(self, user_id: str, memory_id: str) -> bool:
+        return self._x("DELETE FROM memories WHERE id=? AND user_id=?", (memory_id, user_id)) == 1
 
     # Audit and feedback ------------------------------------------------------------------------------------------------
     def audit(self, user_id: str, action: str, *, run_id: str | None = None, system: str | None = None,

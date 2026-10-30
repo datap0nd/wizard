@@ -1,5 +1,5 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {api, ApiError, eventsUrl, onSession} from './api';
+import {api, ApiError, eventsUrl, onSession, type SteerResult} from './api';
 import {buildEmail, emlFile, emlName} from './email';
 import {applyEvent, emptyRun, fromRecord, TERMINAL, withSchedule} from './runState';
 import {AccountDialog} from './components/AccountDialog';
@@ -14,13 +14,16 @@ import {EvidenceDrawer} from './components/EvidenceDrawer';
 import {LoginScreen} from './components/LoginScreen';
 import {QuickEmpty, QuickHeader} from './components/QuickPanel';
 import {SettingsDialog} from './components/SettingsDialog';
+import {SteerContext, type SteerActions} from './components/Steering';
 import {SystemsContext} from './components/SystemsStage';
 import {Sidebar} from './components/Sidebar';
 import {WizardSprite} from './components/WizardSprite';
 import {dropToHost, onHost, toHost, type DroppedFile} from './host';
 import {cn} from './lib/utils';
+import {choosable, conversationChoice, withFiles} from './systems';
 import {wizardAnimation} from './wizard';
-import type {Attachment, Bootstrap, Cadence, ConversationSummary, EvidenceSummary, LocalFile, RunEvent, RunView, Schedule} from './types';
+import type {Attachment, Bootstrap, Cadence, ConversationSummary, EvidenceSummary, LocalFile, RunEvent, RunView, Schedule, SteerReason,
+  SystemRequest, TimelineItem} from './types';
 
 const LAST = 'wizard-conversation';
 
@@ -32,6 +35,8 @@ export function App({compact = false}: {compact?: boolean}) {
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [runs, setRuns] = useState<RunView[]>([]);
   const [draft, setDraft] = useState('');
+  /** The systems picker for this conversation: null is Auto. */
+  const [chosen, setChosen] = useState<string[] | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [drawer, setDrawer] = useState<{items: EvidenceSummary[]; focus: string | null} | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
@@ -124,6 +129,7 @@ export function App({compact = false}: {compact?: boolean}) {
     const views = data.runs.map(fromRecord);
     views.forEach(v => questions.current.set(v.id, v.question));
     setRuns(views);
+    setChosen(conversationChoice(views));
     for (const record of data.runs) if (record.active) follow(record.id, Math.max(0, ...record.events.map(e => e.seq)), record.parent_run_id);
   }, [follow]);
 
@@ -167,15 +173,18 @@ export function App({compact = false}: {compact?: boolean}) {
     window.addEventListener('keydown', keydown);
     return () => window.removeEventListener('keydown', keydown);
   }, [compact, dialogOpen]);
-  const ask = useCallback(async (question: string) => {
+  const available = useMemo(() => choosable(boot?.systems ?? []), [boot?.systems]);
+  const ask = useCallback(async (question: string, systems: string[] | null = chosen) => {
     setNotice(null);
     try {
       const ready = files.filter(f => f.state === 'ok' && f.attachment).map(f => f.attachment!.id);
-      const started = await api.ask(question, currentId, ready);
+      const using = ready.length ? withFiles(systems, available) : systems;
+      const started = await api.ask(question, currentId, ready, using);
       questions.current.set(started.run_id, question);
       if (started.conversation_id !== currentId) { setCurrentId(started.conversation_id); localStorage.setItem(LAST, started.conversation_id); }
+      setChosen(using);
       setRuns(prev => [...(started.conversation_id === currentId ? prev : []),
-        {...emptyRun(started.run_id, started.conversation_id, question), attachments: started.attachments ?? []}]);
+        {...emptyRun(started.run_id, started.conversation_id, question), attachments: started.attachments ?? [], systems: using}]);
       setDraft('');
       files.filter(f => f.state === 'failed' && f.attachment).forEach(f => void api.removeAttachment(f.attachment!.id).catch(() => undefined));
       setFiles([]);
@@ -184,7 +193,46 @@ export function App({compact = false}: {compact?: boolean}) {
     } catch (e) {
       setNotice(e instanceof ApiError && e.loginRequired ? 'You were signed out. Your question is still here: send it again.' : e instanceof Error ? e.message : 'The question could not be sent.');
     }
-  }, [currentId, files, follow, refreshConversations]);
+  }, [available, chosen, currentId, files, follow, refreshConversations]);
+
+  /** A note that became the next question (an answer already finished, or a connection that cannot take notes). */
+  const followed = useCallback((result: SteerResult) => {
+    const next = result.follow_up;
+    if (!next) return;
+    questions.current.set(next.run_id, next.question);
+    setRuns(prev => [...prev, {...emptyRun(next.run_id, next.conversation_id, next.question), systems: next.systems}]);
+    follow(next.run_id, 0, null);
+    void refreshConversations();
+  }, [follow, refreshConversations]);
+
+  const steerRun = useCallback(async (runId: string, note: {text?: string; call_id?: string; reason?: SteerReason}) => {
+    setNotice(null);
+    try { followed(await api.steer(runId, note)); return true; }
+    catch (e) { setNotice(e instanceof Error ? e.message : 'The note could not be sent.'); return false; }
+  }, [followed]);
+
+  const choose = useCallback((next: string[] | null) => {
+    setChosen(next);
+    const running = runs.find(r => r.status === 'running' || r.status === 'queued');
+    if (running) void api.setSystems(running.id, next).catch(() => undefined);  // it may have just finished
+  }, [runs]);
+
+  const steerActions: SteerActions = useMemo(() => ({
+    live: !!boot?.runtime?.steering,
+    notThis: async (run: RunView, step: TimelineItem, reason: SteerReason, text: string) => {
+      await steerRun(run.id, {text, call_id: step.key, reason});
+    },
+    remember: async (text: string, runId: string | null) => {
+      try { await api.remember(text, runId); setNotice('Wizard will remember this in your next questions. Account → What Wizard remembers lists your notes.'); return true; }
+      catch (e) { setNotice(e instanceof Error ? e.message : 'The note could not be kept.'); return false; }
+    },
+    turnOn: (run: RunView, request: SystemRequest) => {
+      const next = Array.from(new Set([...(chosen ?? run.systems ?? []), request.system]));
+      if (run.status === 'running' || run.status === 'queued') { choose(next); return; }
+      setChosen(next);
+      void ask(`Continue with ${request.name} switched on.`, next);
+    },
+  }), [ask, boot?.runtime?.steering, choose, chosen, steerRun]);
 
   const check = useCallback(async (run: RunView) => {
     try {
@@ -243,7 +291,7 @@ export function App({compact = false}: {compact?: boolean}) {
     return Array.from(seen.values());
   }, [runs]);
 
-  const newChat = useCallback(() => { streams.current.forEach(s => s.close()); streams.current.clear(); setCurrentId(null); setRuns([]); setDraft(''); localStorage.removeItem(LAST); }, []);
+  const newChat = useCallback(() => { streams.current.forEach(s => s.close()); streams.current.clear(); setCurrentId(null); setRuns([]); setDraft(''); setChosen(null); localStorage.removeItem(LAST); }, []);
 
   if (fatal) return <div className="grid min-h-dvh place-items-center p-6 text-sm text-danger" role="alert">{fatal}</div>;
   if (!boot) return <div className="grid min-h-dvh place-content-center justify-items-center gap-2 text-sm text-ink-3"><WizardSprite animation="idle" scale={2} />Loading Wizard…</div>;
@@ -254,20 +302,21 @@ export function App({compact = false}: {compact?: boolean}) {
   const blocked = runtime.ready ? null : runtime.reason ?? 'Gemini is not available.';
   const title = conversations.find(c => c.id === currentId)?.title ?? (compact ? 'Ask Wizard' : 'New analysis');
   const conversation = (empty: React.ReactNode) => (
-    <SystemsContext.Provider value={boot.systems ?? []}>
+    <SystemsContext.Provider value={boot.systems ?? []}><SteerContext.Provider value={steerActions}>
       <Conversation runs={runs} busy={busy} empty={empty}
         onEvidence={(run, id) => setDrawer({items: id ? allEvidence : run.evidence, focus: id})}
-        onCheck={run => void check(run)} onCancel={run => void api.cancel(run.id)} onRetry={run => void ask(run.question)}
+        onCheck={run => void check(run)} onCancel={run => void api.cancel(run.id)} onRetry={run => void ask(run.question, run.systems)}
         onFeedback={(run, category) => void api.feedback(run.id, category).then(() => setNotice('Thanks — recorded in the evaluation log.'))}
         onEmail={run => void email(run)} onRecurring={(run, cadence) => void recurring(run, cadence)}
         onSchedule={(run, schedule, action) => void decide(run, schedule, action)} canRecur={!!boot.metronome?.enabled} />
-    </SystemsContext.Provider>
+    </SteerContext.Provider></SystemsContext.Provider>
   );
   const composer = (
     <div className={compact ? 'border-t border-line bg-canvas px-3 pb-2 pt-2.5' : 'border-t border-line bg-canvas px-4 pb-3 pt-3 md:px-6'}>
       {notice && <p className="mx-auto mb-2 max-w-[820px] rounded-lg bg-surface px-3 py-2 text-[13px] text-ink-2" role="status">{notice}</p>}
-      <Composer busy={busy} draft={draft} onDraftChange={setDraft} onSubmit={ask} disabledReason={blocked} focusSignal={focusTick}
-        placeholder={compact ? 'Ask Wizard anything' : undefined}
+      <Composer busy={busy} draft={draft} onDraftChange={setDraft} onSubmit={question => ask(question)} disabledReason={blocked} focusSignal={focusTick}
+        placeholder={compact ? 'Ask Wizard anything' : undefined} systems={available} chosen={chosen} onChoose={choose}
+        steer={working ? {live: !!runtime.steering, onSteer: async text => { if (await steerRun(working.id, {text})) setDraft(''); }} : null}
         files={files} onFiles={addFiles} onRemoveFile={removeFile} onLocal={boot.attachments?.from_this_pc ? () => setLocalOpen(true) : undefined} />
     </div>
   );

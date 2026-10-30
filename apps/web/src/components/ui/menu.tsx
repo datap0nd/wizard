@@ -17,6 +17,15 @@ export function DropdownMenuItem({className, danger, ...props}: React.ComponentP
 export const DropdownMenuLabel = ({className, ...props}: React.ComponentProps<typeof Menu.Label>) =>
   <Menu.Label className={cn('px-2 py-1 text-xs font-medium text-ink-3', className)} {...props} />;
 
+/** A ticked or unticked choice; the menu stays open so several can be ticked in a row. */
+export function DropdownMenuCheckboxItem({className, onSelect, ...props}: React.ComponentProps<typeof Menu.CheckboxItem>) {
+  return <Menu.CheckboxItem className={cn('flex cursor-pointer select-none items-center gap-2 rounded-md px-2 py-1.5 outline-none data-[highlighted]:bg-surface', className)}
+    onSelect={event => { event.preventDefault(); onSelect?.(event); }} {...props} />;
+}
+
+export const DropdownMenuSeparator = ({className, ...props}: React.ComponentProps<typeof Menu.Separator>) =>
+  <Menu.Separator className={cn('-mx-1 my-1 h-px bg-line', className)} {...props} />;
+
 export const TooltipProvider = TooltipPrimitive.Provider;
 
 /** Tooltip that also opens on keyboard focus. */

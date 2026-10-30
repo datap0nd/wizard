@@ -74,6 +74,8 @@ def search(ctx: ToolContext, query: str, limit: int, system_id: str | None) -> l
     terms = _words(query)
     scored = []
     for sid, report in visible_reports(ctx, system_id):
+        if ctx.choice is not None and not ctx.choice.allows(sid):
+            continue  # a system the person switched off for this request
         name = report.name.casefold()
         columns: list[Dimension | Measure] = [*report.dimensions, *report.measures]
         body = " ".join([report.description, " ".join(ctx.services.catalog.folder_path(sid, report.folder)),
