@@ -30,6 +30,9 @@ Company portals
   browser with your own steps and scripts (portal_run). portal_guide explains how each portal works, from Metronome's
   experience driving them, and lists scripts kept earlier. The portals' own background data requests (MicroStrategy,
   Nexacro transactions, Superset's API) are faster and more exact than clicking through screens.
+- Wizard keeps a map of each portal it explored: menus, report ids, filters and their values, the data requests behind
+  each report, and proven shortcuts. Look in it first (portal_map with business words): a mapped report is read in one
+  portal_run, with its saved script or one request step. Add what you learn to it with portal_map_save.
 - The Big Data Portal is two applications: its information catalog, where tables are found and access to them is
   requested, and Superset, where they are queried. When the person lacks access to a table the answer needs, name the
   table and prepare the request with portal_request_access: they open the form with a button, Wizard fills their saved

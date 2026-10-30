@@ -1,5 +1,5 @@
 import type {BrainLive, BrainMap} from './brain';
-import type {AccessForm, Answer, Attachment, Bootstrap, Cadence, ConversationSummary, Evidence, GeminiAccount, GeminiQuota, LocalFile, PortalCheck, PortalStatus, RecurringList, Report, RunRecord, SavedFile, Schedule, SettingsSaved, SettingsView, SourceCatalog, SourceSummary, UpdateInfo} from './types';
+import type {AccessForm, Answer, Attachment, Bootstrap, Cadence, ConversationSummary, Evidence, GeminiAccount, GeminiQuota, LocalFile, PortalCheck, PortalMapView, PortalStatus, RecurringList, Report, RunRecord, SavedFile, Schedule, SettingsSaved, SettingsView, SourceCatalog, SourceSummary, UpdateInfo} from './types';
 
 export class ApiError extends Error {
   constructor(message: string, public status: number, public code?: string, public loginRequired = false) { super(message); }
@@ -104,6 +104,10 @@ export const api = {
     request<AccessForm>(`/api/v1/portals/${encodeURIComponent(system)}/access-form`, {body: form}),
   openAccessRequest: (system: string, request_: {address?: string; tables?: string[]; answers?: Answer[]} = {}) =>
     request<PortalStatus>(`/api/v1/portals/${encodeURIComponent(system)}/access-request`, {body: request_}),
+  mapPortal: (system: string) => request<PortalMapView>(`/api/v1/portals/${encodeURIComponent(system)}/map`, {body: {}}),
+  stopMapping: (system: string) => request<PortalMapView>(`/api/v1/portals/${encodeURIComponent(system)}/map/stop`, {body: {}}),
+  publishMap: (system: string) => request<PortalMapView>(`/api/v1/portals/${encodeURIComponent(system)}/map/publish`, {body: {}}),
+  forgetMap: (system: string) => request<PortalMapView>(`/api/v1/portals/${encodeURIComponent(system)}/map`, {method: 'DELETE'}),
   health: () => request<{status: string; version: string}>('/api/v1/health'),
 };
 

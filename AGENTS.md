@@ -24,7 +24,8 @@ around a precomputed result is withdrawn. Its credential, entitlement, DLP and h
 - Run each Gemini request under the requesting user's own enterprise identity, with isolated per-user state
   (`GEMINI_CLI_HOME` + `GEMINI_FORCE_FILE_STORAGE=true`, or the per-user Code Assist token).
 - Keep company content (knowledge notes, report catalogs) in the owner's private enterprise GitHub repository, which the
-  desktop app reads with a read-only token, or in a local `content\` folder. Company settings and credentials reach a
+  desktop app reads with a read-only token, or in a local `content\` folder. Wizard writes there only its portal maps
+  (`portal-maps/`), with the write token the person enters in Settings on their own PC. Company settings and credentials reach a
   PC only in the provisioning file (`wizard.provision`), stored with DPAPI on import. See
   [docs/decisions/2026-10-20-desktop-app.md](docs/decisions/2026-10-20-desktop-app.md) and [docs/desktop.md](docs/desktop.md).
 - Ship every change (owner): merge it into `main`, push, and confirm the `desktop-continuous` release was published
@@ -64,7 +65,12 @@ around a precomputed result is withdrawn. Its credential, entitlement, DLP and h
   clicked; confirmations are answered No; downloads are off; secrets are redacted from what Gemini sees; a sign-in page
   stops the read and Gemini never types credentials, and Wizard stores no password (only its own browser's session-only
   sign-in cookies, which Chrome drops on closing, kept through the secret store); evidence is `LIVE` /
-  `BROWSER_SESSION`, never verified.
+  `BROWSER_SESSION`, never verified. Gemini may also send a portal's data requests straight from that browser (the
+  `request` step: same session, same rules), and keeps a map of each portal it explored (owner decision,
+  [docs/decisions/2026-10-30-portal-maps.md](docs/decisions/2026-10-30-portal-maps.md)): **Map** in Settings → Portals
+  explores a portal in rounds, `portal_map` / `portal_map_save` read and add to the map on this PC, and Wizard publishes
+  it to the knowledge-base repository with the write token the person entered on their own PC. Maps hold metadata only
+  (no rows, secrets removed), and a company provisioning file never carries the write token.
   Access requests in the Big Data Portal's information catalog (owner decision,
   [docs/decisions/2026-10-28-bdp-access-requests.md](docs/decisions/2026-10-28-bdp-access-requests.md)):
   `portal_request_access` only proposes one; the person opens it with a button in a visible window of their Wizard
@@ -77,8 +83,9 @@ around a precomputed result is withdrawn. Its credential, entitlement, DLP and h
 - Commit corporate exports, live rows, credentials, tokens, cookies, `.env`, `*.provision`, the DLP-blocked DOCX, raw
   model/source logs, or owner reference answers. Live references live in the approved private location; CI sees safe
   IDs only. Never build a password or token into WizardSetup.exe or a release: they are public.
-- Use copied browser cookies, TLS bypass, `/mstr` event URLs or a debugging browser as a production connector. The
-  portal browser is none of these: its own profile, signed in by the person, driven by Playwright.
+- Disable TLS certificate checks. (Owner, 30 October 2026, [decision](docs/decisions/2026-10-30-portal-maps.md): the
+  older ban on copied browser cookies, `/mstr` event URLs and a debugging browser is lifted; use whatever route reads
+  the portals fastest, under the read-only and host rules above.)
 - Present SYNTHETIC output as live, call a navigation-only report a data connection, upgrade an unchecked figure to
   checked, call an investment-efficiency proxy "ROI", or describe observed Smart Switch counts as all switchers.
   The one staged motion, an owner decision

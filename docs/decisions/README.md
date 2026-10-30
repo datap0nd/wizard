@@ -20,3 +20,4 @@ Evidence**. A decision that changes repository rules also updates [AGENTS.md](..
 - [2026-10-28 The Brain page: what Wizard knows, as one picture, beside the app](2026-10-28-brain-page.md)
 - [2026-10-28 Wizard opens the access request form, filled from the person's saved answers](2026-10-28-bdp-access-requests.md)
 - [2026-10-28 The roadmap page: what Wizard does today and what comes next](2026-10-28-roadmap-page.md)
+- [2026-10-30 Wizard maps the portals, keeps the map, and reads them by their own requests](2026-10-30-portal-maps.md)

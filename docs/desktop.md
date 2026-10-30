@@ -168,7 +168,7 @@ of Wizard on this PC:
 | Section | Settings | Test |
 |---|---|---|
 | Gemini | Google Cloud project, company Google domains | — |
-| Knowledge base | Repository, read-only token, branch, folder, check interval | **Test connection**: can the token read the repository? |
+| Knowledge base | Repository, read-only token, write token (PAT, optional), branch, folder, check interval | **Test connection**: can the token read the repository, and can the write token write to it? With the write token, Wizard publishes its portal maps to `portal-maps/` ([decision](decisions/2026-10-30-portal-maps.md)); a company file never carries it |
 | Company database | Name people see (default "AI Team Database"), server, port, database, read-only user, password, SSL | **Test connection**: connects read-only and reports the user |
 | Portals | ASAP and GSCM addresses, the Big Data Portal's two (information catalog and Superset), browser (Chrome or Edge), other hosts the portals need; the **Access request form**: your usual answers on every Big Data Portal access request (field and answer) and an optional request page | **Sign in to the portals** opens Wizard's own browser visibly, one tab per portal (two for the Big Data Portal): sign in, then close it (or **Done**). The sign-in lasts as long as the portals' own sessions, across restarts too: Wizard keeps its browser's session cookies (DPAPI), never a password. **Check sign-in** opens each in the background and says whether it is signed in, or which page asked for a sign-in. **Open the request page** opens the catalog's request page with your answers filled in; you check it and submit it |
 | Network | Proxy | — |

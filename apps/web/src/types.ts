@@ -327,7 +327,40 @@ export interface PortalStatus {
   last_sign_in: string | null;
   /** parts: the applications of a portal that has several (the Big Data Portal's Superset and information catalog). */
   portals: {id: string; name: string; host: string; parts?: {id: string; name: string; host: string}[]; access_requests?: boolean}[];
+  /** What Wizard learned exploring each portal, and the portal being mapped now (one per person). */
+  maps?: Record<string, PortalMapStatus>;
+  mapping?: PortalMapping | null;
 }
+
+/** A portal's map: Gemini's exploration of it, kept on this PC and published to the knowledge base when it can. */
+export interface PortalMapStatus {
+  system: string;
+  updated: string | null;
+  has_overview: boolean;
+  topics: number;
+  reports: number;
+  reports_todo: number;
+  reports_mapped: number;
+  reports_partial: number;
+  reports_failed: number;
+  reports_skipped: number;
+  published?: {at: string; outcome: string; message: string; commit: string | null} | null;
+  /** Where the map comes from: this PC's own, the knowledge base's published copy, or none yet. */
+  source: 'this_pc' | 'knowledge_base' | 'none';
+  can_publish: boolean;
+}
+
+export interface PortalMapping {
+  system: string;
+  conversation_id: string;
+  started_at: string;
+  round: number;
+  run_id: string | null;
+  state: 'running' | 'finished' | 'stopped' | 'failed';
+  message: string;
+}
+
+export interface PortalMapView { map: PortalMapStatus; mapping: PortalMapping | null; message?: string }
 
 export interface Answer { label: string; value: string }
 

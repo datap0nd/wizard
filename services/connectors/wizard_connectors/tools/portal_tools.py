@@ -5,7 +5,11 @@ The scripts are Gemini's own, like its SQL: steps (open a page, click, fill, wai
 JavaScript evaluated in the page, where the portal's own data requests can be called with fetch() under the person's
 session (W.* helpers carry what Metronome learned about ASAP's MicroStrategy and GSCM's Nexacro). The rules that keep
 them read-only live in portals.py and portal_browser.py, inside the tool. Every table a script returns is evidence:
-LIVE (never verified), with the script as its query."""
+LIVE (never verified), with the script as its query.
+
+The portal map (portal_map.py) is what Gemini learned exploring a portal: how it works, its shortcuts and, per report,
+how to open it, its filters and the data requests that return its rows. portal_map reads it, portal_map_save adds to
+it, so a later question goes straight to the data."""
 from __future__ import annotations
 
 import json
@@ -17,7 +21,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .. import access_requests, portals
+from .. import access_requests, portal_map, portals
 from ..portal_browser import PortalError
 from .registry import UNTRUSTED_NOTICE, ToolContext, ToolError, ToolSpec
 
@@ -35,14 +39,21 @@ class Args(BaseModel):
 
 class Step(Args):
     action: Literal["goto", "click", "fill", "select", "press", "wait", "evaluate", "read_table", "look", "back",
-                    "use_page"] = Field(description=(
+                    "use_page", "request"] = Field(description=(
         "goto: open url (a path on the portal, or a portal address). click / fill / select: the element named by "
         "selector, role (+ name) or text; fill and select take value. press: a key (value, e.g. Enter). wait: for the "
         "element to be visible (or value 'hidden'), or value 'load'/'networkidle', or timeout_ms alone. evaluate: run "
         "script, JavaScript in the page (an async function body ending in return; W helpers and P parameters are "
         "defined). read_table: an HTML table as rows (selector, default the first table). look: the page's controls, "
-        "tables, frames and text, to explore. back: browser back. use_page: switch to open page number nth (popups)."))
-    url: str | None = Field(default=None, max_length=2000, description="goto: '/path?query' on the portal application the page is on, or a full portal address (portal_guide lists them; the Big Data Portal's information catalog and Superset have one each).")
+        "tables, frames and text, to explore. back: browser back. use_page: switch to open page number nth (popups). "
+        "request: send one data request (url, method, body, headers) straight from the browser with the person's "
+        "session cookies, without opening or waiting for a page: the fastest way to call a portal route the map "
+        "knows. The reply is parsed (Nexacro SSV or XML, JSON); a reply with one dataset comes back as a table, else "
+        "give script, a JavaScript body that gets R = {status, contentType, text, data} and returns a table."))
+    url: str | None = Field(default=None, max_length=4000, description="goto / request: '/path?query' on the portal application the page is on, or a full portal address (portal_guide lists them; the Big Data Portal's information catalog and Superset have one each).")
+    method: Literal["GET", "POST", "PUT"] | None = Field(default=None, description="request: the HTTP method (default POST with a body, else GET).")
+    body: str | None = Field(default=None, max_length=200_000, description="request: the request body exactly as the portal sends it (a Nexacro SSV or XML body, form fields, JSON); {{name}} parameters are filled in.")
+    headers: dict[str, str] | None = Field(default=None, description="request: headers the route needs, such as Content-Type (cookies are the browser's own).")
     selector: str | None = Field(default=None, max_length=500, description="Playwright selector: CSS ('[id=\"…btn_search\"]', '#content-frame'), 'text=Run', or 'role=button[name=\"Go\"]'.")
     role: str | None = Field(default=None, max_length=40, description="ARIA role, e.g. button, link, tab, menuitem, option.")
     name: str | None = Field(default=None, max_length=200, description="Accessible name with role.")
@@ -50,15 +61,15 @@ class Step(Args):
     frame: str | None = Field(default=None, max_length=200, description="Frame name (e.g. content-frame) or part of its address; default the page itself.")
     nth: int | None = Field(default=None, ge=0, le=50, description="Which match when several elements match (0 = first); for use_page, the page number.")
     value: str | None = Field(default=None, max_length=2000, description="Text to fill, option to select, key to press, or the wait condition.")
-    script: str | None = Field(default=None, max_length=30_000, description="evaluate: JavaScript body, e.g. 'const d = W.nexacro.read(\"ds_list\"); return d;'. Return a table as {columns, rows} or a list of objects to cite it.")
+    script: str | None = Field(default=None, max_length=30_000, description="evaluate: JavaScript body, e.g. 'const d = W.nexacro.read(\"ds_list\"); return d;'. request: what to return from the reply R, e.g. 'return R.data.datasets.ds_out;'. Return a table as {columns, rows} or a list of objects to cite it.")
     timeout_ms: int | None = Field(default=None, ge=500, le=150_000, description="Limit for this step (default 30000).")
     limit: int | None = Field(default=None, ge=5, le=200, description="look: how many controls to list (default 60).")
     save_as: str | None = Field(default=None, max_length=60, description="A short name for this step's result.")
 
     @model_validator(mode="after")
     def complete(self) -> Step:
-        if self.action == "goto" and not self.url:
-            raise ValueError("goto needs url")
+        if self.action in ("goto", "request") and not self.url:
+            raise ValueError(f"{self.action} needs url")
         if self.action == "evaluate" and not (self.script or "").strip():
             raise ValueError("evaluate needs script")
         if self.action in ("click", "fill", "select") and not (self.selector or self.role or self.text):
@@ -102,6 +113,79 @@ class RequestAccessArgs(Args):
     address: str | None = Field(default=None, max_length=2000, description="The page with the request form, or the table's page in the catalog where the person presses Request access (the full address you read it at). Omit to use the request page the person saved, else the catalog's start page.")
     tables: list[str] = Field(default_factory=list, max_length=20, description="The tables the person needs, as the catalog names them.")
     answers: list[Answer] = Field(default_factory=list, max_length=20, description="This request's own fields by the form's labels (the guide lists labels seen before), e.g. the reason, in the person's words from the question. Their saved answers (purpose, manager, duration...) are filled too.")
+
+
+MAP_ID = r"^[a-z0-9][a-z0-9_.-]{0,79}$"
+
+
+class MapTopic(Args):
+    id: str = Field(pattern=MAP_ID, description="Short stable id, e.g. open-report-by-menu-id, transactions, weeks.")
+    title: str = Field(min_length=3, max_length=160)
+    text: str = Field(min_length=10, max_length=20_000, description="What a later script needs: how it works, the exact calls, selectors, routes and formats, and the steps or JavaScript that proved it.")
+
+
+class MapFilter(Args):
+    name: str = Field(max_length=160, description="The filter's label on screen, e.g. Week, Market, Plan version.")
+    component: str | None = Field(default=None, max_length=400, description="Its component path or selector.")
+    kind: str | None = Field(default=None, max_length=60, description="Combo, MultiCombo, Calendar, Edit, Radio, CheckBox, popup...")
+    values: str | None = Field(default=None, max_length=6000, description="Its options (code = label, at most about 100) or format (e.g. YYYYWW, Sunday-start weeks), and where the options come from (an inner dataset, a lookup request).")
+    default: str | None = Field(default=None, max_length=400)
+    required: bool | None = None
+    param: str | None = Field(default=None, max_length=120, description="The request parameter or body field this filter sets.")
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class MapData(Args):
+    dataset: str = Field(max_length=160, description="The dataset name, e.g. ds_list.")
+    component: str | None = Field(default=None, max_length=400, description="The grid (or chart) showing it.")
+    columns: list[str] = Field(default_factory=list, max_length=300)
+    labels: str | None = Field(default=None, max_length=6000, description="Column ids with their screen headers and units, e.g. QTY = Sell-out units.")
+    rows_seen: int | None = Field(default=None, ge=0)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class MapRequest(Args):
+    name: str = Field(max_length=120, description="What it does, e.g. search, combo-markets.")
+    method: str = Field(default="POST", max_length=10)
+    url: str = Field(max_length=2000, description="The route, as a path on the portal (e.g. /gscm/xyz/selectList.do).")
+    body: str | None = Field(default=None, max_length=60_000, description="The body with the filter values as {{param}} placeholders, otherwise exactly as captured.")
+    headers: dict[str, str] | None = Field(default=None, description="Headers it needs (Content-Type...).")
+    params: list[str] = Field(default_factory=list, max_length=40, description="The {{param}} names in url and body, each matching a filter's param.")
+    reply: str | None = Field(default=None, max_length=2000, description="What comes back: dataset names, columns, paging.")
+    verified: bool = Field(default=False, description="True only when you sent it again with a changed filter and the reply matched what the screen shows.")
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class MapReport(Args):
+    id: str = Field(pattern=MAP_ID, description="Stable id: the menu id or a short kebab-case name, e.g. as470 or weekly-sellout.")
+    name: str | None = Field(default=None, max_length=200)
+    path: list[str] | None = Field(default=None, max_length=8, description="Menu path, top level first.")
+    menu_id: str | None = Field(default=None, max_length=120)
+    status: Literal["todo", "mapped", "partial", "failed", "skipped"] | None = Field(default=None, description="todo: listed, not mapped yet. mapped: open, filters, data and a proven fast route are known. partial: some of it. failed / skipped: say why in notes.")
+    summary: str | None = Field(default=None, max_length=3000, description="What the report shows in business words: measures, grain, period, units.")
+    open: str | None = Field(default=None, max_length=6000, description="The fastest proven way to open it (a call, steps or JavaScript), and how to tell it has loaded.")
+    filters: list[MapFilter] | None = Field(default=None, max_length=60)
+    data: list[MapData] | None = Field(default=None, max_length=30)
+    requests: list[MapRequest] | None = Field(default=None, max_length=20)
+    script: str | None = Field(default=None, pattern=SCRIPT_NAME, description="A saved script (portal_save_script) that reads it with parameters.")
+    notes: str | None = Field(default=None, max_length=6000, description="Pitfalls: waits, popups, paging, limits, why it failed.")
+
+
+class MapArgs(Args):
+    system: str = Field(pattern=SYSTEM, description="The portal: asap, gscm or bdp.")
+    find: str | None = Field(default=None, max_length=300, description="Business words or a report name: returns the best matching reports in full.")
+    report: str | None = Field(default=None, max_length=120, description="One report's id or menu id: returns it in full.")
+    topic: str | None = Field(default=None, max_length=80, description="One topic's id: returns its full text.")
+    todo: bool = Field(default=False, description="True: the reports still to map (todo, partial, failed), for exploring.")
+
+
+class MapSaveArgs(Args):
+    system: str = Field(pattern=SYSTEM)
+    overview: str | None = Field(default=None, max_length=30_000, description="How the portal works as a whole (replaces the old overview): the client, frames, sign-in and session, how menus and reports open, the data request format, waits and popups.")
+    topics: list[MapTopic] = Field(default_factory=list, max_length=30, description="Technical details and shortcuts, added or updated by id.")
+    reports: list[MapReport] = Field(default_factory=list, max_length=300, description="Reports added or updated by id; only the fields you give change.")
+    remove: list[str] = Field(default_factory=list, max_length=100, description="Report ids to drop (duplicates, entries that are not reports).")
+    note: str | None = Field(default=None, max_length=600, description="One line for the map's log: what this save adds.")
 
 
 def _portal(ctx: ToolContext, system: str) -> portals.Portal:
@@ -150,6 +234,13 @@ def guide(ctx: ToolContext, args: GuideArgs) -> dict[str, Any]:
             "guide": _guide_text(portal.id),
             "note": "Steps run in the person's own Wizard browser, signed in as them, in the background. Wizard refuses "
                     "writes (save, delete, submit, upload, request access, sign out...) and any host outside the portals."}
+    maps = ctx.services.portal_maps
+    if maps is not None:
+        data["map"] = {**maps.summary(portal.id),
+                       "how_to_use": "What Wizard learned exploring this portal. Look here first: portal_map(find=...) "
+                                     "returns a report's menu id, how to open it, its filters and the data request with "
+                                     "the filters as parameters, so one portal_run (a request step or the saved script) "
+                                     "reads it. Add what you learn with portal_map_save."}
     if portal.parts:
         data["applications"] = [{"part": part.id, "name": part.label, "address": part.url} for part in portal.parts]
     if portal.id in access_requests.REQUEST_PORTALS:
@@ -165,6 +256,8 @@ def guide(ctx: ToolContext, args: GuideArgs) -> dict[str, Any]:
 def _fill(value: Any, params: dict[str, str]) -> Any:
     if isinstance(value, str):
         return re.sub(r"\{\{([a-z][a-z0-9_]{0,39})\}\}", lambda m: params.get(m.group(1), m.group(0)), value)
+    if isinstance(value, dict):
+        return {k: _fill(v, params) for k, v in value.items()}
     return value
 
 
@@ -212,7 +305,7 @@ def run(ctx: ToolContext, args: RunArgs) -> dict[str, Any]:
     page = result.get("page", {})
     for output in result["outputs"]:
         value = output.pop("value", None)
-        table = portals.table_from(value) if output["action"] in ("evaluate", "read_table") else None
+        table = portals.table_from(value) if output["action"] in ("evaluate", "read_table", "request") else None
         if table is None:
             if value is not None:
                 output["value"] = _cap_value(value)
@@ -296,6 +389,53 @@ def save_script(ctx: ToolContext, args: SaveArgs) -> dict[str, Any]:
                     "this PC for this person only."}
 
 
+def _maps(ctx: ToolContext) -> portal_map.PortalMaps:
+    if ctx.services.portal_maps is None:
+        raise ToolError("portals_unavailable", "This Wizard keeps no portal maps (no portals are configured).")
+    return ctx.services.portal_maps
+
+
+def read_map(ctx: ToolContext, args: MapArgs) -> dict[str, Any]:
+    portal = _portal(ctx, args.system)
+    maps = _maps(ctx)
+    data: dict[str, Any] = {"system": portal.id, "source_text_policy": UNTRUSTED_NOTICE}
+    if args.report:
+        found = maps.report(portal.id, args.report)
+        if found is None:
+            raise ToolError("not_found", f"No report '{args.report}' in the {portal.name} map; portal_map(find=...) searches it.")
+        data["report"] = found
+    elif args.topic:
+        found = maps.topic(portal.id, args.topic)
+        if found is None:
+            raise ToolError("not_found", f"No topic '{args.topic}' in the {portal.name} map.")
+        data["topic"] = found
+    elif args.find:
+        data["reports"] = maps.find(portal.id, args.find)
+        if not data["reports"]:
+            data["note"] = "Nothing in the map matches: explore the portal (portal_guide), then save what you find."
+    elif args.todo:
+        data["todo"] = maps.todo(portal.id)
+        data["counts"] = maps.counts(maps.load(portal.id))
+    else:
+        data.update(maps.summary(portal.id))
+    return data
+
+
+def save_map(ctx: ToolContext, args: MapSaveArgs) -> dict[str, Any]:
+    portal = _portal(ctx, args.system)
+    if args.overview is None and not (args.topics or args.reports or args.remove):
+        raise ToolError("invalid_arguments", "Give an overview, topics, reports or report ids to remove.")
+    try:
+        result = _maps(ctx).save(portal.id, overview=args.overview, topics=[t.model_dump() for t in args.topics],
+                                 reports=[r.model_dump(exclude_none=True) for r in args.reports], remove=args.remove,
+                                 note=args.note)
+    except portal_map.MapError as error:
+        raise ToolError("map_full", str(error)) from None
+    return {"system": portal.id, **result,
+            "note": f"Saved in the {portal.name} map on this PC; Wizard publishes it to the knowledge base after this run "
+                    "when this PC has the knowledge base's write token."}
+
+
 def request_access(ctx: ToolContext, args: RequestAccessArgs) -> dict[str, Any]:
     portal = _portal(ctx, args.system)
     if portal.id not in access_requests.REQUEST_PORTALS:
@@ -333,8 +473,10 @@ PORTAL_TOOLS = [
              "Read a company portal live, in the person's own signed-in Wizard browser (Chrome, in the background): "
              "your own steps (open pages, click, fill, wait, look around, read tables) and JavaScript evaluated in the "
              "page, where W.* helpers read Nexacro datasets, walk ASAP's menu, replay the portal's own data requests "
-             "(W.requests, W.replay), search the Big Data Portal's information catalog and query Superset. Prefer the "
-             "portal's data requests over clicking through screens. Every table you return (a {columns, rows} object "
+             "(W.requests, W.replay), search the Big Data Portal's information catalog and query Superset, and request "
+             "steps that send a portal's data request straight from the browser with the person's session. Prefer the "
+             "portal's data requests over clicking through screens, and the map's (portal_map) routes and saved scripts "
+             "over exploring. Every table you return (a {columns, rows} object "
              "or a list of objects) is recorded as evidence with an id such as E3: cite it next to its numbers. The "
              "result also lists the data requests the page made, with secrets removed. Wizard refuses saves, deletes, "
              "submissions, uploads, access requests, sign-outs and other hosts.", RunArgs, run, "portal", "source"),
@@ -349,4 +491,18 @@ PORTAL_TOOLS = [
              "this request filled into the form's empty fields; they check every field and submit it themselves. Use it "
              "after you found the table and saw that the person lacks access, and name the table in your answer.",
              RequestAccessArgs, request_access, "portal", "present"),
+    ToolSpec("portal_map",
+             "The map Wizard keeps of a company portal (GSCM, ASAP, the Big Data Portal): what Gemini learned exploring "
+             "it. Without arguments: how the portal works, its proven shortcuts, and the index of mapped reports. find: "
+             "the reports that match business words, in full: menu path and id, how to open it fastest, its filters and "
+             "their values, the datasets and columns, and the data requests that return its rows with the filters as "
+             "parameters. Read it before exploring a portal: a mapped report is read in one portal_run.",
+             MapArgs, read_map, "portal", "knowledge"),
+    ToolSpec("portal_map_save",
+             "Add what you learned about a portal to its map, so later questions go straight to the data: the "
+             "overview, topics (technical details and shortcuts you proved), and reports by id (menu path and id, how "
+             "to open it, filters and their values, datasets and columns, data requests with {{param}} placeholders, "
+             "status). Only the fields you give change. Metadata only: never data rows or secrets. Saved on this PC "
+             "and published to the knowledge base when this PC can write to it; it changes nothing in the portal.",
+             MapSaveArgs, save_map, "portal", "present"),
 ]
