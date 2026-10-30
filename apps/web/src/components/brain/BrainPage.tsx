@@ -168,7 +168,7 @@ export function BrainPage() {
   const [layers, setLayers] = useState<ReadonlySet<LayerId>>(DEFAULT_LAYERS);
   const [colourBy, setColourBy] = useState<ColourBy>('community');
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
-  const [dims, setDims] = useState<2 | 3>(2);
+  const [dims, setDims] = useState<2 | 3>(3);  // owner, 30 Oct 2026: "it needs to be 3D and rotate"
   const [rotate, setRotate] = useState(true);
   const [hubs, setHubs] = useState(false);
   const [query, setQuery] = useState('');

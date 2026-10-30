@@ -93,8 +93,9 @@ sidebar with check boxes and counts): "the knowledge base brain looks rough, was
 - **No made-up hubs.** The knowledge-base root and the area hubs are gone; the structure is the notes' own links, tags,
   terms, documented systems and the news. Areas stay as a colouring (Communities | Areas) with the same check boxes,
   and the tour still lights each area.
-- **The look.** 2D by default (a drag moves it, the wheel zooms at the pointer); 3D one click away (it turns, slowly by
-  itself). Small points sized by their links, no rings; thin, slightly curved edges in the colour of the hub they leave;
+- **The look.** 3D and turning slowly by default (the owner: "but it needs to be 3D and rotate"; a drag turns it,
+  Rotate stops it, a narrow lens keeps near points from swelling); 2D one click away (a drag moves it, the wheel zooms at
+  the pointer). Small points sized by their links, no rings; thin, slightly curved edges in the colour of the hub they leave;
   a flat dark surface; no floor grid or axis triad; labels only for the point under the pointer, the picked point and
   what it joins, the notes a tour step names, and, with **Labels**, each community's hub and the most linked points. A
   weak pull towards each community's centre lets communities read as groups. Colours: the validated dark palette for the

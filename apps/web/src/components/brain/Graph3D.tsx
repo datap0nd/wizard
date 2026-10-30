@@ -6,13 +6,13 @@ export interface GraphControl { zoom: (factor: number) => void; reset: () => voi
 const isJsdom = typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent);
 const START_3D = {yaw: 0.65, pitch: 0.38};
 const NEAR = 8;
-const FOG = [1, 0.7, 0.45];
+const FOG = [1, 0.8, 0.6];
 
 /**
  * The knowledge graph on a plain canvas, drawn the way graphify draws one: small points sized by their links, thin
  * slightly curved edges in the colour of the hub they leave, no labels until a point is pointed at or picked (or the
- * tour names it). In 2D a drag pans and the wheel zooms at the pointer; in 3D a drag turns the graph, which also turns
- * slowly by itself. The layout settles a few ticks per frame (graph3d.ts, Layout); a double click frames it again.
+ * tour names it). In 3D (the default) the graph turns slowly by itself and a drag turns it; in 2D a drag pans and the
+ * wheel zooms at the pointer. The layout settles a few ticks per frame (graph3d.ts, Layout); a double click frames it again.
  */
 export function Graph3D({graph, layers, visible, colors, lit, frameOn, frameKey, selected, hovered, labelled, hubs, dims, reduced, rotate,
   inset, bottom, control, onHover, onPick, onProgress}: {
@@ -35,7 +35,7 @@ export function Graph3D({graph, layers, visible, colors, lit, frameOn, frameKey,
     const s = state.current, p = props.current;
     if (!s.layout) return;
     const shown = p.frameOn ?? p.graph.nodes.filter(n => p.visible[n.i] && nodeShown(n, p.layers)).map(n => n.i);
-    s.goal = frame(s.layout.pos, shown.length ? shown : p.graph.nodes.map(n => n.i), aspect(s.size, p.inset, p.bottom));
+    s.goal = frame(s.layout.pos, shown.length ? shown : p.graph.nodes.map(n => n.i), aspect(s.size, p.inset, p.bottom), p.dims === 3 ? 0.78 : 1.06);
   };
 
   // A new graph keeps the places of the points it shares with the one before; 2D and 3D each have their own layout.
@@ -116,7 +116,7 @@ export function Graph3D({graph, layers, visible, colors, lit, frameOn, frameKey,
           distance: c.distance + (g.distance - c.distance) * k};
         moved = true;
       }
-      if (p.dims === 3 && p.rotate && !p.reduced && !dragging && now - s.touched > 2500) { s.camera = {...s.camera, yaw: s.camera.yaw + dt * 0.07}; moved = true; }
+      if (p.dims === 3 && p.rotate && !p.reduced && !dragging && now - s.touched > 2500) { s.camera = {...s.camera, yaw: s.camera.yaw + dt * 0.1}; moved = true; }
       if ((moved || s.dirty) && layout && (!p.reduced || layout.settled)) { draw(ctx!); s.dirty = false; }
       raf = requestAnimationFrame(loop);
     };

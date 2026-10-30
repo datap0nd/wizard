@@ -12,12 +12,15 @@ The owner, showing a graphify graph: "the knowledge base brain looks rough, was 
   by their most linked note, largest first, the points without a link gathered last. The layout runs in 2D (every z
   stays 0) or 3D, with a weak pull towards each community's centre and longer spokes from a hub to its terms, tags and
   news categories. Statistics over the whole graph, with the communities' modularity (and the areas' on hover).
-- `Graph3D.tsx`: 2D by default (drag moves, the wheel zooms at the pointer), 3D on a click (it turns); small points
+- `Graph3D.tsx`: 3D and turning by default (the owner, after a first 2D version: "but it needs to be 3D and rotate";
+  a narrower lens, 0.5 rad, so near points do not swell; framed tighter, as a cloud never fills its sphere), 2D on a click
+  (drag moves, the wheel zooms at the pointer); small points
   sized by their links; thin, slightly curved edges in the hub's colour; no rings, floor grid or axis triad; labels only
   on hover, on a pick, for a tour step's notes, or with **Labels** (each community's hub and the most linked points).
 - `BrainPage.tsx`: a **Communities** panel (Select all, a check box per community to show or hide it, its colour, name
   and count; a click on the name lights it up and frames it), switchable to **Areas**; layers as check boxes; 2D | 3D,
-  Labels, Rotate (3D) and zoom along the bottom. The search box lets go of the keyboard after a pick.
+  Labels, Rotate (3D) and zoom along the bottom. The search box lets go of the keyboard after a pick. Two screenshots 5 s
+  apart differ at every size: it turns.
 - Colours: the validated dark palette for the eight largest groups, grey after; graphify's Tableau 10 fails the
   `validate_palette.js --mode dark` checks on `#0f1117` (lightness band, chroma floor, green↔teal ΔE 14.0 below 15).
 

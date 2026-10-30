@@ -205,7 +205,8 @@ test('the Brain page draws the knowledge base as a graph of communities and walk
   await expect(page.getByTestId('brain-page')).toBeVisible();
   await expect(page.getByTestId('brain-examples')).toBeVisible();  // the synthetic notes are never shown as company knowledge
   await expect(page.getByTestId('brain-canvas')).toBeVisible();
-  await expect(page.getByTestId('brain-page')).toHaveAttribute('data-dims', '2');
+  await expect(page.getByTestId('brain-page')).toHaveAttribute('data-dims', '3');  // 3D and turning, by default
+  await expect(page.getByTestId('brain-rotate')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByTestId('brain-community').first()).toBeVisible();
   await expect(page.getByTestId('brain-select-all')).toBeChecked();
   await expect(page.locator('[data-testid=brain-system][data-system=asap]')).toContainText('reports');
@@ -241,10 +242,12 @@ test('the Brain page draws the knowledge base as a graph of communities and walk
   await expect(page.getByTestId('brain-card')).toContainText('GSCM platform guide');
   await expect(page.getByTestId('brain-neighbours')).toContainText('GSCM');
   await expect(page.getByTestId('brain-cluster').filter({hasText: 'Metrics'})).toHaveAttribute('aria-pressed', 'false');
-  // The same graph in 3D.
+  // The same graph flat, in 2D, and back.
+  await page.getByTestId('brain-2d').click();
+  await expect(page.getByTestId('brain-page')).toHaveAttribute('data-dims', '2');
+  await expect(page.getByTestId('brain-rotate')).toHaveCount(0);
   await page.getByTestId('brain-3d').click();
   await expect(page.getByTestId('brain-page')).toHaveAttribute('data-dims', '3');
-  await expect(page.getByTestId('brain-rotate')).toBeVisible();
   await page.getByRole('link', {name: 'Ask Wizard'}).click();
   await expect(page.getByTestId('conversation-title')).toBeVisible();
 });

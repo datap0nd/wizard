@@ -450,7 +450,7 @@ export class Layout {
 // The camera: it looks at a target point; in 3D it orbits it (yaw turns around the vertical axis, pitch tilts).
 
 export interface Camera { yaw: number; pitch: number; distance: number; tx: number; ty: number; tz: number }
-export const FOV = 0.9;
+export const FOV = 0.5;  // narrow, so points near the camera do not swell as the graph turns
 export interface Projected { x: number; y: number; depth: number; scale: number }
 
 /** Where a point lands on a canvas `width` x `height`, in the part the panels leave free: `inset` on the left, `bottom`
@@ -468,15 +468,15 @@ export function projector(camera: Camera, width: number, height: number, inset =
 }
 
 /** The camera target and distance that frame these points (all but the farthest few in a hundred, so one stray point
- *  does not shrink the picture). */
-export function frame(pos: Float32Array, indexes: number[], aspect = 1): Pick<Camera, 'tx' | 'ty' | 'tz' | 'distance'> {
+ *  does not shrink the picture). `margin` below 1 frames tighter, as for a 3D cloud, which never fills its sphere. */
+export function frame(pos: Float32Array, indexes: number[], aspect = 1, margin = 1.06): Pick<Camera, 'tx' | 'ty' | 'tz' | 'distance'> {
   if (!indexes.length) return {tx: 0, ty: 0, tz: 0, distance: 400};
   const c = [0, 0, 0];
   for (const i of indexes) for (let k = 0; k < 3; k++) c[k] += pos[i * 3 + k] / indexes.length;
   const reach = indexes.map(i => Math.hypot(pos[i * 3] - c[0], pos[i * 3 + 1] - c[1], pos[i * 3 + 2] - c[2])).sort((a, b) => a - b);
   const radius = Math.max(24, reach[Math.min(reach.length - 1, Math.floor(reach.length * 0.98))]);
   const half = Math.min(FOV / 2, Math.atan(Math.tan(FOV / 2) * Math.max(aspect, 0.2)));
-  return {tx: c[0], ty: c[1], tz: c[2], distance: radius / Math.sin(half) * 1.06};
+  return {tx: c[0], ty: c[1], tz: c[2], distance: radius / Math.sin(half) * margin};
 }
 
 /** The points a focus lights up, or null for all of them: an area (or the news), a community, the systems with what
