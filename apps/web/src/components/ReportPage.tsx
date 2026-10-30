@@ -7,6 +7,7 @@ import {sourceGroups, usesText} from '@/sources';
 import {AnswerMarkdown} from './AnswerMarkdown';
 import {CheckBadge, DataModeBadge, RuntimeBadge} from './Badges';
 import {EvidenceDrawer} from './EvidenceDrawer';
+import {LongText} from './LongText';
 import {Button} from './ui/button';
 import {VisualBlock} from './VisualBlock';
 import type {Report} from '@/types';
@@ -41,7 +42,8 @@ export function ReportPage({id}: {id: string}) {
             <Button variant="ghost" size="sm" className="ml-auto" onClick={() => window.print()}><Printer />Print</Button>
           </div>
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent">Wizard report · {formatDate(report.created_at, true)}</p>
-          <h1 className="mt-2 text-[22px] font-semibold leading-snug tracking-tight">{report.question}</h1>
+          <LongText as="h1" text={report.question} lines={4} chars={400} clamp="line-clamp-4"
+            className="mt-2 text-[22px] font-semibold leading-snug tracking-tight" />
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <DataModeBadge mode={report.data_mode} /><CheckBadge status={report.check.status} /><RuntimeBadge kind={report.runtime.kind} label={report.runtime.label} />
           </div>

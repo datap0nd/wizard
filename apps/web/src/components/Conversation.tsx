@@ -2,6 +2,7 @@ import {useEffect, useRef, useState} from 'react';
 import {ArrowDown} from 'lucide-react';
 import {Button} from './ui/button';
 import {SentFiles} from './Attachments';
+import {LongText} from './LongText';
 import {RunCard} from './RunCard';
 import {RememberButton} from './Steering';
 import type {Cadence, RunView, Schedule} from '@/types';
@@ -45,7 +46,8 @@ export function Conversation({runs, empty, ...handlers}: Props) {
           {runs.map(run => (
             <article key={run.id} className="flex flex-col gap-3" data-testid="turn">
               {run.kind !== 'check' && <div className="group flex flex-col items-end gap-1.5">
-                <p className="max-w-[760px] whitespace-pre-wrap rounded-2xl bg-accent-soft px-4 py-2.5 text-[15px]" data-testid="user-turn">{run.question}</p>
+                <LongText text={run.question} lines={12} chars={1200} clamp="line-clamp-12" testId="user-turn"
+                  className="max-w-[760px] rounded-2xl bg-accent-soft px-4 py-2.5 text-[15px]" />
                 <SentFiles files={run.attachments.filter(a => a.origin !== 'edited')} />
                 {run.kind === 'ask' && <div className="flex justify-end opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 [&:has(form)]:opacity-100">
                   <RememberButton text={run.question} runId={run.id} label="Remember this" />

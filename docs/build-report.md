@@ -34,6 +34,23 @@ both viewports, on Playwright's Chromium. Screenshots in Chromium at 1280×720, 
 `knowledge_map`, with synthetic news (not committed). Layout timing: about 10 ms per iteration for 2,400 points in
 Node, run a few iterations per frame so the page never blocks; the synthetic base settles in 252 iterations.
 
+## 2026-10-30 — The question box holds 100,000 characters
+
+The owner asked whether the box's limit (4,000 characters; 2,000 for a note while an answer runs) could be tripled,
+"or nearly unlimited actually".
+- A question, and a note typed in the box while an answer runs, now take up to 100,000 characters (about 15,000 words):
+  `MAX_QUESTION_CHARS` in `app.py` (`RunBody.question`, `SteerBody.text`, the follow-up a note asks) and in
+  `Composer.tsx`. Both Gemini routes take the prompt in the request body or over stdin, never on a command line, so
+  Windows' 32,767-character command-line limit does not apply. Each earlier question goes back to Gemini in full with every
+  follow-up (six at most), about 150,000 tokens at worst, well inside the 1M-token window. Longer text goes in as
+  an attached file, which Gemini reads when it needs to (up to 300,000 characters per file).
+- A paste that fills the box says so under it: "The box holds 100,000 characters. Attach longer text as a file."
+- A long question shows its first 12 lines in the conversation (4 as the report's heading) with **Show all**
+  (`LongText.tsx`); a printed report shows it whole.
+
+**Tests.** 1 API test (a 100,000-character question and a 9,600-character note reach Gemini whole, a follow-up keeps
+the paste, one character more is refused) and 3 component tests; contracts re-exported.
+
 ## 2026-10-30 — Updates download the way Metronome's setup.ps1 does, up to 20 attempts
 
 The owner: "it seems github downloads got tightened on work pc. can you make it so the check for updates does the same
