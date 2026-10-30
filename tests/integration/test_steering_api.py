@@ -173,7 +173,8 @@ def test_the_box_takes_a_long_paste_as_a_question_or_a_note(scripted):
 
     runtime.script = script
     pasted = ("Model A55 sell-out by market;" * 4000)[:MAX_QUESTION_CHARS]
-    assert client.post("/api/v1/runs", json={"question": pasted + "x"}, headers=HEADERS).status_code == 422
+    refused = client.post("/api/v1/runs", json={"question": pasted + "x"}, headers=HEADERS)
+    assert refused.status_code == 400 and "at most 100000 characters" in refused.json()["details"][0]
     first = wait_run(client, client.post("/api/v1/runs", json={"question": pasted}, headers=HEADERS).json()["run_id"])
     assert first["status"] == "succeeded" and runtime.requests[0].question == pasted
     assert f"<request>\n{pasted}\n</request>" in runtime.requests[0].prompt
@@ -188,7 +189,7 @@ def test_the_box_takes_a_long_paste_as_a_question_or_a_note(scripted):
     assert f"Their words: {note}\n" in heard[0][0]
     assert runtime.requests[1].history[0].question == pasted, "a follow-up still has the whole paste"
     assert client.post(f"/api/v1/runs/{started['run_id']}/steer", json={"text": "x" * (MAX_QUESTION_CHARS + 1)},
-                       headers=HEADERS).status_code == 422
+                       headers=HEADERS).status_code == 400
 
 
 def test_an_answer_citing_a_step_marked_not_this_is_flagged(scripted):
