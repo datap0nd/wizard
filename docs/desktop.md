@@ -168,7 +168,7 @@ of Wizard on this PC:
 | Section | Settings | Test |
 |---|---|---|
 | Gemini | Google Cloud project, company Google domains | — |
-| Knowledge base | Repository, read-only token, write token (PAT, optional), branch, folder, check interval | **Test connection**: can the token read the repository, and can the write token write to it? With the write token, Wizard publishes its portal maps to `portal-maps/` ([decision](decisions/2026-10-30-portal-maps.md)); a company file never carries it |
+| Knowledge base | Repository, read-only token, write token (PAT, optional), branch, folder, check interval | **Test connection**: can the token read the repository, and can the write token itself write to it (asked of GitHub without writing; the account's role alone is not enough)? The write token is fine-grained: resource owner the organisation, that repository only, Contents read and write. With the write token, Wizard publishes its portal maps to `portal-maps/` ([decision](decisions/2026-10-30-portal-maps.md)); a company file never carries it |
 | Company database | Name people see (default "AI Team Database"), server, port, database, read-only user, password, SSL | **Test connection**: connects read-only and reports the user |
 | Portals | ASAP and GSCM addresses, the Big Data Portal's two (information catalog and Superset), browser (Chrome or Edge), other hosts the portals need; the **Access request form**: your usual answers on every Big Data Portal access request (field and answer) and an optional request page | **Sign in to the portals** opens Wizard's own browser visibly, one tab per portal (two for the Big Data Portal): sign in, then close it (or **Done**). The sign-in lasts as long as the portals' own sessions, across restarts too: Wizard keeps its browser's session cookies (DPAPI), never a password. **Check sign-in** opens each in the background and says whether it is signed in, or which page asked for a sign-in. **Open the request page** opens the catalog's request page with your answers filled in; you check it and submit it |
 | Network | Proxy | — |
@@ -296,7 +296,8 @@ Someone who already has Wizard can import a new file from the tray menu: **Impor
 |---|---|
 | The tab says "Wizard stopped" | The panel shows the reason. `logs\wizard.log` names a settings problem (exit code 2); Restart Wizard tries again |
 | "Starting Wizard…" for minutes | `logs\service-output.log`. Another program may use port 8771: set `WIZARD_PORT` in `%LOCALAPPDATA%\Wizard\.env` |
-| Knowledge base not updating | About Wizard shows the last sync problem: 401 = token expired, 404 = token lacks access, 403 = SSO approval or rate limit |
+| Knowledge base not updating | About Wizard shows the last sync problem: 401 = token expired, 404 = token lacks access, 403 = GitHub's own reason, quoted (an organisation that refuses classic tokens, a missing permission, approval, SSO or the rate limit) |
+| A portal map is not published | Settings → Portals says which request GitHub refused and why. The write token is a fine-grained token: resource owner the organisation, only the knowledge-base repository, Contents **Read and write**. Organisations may refuse classic tokens. **Test connection** checks that the token itself can write, without writing |
 | No tab, but the tray icon is there | The tab hides during full-screen apps and slide shows, or was turned off in the menu |
 | Ctrl+Alt+W does nothing | Another program owns it (`bar.log` says "taken by another program"); use the tab or the tray icon |
 | The panel is blank and mentions WebView2 | The Edge WebView2 runtime is missing; it ships with Windows 10/11 and Edge |

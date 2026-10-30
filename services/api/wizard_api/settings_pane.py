@@ -61,8 +61,9 @@ FIELDS = [
     Field("WIZARD_KB_TOKEN", "Read-only token", "knowledge", "Fine-grained token: that repository only, Contents read.",
           "github_pat_…"),
     Field("WIZARD_KB_WRITE_TOKEN", "Write token (PAT)", "knowledge",
-          "Lets Wizard save what it learns, such as the portal maps, to this repository: a token with Contents read and "
-          "write on it. Kept on this PC only.", "github_pat_…"),
+          "Lets Wizard save what it learns, such as the portal maps, to this repository. Fine-grained token: resource "
+          "owner the organisation, that repository only, Contents read and write (organisations may refuse classic "
+          "tokens). Kept on this PC only.", "github_pat_…"),
     Field("WIZARD_KB_REF", "Branch", "knowledge", "", "main"),
     Field("WIZARD_KB_PATH", "Folder in the repository", "knowledge", "Leave empty when the notes are at the root.", ""),
     Field("WIZARD_KB_SYNC_MINUTES", "Check for changes every (minutes)", "knowledge", "0 checks only at start-up.", "30"),

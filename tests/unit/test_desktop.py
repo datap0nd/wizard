@@ -214,7 +214,7 @@ def test_sync_uses_the_configured_folder_and_refuses_unsafe_archives(tmp_path):
     assert "unexpected archive layout" in knowledge_sync.sync(kb(), tmp_path / "third", transport=transport).message
 
 
-@pytest.mark.parametrize(("status", "words"), [(401, "invalid or expired"), (404, "Contents: read"), (403, "SSO"),
+@pytest.mark.parametrize(("status", "words"), [(401, "invalid or expired"), (404, "Contents: read"), (403, "refuse classic tokens"),
                                                (409, "is empty: nothing has been published")])
 def test_github_refusals_are_explained(tmp_path, status, words):
     github = FakeGitHub("a" * 40, {})

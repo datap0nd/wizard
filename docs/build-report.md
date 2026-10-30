@@ -3,7 +3,37 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-30 (latest) — The Brain page draws the knowledge base the way graphify does
+## 2026-10-30 (latest) — A refused portal-map publish says which request and why
+
+The owner: "github refused the request when publishing the portal mapping. The token needs contents read and write and
+sso approval." and "the token I generated is simply classic token with repo access." That message was Wizard's guess
+for every 403. On the company's GitHub Enterprise Server a classic token with the repo scope already reads and writes,
+and tokens need no SSO approval there, so the guess pointed away from the likely cause: an organisation that refuses
+classic personal access tokens. Settings → Test connection checked only the account's role, so it would have passed.
+- **Why, from GitHub** (`wizard_connectors.github.refused`): a 403 is explained from GitHub's own message and headers:
+  an organisation that refuses classic tokens (make a fine-grained token: resource owner the organisation, that
+  repository only, Contents read and write), a token lifetime the organisation refuses, SSO (`X-GitHub-SSO`), the rate
+  limit, approval, or a missing permission (`X-Accepted-GitHub-Permissions`, e.g. `contents=write`). Anything else
+  names both usual causes. GitHub's message is always quoted.
+- **Which request** (`kb.explain`): "while reading the repository (GET /)", "while uploading a file (POST /git/blobs)",
+  "while moving the branch to the new commit (PATCH /git/refs/heads/main)" and so on. A protected branch (409 or 422)
+  is named as one; a 409 is no longer always called "empty". The account-role refusal says the account, not the token.
+- **Test connection** (`kb.check_write`): after the account's role, it asks GitHub to create a branch at a commit that
+  does not exist. A token that may not write is refused (403, explained as above); one that may is told the commit does
+  not exist (422). Nothing is created either way.
+- The knowledge-base sync's own 403 (the read-only token) uses the same explanation. Settings' help for the write token
+  says fine-grained, and that organisations may refuse classic tokens. Desktop docs: Test connection and two
+  troubleshooting rows.
+
+**Tests.** `tests/unit/test_kb_publish.py`: Test connection says a read-only token cannot write (GitHub asks for
+`contents=write`) and a classic token is refused by the organisation, and the probe's request is a commit of zeros that
+creates nothing; a refused map names the request and the cause for a classic token, a read-only token on upload, SAML
+SSO, the rate limit and an unexplained 403 (no "SSO" unless GitHub says so); a protected branch (422 and 409) is named,
+not called empty. `tests/unit/test_desktop.py`: the sync's 403 names classic tokens. Against the company's GitHub
+server nothing was run here: whether the probe answers 422 for a token that may write is the owner's next Test
+connection.
+
+## 2026-10-30 — The Brain page draws the knowledge base the way graphify does
 
 The owner, showing a graphify graph: "the knowledge base brain looks rough, was hoping it looked like this".
 [Decision update](decisions/2026-10-28-brain-page.md).

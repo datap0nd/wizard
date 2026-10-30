@@ -27,7 +27,7 @@ import httpx
 
 from wizard_agent import outbound
 from wizard_connectors.content import errors, validate_content
-from wizard_connectors.github import API
+from wizard_connectors.github import API, refused
 
 MAX_ARCHIVE_BYTES = 200 * 1024 * 1024
 MAX_UNPACKED_BYTES = 500 * 1024 * 1024
@@ -128,8 +128,12 @@ def _explain(response: httpx.Response, source: Source) -> str:
         return (f"GitHub says {source.repo} or {source.ref} does not exist for this token (HTTP 404): the token must have "
                 "Contents: read on that repository.")
     if code == 403:
-        return ("GitHub refused the request (HTTP 403): the token awaits the organisation's approval or needs SSO "
-                "authorization, or the rate limit was reached.")
+        try:
+            body = response.json()
+            detail = str(body.get("message", ""))[:200] if isinstance(body, dict) else ""
+        except ValueError:
+            detail = ""
+        return "GitHub refused the knowledge-base token (HTTP 403): " + refused(detail, dict(response.headers), source.repo)
     if code == 409:
         return (f"The token works, but {source.repo} is empty: nothing has been published to it yet. Publish the notes "
                 "from the work PC first (task 50: .\\docs.ps1 kb-publish).")
