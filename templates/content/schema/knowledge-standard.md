@@ -157,7 +157,8 @@ the files stay on this PC.
 - [ ] The lead answers what it is, why it matters and what not to get wrong, in at most four sentences.
 - [ ] Every section starts by naming its subject.
 - [ ] Every fact has a source id, or is marked `(inferred)` or `UNKNOWN`.
-- [ ] A metric note ends with `## Where to get it`, every name and value checked against the dataset notes.
+- [ ] A metric note ends with `## Where to get it`, every name and value checked against the dataset notes and the
+      portal maps.
 - [ ] Acronyms are spelled out once and listed in `aliases`.
 - [ ] Changeable facts are dated.
 - [ ] No contact details, credentials, performance figures or restricted topics.
@@ -198,21 +199,28 @@ claim under `## Conflicting information` with both source ids.
 A metric note (`type: metric`) says what a measure means **and where Wizard reads it**. Without the second part Wizard
 knows what "sell-in" is but finds out by trial which object holds it, which rows are actuals and which column is the
 week; on the first live question that was most of a 41-step run. So every metric note ends with `## Where to get it`,
-written from the dataset notes in `datasets/` (and their export), never from memory:
+written from the dataset notes in `datasets/` (and their export) and from the portal maps Wizard keeps
+(`data\portal-maps\<portal>.json` on the Wizard PC), never from memory. A database object and a mapped portal report
+are equal sources: list every one that holds the measure.
 
-- One short block per object that holds the measure, the most direct first: the dataset note id and exact name
+- One short block per database object that holds the measure: the dataset note id and exact name
   (`meto_db`, `schema.object`); the measure column and its unit; the filters that select the right rows, with their
   exact values (actual or plan, units or currency, current plan version); the period column and its format; the market
   or subsidiary column.
+- One short block per mapped portal report (status `mapped` or `partial`) that holds the measure: the portal and report
+  id (`gscm:as470`), its name and menu path, what it answers (its `use_for`), and the filters that select the right rows
+  with their values. No query: Wizard reads it through the map.
 - Column names exactly as the database spells them, double-quoted when they have capitals, spaces or symbols
   (`"Order Week"`, `"Unit/Value"`).
-- One example query per block: a SELECT with those filters, grouped by period and market. Check every column name and
-  filter value against the dataset note and the export's value lists. A value you cannot find there is `UNKNOWN`, not
-  a guess.
-- When more than one object holds the measure, which one answers which variant of the question (weekly or monthly,
-  units or revenue, actual or plan).
+- One example query per database block: a SELECT with those filters, grouped by period and market. Check every column
+  name and filter value against the dataset note and the export's value lists. A value you cannot find there is
+  `UNKNOWN`, not a guess.
+- When more than one source holds the measure, which one answers which variant of the question (weekly or monthly,
+  units or revenue, actual or plan, company sell-in or an analyst's shipment estimate). Order the blocks by that, not
+  by kind of source.
 
-Cite the dataset notes' sources. Then point the data back at the metric: add the metric note's id to each dataset
-note's `related`, and the measure's name and aliases to the dataset note's `aliases` or `tags` and to its "Questions
-this note answers". This section says what the data can answer and how to reach it; Wizard may follow it or adapt it.
+Cite the dataset notes' sources and the maps. Then point the data back at the metric: add the metric note's id to each
+dataset note's `related`, and the measure's name and aliases to the dataset note's `aliases` or `tags` and to its
+"Questions this note answers". Mapped portal reports link back themselves: their `definitions` name the metric note
+when Wizard maps or routes them, and Wizard shows them with the note. This section says what the data can answer and how to reach it; Wizard may follow it or adapt it.
 It is not a rule for how an answer must be built.

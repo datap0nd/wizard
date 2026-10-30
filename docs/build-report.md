@@ -3,7 +3,16 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-30 (latest) — Mapped reports say what they are for; earlier ones are routed without being changed
+## 2026-10-31 (latest) — "Where to get it" names mapped portal reports, not only database objects
+
+The owner sensed Wizard "heavily prioritizing" the database. The cause was the knowledge standard, not code: section 11
+(7 October, before portals were read live) made every metric note's `## Where to get it` come only from dataset notes,
+with a ready query, so a term lookup always led to the database. Section 11, its checklist line and work-PC task 23
+now take blocks from the portal maps too (`portal:id`, name, path, what it answers, filters; no query), treat both
+kinds as equal sources, and order blocks by which variant of the question each answers. Existing notes change when
+task 23 runs again. Tests: `test_workpc.py`, `test_knowledge.py`, `test_content.py` (35 passed); `verify_spec.py`.
+
+## 2026-10-30 — Mapped reports say what they are for; earlier ones are routed without being changed
 
 The owner, reviewing a mapped ASAP report: "I dont see business logic saying: THIS report is used for THESE terms", and
 how adding it would change the reports already mapped. The mapping request never asked for a report's `summary`, so
