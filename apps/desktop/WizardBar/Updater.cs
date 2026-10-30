@@ -4,6 +4,8 @@ using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -24,11 +26,11 @@ namespace WizardBar
     /// version and the installer's SHA-256, the installer is downloaded, checked (size, Windows executable, hash,
     /// version) and run silently for this Windows account. It never downgrades. The release carries no credentials.
     ///
-    /// Owner, 30 Oct 2026: GitHub downloads were tightened on the work network, so Wizard updates the way Metronome's
-    /// setup.ps1 does. Every read is Windows PowerShell's Invoke-WebRequest -UseBasicParsing over TLS 1.2 (Windows' proxy
-    /// settings and the person's proxy sign-in), tried up to 20 times, 5 seconds apart, and it goes first where setup.ps1
-    /// goes: api.github.com for the newest manifest, and a branch zip from codeload.github.com for the installer (CI
-    /// mirrors every release to the desktop-download branch). The release's own download host comes second.</summary>
+    /// Owner, 30 Oct 2026: GitHub downloads were tightened on the work network, so Wizard goes first where Metronome's
+    /// setup.ps1 goes: api.github.com for the newest manifest, and a branch zip from codeload.github.com for the installer
+    /// (CI mirrors every release to the desktop-download branch). The release's own download host comes second, and the
+    /// pair is tried up to 20 times, 5 seconds apart. The reads run in this process, never through PowerShell (owner,
+    /// 30 Oct 2026: Microsoft Defender reported the hidden PowerShell downloads as malware, execution/mdp.powershell.m4192).</summary>
     internal static class Updater
     {
         public const string ReleaseRoot = "https://github.com/datap0nd/wizard/releases/download/desktop-continuous/";
@@ -39,21 +41,6 @@ namespace WizardBar
         private static readonly TimeSpan Pause = TimeSpan.FromSeconds(5);
         private const long MaxBytes = 400L * 1024 * 1024;
 
-        /// <summary>One read. The address, the file, the Accept header and the time limit reach PowerShell as environment
-        /// variables, never as script text. Setting TLS 1.2 and the proxy sign-in may be refused under a locked-down
-        /// PowerShell; the read then goes ahead with Windows' defaults. The error goes to standard output, readable in any
-        /// language mode.</summary>
-        private const string Script =
-            "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue'\n" +
-            "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}\n" +
-            "try { [Net.WebRequest]::DefaultWebProxy.Credentials = [Net.CredentialCache]::DefaultNetworkCredentials } catch {}\n" +
-            "$headers = @{}\n" +
-            "if ($env:WIZARD_DOWNLOAD_ACCEPT) { $headers['Accept'] = $env:WIZARD_DOWNLOAD_ACCEPT }\n" +
-            "try {\n" +
-            "    Invoke-WebRequest -Uri $env:WIZARD_DOWNLOAD_URL -OutFile $env:WIZARD_DOWNLOAD_FILE -UseBasicParsing " +
-            "-UserAgent $env:WIZARD_DOWNLOAD_AGENT -Headers $headers -TimeoutSec ([int]$env:WIZARD_DOWNLOAD_TIMEOUT)\n" +
-            "} catch { Write-Output $_.Exception.Message; exit 1 }\n";
-
         /// <summary>One address to read into File. `Check` throws for a file that is not what was asked for (cut short, a
         /// proxy's page, another release), which counts as a failed read.</summary>
         private sealed class Route
@@ -61,7 +48,6 @@ namespace WizardBar
             public string Url;
             public string File;
             public string Accept;
-            public int TimeoutSeconds;
             public TimeSpan Limit;
             public Action<string> Check;
         }
@@ -79,16 +65,17 @@ namespace WizardBar
                     try
                     {
                         if (File.Exists(route.File)) File.Delete(route.File);
-                        await PowerShell(route, cancel);
-                        if (!File.Exists(route.File)) throw new IOException("PowerShell saved nothing.");
+                        await Read(route, cancel);
                         route.Check(route.File);
                         if (attempt > 1 || route != routes[0]) Log.Write("read " + route.Url + " on attempt " + attempt + " of " + Attempts);
                         return;
                     }
                     catch (Exception error) when (!(error is OperationCanceledException) && !cancel.IsCancellationRequested)
                     {
-                        errors.Add(new Uri(route.Url).Host + ": " + error.Message);
-                        Log.Write("attempt " + attempt + " of " + Attempts + " failed (" + route.Url + "): " + error.Message);
+                        // HttpClient's own message ("An error occurred while sending the request.") hides the cause.
+                        var reason = error.GetBaseException().Message;
+                        errors.Add(new Uri(route.Url).Host + ": " + reason);
+                        Log.Write("attempt " + attempt + " of " + Attempts + " failed (" + route.Url + "): " + reason);
                     }
                 }
                 last = string.Join("; ", errors);
@@ -98,59 +85,52 @@ namespace WizardBar
             throw new IOException("Wizard tried " + Attempts + " times. " + last);
         }
 
-        private static Task PowerShell(Route route, CancellationToken cancel)
+        /// <summary>One read into route.File, in this process, with the network settings Windows PowerShell's
+        /// Invoke-WebRequest uses (the same .NET Framework stack): Windows' proxy settings, a PAC script included, and the
+        /// person's proxy sign-in, over TLS 1.2. Each redirect hop gets its own proxy. A read that outlasts route.Limit is
+        /// stopped.</summary>
+        private static async Task Read(Route route, CancellationToken cancel)
         {
-            return Task.Run(() =>
+            ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
+            var proxy = WebRequest.DefaultWebProxy;
+            if (proxy != null) proxy.Credentials = CredentialCache.DefaultNetworkCredentials;
+            var handler = new HttpClientHandler { Proxy = proxy, UseProxy = proxy != null, AllowAutoRedirect = true };
+            using (var limit = CancellationTokenSource.CreateLinkedTokenSource(cancel))
+            using (var http = new HttpClient(handler) { Timeout = System.Threading.Timeout.InfiniteTimeSpan })
+            using (var request = new HttpRequestMessage(HttpMethod.Get, route.Url))
             {
-                var exe = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe");
-                var encoded = Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(Script));
-                var start = new ProcessStartInfo(exe, "-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand " + encoded)
+                request.Headers.UserAgent.ParseAdd("WizardBar/" + Paths.Version);
+                if (!string.IsNullOrEmpty(route.Accept)) request.Headers.TryAddWithoutValidation("Accept", route.Accept);
+                limit.CancelAfter(route.Limit);
+                try
                 {
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                };
-                start.EnvironmentVariables["WIZARD_DOWNLOAD_URL"] = route.Url;
-                start.EnvironmentVariables["WIZARD_DOWNLOAD_FILE"] = route.File;
-                start.EnvironmentVariables["WIZARD_DOWNLOAD_ACCEPT"] = route.Accept ?? "";
-                start.EnvironmentVariables["WIZARD_DOWNLOAD_AGENT"] = "WizardBar/" + Paths.Version;
-                start.EnvironmentVariables["WIZARD_DOWNLOAD_TIMEOUT"] = route.TimeoutSeconds.ToString();
-                using (var process = Process.Start(start))
-                {
-                    var output = process.StandardOutput.ReadToEndAsync();
-                    var errors = process.StandardError.ReadToEndAsync();
-                    bool done;
-                    using (cancel.Register(() => Stop(process)))
-                        done = process.WaitForExit((int)route.Limit.TotalMilliseconds);
-                    if (!done)
+                    using (var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, limit.Token))
+                    using (limit.Token.Register(response.Dispose))
                     {
-                        Stop(process);
-                        throw new TimeoutException("No answer within " + (int)route.Limit.TotalMinutes + " minute(s).");
+                        if (!response.IsSuccessStatusCode)
+                            throw new IOException("The remote server returned an error: (" + (int)response.StatusCode + ") " + response.ReasonPhrase + ".");
+                        using (var source = await response.Content.ReadAsStreamAsync())
+                        using (var output = new FileStream(route.File, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true))
+                        {
+                            var buffer = new byte[81920];
+                            long total = 0;
+                            int read;
+                            while ((read = await source.ReadAsync(buffer, 0, buffer.Length, limit.Token)) > 0)
+                            {
+                                total += read;
+                                if (total > MaxBytes) throw new InvalidDataException("The download is larger than expected.");
+                                await output.WriteAsync(buffer, 0, read, limit.Token);
+                            }
+                        }
                     }
-                    cancel.ThrowIfCancellationRequested();
-                    process.WaitForExit();
-                    if (process.ExitCode != 0)
-                        throw new IOException(FirstLine(output.Result) ?? FirstLine(errors.Result) ?? "PowerShell exited with " + process.ExitCode + ".");
                 }
-            });
-        }
-
-        private static void Stop(Process process)
-        {
-            try { if (!process.HasExited) process.Kill(); }
-            catch (Exception error) { Log.Write("could not stop the download: " + error.Message); }
-        }
-
-        /// <summary>The first line that says something; PowerShell's own progress records (CLIXML) are not a message.</summary>
-        private static string FirstLine(string text)
-        {
-            foreach (var line in (text ?? "").Split('\n'))
-            {
-                var trimmed = line.Trim();
-                if (trimmed.Length > 0 && !trimmed.StartsWith("#< CLIXML") && !trimmed.StartsWith("<Objs")) return trimmed;
+                catch (Exception) when (limit.IsCancellationRequested && !cancel.IsCancellationRequested)
+                {
+                    // The stream of a stalled read is closed when the limit passes; whatever that throws is a time-out.
+                    throw new TimeoutException("No answer within " + (route.Limit.TotalMinutes >= 1
+                        ? (int)route.Limit.TotalMinutes + " minute(s)." : (int)route.Limit.TotalSeconds + " seconds."));
+                }
             }
-            return null;
         }
 
         private static string Folder()
@@ -188,11 +168,11 @@ namespace WizardBar
             await Fetch(new[]
             {
                 // The mirror branch's manifest from api.github.com, as setup.ps1 asks it for its branch's newest commit.
-                new Route { Url = MirrorManifest, File = file, Accept = "application/vnd.github.raw+json", TimeoutSeconds = 30,
-                            Limit = TimeSpan.FromMinutes(1), Check = read },
+                new Route { Url = MirrorManifest, File = file, Accept = "application/vnd.github.raw+json",
+                            Limit = TimeSpan.FromSeconds(30), Check = read },
                 // The release's own manifest, at a fresh address so no proxy on the way answers with an old one.
                 new Route { Url = ReleaseRoot + Manifest + "?nocache=" + DateTimeOffset.UtcNow.ToUnixTimeSeconds(), File = file,
-                            TimeoutSeconds = 30, Limit = TimeSpan.FromMinutes(1), Check = read },
+                            Limit = TimeSpan.FromSeconds(30), Check = read },
             }, cancel, failed);
             File.Delete(file);
             return System.Version.Parse(release.Version) > System.Version.Parse(Paths.Version) ? release : null;
@@ -239,9 +219,9 @@ namespace WizardBar
                 await Fetch(new[]
                 {
                     // The mirror branch as a zip from codeload.github.com: how setup.ps1 downloads Metronome.
-                    new Route { Url = MirrorZip + "?nocache=" + DateTimeOffset.UtcNow.ToUnixTimeSeconds(), File = zip, TimeoutSeconds = 0,
+                    new Route { Url = MirrorZip + "?nocache=" + DateTimeOffset.UtcNow.ToUnixTimeSeconds(), File = zip,
                                 Limit = TimeSpan.FromMinutes(10), Check = path => { Unpack(path, target); Verify(target, release); } },
-                    new Route { Url = ReleaseRoot + "WizardSetup.exe", File = target, TimeoutSeconds = 0, Limit = TimeSpan.FromMinutes(10),
+                    new Route { Url = ReleaseRoot + "WizardSetup.exe", File = target, Limit = TimeSpan.FromMinutes(10),
                                 Check = path => Verify(path, release) },
                 }, cancel, failed);
             }
