@@ -52,7 +52,47 @@ section is too small) and the simple one is without animations and the wizard lo
   two columns, and the latest articles list at least 220 px tall with larger headlines. With motion off (the simple
   view or the PC's reduced-motion setting) the chart's running-total line is drawn instead of left invisible.
 
-**Evidence.** `tests/unit/test_brain.py` (9), `tests/integration/test_brain_postgres_real.py` (2, real PostgreSQL 16),
+**Update (30 October 2026): the knowledge base as a 3D graph, more serious.** The owner: "The knowledge base. I want
+to create a neural network or graphify of the full knowledge base, in 3D", "And we replace the /brain, with that. A bit
+more... serious", "make it scientific, and complex, but not overly ... quirky. keep news and tour."
+- **The picture is a 3D graph of the whole knowledge base.** Points: the knowledge base at the root, each area, every
+  note, every tag two or more notes share (up to 60 notes; more says little), every glossary term, the systems the notes
+  document, and the news categories. Edges: each area to the root, each note to its area, the notes' own `related`
+  links, **mentions** (a note's text naming another note by its id, title or an alias of at least four characters, as
+  whole words; a name two notes share, or one found in more than a quarter of the notes, is left out; the 12 most named
+  per note), shared tags (two or more; off at first, as the tag points show the same), a note to its tags and terms,
+  a system to the notes that document it, the news table to the database and its categories. `GET /api/v1/brain` now
+  also returns the glossary terms (up to 3,000), all of a note's tags (up to 15), its length in words, and each link's
+  weight. Everything is still read; nothing is a Gemini tool.
+- **Laid out by a force simulation in the browser** (`apps/web/src/graph3d.ts`): springs along the edges (membership
+  pulls hardest, so each area forms its own module), Barnes-Hut repulsion through an octree (θ = 0.9), a weak pull to
+  the middle; seeded, so the same knowledge base settles the same way, and a refresh keeps the places of the points it
+  already had. Drawn on a plain canvas with a perspective camera: no new dependency.
+- **Scientific, not decorative.** A flat dark surface, the validated dark categorical palette for the areas in their
+  own order (a ninth area and beyond in grey; every area is also labelled in the graph and the legend), depth fading,
+  a floor grid and an axis triad for orientation. Along the bottom, the note network's statistics: nodes, edges,
+  note links m, mean degree ⟨k⟩, k max, density ρ, average clustering ⟨C⟩, modularity Q with the areas as communities,
+  components, mean shortest path ⟨ℓ⟩ and diameter D (sampled from 200 notes above 800), and the degree distribution
+  P(k); each explained on hover. The layout's state ("settled · 252 it.") shows beside them.
+- **Gone:** the pixel wizard and his circle, the starfield, the pulses and twinkling, the counters along the bottom and
+  the Simple / Advanced toggle (V). The graph turns slowly (Rotate turns it off; reduced motion never turns it and
+  draws it only once settled).
+- **Working it:** drag turns, the wheel zooms, a double click or R frames it again; hover shows a point, a click opens
+  it with its edges by kind and the points it joins (each opens in turn); `/` searches notes, terms and tags; on the
+  left, the areas (a click lights one up and frames it), the layers (related, mentions, shared tags, note to area,
+  tags, terms, systems, news) with their counts, and the sources with their reports or tables.
+- **Kept:** the news panel and its demo arrival (N), and the tour (→, ←, Esc, F), whose steps now frame what they
+  speak of and label the notes they name. The intro says how many links are declared and how many are mentions.
+
+**Evidence.** `tests/unit/test_brain.py` (10 since 30 October), `tests/integration/test_brain_postgres_real.py` (2, real PostgreSQL 16),
 `apps/web/src/brain.test.ts` (8), the e2e test "the Brain page maps what Wizard knows…" in `apps/web/e2e/wizard.spec.ts`,
 and screenshots of the page in Chromium at 1280×720, 1600×900 and 1920×1080 over a synthetic knowledge base of 111 notes
 and a synthetic news table of 1,512 rows (not committed).
+
+Evidence for the 30 October update: `tests/unit/test_brain.py` (mentions by id, title and alias; shared, short and
+common names left out; terms, tags and words), `apps/web/src/graph3d.test.ts` (13: what is drawn, colours, sizes,
+layers, a deterministic layout that keeps each note nearer its own area, carried places, the octree on 600 notes, the
+camera, picking, focus, search, the statistics against hand-computed values), the e2e test "the Brain page shows the
+knowledge base as a 3D graph…", and screenshots in Chromium at 1280×720, 1600×900 and 1920×1080 over a synthetic
+knowledge base of 101 notes in 12 areas (681 links, 163 glossary terms, mapped by the real `knowledge_map`) and
+synthetic news (not committed).

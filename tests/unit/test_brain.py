@@ -101,8 +101,31 @@ def test_the_map_counts_notes_links_terms_and_what_each_system_is_documented_by(
     documented = {s["id"]: s["documented_by"] for s in found["systems"]}
     assert documented == {"gscm": ["platform-gscm"], "postgresql": ["bi-sell-in-mv"], "knowledge": []}
     assert found["systems"][0]["reports"] == 12 and found["systems"][1]["reports"] is None
-    assert found["counts"] == {"notes": 4, "areas": 4, "links": len(links), "related": 1, "glossary_terms": 2, "datasets": 1,
-                               "metrics": 1, "signed": 1, "expert_checked": 1, "reports": 12, "systems": 3}
+    assert links[("sales-terms", "sell-in")] == "mention", "the glossary names sell-in in its text"
+    assert found["terms"] == [{"note": "sales-terms", "term": "GSCM"}, {"note": "sales-terms", "term": "SI"}]
+    assert by_id["platform-gscm"]["tags"] == ["gscm", "sell-in", "stock"] and by_id["sales-terms"]["words"] == 9
+    assert found["counts"] == {"notes": 4, "areas": 4, "links": len(links), "related": 1, "mentions": 1, "glossary_terms": 2,
+                               "datasets": 1, "metrics": 1, "signed": 1, "expert_checked": 1, "reports": 12, "systems": 3}
+
+
+def test_a_note_mentions_the_notes_it_names_by_id_title_or_alias():
+    notes = [
+        note("platform-gscm", "platforms", (), aliases=("Global Supply Chain Management", "G-SCM", "SI")),
+        note("fiscal-calendar", "general", (), body="Weeks start on Monday. See platform-gscm for the weekly cut-off."),
+        note("launch-process", "processes", (), related=("fiscal-calendar",),
+             body="The launch follows the Fiscal Calendar. Data comes from Global Supply Chain Management (G-SCM), "
+                  "and from G-SCM again. SI is too short to count."),
+        note("twin-a", "general", (), aliases=("twin",)), note("twin-b", "general", (), aliases=("twin",)),
+        note("reader", "general", (), body="Twin twin. The reader names itself: reader."),
+    ]
+    pairs = brain.mentions(notes)
+    assert pairs == {("fiscal-calendar", "platform-gscm"): 1, ("launch-process", "platform-gscm"): 3,
+                     ("fiscal-calendar", "launch-process"): 1}, "ids, titles and aliases; not short, shared or own names"
+    found = {(link["source"], link["target"]): (link["kind"], link["weight"]) for link in brain.links(notes)}
+    assert found[("fiscal-calendar", "launch-process")] == ("related", 1), "a note's own link comes first"
+    assert found[("launch-process", "platform-gscm")] == ("mention", 3)
+    crowd = [note(f"n{i}", "general", (), body="the gscm portal") for i in range(10)] + [note("gscm", "platforms", ())]
+    assert brain.mentions(crowd) == {}, "a name in most notes is an ordinary word there"
 
 
 def test_news_columns_are_matched_by_name_and_dates_must_be_dates():

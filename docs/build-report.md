@@ -3,7 +3,38 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-30 (latest) — The question box holds 100,000 characters
+## 2026-10-30 (latest) — The Brain page is the whole knowledge base as a 3D graph
+
+The owner: "The knowledge base. I want to create a neural network or graphify of the full knowledge base, in 3D", "And
+we replace the /brain, with that. A bit more... serious", "make it scientific, and complex, but not overly ... quirky.
+keep news and tour." [Decision update](decisions/2026-10-28-brain-page.md).
+- **Server** (`brain.py`): `GET /api/v1/brain` adds mentions (a note's text naming another note by id, title or an
+  alias of four or more characters, as whole words; names two notes share or found in over a quarter of the notes left
+  out; 12 per note), each link's weight, the glossary terms (up to 3,000), all of a note's tags (up to 15) and its
+  length in words, and counts mentions.
+- **Graph** (`apps/web/src/graph3d.ts`): root, areas, notes, tags on 2 to 60 notes, glossary terms, documented systems,
+  news categories; area membership, related, mentions, shared tags (off at first), tagged, terms, documents, news.
+  A seeded 3D force layout with Barnes-Hut repulsion (an octree), membership pulling hardest so areas form modules;
+  a refresh keeps the places it had. Network statistics over the note network: nodes, edges, m, ⟨k⟩, k max, ρ, ⟨C⟩,
+  modularity Q by area, components, ⟨ℓ⟩, D (sampled above 800 notes), P(k). Search by name.
+- **Page** (`Graph3D.tsx`, `BrainPage.tsx`): a canvas with a perspective camera (drag, wheel, double click or R to
+  frame, a slow turn unless reduced motion), edges batched by style and faded with depth, nodes back to front, labels
+  that do not collide (flipped left at the right edge), a floor grid and an axis triad. Legend on the left (areas, layers
+  with counts, sources), statistics strip along the bottom, a card per point with its edges and neighbours. The news
+  panel, the demo arrival (N) and the tour stay; the tour frames what each step speaks of. Removed: the 2D picture
+  (`BrainCanvas.tsx`, `layoutBrain`), the pixel wizard, starfield, pulses, counters and the Simple / Advanced toggle.
+  Area colours are the dataviz skill's dark categorical palette, validated against the page surface `#0c1016`
+  (`validate_palette.js --mode dark`: all checks pass; worst adjacent CVD ΔE 8.4).
+
+**Tests.** `tests/unit/test_brain.py` (10, two new or extended: mentions; terms, tags and words). `apps/web/src/graph3d.test.ts`
+(13). `apps/web/src/brain.test.ts` (tour and news helpers; the 2D layout tests went with the 2D layout). e2e: "the Brain
+page shows the knowledge base as a 3D graph and walks a presenter through it, beside the app" and the demo arrival, in
+both viewports, on Playwright's Chromium. Screenshots in Chromium at 1280×720, 1600×900 and 1920×1080 over a synthetic
+101-note knowledge base in 12 areas (681 links, of which 384 mentions; 163 glossary terms) mapped by the real
+`knowledge_map`, with synthetic news (not committed). Layout timing: about 10 ms per iteration for 2,400 points in
+Node, run a few iterations per frame so the page never blocks; the synthetic base settles in 252 iterations.
+
+## 2026-10-30 — The question box holds 100,000 characters
 
 The owner asked whether the box's limit (4,000 characters; 2,000 for a note while an answer runs) could be tripled,
 "or nearly unlimited actually".
