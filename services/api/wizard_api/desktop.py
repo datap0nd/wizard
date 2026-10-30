@@ -90,7 +90,7 @@ def prepare(home: Path, env: dict[str, str] | None = None) -> Settings:
         settings = load_settings(env=env, home=home)
     source = kb_source(settings)
     if source:
-        result = knowledge_sync.sync(source, settings.data_dir, proxy=settings.proxy, timeout=30)
+        result = knowledge_sync.sync(source, settings.data_dir, proxy=settings.github_proxy, timeout=30)
         (log.info if result.ok else log.warning)("knowledge base at start-up: %s", result.message)
         settings = load_settings(env=env, home=home)
     settings.desktop = True

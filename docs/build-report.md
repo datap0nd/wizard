@@ -3,7 +3,29 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-30 (latest) — A refused write names the token, the repository's visibility, and whether GitHub refused at all
+## 2026-10-30 (latest) — The company GitHub is reached the way Windows and Edge reach it
+
+The owner: "It got blocked by macafee web gateway. cant we just authenticate wizard like we authenticate CLI?", and,
+after Edge committed to the same server: "build the Windows route fix". With Settings → Network empty, Wizard sent its
+requests to the company GitHub through the proxy in the person's Gemini CLI settings, there a McAfee Web Gateway that
+let reads through and refused the upload. That proxy exists for reaching Google; Windows' own proxy settings (which Edge
+follows) route the company GitHub as the company decided, often directly.
+- `outbound.windows_route`: the company GitHub's route is Settings' new **Company GitHub proxy**
+  (`WIZARD_GITHUB_PROXY`) if set, then `NO_PROXY`, then the Windows proxy settings for that address, else direct; never
+  `WIZARD_PROXY` or Gemini CLI's proxy, which stay for Google and the app's updates. Used by the knowledge-base sync
+  (start-up, every interval, Sync now), Test connection, portal-map publishing and `docs.ps1 kb-publish` / `kb-check`.
+- The Windows proxy for an address is read in this process with WinHTTP (the person's Internet settings: a PAC script
+  or automatic detection, else a fixed proxy and its bypass list), instead of a hidden PowerShell; PowerShell is asked
+  only if WinHTTP fails. This applies to every Windows proxy lookup, Google's included.
+- A refusal that did not come from GitHub names the route the request took, and that Edge signs in to a web gateway
+  while Wizard cannot. Settings help for both proxies says which traffic each one carries.
+
+**Tests.** `tests/unit/test_outbound.py`: the company GitHub's route order (and Google's unchanged), Windows proxy lists
+and bypass lists read as Windows reads them, WinHTTP first and PowerShell only when it fails, once per host.
+`tests/unit/test_kb_publish.py`: the refusal names the route. The WinHTTP calls themselves run only on Windows: the work
+PC's next Test connection and map publish are their first run.
+
+## 2026-10-30 — A refused write names the token, the repository's visibility, and whether GitHub refused at all
 
 The owner, after the previous change named Contents "Read-only" as the likely cause: "Checked. My token already has all
 contents read and write." The refusal comes at the first upload (`POST /git/blobs`), before any commit or branch move,

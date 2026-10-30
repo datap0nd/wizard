@@ -235,11 +235,11 @@ def map_writer(settings: Settings) -> Any:
         assert settings.kb_repo and settings.kb_write_token
         try:
             commit = kb.write_files(settings.kb_repo, settings.kb_write_token, files, branch=settings.kb_ref,
-                                    message=message, proxy=settings.proxy)
+                                    message=message, proxy=settings.github_proxy)
         except kb.PublishError as error:
             return Published("failed", str(error))
         except httpx.HTTPError as error:
-            return Published("failed", outbound.explain(error, kb.API, settings.proxy))
+            return Published("failed", outbound.explain(error, kb.API, settings.github_proxy, windows=True))
         if commit is None:
             return Published("unchanged", f"{settings.kb_repo} already has this map.")
         return Published("published", f"Committed to {settings.kb_repo} ({settings.kb_ref}).", commit)
@@ -315,7 +315,7 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
     async def sync_knowledge_forever() -> None:
         while True:
             await asyncio.sleep(settings.kb_sync_minutes * 60)
-            result = await asyncio.to_thread(knowledge_sync.sync, kb, settings.data_dir, proxy=settings.proxy)
+            result = await asyncio.to_thread(knowledge_sync.sync, kb, settings.data_dir, proxy=settings.github_proxy)
             if not result.ok:
                 log.warning("knowledge base: %s", result.message)
             restart_if_idle(KB_IDLE_RESTART_S)
@@ -1418,7 +1418,7 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
     @app.post("/internal/v1/desktop/sync")
     async def desktop_sync(request: Request) -> dict[str, Any]:
         desktop_control(request)
-        result = await asyncio.to_thread(knowledge_sync.sync, kb, settings.data_dir, proxy=settings.proxy)
+        result = await asyncio.to_thread(knowledge_sync.sync, kb, settings.data_dir, proxy=settings.github_proxy)
         # Asked for by the person at this PC: restart now unless a question is running (then when it finishes).
         restarting = result.ok and bool(knowledge_status().get("restart_pending")) and restart_if_idle(0)
         return {"outcome": result.outcome, "message": result.message, "commit": result.commit, "restarting": restarting,

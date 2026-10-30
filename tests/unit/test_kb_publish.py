@@ -366,6 +366,7 @@ def test_a_refusal_that_did_not_come_from_github_says_so():
     message = write(github)
     assert message.startswith("Wizard's request was refused (HTTP 403) while uploading a file (POST /git/blobs), but not by "
                               "GitHub: GitHub's answers carry an X-GitHub-Request-Id, and this one has none (server "
-                              'Proxy-Gateway; page "Access Denied").')
+                              'Proxy-Gateway; page "Access Denied"); the request went by ')
     assert "the token is not the cause" in message and "send POST to https://github.sec.samsung.net/api/v3" in message
+    assert "Wizard takes the route Windows and Edge take (Settings → Network → Company GitHub proxy changes it)" in message
     assert "POST /git/trees" not in github.calls, "nothing after the refused upload"

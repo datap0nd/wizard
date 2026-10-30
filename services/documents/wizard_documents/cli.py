@@ -214,7 +214,7 @@ def cmd_kb(args: argparse.Namespace) -> int:
             if not token:
                 print("FAIL  no WIZARD_KB_READ_TOKEN (the read-only token users get) in .env")
                 return 2
-            ok, text = kb.check_read(repo, token, args.branch or "main", proxy=env.get("WIZARD_PROXY"))
+            ok, text = kb.check_read(repo, token, args.branch or "main", proxy=env.get("WIZARD_GITHUB_PROXY"))
             print(("PASS  " if ok else "FAIL  ") + text)
             return 0 if ok else 1
         token = env.get("WIZARD_KB_PUBLISH_TOKEN")
@@ -222,12 +222,12 @@ def cmd_kb(args: argparse.Namespace) -> int:
             print("FAIL  no WIZARD_KB_PUBLISH_TOKEN (Contents read and write on the repository) in .env or the environment")
             return 2
         outcome = kb.publish(content, repo, token, branch=args.branch, message=args.message, dry_run=args.dry_run,
-                             proxy=env.get("WIZARD_PROXY"))
+                             proxy=env.get("WIZARD_GITHUB_PROXY"))
     except kb.PublishError as error:
         print(f"FAIL  {error}")
         return 1
     except httpx.HTTPError as error:
-        print(f"FAIL  {outbound.explain(error, kb.API, env.get('WIZARD_PROXY'))}")
+        print(f"FAIL  {outbound.explain(error, kb.API, env.get('WIZARD_GITHUB_PROXY'), windows=True)}")
         return 1
     print("\n".join(outcome.lines))
     for label, names in (("added", outcome.added), ("changed", outcome.changed), ("removed", outcome.removed)):

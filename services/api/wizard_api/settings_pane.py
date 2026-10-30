@@ -90,7 +90,10 @@ FIELDS = [
           "chrome", ("chrome", "msedge")),
     Field("WIZARD_PORTAL_HOSTS", "Other hosts the portals need", "portals",
           "Only when sign-in or a portal uses a host outside the company domain, e.g. login.microsoftonline.com.", ""),
-    Field("WIZARD_PROXY", "Proxy", "network", "http://host:port, or direct. Empty: the Windows proxy settings.", ""),
+    Field("WIZARD_PROXY", "Proxy", "network", "For Google (Gemini) and the app's updates: http://host:port, or direct. "
+          "Empty: the proxy in your Gemini CLI settings, else the Windows proxy settings.", ""),
+    Field("WIZARD_GITHUB_PROXY", "Company GitHub proxy", "network", "For the company GitHub (the knowledge base and the "
+          "portal maps): http://host:port, or direct. Empty: the route Windows and Edge take to it.", ""),
 ]
 BY_KEY = {f.key: f for f in FIELDS}
 
@@ -266,7 +269,7 @@ def test_knowledge(settings: Settings, proposed: dict[str, Any],
         return {"ok": False, "message": "Fill in the repository and the token."}
     source = knowledge_sync.Source(repo, values.get("WIZARD_KB_REF") or "main", (values.get("WIZARD_KB_PATH") or "").strip("/\\"),
                                    token)
-    proxy = values.get("WIZARD_PROXY") or settings.proxy
+    proxy = values.get("WIZARD_GITHUB_PROXY") or settings.github_proxy  # the company GitHub's own route
     result = knowledge_sync.check(source, proxy=proxy, transport=transport)
     writer = values.get("WIZARD_KB_WRITE_TOKEN")
     if not writer or not result.ok:
