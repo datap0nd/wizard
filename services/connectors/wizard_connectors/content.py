@@ -1,7 +1,7 @@
 """Validate an external content folder (the internal wizard-content repository) before Wizard loads it.
 
-Layout: <dir>/contracts/sources/<platform>.json (report catalogs) and optionally <dir>/knowledge/**/*.md (platform
-guides and definitions). Used by `scripts/validate_content.py`, by the knowledge-base sync (a commit with errors is not
+Layout: <dir>/contracts/sources/<platform>.json (report catalogs), optionally <dir>/knowledge/**/*.md (platform
+guides and definitions) and <dir>/portal-maps/<portal>.json (what Wizard learned exploring a portal, written by Wizard). Used by `scripts/validate_content.py`, by the knowledge-base sync (a commit with errors is not
 applied) and by the API at start-up, where a file with an error is left out and logged rather than stopping Wizard.
 
 Real content may only describe reports; it cannot make a report readable. Until a live adapter and a signed parity
@@ -60,7 +60,19 @@ def validate_content(root: Path) -> list[Problem]:
         return [Problem("error", str(root), "content folder does not exist")]
     files = sorted(sources.glob("*.json")) if sources.is_dir() else []
     notes = [p for p in (root / "knowledge").rglob("*.md") if p.name != "README.md"] if (root / "knowledge").is_dir() else []
-    if not files and not notes:
+    maps = sorted((root / "portal-maps").glob("*.json")) if (root / "portal-maps").is_dir() else []
+    for path in maps:
+        where = path.relative_to(root).as_posix()
+        text = path.read_text(encoding="utf-8")
+        problems += _secrets(text, where)
+        try:
+            value = json.loads(text)
+        except json.JSONDecodeError as error:
+            problems.append(Problem("error", where, f"not valid JSON: {error.msg} (line {error.lineno})"))
+            continue
+        if not isinstance(value, dict) or value.get("system") != path.stem:
+            problems.append(Problem("error", where, f"a portal map's system must match its file name '{path.stem}'"))
+    if not files and not notes and not maps:
         problems.append(Problem("error", "contracts/sources", "nothing to load: no report catalogs (<platform>.json) and no "
                                                               "knowledge notes"))
     elif not files:

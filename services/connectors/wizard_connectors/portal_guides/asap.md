@@ -70,6 +70,9 @@ What Metronome learned driving ASAP (data_governance `app/flow_worker.py`, `app/
   rectangular block. Multi-week Excel views can have a two-level header ending in `Metrics`.
 - If the shell also serves MicroStrategy's REST API (try `GET /MicroStrategyLibrary/api/status`), it may answer report
   requests directly; Metronome never used it, so treat it as unverified.
+- MicroStrategy Web's own task and event URLs (`{web_base}/taskProc?taskId=reportExecute...`,
+  `.../servlet/mstrWeb?evt=...`) are allowed like any other read: if the requests after RUN show one, map it and send
+  it again with a `request` step or `W.replay`.
 
 ## Sign-in
 

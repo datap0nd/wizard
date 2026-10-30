@@ -55,6 +55,25 @@ screen.
 - Metronome itself never called these routes (it drove the screen and the Excel button), so they are unverified: check
   the first replay against what the screen shows for the same filters.
 
+## Mapping GSCM (what the map needs, and the helpers that find it)
+
+- **The menu without clicking.** `W.nexacro.appDatasets()` lists the application's own Datasets, biggest first, with
+  their columns: the menu tree is one of them (a name like `gds_menu`, columns such as a menu id, its name, its parent
+  and level, the form it opens). Read it with `W.nexacro.read(name)` and save every report as `todo` with its path and
+  menu id.
+- **Opening a report directly.** `W.nexacro.functions()` lists the client's own functions (`gfn_*`, `fn_*`) on the
+  application, the top, left and toolbar forms and the active report, with the start of each source. Look for the one
+  the menu calls to open a menu id (open, menu, popup, link in its name), call it in an `evaluate` step with a report's
+  menu id, wait for the overlay (`W.nexacro.idle()`) and for the new WorkFrame (`W.nexacro.activeForms()`), and save
+  the call that works as a topic: every later question then opens reports in one step.
+- **Filters.** `W.nexacro.inputs()` lists the active report form's inputs: Combo, Calendar, Edit, Radio... with their
+  value, and a combo's options from its inner Dataset as `code = label`. Note which request parameter each filter
+  sets (compare the search request's body with the values on screen).
+- **The data request.** After pressing the report's search button (Search, Retrieve, Inquiry...; never Save), the
+  result's `requests` and `W.requests('.do')` show the transaction. Its SSV body names the parameters
+  (`name:string=value` units) and the datasets it fills. Prove the route with a `request` step: the same url and body
+  with one value changed must return the same dataset with the new values. Save it with `{{param}}` placeholders.
+
 ## Bookmarks (Setting > Favorite)
 
 - The person's saved reports ("bookmarks") are in the application dataset `gds_bookmark`; `W.nexacro.bookmarks()`

@@ -41,6 +41,12 @@ VISUAL = re.compile(r"\[(V\d{1,4})\]")
 REPEAT_LIMIT = 2
 LOOP_STOP = 3
 RESEARCH = ("source", "knowledge")  # tool categories that gather more; calculating and presenting stay open to the end
+# Mapping a portal (owner, 30 Oct 2026): Gemini explores in rounds of at most this many tool calls, each a fresh session
+# that continues from the map, so a long exploration never outgrows the model's context. Rounds follow one another
+# until nothing is left to map, a round makes no progress twice, the person stops it, or EXPLORE_ROUNDS have run.
+EXPLORE_TOOL_CALLS = 80
+EXPLORE_ROUNDS = 30
+EXPLORE_STALLS = 2
 
 
 def wrap_up_s(timeout_s: int) -> int:
@@ -102,6 +108,25 @@ class Busy(Exception):
 
 
 @dataclass
+class Exploration:
+    """A portal being mapped for one person: its rounds run one after another in one conversation."""
+    system: str
+    name: str
+    conversation_id: str
+    started_at: str
+    round: int = 0
+    run_id: str | None = None
+    state: str = "running"  # running | finished | stopped | failed
+    message: str = ""
+    stalls: int = 0
+    before: dict[str, int] = field(default_factory=dict)
+
+    def public(self) -> dict[str, Any]:
+        return {"system": self.system, "conversation_id": self.conversation_id, "started_at": self.started_at,
+                "round": self.round, "run_id": self.run_id, "state": self.state, "message": self.message}
+
+
+@dataclass
 class ActiveRun:
     id: str
     identity: Identity
@@ -130,6 +155,9 @@ class ActiveRun:
     waits: int = 0         # times Wizard waited for Gemini (not shown on the stage), for Error details
     waited_s: float = 0.0
     files_made: list[str] = field(default_factory=list)  # edited copies made in this run, announced to the page
+    explore: dict[str, Any] | None = None  # a mapping round: {system, name, round}
+    maps_changed: set[str] = field(default_factory=set)  # portals whose map this run added to (published after it)
+    needs_sign_in: bool = False  # a portal asked for a sign-in during this run
     task: asyncio.Task[None] | None = None
 
 
@@ -215,6 +243,14 @@ def tool_label(name: str, args: dict[str, Any], services: Services) -> str:
         return f"Read Wizard's guide to {portal_name(services, args.get('system'))}"
     if name == "portal_save_script":
         return f"Kept a {portal_name(services, args.get('system'))} script: {args.get('name', '')}"
+    if name == "portal_map":
+        what = args.get("find") or args.get("report") or args.get("topic") or ("what is left to map" if args.get("todo") else "")
+        return f"Read Wizard's map of {portal_name(services, args.get('system'))}" + (f": {what}" if what else "")
+    if name == "portal_map_save":
+        reports = [r for r in args.get("reports") or [] if isinstance(r, dict)]
+        what = (str(reports[0].get("name") or reports[0].get("id")) if len(reports) == 1 else
+                f"{len(reports)} reports" if reports else "how it works")
+        return f"Added to Wizard's map of {portal_name(services, args.get('system'))}: {what}"
     if name == "portal_request_access":
         tables = ", ".join(str(t) for t in args.get("tables") or [])
         return f"Prepared an access request in {portal_name(services, args.get('system'))}" + (f": {tables}" if tables else "")
@@ -263,6 +299,19 @@ def tool_summary(name: str, outcome: ToolOutcome) -> str:
         return f"{data['file']} {data['name']} ready to download · {len(data['changes'])} change(s)"
     if name == "portal_save_script":
         return f"saved {data.get('saved')}"
+    if name == "portal_map_save":
+        counts = data.get("counts") or {}
+        return (f"{len(data.get('added', []))} added, {len(data.get('updated', []))} updated · map: {counts.get('mapped', 0)} "
+                f"mapped, {counts.get('todo', 0)} to do")
+    if name == "portal_map":
+        if "report" in data:
+            return f"{data['report'].get('name') or data['report'].get('id')} ({data['report'].get('status')})"
+        if "todo" in data:
+            return f"{len(data['todo'])} report(s) still to map"
+        if "reports" in data and "counts" not in data:
+            return ", ".join(str(r.get("name") or r.get("id")) for r in data["reports"][:5]) or "nothing matches"
+        counts = data.get("counts") or {}
+        return f"{counts.get('mapped', 0)} report(s) mapped, {counts.get('todo', 0)} to do" if counts else "done"
     if name == "portal_request_access":
         return "waiting for you to open the request form and submit it"
     if name.endswith("_run_report"):
@@ -315,6 +364,7 @@ class RunManager:
         self._semaphore: asyncio.Semaphore | None = None
         self.attachments = Attachments(settings, store)
         self.awake = KeepAwake()
+        self.explorations: dict[str, Exploration] = {}  # by person
 
     @property
     def semaphore(self) -> asyncio.Semaphore:
@@ -324,9 +374,12 @@ class RunManager:
 
     # Lifecycle ---------------------------------------------------------------------------------------------------------
     def start(self, identity: Identity, conversation_id: str, question: str, kind: str = "ask",
-              parent_run_id: str | None = None) -> dict[str, Any]:
-        if any(r.identity.id == identity.id for r in self.active.values()):
-            raise Busy("A question is already running for you. Wait for it or cancel it.")
+              parent_run_id: str | None = None, explore: dict[str, Any] | None = None) -> dict[str, Any]:
+        # A question and a portal being mapped run side by side: one of each per person.
+        mapping = kind == "explore"
+        if any(r.identity.id == identity.id and (r.kind == "explore") == mapping for r in self.active.values()):
+            raise Busy("Wizard is already mapping a portal for you. Stop it in Settings → Portals first." if mapping else
+                       "A question is already running for you. Wait for it or cancel it.")
         if len(self.active) >= self.settings.max_concurrent_runs * 4:
             raise Busy("Wizard is busy. Try again in a minute.")
         run_id = new_id("run")
@@ -336,7 +389,7 @@ class RunManager:
                "created_at": now()}
         self.store.create_run(row)
         self.store.touch_conversation(conversation_id, question[:80] if kind == "ask" else None)
-        run = ActiveRun(run_id, identity, conversation_id, kind, question, parent_run_id, self.runtime.kind)
+        run = ActiveRun(run_id, identity, conversation_id, kind, question, parent_run_id, self.runtime.kind, explore=explore)
         self.active[run_id] = run
         run.task = asyncio.get_running_loop().create_task(self._execute(run))
         return row
@@ -446,6 +499,10 @@ class RunManager:
         if outcome.ok and "schedule" in outcome.data:
             schedule = next(s for s in self.store.schedules(run.conversation_id, run.id) if s["label"] == outcome.data["schedule"])
             await self.emit(run, "schedule_proposed", {"schedule": public_schedule(schedule)})
+        if outcome.ok and name == "portal_map_save":
+            run.maps_changed.add(str(outcome.data.get("system")))
+        if not outcome.ok and outcome.error_code == "sign_in_required":
+            run.needs_sign_in = True
         if outcome.ok and name == "portal_request_access":
             await self.emit(run, "access_request_proposed", {"request": outcome.data["access_request"]})
         if outcome.ok and name == "wizard_edit_attachment":
@@ -461,10 +518,13 @@ class RunManager:
         """Stop a run from spinning without choosing its route: refuse an identical repeat, and once the run keeps
         repeating or nears its time limit, refuse further research so Gemini answers with what it has. A refusal is a
         tool error Gemini reads; the run goes on. None means the call may run."""
-        if run.tool_calls > self.settings.max_tool_calls:
+        limit = min(EXPLORE_TOOL_CALLS, self.settings.max_tool_calls) if run.kind == "explore" else self.settings.max_tool_calls
+        if run.tool_calls > limit and not (run.kind == "explore" and name == "portal_map_save"):
             return ToolOutcome(False, {}, 0, "tool_budget_exhausted",
-                               f"This run reached its limit of {self.settings.max_tool_calls} tool calls. Answer with what "
-                               "you have and say what is missing.")
+                               f"This run reached its limit of {limit} tool calls. " + (
+                                   "Save what you learned with portal_map_save if you have not, then summarise this round; "
+                                   "Wizard starts the next round." if run.kind == "explore" else
+                                   "Answer with what you have and say what is missing."))
         signature = call_signature(name, args)
         run.calls_seen[signature] = seen = run.calls_seen.get(signature, 0) + 1
         if seen > REPEAT_LIMIT:
@@ -497,6 +557,94 @@ class RunManager:
     async def _execute(self, run: ActiveRun) -> None:
         with self.awake:  # a sleeping PC would stop the answer half-way: it stays awake until the run ends
             await self._answer(run)
+        for system in sorted(run.maps_changed):
+            await self._publish_map(system)
+        if run.kind == "explore":
+            await self._next_round(run)
+
+    # Portal maps -------------------------------------------------------------------------------------------------------
+    async def _publish_map(self, system: str) -> None:
+        maps = self.services.portal_maps
+        if maps is None or maps.writer is None:
+            return
+        result = await asyncio.to_thread(maps.publish, system)
+        (log.info if result.outcome in ("published", "unchanged") else log.warning)(
+            "portal map %s: %s %s", system, result.outcome, result.message)
+
+    def start_exploration(self, identity: Identity, system: str, name: str) -> Exploration:
+        """Map a portal: the first round now, the next ones as each round ends (_next_round)."""
+        current = self.explorations.get(identity.id)
+        if current is not None and current.state == "running":
+            raise Busy(f"Wizard is already mapping {current.name} for you.")
+        conversation_id = self.store.create_conversation(identity.id, f"Map {name}")
+        exploration = Exploration(system, name, conversation_id, now())
+        self.explorations[identity.id] = exploration
+        try:
+            self._round(identity, exploration)
+        except Busy:
+            del self.explorations[identity.id]
+            raise
+        return exploration
+
+    def _round(self, identity: Identity, exploration: Exploration) -> None:
+        maps = self.services.portal_maps
+        exploration.before = maps.counts(maps.load(exploration.system)) if maps else {}
+        exploration.round += 1
+        question = f"Map {exploration.name}" + (f" (round {exploration.round})" if exploration.round > 1 else "")
+        row = self.start(identity, exploration.conversation_id, question, kind="explore",
+                         explore={"system": exploration.system, "name": exploration.name, "round": exploration.round})
+        exploration.run_id = row["id"]
+        exploration.message = f"Round {exploration.round} is running."
+
+    def stop_exploration(self, user_id: str) -> Exploration | None:
+        exploration = self.explorations.get(user_id)
+        if exploration is None or exploration.state != "running":
+            return exploration
+        exploration.state, exploration.message = "stopped", f"Stopped by you during round {exploration.round}."
+        if exploration.run_id:
+            self.cancel(user_id, exploration.run_id)
+        return exploration
+
+    async def _next_round(self, run: ActiveRun) -> None:
+        exploration = self.explorations.get(run.identity.id)
+        if exploration is None or exploration.run_id != run.id or exploration.state != "running":
+            return
+        maps = self.services.portal_maps
+        data = maps.load(exploration.system) if maps else None
+        after = maps.counts(data) if maps and data else {}
+        finished = self.store.run(run.identity.id, run.id) or {}
+        status, code = finished.get("status"), finished.get("error_code")
+        progressed = after != exploration.before or bool(run.maps_changed)
+        exploration.stalls = 0 if progressed else exploration.stalls + 1
+        waiting = after.get("todo", 0) + after.get("partial", 0)
+        if status == "cancelled":
+            exploration.state, exploration.message = "stopped", f"Round {exploration.round} was cancelled."
+        elif code in ("gemini_signin_required", "runtime_unavailable", "model_quota", "model_permission_denied",
+                      "gemini_project_unresolved"):
+            exploration.state = "failed"
+            exploration.message = f"Round {exploration.round} could not run: {finished.get('error_message') or code}"
+        elif run.needs_sign_in and not progressed:
+            exploration.state = "failed"
+            exploration.message = (f"{exploration.name} asks for a sign-in: press Sign in to the portals, sign in in the "
+                                   "window that opens and close it, then Continue mapping.")
+        elif data is not None and data.get("overview") and data["reports"] and not waiting:
+            exploration.state = "finished"
+            exploration.message = f"Mapped: {after.get('mapped', 0)} report(s), {after.get('failed', 0)} failed."
+        elif exploration.stalls >= EXPLORE_STALLS:
+            exploration.state = "failed"
+            exploration.message = (f"Stopped after round {exploration.round}: {EXPLORE_STALLS} rounds in a row added nothing "
+                                   "to the map. Open the Map conversation to see why.")
+        elif exploration.round >= EXPLORE_ROUNDS:
+            exploration.state = "finished"
+            exploration.message = (f"Paused after {EXPLORE_ROUNDS} rounds with {waiting} report(s) still to map: press "
+                                   "Continue mapping to go on.")
+        if exploration.state != "running":
+            log.info("portal map %s for %s: %s", exploration.system, run.identity.id, exploration.message)
+            return
+        try:
+            self._round(run.identity, exploration)
+        except Busy as busy:
+            exploration.state, exploration.message = "failed", str(busy)
 
     async def _answer(self, run: ActiveRun) -> None:
         try:
@@ -514,7 +662,7 @@ class RunManager:
                     run_id=run.id, user_id=run.identity.id, user_email=run.identity.email, user_home=home,
                     prompt=compose(run.question, self.history(run), run.kind, today,
                                    [{**a, "tables": table_index(Path(a["folder"]))}
-                                    for a in self.store.conversation_attachments(run.conversation_id)]),
+                                    for a in self.store.conversation_attachments(run.conversation_id)], explore=run.explore),
                     question=run.question, kind=run.kind,  # type: ignore[arg-type]
                     history=self.history(run), internal_url=self.settings.internal_url,
                     run_token=run_token(self.settings.session_secret, run.id, run.identity.id, self.settings.run_timeout_s + 120))

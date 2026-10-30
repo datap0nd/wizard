@@ -25,6 +25,7 @@ from ..fixture_source import FixtureSource, SourceError
 from ..knowledge import KnowledgeBase
 from ..metronome import MetronomeSettings
 from ..portal_browser import PortalBrowsers
+from ..portal_map import PortalMaps
 from ..postgres_query import PostgresQuery
 
 MAX_RESULT_BYTES = 400_000
@@ -64,6 +65,8 @@ class Services:
     mail_domains: list[str] = field(default_factory=list)  # company email domains (WIZARD_GOOGLE_DOMAINS)
     # The company portals read in each person's own Wizard browser (desktop and work-PC installs); None = not set.
     portals: PortalBrowsers | None = None
+    # What Gemini learned about each portal (portal_map.py): on this PC, published to the knowledge base when it can.
+    portal_maps: PortalMaps | None = None
     now: Callable[[], datetime] = field(default=lambda: datetime.now(UTC))
 
 

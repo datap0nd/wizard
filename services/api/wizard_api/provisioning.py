@@ -35,6 +35,9 @@ LOCAL_ONLY = frozenset({
     "WIZARD_BROWSER_EXECUTABLE",  # a test browser binary: never chosen by a file someone hands out
     "WIZARD_KB_PUBLISH_REPO", "WIZARD_KB_PUBLISH_TOKEN", "WIZARD_KB_READ_TOKEN",  # the owner's publishing set-up
 })
+# Chosen on each PC in the settings pane, never handed out in a company file: the knowledge base's write token lets a
+# PC change the company's notes repository (owner, 30 Oct 2026), so only the person who enters it holds it.
+PC_CHOSEN = frozenset({"WIZARD_KB_WRITE_TOKEN"})
 MAX_BYTES = 64 * 1024
 
 
@@ -78,7 +81,7 @@ def parse(text: str) -> Provision:
     for key, value in values.items():
         if not isinstance(key, str) or not KEY.match(key):
             raise ProvisionError(f"{key!r} is not a Wizard setting (WIZARD_* or GOOGLE_CLOUD_PROJECT)")
-        if key in LOCAL_ONLY:
+        if key in LOCAL_ONLY or key in PC_CHOSEN:
             raise ProvisionError(f"{key} is set on each PC, not in a provisioning file")
         if not isinstance(value, str | int) or isinstance(value, bool) or not str(value).strip() or "\n" in str(value):
             raise ProvisionError(f"{key} must be a one-line text value")
@@ -143,7 +146,8 @@ def load(data_dir: Path, box: SecretBox | None = None, layer: str = "provision")
     if stored:
         try:
             decoded = json.loads(stored)
-            secrets = {k: v for k, v in decoded.items() if isinstance(v, str) and KEY.match(k) and is_secret(k)}
+            secrets = {k: v for k, v in decoded.items() if isinstance(v, str) and KEY.match(k) and is_secret(k)
+                       and (layer == "local" or k not in PC_CHOSEN)}
         except ValueError:
             secrets = {}
     return Provision(name=str(record.get("name", "")), settings=settings, secrets=secrets)

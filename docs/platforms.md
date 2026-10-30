@@ -54,6 +54,13 @@ inside the tool; evidence is `LIVE` / `BROWSER_SESSION`. Configure the addresses
 (`WIZARD_PORTAL_ASAP_URL`, `WIZARD_PORTAL_GSCM_URL`, and for the Big Data Portal both `WIZARD_PORTAL_BDP_CATALOG_URL`
 and `WIZARD_PORTAL_BDP_URL`). [Decision](decisions/2026-10-23-portal-browser.md).
 
+**Portal maps.** Settings → Portals → **Map GSCM** (or any configured portal) has Gemini explore the portal on its own,
+in rounds, and keep a map: how the application works, the shortcuts it proved, and per report its menu id, filters,
+datasets and data request. Questions read the map first (`portal_map`) and read a mapped report in one `portal_run`,
+often one `request` step (the portal's own data request, sent from the browser with the person's session). With the
+knowledge base's **Write token (PAT)**, the map is published to `portal-maps/` in the knowledge-base repository.
+[Decision](decisions/2026-10-30-portal-maps.md).
+
 PostgreSQL is different: it has no report entries. Gemini reads the dataset notes and queries the server directly
 with `wizard_query_postgresql`
 ([documentation-guide.md](documentation-guide.md#postgresql-documentation-then-geminis-own-sql)).
