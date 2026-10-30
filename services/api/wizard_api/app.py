@@ -43,6 +43,8 @@ from .metronome_client import MetronomeClient, MetronomeError
 from .outlook import DraftError, open_outlook_draft
 from .runs import Busy, RunManager, decode_systems, entitled_to, evidence_summary, public_schedule, step_about
 from .security import REQUEST_HEADER, SECURITY_HEADERS, SESSION_COOKIE, session_token, verify
+from .site import Site, SiteError, brain_snapshot, build_case, case_id
+from .site import turns as case_turns
 from .store import Store
 
 OWNER_ID = "local-owner"
@@ -145,6 +147,12 @@ class DropBody(Body):
 
 class TitleBody(Body):
     title: str = Field(min_length=1, max_length=120)
+
+
+class CaseBody(Body):
+    title: str = Field(default="", max_length=200)
+    takeaway: str = Field(default="", max_length=600)
+    run_ids: list[str] = Field(default_factory=list, max_length=60)
 
 
 class FeedbackBody(Body):
@@ -498,7 +506,8 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
                 "attachments": {"from_this_pc": manager.attachments.local_enabled(), "max_mb": settings.max_attachment_mb},
                 "systems": systems_for(identity),
                 "metronome": {"enabled": can_schedule(identity),
-                              "user": settings.metronome.user if settings.metronome else None}}
+                              "user": settings.metronome.user if settings.metronome else None},
+                "site": {"enabled": may_publish(identity) and site.problem() is None}}
 
     # Session (fixture identities only) ---------------------------------------------------------------------------------
     @app.get("/api/v1/session/identities")
@@ -1040,23 +1049,119 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
     # What Wizard can draw on, for showing it to people: read from the knowledge base, the catalogs and the database,
     # within this person's rights. Read-only, and never a Gemini tool (brain.py).
     live_cache = brain.LiveCache()
+    site = Site(settings)
 
-    @app.get("/api/v1/brain")
-    def brain_map(request: Request) -> dict[str, Any]:
-        identity = me(request)
+    def brain_for(identity: Identity) -> dict[str, Any]:
         reports = {s.id: sum(1 for _, r in services.catalog.reports(s.id) if identity.can_see_report(s.id, r.id))
                    for s in services.catalog.systems if identity.can_use_system(s.id)}
         content = "company" if loaded_content else "none" if kb else "examples"
         synced = knowledge_status().get("synced_at")  # never the repository: people do not see it
-        return {**brain.knowledge_map(services.knowledge, systems_for(identity), reports, content),
+        found = systems_for(identity)
+        maps = {s["id"]: services.portal_maps.load(s["id"]) for s in found if s["kind"] == "portal"} if services.portal_maps else {}
+        return {**brain.knowledge_map(services.knowledge, found, reports, content, maps),
                 "knowledge_synced_at": synced, "pg_name": services.postgres_name}
 
-    @app.get("/api/v1/brain/live")
-    def brain_live(request: Request) -> dict[str, Any]:
-        identity = me(request)
+    def live_for(identity: Identity) -> dict[str, Any]:
         allowed = identity.can_use_system("postgresql") and identity.allowed_markets("postgresql") is None
         return brain.live(services.postgres, allowed, live_cache, settings.news_table, settings.news_database,
                           services.postgres_name)
+
+    @app.get("/api/v1/brain")
+    def brain_map(request: Request) -> dict[str, Any]:
+        return brain_for(me(request))
+
+    @app.get("/api/v1/brain/live")
+    def brain_live(request: Request) -> dict[str, Any]:
+        return live_for(me(request))
+
+    # The Pages site (site.py): Brain and Cases, published at the person's click with this PC's write token --------------
+    def may_publish(identity: Identity) -> bool:
+        """Only the person at a single-person install publishes: the write token is theirs, on their own PC."""
+        return identity.id == OWNER_ID and (settings.install_mode or settings.desktop)
+
+    def publisher(request: Request) -> Identity:
+        identity = me(request)
+        if not may_publish(identity):
+            raise HTTPException(403, "Only the person at this PC publishes to the Pages site, with their own write token.")
+        problem = site.problem()
+        if problem:
+            raise HTTPException(409, problem)
+        return identity
+
+    def author(identity: Identity) -> str | None:
+        name = (identity.name or "").strip()
+        return None if not name or name == "You" else name
+
+    @app.get("/api/v1/site")
+    async def site_status(request: Request) -> dict[str, Any]:
+        identity = me(request)
+        return {**await asyncio.to_thread(site.status), "allowed": may_publish(identity)}
+
+    @app.post("/api/v1/site/brain")
+    async def publish_brain(request: Request) -> dict[str, Any]:
+        identity = publisher(request)
+        snapshot = brain_snapshot(brain_for(identity), await asyncio.to_thread(live_for, identity))
+        try:
+            result = await asyncio.to_thread(site.publish_brain, snapshot)
+        except SiteError as error:
+            store.audit(identity.id, "site:brain_publish", outcome="failed", detail={"error": str(error)[:300]})
+            raise HTTPException(409, str(error)) from None
+        store.audit(identity.id, "site:brain_publish", detail={"outcome": result.outcome, "commit": result.commit})
+        return {"outcome": result.outcome, "message": result.message, "commit": result.commit, "url": result.url}
+
+    def chat(identity: Identity, conversation_id: str) -> dict[str, Any]:
+        found = store.conversation(identity.id, conversation_id)
+        if not found:
+            raise HTTPException(404, "Conversation not found.")
+        return found
+
+    @app.get("/api/v1/conversations/{conversation_id}/case")
+    async def case_preview(request: Request, conversation_id: str) -> dict[str, Any]:
+        """What Share as case would publish: every finished answer of the chat, as the case page shows it."""
+        identity = me(request)
+        found = chat(identity, conversation_id)
+        turns = case_turns(store, conversation_id)
+        case = None
+        if turns:
+            try:
+                case = build_case(found, turns, str(found.get("title") or ""), "", author(identity), keep_runs=True)
+            except SiteError as error:
+                case = {"problem": str(error)}
+        published = store.site_case(identity.id, conversation_id)
+        return {"case": case, "published": published, "site": {**await asyncio.to_thread(site.status),
+                                                               "allowed": may_publish(identity)}}
+
+    @app.post("/api/v1/conversations/{conversation_id}/case")
+    async def publish_case(request: Request, conversation_id: str, body: CaseBody) -> dict[str, Any]:
+        identity = publisher(request)
+        found = chat(identity, conversation_id)
+        turns = case_turns(store, conversation_id)
+        chosen = [t for t in turns if t["run_id"] in body.run_ids] if body.run_ids else turns
+        try:
+            case = build_case(found, chosen, body.title.strip(), body.takeaway.strip(), author(identity))
+            result = await asyncio.to_thread(site.publish_case, case)
+        except SiteError as error:
+            store.audit(identity.id, "site:case_publish", outcome="failed",
+                        detail={"conversation_id": conversation_id, "error": str(error)[:300]})
+            raise HTTPException(409, str(error)) from None
+        store.save_site_case(case["id"], conversation_id, identity.id, case["title"], case["takeaway"],
+                             [t["run_id"] for t in chosen], result.commit, result.url)
+        store.audit(identity.id, "site:case_publish", detail={"conversation_id": conversation_id, "case": case["id"],
+                                                              "outcome": result.outcome, "commit": result.commit})
+        return {"outcome": result.outcome, "message": result.message, "commit": result.commit, "url": result.url,
+                "published": store.site_case(identity.id, conversation_id)}
+
+    @app.delete("/api/v1/conversations/{conversation_id}/case")
+    async def remove_case(request: Request, conversation_id: str) -> dict[str, Any]:
+        identity = publisher(request)
+        chat(identity, conversation_id)
+        try:
+            result = await asyncio.to_thread(site.remove_case, case_id(conversation_id))
+        except SiteError as error:
+            raise HTTPException(409, str(error)) from None
+        store.delete_site_case(identity.id, conversation_id)
+        store.audit(identity.id, "site:case_remove", detail={"conversation_id": conversation_id, "commit": result.commit})
+        return {"outcome": result.outcome, "message": result.message, "commit": result.commit}
 
     # Dev diagnostics -----------------------------------------------------------------------------------------------------
     @app.get("/api/v1/dev/log")

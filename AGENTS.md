@@ -25,7 +25,10 @@ around a precomputed result is withdrawn. Its credential, entitlement, DLP and h
   (`GEMINI_CLI_HOME` + `GEMINI_FORCE_FILE_STORAGE=true`, or the per-user Code Assist token).
 - Keep company content (knowledge notes, report catalogs) in the owner's private enterprise GitHub repository, which the
   desktop app reads with a read-only token, or in a local `content\` folder. Wizard writes there only its portal maps
-  (`portal-maps/`), with the write token the person enters in Settings on their own PC. Company settings and credentials reach a
+  (`portal-maps/`) and, at the person's click, the Pages site (Brain and Cases) on its own branch (`gh-pages`, never the
+  notes' branch), with the write token the person enters in Settings on their own PC
+  ([decision](docs/decisions/2026-10-30-pages-site.md)): a case carries prompts, answers, charts and source names,
+  never a source's rows; the Brain snapshot never a note's text. Company settings and credentials reach a
   PC only in the provisioning file (`wizard.provision`), stored with DPAPI on import; **Export settings…** in the tray
   writes one from a PC's own settings at the person's click, never with the write token
   ([decision](docs/decisions/2026-10-30-settings-export.md)). See

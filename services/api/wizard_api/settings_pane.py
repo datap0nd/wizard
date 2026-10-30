@@ -45,6 +45,8 @@ class Field:
 SECTIONS = [
     ("gemini", "Gemini", "The model answers under your own Google sign-in."),
     ("knowledge", "Knowledge base", "The private GitHub repository Wizard reads its company notes from."),
+    ("site", "Pages site", "Brain and Cases, two pages of their own on the company GitHub's Pages, published from this PC "
+                           "with the knowledge base's write token."),
     ("postgres", "Company database", "A read-only PostgreSQL account for Gemini's SQL questions."),
     ("metronome", "Metronome", "Recurring extractions: Metronome emails a table on a schedule, as Flows owned by its "
                                "Wizard user."),
@@ -67,6 +69,12 @@ FIELDS = [
     Field("WIZARD_KB_REF", "Branch", "knowledge", "", "main"),
     Field("WIZARD_KB_PATH", "Folder in the repository", "knowledge", "Leave empty when the notes are at the root.", ""),
     Field("WIZARD_KB_SYNC_MINUTES", "Check for changes every (minutes)", "knowledge", "0 checks only at start-up.", "30"),
+    Field("WIZARD_SITE_REPO", "Repository", "site", "Empty: the knowledge base's repository. Another one needs the write "
+          "token to cover it too.", "acme/wizard-content"),
+    Field("WIZARD_SITE_BRANCH", "Branch", "site", "Never the notes' branch. On GitHub, Settings → Pages: Deploy from a "
+          "branch, this branch, / (root).", "gh-pages"),
+    Field("WIZARD_SITE_URL", "Site address", "site", "The address GitHub shows under Settings → Pages, so Wizard can link "
+          "the pages.", "https://pages.github.example.com/acme/wizard-content/"),
     Field("WIZARD_PG_NAME", "Name people see", "postgres", "Shown in the app and in answers' sources.", "AI Team Database"),
     Field("WIZARD_PG_HOST", "Server", "postgres", "", "db.company.example"),
     Field("WIZARD_PG_PORT", "Port", "postgres", "", "5432"),

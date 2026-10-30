@@ -40,6 +40,8 @@ MENTIONS_PER_NOTE = 12   # mention links kept per note: the notes it names most 
 COMMON_NAME = 0.25       # a name found in more than this share of notes (8 or more) is an ordinary word there
 MAX_TERMS = 3000         # glossary entries drawn as points of their own
 MAX_TAGS = 15            # the knowledge standard's most tags per note
+MAPPED = ("mapped", "partial")  # a portal map's reports Gemini has mapped (the rest it has only found)
+MAX_PORTAL_REPORTS = 3000       # portal reports drawn as points of their own, as many as a map holds
 WORD = re.compile(r"[a-z0-9]+")
 TABLE_NAME = re.compile(r"^(?:([A-Za-z_][A-Za-z0-9_$]{0,62})\.)?([A-Za-z_][A-Za-z0-9_$]{0,62})$")
 DATABASE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_$-]{0,62}$")
@@ -164,8 +166,21 @@ def documents(system: dict[str, Any], note: Note) -> bool:
     return sid in tags or ((note.type == "platform" or note.area == "platforms") and named)
 
 
-def knowledge_map(kb: KnowledgeBase, systems: list[dict[str, Any]], reports: dict[str, int], content: str) -> dict[str, Any]:
-    """Areas, notes, links and systems for the map, with the counts the page shows."""
+def portal_reports(system: str, data: dict[str, Any]) -> list[dict[str, Any]]:
+    """The reports a portal's map holds that Gemini has mapped: name, menu path and status, metadata only."""
+    out = []
+    for report in data.get("reports") or []:
+        if isinstance(report, dict) and report.get("id") and report.get("status") in MAPPED:
+            path = [str(p)[:120] for p in report.get("path") or [] if p][:8]
+            out.append({"system": system, "id": str(report["id"])[:200], "name": str(report.get("name") or report["id"])[:200],
+                        "path": path, "status": report["status"]})
+    return out
+
+
+def knowledge_map(kb: KnowledgeBase, systems: list[dict[str, Any]], reports: dict[str, int], content: str,
+                  maps: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
+    """Areas, notes, links and systems for the map, with the counts the page shows. `maps`: each portal's map (owner, 30
+    Oct 2026: "I mapped like 120 reports. I see that /brain didnt change much"), whose mapped reports are drawn too."""
     notes = kb.notes
     terms = {note.id: sum(1 for s in kb.sections.get(note.id, ()) if s.entry) for note in notes}
     per_area = Counter(note.area for note in notes)
@@ -174,9 +189,15 @@ def knowledge_map(kb: KnowledgeBase, systems: list[dict[str, Any]], reports: dic
              for area, count in per_area.items()]
     areas.sort(key=lambda a: (a.pop("order"), a["name"]))
     out_systems = []
+    mapped: list[dict[str, Any]] = []
     for system in systems:
         documented = [note.id for note in notes if documents(system, note)]
-        out_systems.append({**system, "reports": reports.get(str(system["id"])), "documented_by": documented[:300]})
+        data = (maps or {}).get(str(system["id"])) or {}
+        listed = [r for r in data.get("reports") or [] if isinstance(r, dict)]
+        drawn = portal_reports(str(system["id"]), data)
+        mapped += drawn
+        out_systems.append({**system, "reports": reports.get(str(system["id"])), "documented_by": documented[:300],
+                            "mapped": {"mapped": len(drawn), "found": len(listed), "updated": data.get("updated")} if listed else None})
     found = links(notes)
     stages = Counter(stage(note) for note in notes)
     ordered = sorted(notes, key=lambda n: (n.area, n.title.casefold()))
@@ -191,6 +212,7 @@ def knowledge_map(kb: KnowledgeBase, systems: list[dict[str, Any]], reports: dic
         "links": found,
         "terms": entries,
         "systems": out_systems,
+        "portal_reports": mapped[:MAX_PORTAL_REPORTS],
         "counts": {"notes": len(notes), "areas": len(areas), "links": len(found),
                    "related": sum(1 for link in found if link["kind"] == "related"),
                    "mentions": sum(1 for link in found if link["kind"] == "mention"),
@@ -198,7 +220,7 @@ def knowledge_map(kb: KnowledgeBase, systems: list[dict[str, Any]], reports: dic
                    "datasets": sum(1 for n in notes if n.type == "dataset" or n.area == "datasets"),
                    "metrics": sum(1 for n in notes if n.type == "metric" or n.area == "metrics"),
                    "signed": stages["SIGNED"], "expert_checked": stages["EXPERT_CHECKED"],
-                   "reports": sum(v for v in reports.values() if v), "systems": len(systems)},
+                   "reports": sum(v for v in reports.values() if v), "mapped_reports": len(mapped), "systems": len(systems)},
     }
 
 

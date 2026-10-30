@@ -104,6 +104,26 @@ describe('the knowledge graph', () => {
   });
 });
 
+describe('portal maps', () => {
+  it('draws the reports Gemini mapped in a portal around it, on a layer of their own', () => {
+    const mapped: BrainMap = {...map, systems: [...map.systems, {id: 'asap', name: 'ASAP', kind: 'portal', reports: 3, documented_by: [],
+      mapped: {mapped: 3, found: 5, updated: null}}],
+      portal_reports: ['Sell-out by week', 'Stock by store', 'Share by brand'].map((name, i) => ({system: 'asap', id: `r${i}`, name, path: ['Sales'], status: 'mapped' as const}))};
+    const graph = buildGraph(mapped, null);
+    const asap = graph.byKey.get('system:asap')!;
+    const reports = graph.nodes.filter(n => n.kind === 'report');
+    expect(asap).toBeTruthy();  // no note documents ASAP: its mapped reports put it on the graph
+    expect(reports.map(r => r.label)).toEqual(['Sell-out by week', 'Stock by store', 'Share by brand']);
+    expect(reports.every(r => graph.neighbors[r.i].includes(asap.i))).toBe(true);
+    expect(networkStats(graph).byKind.report).toBe(3);
+    expect(networkStats(graph).byEdge.maps).toBe(3);
+    expect(DEFAULT_LAYERS.has('reports')).toBe(true);
+    const off = new Set([...DEFAULT_LAYERS].filter(l => l !== 'reports'));
+    expect(reports.some(r => nodeShown(r, off))).toBe(false);
+    expect(search(graph, 'stock by').map(n => n.label)).toEqual(['Stock by store']);
+  });
+});
+
 describe('the layout', () => {
   const at = (layout: Layout, key: string) => { const i = layout.graph.byKey.get(key)!.i; return [0, 1, 2].map(k => layout.pos[i * 3 + k]); };
   const gap = (layout: Layout, a: string, b: string) => Math.hypot(...at(layout, a).map((v, k) => v - at(layout, b)[k]));

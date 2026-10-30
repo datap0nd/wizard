@@ -56,6 +56,8 @@ CREATE INDEX IF NOT EXISTS schedules_conversation ON schedules(conversation_id);
 CREATE TABLE IF NOT EXISTS memories(id TEXT PRIMARY KEY, user_id TEXT NOT NULL, text TEXT NOT NULL, run_id TEXT,
   created_at TEXT);
 CREATE INDEX IF NOT EXISTS memories_user ON memories(user_id, created_at);
+CREATE TABLE IF NOT EXISTS site_cases(id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, user_id TEXT NOT NULL,
+  title TEXT, takeaway TEXT, runs TEXT, published_at TEXT, commit_sha TEXT, url TEXT);
 """
 # Columns added after a database was first created. Nullable, so an older release still reads and writes the table.
 ADDED_COLUMNS = {"runs": {"systems": "TEXT"}}
@@ -130,6 +132,11 @@ class Store:
     def rename_conversation(self, user_id: str, conversation_id: str, title: str) -> bool:
         return self._x("UPDATE conversations SET title=?, updated_at=? WHERE id=? AND user_id=? AND deleted_at IS NULL",
                        (title, now(), conversation_id, user_id)) == 1
+
+    def retitle_conversation(self, user_id: str, conversation_id: str, expected: str, title: str) -> bool:
+        """Gemini's name for a chat, only while the chat still has the name it started with (`expected`)."""
+        return self._x("UPDATE conversations SET title=? WHERE id=? AND user_id=? AND title=? AND deleted_at IS NULL",
+                       (title, conversation_id, user_id, expected)) == 1
 
     def delete_conversation(self, user_id: str, conversation_id: str) -> bool:
         return self._x("UPDATE conversations SET deleted_at=? WHERE id=? AND user_id=? AND deleted_at IS NULL",
@@ -379,6 +386,24 @@ class Store:
 
     def delete_memory(self, user_id: str, memory_id: str) -> bool:
         return self._x("DELETE FROM memories WHERE id=? AND user_id=?", (memory_id, user_id)) == 1
+
+    # Cases this person published to the Pages site (site.py), so Share as case can update or remove them --------------
+    def save_site_case(self, case_id: str, conversation_id: str, user_id: str, title: str, takeaway: str, runs: list[str],
+                       commit: str | None, url: str | None) -> None:
+        self._x("INSERT OR REPLACE INTO site_cases(id,conversation_id,user_id,title,takeaway,runs,published_at,commit_sha,url) "
+                "VALUES(?,?,?,?,?,?,?,?,?)", (case_id, conversation_id, user_id, title, takeaway, json.dumps(runs), now(),
+                                              commit, url))
+
+    def site_case(self, user_id: str, conversation_id: str) -> dict[str, Any] | None:
+        rows = self._q("SELECT * FROM site_cases WHERE conversation_id=? AND user_id=?", (conversation_id, user_id))
+        if not rows:
+            return None
+        found = dict(rows[0])
+        found["runs"] = json.loads(found.get("runs") or "[]")
+        return found
+
+    def delete_site_case(self, user_id: str, conversation_id: str) -> None:
+        self._x("DELETE FROM site_cases WHERE conversation_id=? AND user_id=?", (conversation_id, user_id))
 
     # Audit and feedback ------------------------------------------------------------------------------------------------
     def audit(self, user_id: str, action: str, *, run_id: str | None = None, system: str | None = None,

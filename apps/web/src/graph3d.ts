@@ -1,9 +1,9 @@
 // The knowledge base as a graph (/brain): what is drawn, the communities its links form, where each point sits (in 2D or
 // 3D), how the camera sees it, and the network's statistics. Pure functions over what the server read (brain.ts types),
 // so the layout, the communities, the projection and every number on the page are tested without a canvas. Nothing here
-// is invented: a node is a note, a tag on two or more notes, a glossary term, a system or the news; an edge is a link the
-// server found. The look follows graphify's knowledge graphs (owner, 30 Oct 2026: "was hoping it looked like this").
-import {NEWS, ringSystems, type BrainMap, type BrainNews, type BrainNote, type BrainSystem, type Focus} from './brain';
+// is invented: a node is a note, a tag on two or more notes, a glossary term, a system, a report Gemini mapped in a portal
+// or the news; an edge is a link the server found. The look follows graphify's knowledge graphs (owner, 30 Oct 2026: "was hoping it looked like this").
+import {NEWS, ringSystems, type BrainMap, type BrainNews, type BrainNote, type BrainPortalReport, type BrainSystem, type Focus} from './brain';
 
 /** The page's surface and inks (dark only: the page is made for a meeting-room screen). */
 export const SURFACE = '#0f1117';
@@ -15,17 +15,17 @@ export const OTHER = '#7d8590';
 const COMMON_TAG = 60;    // a tag on more notes than this is not drawn: it says little about how they relate
 const MAX_TAGS = 1500;
 
-export type NodeKind = 'note' | 'tag' | 'term' | 'system' | 'news' | 'category';
-export type EdgeKind = 'related' | 'mention' | 'shared' | 'tagged' | 'term' | 'documents' | 'news';
+export type NodeKind = 'note' | 'tag' | 'term' | 'system' | 'report' | 'news' | 'category';
+export type EdgeKind = 'related' | 'mention' | 'shared' | 'tagged' | 'term' | 'documents' | 'maps' | 'news';
 /** What the legend switches on and off. Notes are always shown. */
-export type LayerId = 'related' | 'mention' | 'shared' | 'tags' | 'terms' | 'systems' | 'news';
+export type LayerId = 'related' | 'mention' | 'shared' | 'tags' | 'terms' | 'systems' | 'reports' | 'news';
 
 export interface GNode {
   i: number; key: string; kind: NodeKind; label: string;
   group: string;        // the area of a note or term; 'tags', 'systems' or 'news' otherwise
   community: number;    // index into graph.communities
   size: number; charge: number;
-  note?: BrainNote; system?: BrainSystem; count?: number; area?: string;
+  note?: BrainNote; system?: BrainSystem; report?: BrainPortalReport; count?: number; area?: string;
 }
 export interface GEdge { a: number; b: number; kind: EdgeKind; weight: number }
 /** `alone`: the points without a link, gathered in one group (not a community the links formed). */
@@ -46,9 +46,10 @@ export const EDGE_STYLE: Record<EdgeKind, {layer: LayerId; length: number; stren
   tagged: {layer: 'tags', length: 36, strength: 0.6, weight: 1},
   term: {layer: 'terms', length: 26, strength: 1, weight: 1},
   documents: {layer: 'systems', length: 40, strength: 0.5, weight: 1},
+  maps: {layer: 'reports', length: 22, strength: 1, weight: 1},
   news: {layer: 'news', length: 26, strength: 1, weight: 1},
 };
-const NODE_LAYER: Partial<Record<NodeKind, LayerId>> = {tag: 'tags', term: 'terms', system: 'systems', news: 'news', category: 'news'};
+const NODE_LAYER: Partial<Record<NodeKind, LayerId>> = {tag: 'tags', term: 'terms', system: 'systems', report: 'reports', news: 'news', category: 'news'};
 export const LAYERS: {id: LayerId; label: string; edge?: EdgeKind; nodes?: NodeKind}[] = [
   {id: 'related', label: 'Related (declared)', edge: 'related'},
   {id: 'mention', label: 'Mentions in the text', edge: 'mention'},
@@ -56,9 +57,10 @@ export const LAYERS: {id: LayerId; label: string; edge?: EdgeKind; nodes?: NodeK
   {id: 'tags', label: 'Tags', nodes: 'tag'},
   {id: 'terms', label: 'Glossary terms', nodes: 'term'},
   {id: 'systems', label: 'Systems documented', nodes: 'system'},
+  {id: 'reports', label: 'Portal reports mapped', nodes: 'report'},
   {id: 'news', label: 'Market news', nodes: 'category'},
 ];
-export const DEFAULT_LAYERS: ReadonlySet<LayerId> = new Set<LayerId>(['related', 'mention', 'tags', 'terms', 'systems', 'news']);
+export const DEFAULT_LAYERS: ReadonlySet<LayerId> = new Set<LayerId>(['related', 'mention', 'tags', 'terms', 'systems', 'reports', 'news']);
 
 export function nodeShown(node: GNode, layers: ReadonlySet<LayerId>): boolean {
   const layer = NODE_LAYER[node.kind];
@@ -69,7 +71,8 @@ export function edgeShown(graph: Graph, edge: GEdge, layers: ReadonlySet<LayerId
 }
 
 /** The graph: the notes and their links, the tags two or more notes share, the glossary terms, the systems the notes
- *  document and the news (when it was read), with the communities its links form. */
+ *  document, the reports Gemini mapped in each portal and the news (when it was read), with the communities its links
+ *  form. */
 export function buildGraph(map: BrainMap, news: BrainNews | null): Graph {
   const nodes: GNode[] = [];
   const edges: GEdge[] = [];
@@ -105,9 +108,14 @@ export function buildGraph(map: BrainMap, news: BrainNews | null): Graph {
   for (const system of ringSystems(map)) {
     if (system.id === 'knowledge') continue;
     const documented = system.documented_by.map(id => byKey.get(`note:${id}`)).filter((n): n is GNode => !!n);
-    if (!documented.length && !(newsOk && system.id === 'postgresql')) continue;
+    const mapped = (map.portal_reports ?? []).filter(r => r.system === system.id);
+    if (!documented.length && !mapped.length && !(newsOk && system.id === 'postgresql')) continue;
     const node = add({key: `system:${system.id}`, kind: 'system', label: system.name, group: 'systems', size: 2, charge: 1.5, system});
     for (const note of documented) join(node, note, 'documents');
+    for (const report of mapped) {
+      if (byKey.has(`report:${system.id}:${report.id}`)) continue;
+      join(node, add({key: `report:${system.id}:${report.id}`, kind: 'report', label: report.name, group: 'systems', size: 2, charge: 0.5, report}), 'maps');
+    }
   }
   if (newsOk) {
     const hub = add({key: NEWS, kind: 'news', label: 'Market news', group: NEWS, size: 2, charge: 1.5, count: news.total ?? 0});
@@ -513,7 +521,7 @@ export function nearest(points: {i: number; x: number; y: number; r: number; dep
   return best;
 }
 
-const KIND_RANK: Record<NodeKind, number> = {note: 0, term: 1, system: 2, tag: 3, category: 4, news: 5};
+const KIND_RANK: Record<NodeKind, number> = {note: 0, term: 1, system: 2, report: 2, tag: 3, category: 4, news: 5};
 /** Search the graph by name: exact names first, then names that start with the words, then names that contain them. */
 export function search(graph: Graph, query: string, limit = 8): GNode[] {
   const q = query.trim().toLocaleLowerCase().replace(/^#/, '');
@@ -555,8 +563,8 @@ export function modularity(links: [number, number][], group: (i: number) => stri
 }
 
 export function networkStats(graph: Graph): NetworkStats {
-  const byKind = {note: 0, tag: 0, term: 0, system: 0, news: 0, category: 0} as Record<NodeKind, number>;
-  const byEdge = {related: 0, mention: 0, shared: 0, tagged: 0, term: 0, documents: 0, news: 0} as Record<EdgeKind, number>;
+  const byKind = {note: 0, tag: 0, term: 0, system: 0, report: 0, news: 0, category: 0} as Record<NodeKind, number>;
+  const byEdge = {related: 0, mention: 0, shared: 0, tagged: 0, term: 0, documents: 0, maps: 0, news: 0} as Record<EdgeKind, number>;
   for (const node of graph.nodes) byKind[node.kind]++;
   for (const edge of graph.edges) byEdge[edge.kind]++;
   const n = graph.nodes.length;

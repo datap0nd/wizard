@@ -104,6 +104,14 @@ sidebar with check boxes and counts): "the knowledge base brain looks rough, was
 - **The statistics** are now over the whole graph: nodes, edges, communities, modularity Q of the communities (the
   areas' Q on hover), ⟨k⟩, k max, ρ, ⟨C⟩, components, ⟨ℓ⟩, D and P(k).
 
+**Update (30 October 2026, later): the reports mapped in a portal, and the Pages site.** The owner, mapping ASAP: "I
+mapped like 120 reports. I see that /brain didnt change much though. Still says 3 reports catalogued." The page counted
+only the report catalogs. It now reads each portal's map too: the Sources panel says how many reports Gemini mapped there
+("120 reports mapped"), and each mapped or partly mapped report is a point joined to its portal, on a layer of its own
+(**Portal reports mapped**), so a mapped portal joins the graph even when no note documents it. Reports only found are
+counted, not drawn. **Publish** in the header (when the person at this PC can publish) puts the page, as it reads now,
+on the company GitHub's Pages, a page of its own with its own address: [decision](2026-10-30-pages-site.md).
+
 **Evidence.** `tests/unit/test_brain.py` (10 since 30 October), `tests/integration/test_brain_postgres_real.py` (2, real PostgreSQL 16),
 `apps/web/src/brain.test.ts` (8), the e2e test "the Brain page maps what Wizard knows…" in `apps/web/e2e/wizard.spec.ts`,
 and screenshots of the page in Chromium at 1280×720, 1600×900 and 1920×1080 over a synthetic knowledge base of 111 notes

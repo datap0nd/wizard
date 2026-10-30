@@ -1,7 +1,7 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {ArrowLeft, ArrowRight, BadgeCheck, Maximize2, MessageSquareText, Minus, Pause, Play, Plus, RotateCcw, Search, X} from 'lucide-react';
+import {ArrowLeft, ArrowRight, BadgeCheck, ExternalLink, Maximize2, MessageSquareText, Minus, Pause, Play, Plus, RotateCcw, Search, Upload, X} from 'lucide-react';
 import {api} from '@/api';
-import {demoArrival, itemKey, NEWS, plural, ringSystems, tourSteps, type BrainLive, type BrainMap, type Focus, type NewsItem} from '@/brain';
+import {demoArrival, itemKey, NEWS, plural, ringSystems, tourSteps, type BrainLive, type BrainMap, type BrainSnapshot, type Focus, type NewsItem} from '@/brain';
 import mark from '@/assets/wizard-mark.svg';
 import {formatDate} from '@/format';
 import {buildGraph, DEFAULT_LAYERS, focusNodes, LAYERS, networkStats, OTHER, search, type EdgeKind, type GNode, type Graph,
@@ -18,11 +18,11 @@ const ARRIVE_AFTER_MS = 2500;  // on the tour's news step, the demo arrival come
 const STAGE_NAMES = {SIGNED: 'Signed by its owner', EXPERT_CHECKED: 'Checked by an expert', DRAFT: 'Draft'} as const;
 const PANEL = 252;             // the panels on the left of the graph; the camera centres on what is left
 const STRIP = 52;              // the statistics along the bottom
-const KIND_NAMES: Record<GNode['kind'], string> = {note: 'Note', tag: 'Tag', term: 'Glossary term', system: 'System', news: 'News table',
-  category: 'News category'};
+const KIND_NAMES: Record<GNode['kind'], string> = {note: 'Note', tag: 'Tag', term: 'Glossary term', system: 'System', report: 'Portal report',
+  news: 'News table', category: 'News category'};
 const EDGE_NAMES: Record<EdgeKind, string> = {related: 'related', mention: 'mentions', shared: 'shared tags', tagged: 'tagged', term: 'term',
-  documents: 'documents', news: 'news'};
-const EDGE_ORDER: EdgeKind[] = ['related', 'mention', 'documents', 'shared', 'term', 'news', 'tagged'];
+  documents: 'documents', maps: 'mapped', news: 'news'};
+const EDGE_ORDER: EdgeKind[] = ['related', 'mention', 'documents', 'maps', 'shared', 'term', 'news', 'tagged'];
 const UNGROUPED = '#6e7681';   // tags, systems and the news when colouring by area
 
 type ColourBy = 'community' | 'area';
@@ -41,8 +41,8 @@ function fixed(value: number | null, digits: number): string {
  *  is room for (the rest wrap out of sight), each explained on hover, after the degree distribution. */
 function StatsStrip({stats}: {stats: NetworkStats}) {
   const rows: [string, string, string][] = [
-    ['Nodes', stats.nodes.toLocaleString(), `${stats.byKind.note} notes, ${stats.byKind.term} glossary terms, ${stats.byKind.tag} tags, ${stats.byKind.system} systems, ${stats.byKind.category} news categories`],
-    ['Edges', stats.edges.toLocaleString(), `${stats.byEdge.related} related, ${stats.byEdge.mention} mentions, ${stats.byEdge.shared} shared tags, ${stats.byEdge.tagged} tagged, ${stats.byEdge.term} terms, ${stats.byEdge.documents} documenting a system`],
+    ['Nodes', stats.nodes.toLocaleString(), `${stats.byKind.note} notes, ${stats.byKind.term} glossary terms, ${stats.byKind.tag} tags, ${stats.byKind.system} systems, ${stats.byKind.report} portal reports, ${stats.byKind.category} news categories`],
+    ['Edges', stats.edges.toLocaleString(), `${stats.byEdge.related} related, ${stats.byEdge.mention} mentions, ${stats.byEdge.shared} shared tags, ${stats.byEdge.tagged} tagged, ${stats.byEdge.term} terms, ${stats.byEdge.documents} documenting a system, ${stats.byEdge.maps} reports mapped in a portal`],
     ['Communities', stats.communities.toLocaleString(), 'groups the links form (Louvain), each named by its most linked note'],
     ['Modularity Q', fixed(stats.modularity, 3), `how far links stay inside their community (by area: ${fixed(stats.areaModularity, 3)})`],
     ['⟨k⟩', fixed(stats.meanDegree, 2), 'mean degree: links per point'],
@@ -105,6 +105,8 @@ function NodeCard({graph, node, color, pinned, onClose, onOpen}: {graph: Graph; 
         {pinned && <button type="button" onClick={onClose} aria-label="Close" className="rounded p-0.5 text-slate-400 hover:bg-white/10"><X className="size-3.5" /></button>}
       </div>
       {note?.summary && <p className="mt-2 text-[12.5px] leading-snug text-slate-200">{note.summary}</p>}
+      {node.report && <p className="mt-2 text-[12px] leading-snug text-slate-300">{node.report.path.length ? node.report.path.join(' › ') : node.report.id}
+        {node.report.status === 'partial' ? ' · partly mapped' : ' · mapped'}</p>}
       {note && (
         <p className={cn('mt-2 inline-flex items-center gap-1 text-[11.5px]', note.stage === 'DRAFT' ? 'text-slate-400' : 'text-emerald-300')}>
           {note.stage !== 'DRAFT' && <BadgeCheck className="size-3.5" />}{STAGE_NAMES[note.stage]}{note.updated ? ` · updated ${formatDate(note.updated)}` : ''}
@@ -154,11 +156,15 @@ function GroupRow({color, name, count, shown, focused, dimmed, testid, data, onS
  * it was read from the knowledge base, the catalogs and the company database (brain.py); the communities are found from
  * the links (graph3d.ts). The news panel and the presenter tour stay. Keys: → or Space next step, ← back, Esc out,
  * F full screen, N a demo "new article came in", R frame the graph again, / search.
+ *
+ * `snapshot`: the page as published on the Pages site (site.py, owner 30 Oct 2026): the map and news as they were read
+ * when the person published them, with no sign-in, no refresh and no way back into the app.
  */
-export function BrainPage() {
+export function BrainPage({snapshot}: {snapshot?: BrainSnapshot} = {}) {
   const [boot, setBoot] = useState<Bootstrap | null>(null);
-  const [map, setMap] = useState<BrainMap | null>(null);
-  const [live, setLive] = useState<BrainLive | null>(null);
+  const [map, setMap] = useState<BrainMap | null>(snapshot?.map ?? null);
+  const [live, setLive] = useState<BrainLive | null>(snapshot?.live ?? null);
+  const [published, setPublished] = useState<{busy: boolean; message?: string; url?: string | null; failed?: boolean}>({busy: false});
   const [error, setError] = useState<string | null>(null);
   const [hover, setHover] = useState<GNode | null>(null);
   const [pinned, setPinned] = useState<string | null>(null);
@@ -182,10 +188,10 @@ export function BrainPage() {
   const reduced = useReducedMotion();
 
   const loadBoot = useCallback(() => { api.bootstrap().then(setBoot).catch((e: unknown) => setError(e instanceof Error ? e.message : 'Wizard could not start.')); }, []);
-  useEffect(() => { loadBoot(); }, [loadBoot]);
+  useEffect(() => { if (!snapshot) loadBoot(); }, [loadBoot, snapshot]);
   const signedIn = !!boot?.identity && !boot.auth.login_required;
   useEffect(() => {
-    if (!signedIn) return;
+    if (!signedIn || snapshot) return;
     const loadMap = () => api.brain().then(setMap).catch((e: unknown) => setError(e instanceof Error ? e.message : 'The knowledge graph could not be read.'));
     const loadLive = () => api.brainLive().then(setLive).catch(() => undefined);
     void loadMap(); void loadLive();
@@ -256,15 +262,20 @@ export function BrainPage() {
   }, [next, previous, arrive]);
 
   if (error) return <div className="grid min-h-dvh place-items-center bg-[#0f1117] p-6 text-sm text-rose-300" role="alert">{error}</div>;
-  if (!boot) return <div className="grid min-h-dvh place-content-center bg-[#0f1117] text-sm text-slate-400">Loading Wizard…</div>;
-  if (!signedIn) return <LoginScreen mode={boot.auth.mode} onLogin={loadBoot} />;
+  if (!snapshot && !boot) return <div className="grid min-h-dvh place-content-center bg-[#0f1117] text-sm text-slate-400">Loading Wizard…</div>;
+  if (!snapshot && boot && !signedIn) return <LoginScreen mode={boot.auth.mode} onLogin={loadBoot} />;
+  const publish = () => {
+    setPublished({busy: true});
+    api.publishBrain().then(r => setPublished({busy: false, message: r.message, url: r.url}))
+      .catch((e: unknown) => setPublished({busy: false, failed: true, message: e instanceof Error ? e.message : 'Not published.'}));
+  };
 
   const card = graph ? (pinned ? graph.byKey.get(pinned) : hover) ?? null : null;
   const database = live?.database.status === 'ok' ? live.database : null;
   const toggle = (id: LayerId) => setLayers(prev => { const out = new Set(prev); if (out.has(id)) out.delete(id); else out.add(id); return out; });
   const show = (key: string, on: boolean) => setHidden(prev => { const out = new Set(prev); if (on) out.delete(key); else out.add(key); return out; });
   const counts = stats ? {related: stats.byEdge.related, mention: stats.byEdge.mention, shared: stats.byEdge.shared, tags: stats.byKind.tag,
-    terms: stats.byKind.term, systems: stats.byKind.system, news: stats.byKind.category} as Record<LayerId, number> : null;
+    terms: stats.byKind.term, systems: stats.byKind.system, reports: stats.byKind.report, news: stats.byKind.category} as Record<LayerId, number> : null;
   const groups = !graph ? [] : colourBy === 'community'
     ? graph.communities.map(c => ({key: `c:${c.id}`, name: c.name, count: c.size, color: c.color, pin: {kind: 'community', id: c.id} as Pin,
       testid: 'brain-community', data: {'data-community': String(c.id)}}))
@@ -278,7 +289,8 @@ export function BrainPage() {
         <div className="min-w-0">
           <h1 className="text-[18px] font-semibold leading-tight tracking-tight text-white">Knowledge graph</h1>
           <p className="text-[12px] text-slate-400">
-            {map?.content === 'company' ? <>Company knowledge base{map.knowledge_synced_at ? `, synced ${formatDate(map.knowledge_synced_at, true)}` : ''}</>
+            {map?.content === 'company' ? <>Company knowledge base{snapshot ? `, as published ${formatDate(snapshot.published_at, true)}`
+              : map.knowledge_synced_at ? `, synced ${formatDate(map.knowledge_synced_at, true)}` : ''}</>
               : map?.content === 'none' ? 'The knowledge base has not synced yet' : map ? 'Example content: not company knowledge' : 'Reading what Wizard knows…'}
           </p>
         </div>
@@ -310,9 +322,20 @@ export function BrainPage() {
             {step === null ? <><Play className="size-3.5" />Tour</> : <><Pause className="size-3.5" />End tour</>}</button>
           <button type="button" onClick={() => void document.documentElement.requestFullscreen?.().catch(() => undefined)} aria-label="Full screen" title="Full screen (F)"
             className="grid size-8 place-items-center rounded-lg border border-white/10 bg-white/[0.04] hover:bg-white/10"><Maximize2 className="size-3.5" /></button>
-          <a href="/" className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#1428a0] px-3 text-[12.5px] font-semibold text-white hover:bg-[#1c34c0]">
-            <MessageSquareText className="size-3.5" />Ask Wizard</a>
+          {!snapshot && boot?.site?.enabled && (
+            <button type="button" onClick={publish} disabled={published.busy} data-testid="brain-publish" title="Publish this graph to the Pages site"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-[12.5px] font-medium hover:bg-white/10 disabled:opacity-60">
+              <Upload className="size-3.5" />{published.busy ? 'Publishing…' : 'Publish'}</button>
+          )}
+          {!snapshot && <a href="/" className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#1428a0] px-3 text-[12.5px] font-semibold text-white hover:bg-[#1c34c0]">
+            <MessageSquareText className="size-3.5" />Ask Wizard</a>}
         </div>
+        {published.message && (
+          <p className={cn('basis-full text-right text-[12px]', published.failed ? 'text-rose-300' : 'text-emerald-300')} role="status" data-testid="brain-published">
+            {published.message}{published.url && <> <a href={published.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 underline">
+              Open the published graph<ExternalLink className="size-3" /></a></>}
+          </p>
+        )}
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 px-3 pb-3 lg:flex-row">
@@ -368,6 +391,7 @@ export function BrainPage() {
                 <ul className="space-y-0.5">
                   {ringSystems(map).filter(s => s.id !== 'knowledge').map(system => {
                     const detail = system.id === 'postgresql' && database ? `${plural(database.relations ?? 0, 'table')} & views`
+                      : system.mapped?.mapped ? `${plural(system.mapped.mapped, 'report')} mapped`
                       : system.reports ? `${plural(system.reports, 'report')} catalogued` : system.kind === 'portal' ? 'read live'
                       : system.kind === 'schedules' ? 'recurring briefs' : '';
                     return (
@@ -436,7 +460,8 @@ export function BrainPage() {
         </div>
         {news && (
           <aside className={cn('flex min-h-0 shrink-0 flex-col lg:w-[400px] xl:w-[460px]', current?.focus.kind === 'cluster' && current.focus.id === NEWS && 'brain-spotlight')}>
-            {showNews ? <NewsPanel news={news} fresh={fresh} incoming={incoming} category={category} onCategory={setCategory} name={live?.name ?? 'Company database'} still={reduced} />
+            {showNews ? <NewsPanel news={news} fresh={fresh} incoming={incoming} category={category} onCategory={setCategory} name={live?.name ?? 'Company database'} still={reduced}
+              snapshotAt={snapshot?.published_at} />
               : <NewsMissing news={news} />}
           </aside>
         )}

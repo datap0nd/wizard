@@ -2,6 +2,7 @@ import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import {App} from './App';
 import {BrainPage} from './components/brain/BrainPage';
+import {CasePreview} from './components/cases/CasePreview';
 import {ReportPage} from './components/ReportPage';
 import {RoadmapPage} from './components/roadmap/RoadmapPage';
 import {TooltipProvider} from './components/ui/menu';
@@ -12,9 +13,11 @@ const report = location.pathname.match(/^\/r\/([A-Za-z0-9_-]{4,64})\/?$/);
 const brain = /^\/brain\/?$/.test(location.pathname);
 // /roadmap: what Wizard does today and what comes next, also a page of its own.
 const roadmap = /^\/roadmap\/?$/.test(location.pathname);
+// /case/<chat>: a chat as Share as case would publish it to the Pages site (the site itself is built from src/site.tsx).
+const casePreview = location.pathname.match(/^\/case\/(cnv_[A-Za-z0-9]{4,64})\/?$/);
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <TooltipProvider delayDuration={250}>{brain ? <BrainPage /> : roadmap ? <RoadmapPage /> : report ? <ReportPage id={report[1]} /> : <App compact={/^\/quick\/?$/.test(location.pathname)} />}</TooltipProvider>
+    <TooltipProvider delayDuration={250}>{brain ? <BrainPage /> : roadmap ? <RoadmapPage /> : casePreview ? <CasePreview conversationId={casePreview[1]} /> : report ? <ReportPage id={report[1]} /> : <App compact={/^\/quick\/?$/.test(location.pathname)} />}</TooltipProvider>
   </StrictMode>,
 );

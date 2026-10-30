@@ -4,6 +4,7 @@ Each run starts a fresh agent session and receives the prior turns as context, s
 session files and conversations stay inside the user's own state."""
 from __future__ import annotations
 
+import re
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
@@ -30,6 +31,14 @@ RECURRING_REQUEST = (
     "answer, each with its own query whose fixed dates are rewritten relative to CURRENT_DATE, and 'what moved' rules "
     "for the conclusions you drew. If the answer has no database query to repeat, say so instead."
 )
+# A new chat's name, from its first question (code_assist.CodeAssistRuntime.title). The question is the person's own
+# words, so it is quoted as data.
+TITLE_PROMPT = (
+    "Name this analysis for a list of chats. Reply with the name only: at most 8 words, in the question's language, "
+    "with the subject and the scope it names (market, product, period), no quotation marks and no full stop.\n\n"
+    "The question, between the lines:\n---\n{question}\n---"
+)
+TITLE_CHARS = 80
 RECURRING_CHOSEN = " They chose {choice}: call the tool now, without asking anything."
 RECURRING_UNCHOSEN = (" They did not say how often: ask only that, in one short line (every day, every week on which "
                       "day, or every month on which day).")
@@ -201,6 +210,16 @@ def correction_question(text: str, about: dict[str, Any] | None = None, reason: 
 def squeeze(text: str, limit: int) -> str:
     flat = " ".join(text.split())
     return flat if len(flat) <= limit else flat[:limit - 3] + "..."
+
+
+def clean_title(text: str) -> str | None:
+    """Gemini's chat name as the list shows it: its first line, without a "Title:" label, Markdown, quotes or a closing
+    full stop, at most TITLE_CHARS characters. None when nothing is left."""
+    line = next((line for line in text.splitlines() if line.strip()), "")
+    line = line.replace("**", "").replace("__", "").replace("`", "")
+    line = re.sub(r"^\s*(?:#+\s*)?(?:(?:title|name)\s*:\s*)?", "", line, flags=re.IGNORECASE)
+    line = line.strip().strip("\"'“”‘’").strip().rstrip(".").strip()
+    return squeeze(line, TITLE_CHARS) or None
 
 
 def compose(question: str, history: list[Turn], kind: str, today: date, files: list[dict[str, Any]] | None = None,
