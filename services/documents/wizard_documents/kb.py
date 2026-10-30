@@ -25,7 +25,7 @@ import httpx
 
 from wizard_agent import outbound
 from wizard_connectors.content import errors, validate_content
-from wizard_connectors.github import API, WEB
+from wizard_connectors.github import API, WEB, refused
 
 MANAGED = ("knowledge/", "contracts/sources/")
 MAX_FILE_BYTES = 2 * 1024 * 1024
@@ -89,34 +89,59 @@ def blob_id(data: bytes) -> str:
 
 
 class GitHub:
-    def __init__(self, repo: str, token: str, client: httpx.Client):
-        self.repo, self.client = repo, client
+    def __init__(self, repo: str, token: str, client: httpx.Client, label: str = "publishing token"):
+        self.repo, self.client, self.label = repo, client, label
         self.headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json",
                         "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "Wizard-Knowledge-Publish"}
 
     def call(self, method: str, path: str, body: dict[str, Any] | None = None, ok: tuple[int, ...] = (200, 201)) -> Any:
         response = self.client.request(method, f"{API}/repos/{self.repo}{path}", headers=self.headers, json=body)
         if response.status_code not in ok:
-            raise PublishError(explain(response, self.repo))
+            raise PublishError(explain(response, self.repo, self.label))
         return response.json() if response.content else None
 
 
-def explain(response: httpx.Response, repo: str) -> str:
+# What Wizard was doing, by the request GitHub refused: (method, path under /repos/{repo}, words). First match wins.
+STEPS = (("GET", "/git/ref/", "reading the branch"), ("GET", "/git/commits/", "reading the latest commit"),
+         ("GET", "/git/trees/", "reading the repository's files"), ("GET", "/contents/", "reading a file"),
+         ("PUT", "/contents/", "creating the README"), ("POST", "/git/blobs", "uploading a file"),
+         ("POST", "/git/trees", "preparing the commit"), ("POST", "/git/commits", "creating the commit"),
+         ("POST", "/git/refs", "checking that the token can write"),
+         ("PATCH", "/git/refs/", "moving the branch to the new commit"), ("GET", "", "reading the repository"))
+
+
+def _step(response: httpx.Response, repo: str) -> str:
+    try:
+        request = response.request
+    except RuntimeError:  # a response built by hand
+        return ""
+    path = request.url.path.split(f"/repos/{repo}", 1)[-1]
+    words = next((w for method, prefix, w in STEPS if request.method == method and path.startswith(prefix)), None)
+    return f" while {words} ({request.method} {path or '/'})" if words else ""
+
+
+def explain(response: httpx.Response, repo: str, label: str = "publishing token") -> str:
     code = response.status_code
     try:
-        detail = str(response.json().get("message", ""))[:200]
+        body = response.json()
+        detail = str(body.get("message", ""))[:200] if isinstance(body, dict) else ""
     except ValueError:
         detail = ""
+    step = _step(response, repo)
     if code == 401:
-        return "GitHub refused the publishing token (HTTP 401): it is invalid or expired."
+        return f"GitHub refused the {label} (HTTP 401){step}: it is invalid or expired."
     if code == 404:
-        return (f"GitHub says {repo} does not exist for this token (HTTP 404): check the name, and that the token's "
+        return (f"GitHub says {repo} does not exist for this token (HTTP 404){step}: check the name, and that the token's "
                 "repository access includes it.")
     if code == 403:
-        return f"GitHub refused the request (HTTP 403: {detail}): the token needs Contents read and write, and SSO approval."
-    if code == 409:
+        return f"GitHub refused the {label} (HTTP 403){step}: " + refused(detail, dict(response.headers), repo,
+                                                                         write=label != "read-only token")
+    if code == 409 and "empty" in detail.lower():
         return f"{repo} is empty: nothing has been published to it yet. Run .\\docs.ps1 kb-publish first."
-    return f"GitHub answered HTTP {code} ({detail})."
+    if code in (409, 422) and ("protected" in detail.lower() or "rule" in detail.lower()):
+        return (f"GitHub refused the commit (HTTP {code}){step}: the branch is protected, and Wizard commits straight to "
+                f'it. A repository admin can allow this account to push to it. GitHub said: "{detail}"')
+    return f"GitHub answered HTTP {code}{step}" + (f' ("{detail}").' if detail else ".")
 
 
 def _client(proxy: str | None) -> httpx.Client:
@@ -193,19 +218,25 @@ def publish(content: Path, repo: str, token: str, *, branch: str | None = None, 
 
 
 def check_write(repo: str, token: str, *, proxy: str | None = None, client: httpx.Client | None = None) -> tuple[bool, str]:
-    """Can this token write to the repository (the settings pane's write token)? Reads the repository's permissions;
-    writes nothing."""
+    """Can this token write to the repository (the settings pane's write token)? Writes nothing. The account's role is
+    not enough (owner, 30 Oct 2026: Test connection passed, then publishing a map was refused), so it also asks GitHub
+    to create a branch at a commit that does not exist: GitHub checks the token's rights first and refuses a token
+    that may not write (403); one that may is told the commit does not exist (422), and nothing is created."""
     with client or _client(proxy) as http:
-        gh = GitHub(repo, token, http)
+        gh = GitHub(repo, token, http, "write token")
         try:
             info = gh.call("GET", "")
         except PublishError as error:
-            return False, f"Write token: {error}".replace("publishing token", "write token")
-    if not info.get("private"):
-        return False, f"Write token: {repo} is not private; Wizard writes only to a private repository."
-    if not (info.get("permissions") or {}).get("push"):
-        return False, "Write token: it reads the repository but cannot write to it (it needs Contents read and write)."
-    return True, "The write token can write to it."
+            return False, f"Write token: {error}"
+        if not info.get("private"):
+            return False, f"Write token: {repo} is not private; Wizard writes only to a private repository."
+        if not (info.get("permissions") or {}).get("push"):
+            return False, "Write token: this account cannot write to the repository; ask an organisation owner for write access."
+        probe = http.post(f"{API}/repos/{repo}/git/refs", headers=gh.headers,
+                          json={"ref": "refs/heads/wizard-write-check", "sha": "0" * 40})
+    if probe.status_code == 422:
+        return True, "The write token can write to it."
+    return False, f"Write token: {explain(probe, repo, 'write token')}"
 
 
 def write_files(repo: str, token: str, files: dict[str, bytes], *, branch: str, message: str,
@@ -213,16 +244,16 @@ def write_files(repo: str, token: str, files: dict[str, bytes], *, branch: str, 
     """Commit these files in one commit, leaving every other file in the repository alone (Wizard's own files, such as
     its portal maps). Returns the commit, or None when the repository already has them. Refuses a public repository."""
     with client or _client(proxy) as http:
-        gh = GitHub(repo, token, http)
+        gh = GitHub(repo, token, http, "write token")
         info = gh.call("GET", "")
         if not info.get("private"):
             raise PublishError(f"{repo} is not private: Wizard never writes company notes to a public repository.")
         if not (info.get("permissions") or {}).get("push"):
-            raise PublishError("The write token cannot write to the repository: it needs Contents read and write.")
+            raise PublishError(f"This account cannot write to {repo}: ask an organisation owner for write access.")
         for attempt in range(2):  # another commit may land in between: start again from the new head once
             ref = http.get(f"{API}/repos/{repo}/git/ref/heads/{branch}", headers=gh.headers)
             if ref.status_code != 200:
-                raise PublishError(explain(ref, repo).replace("publishing token", "write token"))
+                raise PublishError(explain(ref, repo, gh.label))
             parent = ref.json()["object"]["sha"]
             base_tree = gh.call("GET", f"/git/commits/{parent}")["tree"]["sha"]
             entries: list[dict[str, Any]] = []
@@ -242,7 +273,7 @@ def write_files(repo: str, token: str, files: dict[str, bytes], *, branch: str, 
             if moved.status_code == 200:
                 return str(commit["sha"])
             if moved.status_code != 422 or attempt:
-                raise PublishError(explain(moved, repo).replace("publishing token", "write token"))
+                raise PublishError(explain(moved, repo, gh.label))
     return None
 
 
@@ -254,8 +285,7 @@ def check_read(repo: str, token: str, ref: str = "main", *, proxy: str | None = 
     with client or _client(proxy) as http:
         response = http.get(f"{API}/repos/{repo}/commits/{ref}", headers=headers)
         if response.status_code != 200:
-            return False, explain(response, repo).replace("publishing token", "read-only token")
+            return False, explain(response, repo, "read-only token")
         commit = response.text.strip()
-    # GitHub cannot be asked whether a fine-grained token may write without writing, so the person checks the
-    # token's settings page: Contents read-only, this repository only.
+    # That it cannot write is the person's check, on the token's settings page: Contents read-only, this repository only.
     return True, f"The read-only token reads {repo}: {ref} is at commit {commit[:12]}."

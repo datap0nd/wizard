@@ -32,8 +32,11 @@ TOKEN = "github_pat_" + "w" * 40
 
 
 class FakeGitHub:
-    def __init__(self, private: bool = True, push: bool = True, empty: bool = True):
+    def __init__(self, private: bool = True, push: bool = True, empty: bool = True,
+                 refuse: dict[str, tuple[str, dict[str, str]]] | None = None, protected: tuple[int, str] | None = None):
         self.private, self.push = private, push
+        self.refuse = refuse or {}  # "METHOD path": (GitHub's message, headers) answered with 403
+        self.protected = protected  # (status, message) for moving main
         self.blobs: dict[str, bytes] = {}
         self.commits: dict[str, dict] = {}
         self.trees: dict[str, dict[str, str]] = {}
@@ -69,6 +72,14 @@ class FakeGitHub:
         self.calls.append(f"{request.method} {path}")
         if request.method != "GET":
             self.writes.append(f"{request.method} {path}")
+        if f"{request.method} {path}" in self.refuse:
+            message, headers = self.refuse[f"{request.method} {path}"]
+            return httpx.Response(403, json={"message": message}, headers=headers)
+        if request.method == "POST" and path == "/git/refs":  # only ever Test connection's probe, which creates nothing
+            assert body == {"ref": "refs/heads/wizard-write-check", "sha": "0" * 40}
+            return httpx.Response(422, json={"message": "Object does not exist"})
+        if request.method == "PATCH" and self.protected:
+            return httpx.Response(self.protected[0], json={"message": self.protected[1]})
         if request.method == "GET" and path == "":
             return httpx.Response(200, json={"private": self.private, "default_branch": "main", "permissions": {"push": self.push}})
         if request.method == "GET" and path == "/git/ref/heads/main":
@@ -226,7 +237,66 @@ def test_wizard_never_writes_to_a_public_repository_or_without_write_access():
             kb.write_files("acme/kb", TOKEN, {"portal-maps/x.json": b"{}"}, branch="main", message="m",
                            client=httpx.Client(transport=httpx.MockTransport(github)))
         assert not github.writes
-    ok, message = kb.check_write("acme/kb", TOKEN, client=httpx.Client(transport=httpx.MockTransport(FakeGitHub(empty=False))))
-    assert ok and "can write" in message
+    github = FakeGitHub(empty=False)
+    head = github.head
+    ok, message = kb.check_write("acme/kb", TOKEN, client=httpx.Client(transport=httpx.MockTransport(github)))
+    assert ok and "can write" in message and github.head == head and github.writes == ["POST /git/refs"]
     ok, message = kb.check_write("acme/kb", TOKEN, client=httpx.Client(transport=httpx.MockTransport(FakeGitHub(push=False))))
     assert not ok and "cannot write" in message
+
+
+CLASSIC = ("The `acme` organization forbids access via a personal access token (classic). Please use a GitHub App, "
+           "OAuth App, or a fine-grained personal access token.")
+READ_ONLY = ("Resource not accessible by personal access token", {"X-Accepted-GitHub-Permissions": "contents=write"})
+
+
+def test_test_connection_asks_github_whether_the_token_itself_can_write():
+    """Owner, 30 Oct 2026: Test connection passed on the account's role, then publishing a map was refused (403). The
+    token's own right to write is checked too, by a request that cannot create anything."""
+    github = FakeGitHub(empty=False, refuse={"POST /git/refs": READ_ONLY})
+    ok, message = kb.check_write("acme/kb", TOKEN, client=httpx.Client(transport=httpx.MockTransport(github)))
+    assert not ok and message.startswith("Write token: GitHub refused the write token (HTTP 403) while checking that the "
+                                         "token can write (POST /git/refs): the token lacks a permission (GitHub asks "
+                                         "for contents=write): give it Contents: Read and write on acme/kb.")
+    ok, message = kb.check_write("acme/kb", TOKEN, client=httpx.Client(transport=httpx.MockTransport(
+        FakeGitHub(empty=False, refuse={"GET ": (CLASSIC, {})}))))
+    assert not ok and "does not accept classic personal access tokens" in message and "while reading the repository" in message
+
+
+@pytest.mark.parametrize(("refuse", "words"), [
+    ({"GET ": (CLASSIC, {})},
+     ["(HTTP 403) while reading the repository (GET /): the organisation does not accept classic personal access tokens. "
+      "Make a fine-grained token instead: resource owner = the organisation, only acme/kb, Contents: Read and write.",
+      'GitHub said: "The `acme` organization forbids access via a personal access token (classic).']),
+    ({"POST /git/blobs": READ_ONLY},
+     ["while uploading a file (POST /git/blobs): the token lacks a permission (GitHub asks for contents=write)"]),
+    ({"GET ": ("Resource protected by organization SAML enforcement. You must grant your Personal Access token access "
+               "to this organization.", {"X-GitHub-SSO": "required; url=https://github.example/orgs/acme/sso"})},
+     ["Configure SSO → Authorize"]),
+    ({"GET ": ("API rate limit exceeded for user ID 1.", {})}, ["rate limit was reached"]),
+    ({"GET ": ("Forbidden", {})}, ["some organisations refuse classic tokens", 'GitHub said: "Forbidden"']),
+])
+def test_a_refused_map_says_which_request_github_refused_and_why(refuse, words):
+    """GitHub's own message and headers name the cause; Wizard no longer guesses Contents and SSO approval."""
+    github = FakeGitHub(empty=False, refuse=refuse)
+    head = github.head
+    with pytest.raises(kb.PublishError) as refused:
+        kb.write_files("acme/kb", TOKEN, {"portal-maps/x.json": b"{}"}, branch="main", message="m",
+                       client=httpx.Client(transport=httpx.MockTransport(github)))
+    assert str(refused.value).startswith("GitHub refused the write token (HTTP 403) while ")
+    for part in words:
+        assert part in str(refused.value)
+    assert github.head == head
+    if "Configure SSO" not in words[0]:
+        assert "SSO" not in str(refused.value)
+
+
+@pytest.mark.parametrize("protected", [(422, "Protected branch update failed for refs/heads/main."),
+                                       (409, "Repository rule violations found\n\nChanges must be made through a pull request.")])
+def test_a_protected_branch_is_named_not_called_empty(protected):
+    github = FakeGitHub(empty=False, protected=protected)
+    with pytest.raises(kb.PublishError, match="the branch is protected") as refused:
+        kb.write_files("acme/kb", TOKEN, {"portal-maps/x.json": b"{}"}, branch="main", message="m",
+                       client=httpx.Client(transport=httpx.MockTransport(github)))
+    assert "while moving the branch to the new commit (PATCH /git/refs/heads/main)" in str(refused.value)
+    assert "empty" not in str(refused.value)
