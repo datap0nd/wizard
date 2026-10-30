@@ -4,6 +4,7 @@ import {api, ApiError} from '@/api';
 import {formatDate} from '@/format';
 import {Button} from './ui/button';
 import {Dialog, DialogContent} from './ui/dialog';
+import {RememberedNotes} from './RememberedNotes';
 import type {Bootstrap, GeminiAccount} from '@/types';
 
 /** Link the user's own enterprise Gemini account (Gemini CLI's user-code OAuth flow). Wizard never sees the password. */
@@ -57,6 +58,7 @@ export function AccountDialog({open, boot, onClose, onChanged}: {open: boolean; 
                 </div>}
             {error && <p className="mt-3 rounded-lg bg-danger-soft px-3 py-2 text-danger" role="alert">{error}</p>}
           </section>
+          <RememberedNotes open={open} />
           <p className="text-xs text-ink-3">Source access comes from each system's own entitlements. Wizard shows only reports and markets you may see.</p>
         </div>
       </DialogContent>

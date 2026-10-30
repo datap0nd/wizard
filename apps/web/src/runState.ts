@@ -1,4 +1,12 @@
-import type {AccessRequest, Attachment, RunEvent, RunKind, RunRecord, RunView, Schedule, TimelineItem} from './types';
+import type {AccessRequest, Attachment, RunEvent, RunKind, RunRecord, RunView, Schedule, Steer, SystemRequest, TimelineItem} from './types';
+
+const REASON_WORDS: Record<string, string> = {table: 'Wrong table', filter: 'Wrong filter', period: 'Wrong period', other: 'Not this'};
+
+/** A note as the timeline shows it: the step it is about, then the person's words. */
+export function steerLabel(steer: Steer): string {
+  const about = steer.about ? `${REASON_WORDS[steer.reason ?? 'other']}: ${steer.about.label ?? 'a step'}` : '';
+  return [about, steer.text].filter(Boolean).join(' · ');
+}
 
 export const TERMINAL = new Set(['run_finished', 'run_failed']);
 
@@ -6,6 +14,7 @@ export function emptyRun(id: string, conversationId: string, question: string, k
   return {id, conversationId, kind, question, status: 'queued', runtime: 'replay', runtimeLabel: '', model: '', timeline: [],
     streamText: '', answer: null, visuals: [], evidence: [], check: null, checkStatus: 'NOT_CHECKED', checkSummary: null,
     dataMode: null, reportId: null, error: null, warnings: [], lastSeq: 0, attachments: [], schedules: [], accessRequests: [],
+    systems: null, steers: [], systemRequests: [],
     createdAt: new Date().toISOString(),
     startedAt: null, finishedAt: null, parentRunId: null, diagnostics: []};
 }
@@ -42,6 +51,18 @@ export function applyEvent(run: RunView, event: RunEvent): RunView {
       return withSchedule(next, p.schedule as Schedule);
     case 'access_request_proposed':
       return {...next, accessRequests: [...next.accessRequests.filter(r => r.id !== p.request.id), p.request as AccessRequest]};
+    case 'steer': {
+      const steer = p.steer as Steer;
+      return {...next, steers: [...next.steers.filter(s => s.id !== steer.id), steer],
+        timeline: [...next.timeline, {key: `steer-${steer.id}`, kind: 'steer', label: steerLabel(steer), state: steer.state === 'read' ? 'ok' : 'running', at: event.ts}]};
+    }
+    case 'steer_read':
+      return {...next, steers: next.steers.map(s => (s.id === p.steer_id ? {...s, state: 'read'} : s)),
+        timeline: next.timeline.map(item => (item.key === `steer-${p.steer_id}` ? {...item, state: 'ok'} : item))};
+    case 'systems_changed':
+      return {...next, systems: Array.isArray(p.systems) ? p.systems.map(String) : null};
+    case 'system_requested':
+      return {...next, systemRequests: [...next.systemRequests.filter(r => r.system !== p.system), p as SystemRequest]};
     case 'file_made':
       return {...next, attachments: [...next.attachments.filter(a => a.id !== p.attachment.id), p.attachment as Attachment]};
     case 'check_result':
@@ -57,7 +78,7 @@ export function applyEvent(run: RunView, event: RunEvent): RunView {
     case 'run_failed':
       return {...next, status: p.status === 'cancelled' ? 'cancelled' : 'failed',
         error: {code: String(p.code), message: String(p.message), details: p.details && typeof p.details === 'object' ? p.details : undefined},
-        finishedAt: event.ts, timeline: next.timeline.map(item => item.state === 'running' ? {...item, state: 'error', summary: 'Stopped'} : item)};
+        finishedAt: event.ts, timeline: next.timeline.map(item => item.state === 'running' && item.kind === 'tool' ? {...item, state: 'error', summary: 'Stopped'} : item)};
     default:
       return next;
   }
@@ -66,7 +87,7 @@ export function applyEvent(run: RunView, event: RunEvent): RunView {
 export function fromRecord(record: RunRecord): RunView {
   let view = emptyRun(record.id, record.conversation_id, record.question, record.kind);
   view = {...view, runtime: record.runtime, runtimeLabel: record.runtime_label, model: record.model, createdAt: record.created_at,
-    parentRunId: record.parent_run_id, status: record.status};
+    parentRunId: record.parent_run_id, status: record.status, systems: record.systems ?? null};
   for (const event of record.events) view = applyEvent(view, event);
   return {...view, status: record.status, answer: record.answer ?? view.answer, reportId: record.report_id ?? view.reportId,
     dataMode: record.data_mode ?? view.dataMode, checkStatus: record.check_status, checkSummary: record.check_summary,

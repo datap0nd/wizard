@@ -9,12 +9,14 @@ from collections.abc import Awaitable, Callable, Iterator
 from pathlib import Path
 from typing import Any
 
+import jsonschema
 import pytest
 from fastapi.testclient import TestClient
 from tests.helpers import CEO_QUESTION, HEADERS, ask, login, make_settings, wait_run
 
 from wizard_agent.runtime import AgentRequest, Emit, ToolBridge
 from wizard_api.app import create_app
+from wizard_connectors.paths import ROOT
 
 Script = Callable[[AgentRequest, Emit, ToolBridge], Awaitable[None]]
 
@@ -143,6 +145,8 @@ def test_a_note_reaches_gemini_while_it_works_and_not_this_leaves_the_step_out(s
     steer = sent.json()["steer"]
     assert steer["id"] == "s1" and steer["state"] == "waiting" and steer["reason"] == "table"
     assert steer["about"]["call_id"] == "c1" and steer["about"]["detail"] == "spend"
+    unknown = client.post(f"/api/v1/runs/{started['run_id']}/steer", json={"call_id": "c7", "reason": "table"}, headers=HEADERS)
+    assert unknown.status_code == 404, "a step that is not part of the answer is not taken as an empty note"
     run = wait_run(client, started["run_id"])
     assert run["status"] == "succeeded" and run["answer"] == "Using the quarterly spend report."
     assert len(heard[0]) == 1 and "Their words: use the quarterly report" in heard[0][0] and "wrong table" in heard[0][0]
@@ -151,6 +155,11 @@ def test_a_note_reaches_gemini_while_it_works_and_not_this_leaves_the_step_out(s
     report = client.get(f"/api/v1/reports/{run['report_id']}").json()["report"]
     assert report["steers"][0]["text"] == "use the quarterly report" and report["steers"][0]["state"] == "read"
     assert "message" not in report["steers"][0], "the page shows the person's words, not Gemini's wording"
+    contracts = ROOT / "contracts"
+    event_schema = json.loads((contracts / "run-event.schema.json").read_text(encoding="utf-8"))
+    for event in client.app.state.store.events(run["id"]):
+        jsonschema.validate(event, event_schema)
+    jsonschema.validate(report, json.loads((contracts / "report.schema.json").read_text(encoding="utf-8")))
 
 
 def test_an_answer_citing_a_step_marked_not_this_is_flagged(scripted):
@@ -195,6 +204,9 @@ def test_switching_a_system_on_mid_run_opens_its_tools_and_tells_gemini(scripted
     assert "gscm_run_report" in seen["offered"] and "nerp_run_report" in seen["offered"], "tools are never taken away"
     assert seen["after"][0] is True and json.loads(seen["nerp"][1])["error"]["code"] == "system_off"
     assert run["systems"] == ["gscm", "knowledge"]
+    schema = json.loads((ROOT / "contracts" / "run-event.schema.json").read_text(encoding="utf-8"))
+    for event in client.app.state.store.events(run["id"]):
+        jsonschema.validate(event, schema)
     change = next(e for e in run["events"] if e["type"] == "systems_changed")["payload"]
     assert change["systems"] == ["gscm", "knowledge"] and change["on"] == ["GSCM", "Knowledge base"]
     assert client.post(f"/api/v1/runs/{started['run_id']}/systems", json={"systems": None}, headers=HEADERS).status_code == 409

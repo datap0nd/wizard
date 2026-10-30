@@ -44,7 +44,8 @@ export interface Bootstrap {
   auth: {mode: 'fixture' | 'trusted-header'; login_required: boolean};
   suggestions: {story: string; question: string}[];
   identity?: Identity;
-  runtime?: {kind: RuntimeKind; label: string; model: string; ready: boolean; reason: string | null};
+  /** steering: a note reaches Gemini while it works (otherwise a note stops the run and asks again). */
+  runtime?: {kind: RuntimeKind; label: string; model: string; ready: boolean; reason: string | null; steering?: boolean};
   gemini_account?: GeminiAccount;
   /** Dev mode: show full run diagnostics and the server log. */
   diagnostics?: boolean;
@@ -284,12 +285,29 @@ export interface RunRecord {
   evidence: EvidenceSummary[];
   attachments?: Attachment[];
   schedules?: Schedule[];
+  /** The systems the person chose for this question; null is Auto. */
+  systems?: string[] | null;
   active: boolean;
 }
 
+/** One step of a run, as a note about it names it (Not this). */
+export interface StepAbout { call_id: string; name: string | null; label: string | null; detail: string | null; evidence_id: string | null }
+
+export type SteerReason = 'table' | 'filter' | 'period' | 'other';
+
+/** A note the person sent Wizard while it worked: waiting until Gemini's next step, then read. */
+export interface Steer { id: string; text: string; reason: SteerReason | null; about: StepAbout | null; at: string; state: 'waiting' | 'read' }
+
+/** Gemini asked for a system the person switched off for this question. */
+export interface SystemRequest { system: string; name: string; reason: string }
+
+/** A note the person asked Wizard to remember: it goes into every question they ask. */
+export interface Memory { id: string; text: string; run_id: string | null; created_at: string }
+
 export interface TimelineItem {
   key: string;
-  kind: 'tool' | 'note' | 'warning' | 'status';
+  /** steer: a note the person sent while Wizard worked. */
+  kind: 'tool' | 'note' | 'warning' | 'status' | 'steer';
   label: string;
   state?: 'running' | 'ok' | 'error';
   name?: string;
@@ -391,6 +409,12 @@ export interface RunView {
   schedules: Schedule[];
   /** Access requests prepared in this answer, for the person to open and submit. */
   accessRequests: AccessRequest[];
+  /** The systems the person chose for this question (null: Auto), as they are now. */
+  systems: string[] | null;
+  /** Notes the person sent while Wizard worked. */
+  steers: Steer[];
+  /** Systems Gemini asked the person to switch on. */
+  systemRequests: SystemRequest[];
   createdAt: string;
   /** Server time the agent started (run_started), the zero point for each step's start time. */
   startedAt: string | null;

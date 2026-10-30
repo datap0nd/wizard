@@ -1,5 +1,11 @@
 import type {BrainLive, BrainMap} from './brain';
-import type {AccessForm, Answer, Attachment, Bootstrap, Cadence, ConversationSummary, Evidence, GeminiAccount, GeminiQuota, LocalFile, PortalCheck, PortalStatus, RecurringList, Report, RunRecord, SavedFile, Schedule, SettingsSaved, SettingsView, SourceCatalog, SourceSummary, UpdateInfo} from './types';
+import type {AccessForm, Answer, Attachment, Bootstrap, Cadence, ConversationSummary, Evidence, GeminiAccount, GeminiQuota, LocalFile, Memory, PortalCheck, PortalStatus, RecurringList, Report, RunRecord, SavedFile, Schedule, SettingsSaved, SettingsView, SourceCatalog, SourceSummary, Steer, SteerReason, UpdateInfo} from './types';
+
+/** What a note to Wizard did: reached the running answer (steer), or became the next question (follow_up). */
+export interface SteerResult {
+  steer?: Steer;
+  follow_up?: {run_id: string; conversation_id: string; question: string; systems: string[] | null};
+}
 
 export class ApiError extends Error {
   constructor(message: string, public status: number, public code?: string, public loginRequired = false) { super(message); }
@@ -64,7 +70,15 @@ export const api = {
   conversation: (id: string) => request<{conversation: ConversationSummary; runs: RunRecord[]}>(`/api/v1/conversations/${encodeURIComponent(id)}`),
   rename: (id: string, title: string) => request<{ok: true}>(`/api/v1/conversations/${encodeURIComponent(id)}`, {method: 'PATCH', body: {title}}),
   remove: (id: string) => request<{ok: true}>(`/api/v1/conversations/${encodeURIComponent(id)}`, {method: 'DELETE'}),
-  ask: (question: string, conversationId: string | null, attachmentIds: string[] = []) => request<{run_id: string; conversation_id: string; attachments: Attachment[]}>('/api/v1/runs', {body: {question, conversation_id: conversationId, attachment_ids: attachmentIds}}),
+  ask: (question: string, conversationId: string | null, attachmentIds: string[] = [], systems: string[] | null = null) =>
+    request<{run_id: string; conversation_id: string; attachments: Attachment[]}>('/api/v1/runs', {body: {question, conversation_id: conversationId, attachment_ids: attachmentIds, systems}}),
+  steer: (runId: string, note: {text?: string; call_id?: string; reason?: SteerReason}) =>
+    request<SteerResult>(`/api/v1/runs/${encodeURIComponent(runId)}/steer`, {body: {text: note.text ?? '', call_id: note.call_id ?? null, reason: note.reason ?? null}}),
+  setSystems: (runId: string, systems: string[] | null) => request<{systems: string[] | null}>(`/api/v1/runs/${encodeURIComponent(runId)}/systems`, {body: {systems}}),
+  memories: () => request<{memories: Memory[]}>('/api/v1/memories'),
+  remember: (text: string, runId: string | null = null) => request<{memory: Memory}>('/api/v1/memories', {body: {text, run_id: runId}}),
+  editMemory: (id: string, text: string) => request<{ok: true}>(`/api/v1/memories/${encodeURIComponent(id)}`, {method: 'PATCH', body: {text}}),
+  forget: (id: string) => request<{ok: true}>(`/api/v1/memories/${encodeURIComponent(id)}`, {method: 'DELETE'}),
   upload: (file: File) => request<{attachment: Attachment}>('/api/v1/attachments', {file}),
   localFiles: (q = '') => request<{enabled: boolean; folders: string[]; files: LocalFile[]}>('/api/v1/attachments/local' + (q ? `?q=${encodeURIComponent(q)}` : '')),
   attachLocal: (path: string) => request<{attachment: Attachment}>('/api/v1/attachments/local', {body: {path}}),

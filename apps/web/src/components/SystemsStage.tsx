@@ -5,6 +5,7 @@ import {cn} from '@/lib/utils';
 import {badges, detailOf, stageModel, verbOf, WIZARD, type ModuleStats, type StageModel} from '@/stage';
 import {toolAnimation, wizardAnimation, wizardCaption} from '@/wizard';
 import type {WizardAnimation} from '@/wizardSheet';
+import {NotThis} from './Steering';
 import {brand, SystemLogo} from './SystemLogo';
 import {WizardSprite} from './WizardSprite';
 import type {RunView, SystemInfo, TimelineItem} from '@/types';
@@ -132,8 +133,14 @@ function CountUp({value}: {value: number}) {
 
 function plural(n: number, word: string) { return `${n.toLocaleString()} ${word}${n === 1 ? '' : 's'}`; }
 
-function statLine(m: SystemInfo & {stats: ModuleStats}): string {
+/** A system the person switched off for this answer (one it already read from stays shown as used). */
+function switchedOff(run: RunView, m: SystemInfo & {stats: ModuleStats}): boolean {
+  return !!run.systems && m.kind !== 'schedules' && !run.systems.includes(m.id) && !m.stats.calls.length;
+}
+
+function statLine(m: SystemInfo & {stats: ModuleStats}, off = false): string {
   const s = m.stats;
+  if (off) return 'switched off';
   if (!s.calls.length) return m.kind === 'knowledge' && m.notes ? `${plural(m.notes, 'note')} ready` : 'ready';
   const parts = [plural(s.calls.length, m.kind === 'database' ? 'query' : m.kind === 'knowledge' ? 'lookup'
     : m.kind === 'schedules' ? 'schedule' : 'call')
@@ -153,16 +160,16 @@ function Detail({item, className, onlyNew = false}: {item: TimelineItem; classNa
     : <span className={cn('text-[12.5px] text-ink-2', className)}>{detail.text}</span>;
 }
 
-function Calls({module, onEvidence, onClose}: {module: SystemInfo & {stats: ModuleStats}; onEvidence: (id: string) => void; onClose: () => void}) {
+function Calls({run, module, onEvidence, onClose}: {run: RunView; module: SystemInfo & {stats: ModuleStats}; onEvidence: (id: string) => void; onClose: () => void}) {
   return (
     <div className="stage-pop rounded-xl border border-line bg-canvas p-3 shadow-sm" data-testid="stage-calls">
       <div className="mb-2 flex items-center gap-2">
         <SystemLogo id={module.id} name={module.name} size={22} />
         <p className="text-[13px] font-semibold">{module.name}</p>
-        <span className="text-[12px] text-ink-3">{statLine(module)}</span>
+        <span className="text-[12px] text-ink-3">{statLine(module, switchedOff(run, module))}</span>
         <button type="button" onClick={onClose} aria-label="Close" className="ml-auto rounded p-1 text-ink-3 hover:bg-surface"><X className="size-3.5" /></button>
       </div>
-      {!module.stats.calls.length && <p className="text-[12.5px] text-ink-3">Not used for this answer.</p>}
+      {!module.stats.calls.length && <p className="text-[12.5px] text-ink-3">{switchedOff(run, module) ? 'Switched off for this answer: pick it in Systems, next to the question box, to use it.' : 'Not used for this answer.'}</p>}
       <ol className="space-y-2">
         {module.stats.calls.map(call => (
           <li key={call.key} className="text-[12.5px]">
@@ -176,6 +183,7 @@ function Calls({module, onEvidence, onClose}: {module: SystemInfo & {stats: Modu
             </div>
             <Detail item={call} className="mt-1" />
             {call.summary && <p className={cn('mt-0.5 text-[12px]', call.state === 'error' ? 'text-danger' : 'text-ink-3')}>→ {call.summary}</p>}
+            <NotThis run={run} item={call} className="mt-0.5" />
           </li>
         ))}
       </ol>
@@ -304,14 +312,15 @@ function Stage({run, model, onEvidence, finale}: {run: RunView; model: StageMode
         {model.modules.map((m, i) => {
           const node = l.nodes[i];
           if (!node) return null;
-          const s = m.stats, c = brand(m.id, m.name).color, on = lit.has(m.id);
-          const state = on ? 'active' : s.state;
+          const s = m.stats, c = brand(m.id, m.name).color, on = lit.has(m.id), off = switchedOff(run, m);
+          const state = on ? 'active' : off ? 'off' : s.state;
           const last = s.calls[s.calls.length - 1];
           return (
             <button key={m.id} type="button" onClick={() => setSelected(selected === m.id ? null : m.id)}
-              aria-label={`${m.name}: ${statLine(m)}. Show what Wizard did here`} aria-pressed={selected === m.id}
+              aria-label={`${m.name}: ${statLine(m, off)}. Show what Wizard did here`} aria-pressed={selected === m.id}
               className={cn('absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1 rounded-xl px-1 py-1.5 transition-all duration-300 hover:-translate-y-[calc(50%+2px)] hover:bg-surface/80',
-                state === 'idle' && 'opacity-55 grayscale-[40%] hover:opacity-90', state === 'active' && 'scale-[1.08]', selected === m.id && 'bg-surface')}
+                state === 'idle' && 'opacity-55 grayscale-[40%] hover:opacity-90', state === 'off' && 'opacity-30 grayscale hover:opacity-60',
+                state === 'active' && 'scale-[1.08]', selected === m.id && 'bg-surface')}
               style={{left: node.x, top: node.y, width: l.nodeWidth}} data-testid="stage-node" data-system={m.id} data-state={state}>
               <span key={on && last ? last.key : 'rest'} className={cn('relative', on && 'stage-hop')}>
                 {state === 'active' && <span className="stage-ping absolute -inset-1.5 rounded-[32%]" style={{boxShadow: `0 0 0 2px ${c}`}} />}
@@ -323,7 +332,7 @@ function Stage({run, model, onEvidence, finale}: {run: RunView; model: StageMode
                   style={{background: c}}><CountUp value={s.calls.length} /></span>}
               </span>
               <span className="max-w-full truncate text-[12.5px] font-medium leading-tight text-ink">{m.name}</span>
-              <span className="max-w-full truncate text-[11px] leading-tight text-ink-3">{statLine(m)}</span>
+              <span className="max-w-full truncate text-[11px] leading-tight text-ink-3">{statLine(m, off)}</span>
             </button>
           );
         })}
@@ -346,6 +355,7 @@ function Stage({run, model, onEvidence, finale}: {run: RunView; model: StageMode
                 {active.state !== 'running' && active.summary && (
                   <p className={cn('stage-pop mt-1 text-[12.5px] font-medium', active.state === 'error' ? 'text-danger' : 'text-ok')}>→ {active.summary}</p>
                 )}
+                <NotThis key={active.key} run={run} item={active} className="mt-1" />
               </div>
             </div>
           ) : waiting ? (
@@ -361,7 +371,7 @@ function Stage({run, model, onEvidence, finale}: {run: RunView; model: StageMode
             <MessageSquareText className="mt-0.5 size-3.5 shrink-0 text-ink-3" /><span className="line-clamp-2">{note.label}</span></p>}
         </div>
       )}
-      {chosen && <Calls module={chosen} onEvidence={onEvidence} onClose={() => setSelected(null)} />}
+      {chosen && <Calls run={run} module={chosen} onEvidence={onEvidence} onClose={() => setSelected(null)} />}
     </div>
   );
 }

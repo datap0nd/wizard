@@ -817,14 +817,14 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         text = body.text.strip()
         if not text and not body.call_id:
             raise HTTPException(400, "Write a note for Wizard.")
+        about = step_about(store.events(run_id), body.call_id) if body.call_id else None
+        if body.call_id and about is None:
+            raise HTTPException(404, "That step is not part of this answer.")
         active = run_id in manager.active
         if active and runtime.steering:
             steer = manager.steer(identity.id, run_id, text, body.call_id, body.reason)
             if steer is not None:
                 return {"steer": steer}
-        about = step_about(store.events(run_id), body.call_id) if body.call_id else None
-        if body.call_id and about is None:
-            raise HTTPException(404, "That step is not part of this answer.")
         if active:
             manager.cancel(identity.id, run_id)
             await manager.finished(run_id)
