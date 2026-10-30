@@ -38,9 +38,9 @@ function Growth({news}: {news: BrainNews}) {
 
 /** The news table an automation keeps filling, read live from the company database. `still`: the simple view, where
  *  nothing moves (no counting up, no scrolling headlines). */
-export function NewsPanel({news, fresh, incoming, onCategory, category, name, still = false}: {
+export function NewsPanel({news, fresh, incoming, onCategory, category, name, still = false, snapshotAt}: {
   news: BrainNews; fresh: Set<string>; incoming: NewsItem[]; onCategory: (name: string | null) => void; category: string | null; name: string;
-  still?: boolean;
+  still?: boolean; snapshotAt?: string;
 }) {
   const order = (news.categories ?? []).map(c => c.name);
   // Demo arrivals sit on top, in place of the article each one re-shows.
@@ -80,8 +80,11 @@ export function NewsPanel({news, fresh, incoming, onCategory, category, name, st
           <h2 className="text-[15px] font-semibold text-white">Market news</h2>
           <p className="truncate text-[11.5px] text-slate-400">Curated and categorized · {name}</p>
         </div>
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-300" title="Read from the company database a moment ago">
-          <i className="brain-live size-1.5 rounded-full bg-emerald-400" />LIVE</span>
+        {snapshotAt
+          ? <span className="inline-flex items-center rounded-full border border-slate-400/30 bg-slate-400/10 px-2 py-0.5 text-[11px] font-semibold text-slate-300"
+            title={`Read from the company database on ${formatDate(snapshotAt, true)}, when this graph was published`} data-testid="news-snapshot">SNAPSHOT</span>
+          : <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-300" title="Read from the company database a moment ago">
+            <i className="brain-live size-1.5 rounded-full bg-emerald-400" />LIVE</span>}
       </header>
       <div className="mt-3 flex items-end gap-3">
         <p className="text-[40px] font-semibold leading-none tracking-tight text-white" data-testid="news-total"><CountUp value={news.total ?? 0} duration={1800} still={still} /></p>
@@ -144,7 +147,7 @@ export function NewsPanel({news, fresh, incoming, onCategory, category, name, st
       </div>
       <details className="group mt-2 text-[11.5px] text-slate-400">
         <summary className="flex cursor-pointer list-none items-center gap-1 hover:text-slate-200"><ChevronDown className="size-3.5 transition-transform group-open:rotate-180" />How this was read</summary>
-        <p className="mt-1">Read live from <code className="text-slate-300">{news.table}</code> in database <code className="text-slate-300">{news.database}</code> with these read-only queries{news.read_at ? `, at ${new Date(news.read_at * 1000).toLocaleTimeString()}` : ''}:</p>
+        <p className="mt-1">Read {snapshotAt ? `on ${formatDate(snapshotAt, true)}` : 'live'} from <code className="text-slate-300">{news.table}</code> in database <code className="text-slate-300">{news.database}</code> with these read-only queries{news.read_at ? `, at ${new Date(news.read_at * 1000).toLocaleTimeString()}` : ''}:</p>
         <ul className="mt-1 space-y-1">{(news.queries ?? []).map(q => <li key={q}><code className="block whitespace-pre-wrap break-all rounded bg-black/30 p-1.5 font-mono text-[10.5px] text-slate-300">{q}</code></li>)}</ul>
       </details>
     </section>

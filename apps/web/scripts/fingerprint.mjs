@@ -8,7 +8,7 @@ import {fileURLToPath} from 'node:url';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const dist = join(root, 'dist');
-const inputs = ['index.html', 'package.json', 'package-lock.json', 'vite.config.ts', 'tsconfig.json'];
+const inputs = ['index.html', 'site.html', 'package.json', 'package-lock.json', 'vite.config.ts', 'vite.site.config.ts', 'tsconfig.json'];
 
 function walk(dir, out) {
   for (const entry of readdirSync(dir).sort()) {

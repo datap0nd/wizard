@@ -58,6 +58,8 @@ export interface Bootstrap {
   systems?: SystemInfo[];
   /** Recurring extractions in Metronome: whether this person can set them up, and the Metronome user that owns them. */
   metronome?: {enabled: boolean; user: string | null};
+  /** The Pages site (Brain and Cases): this person may publish to it from this PC. */
+  site?: {enabled: boolean};
 }
 
 export type SettingSource = 'environment' | 'env_file' | 'this_pc' | 'company' | 'default';

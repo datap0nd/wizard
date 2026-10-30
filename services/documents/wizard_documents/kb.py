@@ -17,6 +17,7 @@ import hashlib
 import re
 import shutil
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -314,6 +315,95 @@ def write_files(repo: str, token: str, files: dict[str, bytes], *, branch: str, 
             if moved.status_code != 422 or attempt:
                 raise PublishError(explain(moved, repo, gh.label, gh.visibility, gh.route))
     return None
+
+
+# Builds a commit's files from the branch as it stands: (paths on the branch, read one of them) -> files by path, where
+# None removes that path. Called again from the new head when another commit landed in between.
+Make = Callable[[set[str], Callable[[str], bytes | None]], dict[str, bytes | None]]
+
+
+def update_branch(repo: str, token: str, branch: str, make: Make, *, message: str, proxy: str | None = None,
+                  client: httpx.Client | None = None) -> str | None:
+    """One commit on `branch` with what `make` returns, every other file left alone; a branch that does not exist yet
+    starts with that commit alone (an orphan: the Pages site's branch shares no history with the notes). Returns the
+    commit, or None when nothing changed. Refuses a public repository, like every write Wizard makes."""
+    with client or _client(proxy) as http:
+        gh = GitHub(repo, token, http, "write token")
+        gh.route = outbound.describe(API, proxy, windows=True)
+        info = gh.call("GET", "")
+        if not info.get("private"):
+            raise PublishError(f"{repo} is not private: Wizard never writes company content to a public repository.")
+        if info.get("archived"):
+            raise PublishError(ARCHIVED.format(repo=repo))
+        if not (info.get("permissions") or {}).get("push"):
+            raise PublishError(f"This account cannot write to {repo}: ask an organisation owner for write access.")
+        for attempt in range(3):  # another commit may land in between: build again from the new head
+            ref = http.get(f"{API}/repos/{repo}/git/ref/heads/{quote(branch, safe='/')}", headers=gh.headers)
+            parent: str | None = None
+            existing: dict[str, str] = {}
+            base_tree: str | None = None
+            if ref.status_code == 200:
+                parent = ref.json()["object"]["sha"]
+                base_tree = gh.call("GET", f"/git/commits/{parent}")["tree"]["sha"]
+                tree = gh.call("GET", f"/git/trees/{base_tree}?recursive=1")
+                if tree.get("truncated"):
+                    raise PublishError(f"The {branch} branch of {repo} has too many files for Wizard to update.")
+                existing = {e["path"]: e["sha"] for e in tree.get("tree", []) if e.get("type") == "blob"}
+            elif ref.status_code != 404:
+                raise PublishError(explain(ref, repo, gh.label, gh.visibility, gh.route))
+
+            def read(path: str, existing: dict[str, str] = existing) -> bytes | None:
+                if path not in existing:
+                    return None
+                blob = gh.call("GET", f"/git/blobs/{existing[path]}")
+                return base64.b64decode(blob.get("content") or "")
+
+            files = make(set(existing), read)
+            entries: list[dict[str, Any]] = []
+            for name, data in sorted(files.items()):
+                if data is None:
+                    if name in existing:
+                        entries.append({"path": name, "mode": "100644", "type": "blob", "sha": None})
+                    continue
+                if len(data) > MAX_FILE_BYTES * 4:
+                    raise PublishError(f"{name} is larger than {MAX_FILE_BYTES * 4 // (1024 * 1024)} MB.")
+                if existing.get(name) == blob_id(data):
+                    continue
+                blob = gh.call("POST", "/git/blobs", {"content": base64.b64encode(data).decode("ascii"), "encoding": "base64"})
+                entries.append({"path": name, "mode": "100644", "type": "blob", "sha": blob["sha"]})
+            if not entries:
+                return None
+            if parent is None:
+                tree = gh.call("POST", "/git/trees", {"tree": [e for e in entries if e["sha"]]})
+                commit = gh.call("POST", "/git/commits", {"message": message, "tree": tree["sha"], "parents": []})
+                made = http.post(f"{API}/repos/{repo}/git/refs", headers=gh.headers,
+                                 json={"ref": f"refs/heads/{branch}", "sha": commit["sha"]})
+                if made.status_code == 201:
+                    return str(commit["sha"])
+                moved = made
+            else:
+                tree = gh.call("POST", "/git/trees", {"base_tree": base_tree, "tree": entries})
+                commit = gh.call("POST", "/git/commits", {"message": message, "tree": tree["sha"], "parents": [parent]})
+                moved = http.patch(f"{API}/repos/{repo}/git/refs/heads/{quote(branch, safe='/')}", headers=gh.headers,
+                                   json={"sha": commit["sha"], "force": False})
+                if moved.status_code == 200:
+                    return str(commit["sha"])
+            if moved.status_code != 422 or attempt == 2:
+                raise PublishError(explain(moved, repo, gh.label, gh.visibility, gh.route))
+    return None
+
+
+def pages_url(repo: str, token: str, *, proxy: str | None = None, client: httpx.Client | None = None) -> str | None:
+    """The address of the repository's GitHub Pages site, when Pages is on and the token may read its settings (a
+    Contents-only token may not: then None, and the person enters the address in Settings)."""
+    with client or _client(proxy) as http:
+        response = http.get(f"{API}/repos/{repo}/pages", headers={"Authorization": f"Bearer {token}",
+                            "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28",
+                            "User-Agent": "Wizard-Knowledge-Publish"})
+    if response.status_code != 200:
+        return None
+    found = response.json().get("html_url") if isinstance(response.json(), dict) else None
+    return str(found) if isinstance(found, str) and found.startswith("https://") else None
 
 
 def check_read(repo: str, token: str, ref: str = "main", *, proxy: str | None = None,

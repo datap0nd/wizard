@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "vite",
     "typecheck": "tsc --noEmit",
-    "build": "tsc --noEmit && vite build && node scripts/fingerprint.mjs write",
+    "build": "tsc --noEmit && vite build && vite build --config vite.site.config.ts && node scripts/fingerprint.mjs write",
     "test": "vitest run",
     "e2e": "playwright test",
     "verify-dist": "node scripts/fingerprint.mjs check"

@@ -27,6 +27,7 @@ PICKER_KEYS = ("WIZARD_GEMINI_MODEL", "WIZARD_GEMINI_FALLBACK_MODEL")
 KB_REPO = re.compile(r"^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$")
 KB_REF = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_./-]{0,200}$")
 KB_PATH = re.compile(r"^[A-Za-z0-9_. /\\-]{1,200}$")
+SITE_URL = re.compile(r"^https://[A-Za-z0-9.-]+(?::\d{1,5})?(?:/[A-Za-z0-9._~%/-]*)?$")
 AUTH_MODES = ("fixture", "trusted-header")
 
 
@@ -123,6 +124,12 @@ class Settings:
     # The knowledge base's write token, entered on this PC only: Wizard publishes its portal maps with it.
     kb_write_token: str | None = None
     kb_sync_minutes: int = 30
+    # The Pages site (owner, 30 Oct 2026): Brain and Cases, two pages of their own on GitHub Pages, published from this PC
+    # with the knowledge base's write token to a branch that is not the notes' own (WIZARD_SITE_*). The repository
+    # defaults to the knowledge base's; the address is the one GitHub shows under Settings → Pages.
+    site_repo: str | None = None
+    site_branch: str = "gh-pages"
+    site_url: str | None = None
     # Google accounts allowed to link for Gemini (company domains); empty: any account that matches the user's email rule.
     # Also the only domains a recurring extraction may be emailed to (else the requester's own).
     google_domains: list[str] = field(default_factory=list)
@@ -296,6 +303,19 @@ def load_settings(env: dict[str, str] | None = None, env_file: Path | None = Non
     settings.kb_token = get("WIZARD_KB_TOKEN")
     settings.kb_write_token = get("WIZARD_KB_WRITE_TOKEN")
     settings.kb_sync_minutes = _int(get("WIZARD_KB_SYNC_MINUTES", "30") or "30", "WIZARD_KB_SYNC_MINUTES", 0, 1440)
+    settings.site_repo = get("WIZARD_SITE_REPO") or settings.kb_repo
+    if settings.site_repo and not KB_REPO.match(settings.site_repo):
+        raise ConfigError("WIZARD_SITE_REPO must be owner/name, for example acme/wizard-content")
+    settings.site_branch = get("WIZARD_SITE_BRANCH", "gh-pages") or "gh-pages"
+    if not KB_REF.match(settings.site_branch):
+        raise ConfigError("WIZARD_SITE_BRANCH must be a branch name, for example gh-pages")
+    if settings.site_repo and settings.site_repo == settings.kb_repo and settings.site_branch == settings.kb_ref:
+        raise ConfigError("WIZARD_SITE_BRANCH must not be the knowledge base's own branch: every PC would download the site "
+                          "with the notes. Use gh-pages.")
+    site_url = (get("WIZARD_SITE_URL", "") or "").strip()
+    if site_url and not SITE_URL.match(site_url):
+        raise ConfigError("WIZARD_SITE_URL must be the https:// address GitHub shows under Settings → Pages")
+    settings.site_url = site_url.rstrip("/") + "/" if site_url else None
     if settings.kb_repo and settings.content_dir:
         raise ConfigError("Set either WIZARD_KB_REPO (synced knowledge base) or WIZARD_CONTENT_DIR (a local folder), not both")
     if settings.kb_repo and settings.runtime == "replay":

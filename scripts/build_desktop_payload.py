@@ -29,8 +29,9 @@ RELEASES = "https://github.com/datap0nd/wizard/releases/download"
 # Not needed to run Wizard on a PC: tests, sources of the built web app, the desktop app's own sources, CI files.
 EXCLUDED = ("tests/", "docs/", "apps/desktop/", "apps/web/src/", "apps/web/e2e/", "apps/web/scripts/", ".github/", "artifacts/",
             "workpc/", "installer/", ".claude/")
-EXCLUDED_FILES = ("apps/web/package.json", "apps/web/package-lock.json", "apps/web/index.html", "apps/web/tsconfig.json",
-                  "apps/web/vite.config.ts", "apps/web/playwright.config.ts", "uv.lock")
+EXCLUDED_FILES = ("apps/web/package.json", "apps/web/package-lock.json", "apps/web/index.html", "apps/web/site.html",
+                  "apps/web/tsconfig.json", "apps/web/vite.config.ts", "apps/web/vite.site.config.ts",
+                  "apps/web/playwright.config.ts", "uv.lock")
 
 
 def digest(path: Path) -> str:

@@ -1,4 +1,5 @@
 import type {BrainLive, BrainMap} from './brain';
+import type {CasePreview, CasePublished, SiteStatus} from './cases';
 import type {AccessForm, Answer, Attachment, Bootstrap, Cadence, ConversationSummary, Evidence, GeminiAccount, GeminiQuota, LocalFile, Memory, PortalCheck, PortalMapView, PortalStatus, RecurringList, Report, RunRecord, SavedFile, Schedule, SettingsSaved, SettingsView, SourceCatalog, SourceSummary, Steer, SteerReason, UpdateInfo} from './types';
 
 /** What a note to Wizard did: reached the running answer (steer), or became the next question (follow_up). */
@@ -61,6 +62,13 @@ export const api = {
   bootstrap: () => request<Bootstrap>('/api/v1/bootstrap'),
   brain: () => request<BrainMap>('/api/v1/brain'),
   brainLive: () => request<BrainLive>('/api/v1/brain/live'),
+  site: () => request<SiteStatus>('/api/v1/site'),
+  publishBrain: () => request<{outcome: string; message: string; commit: string | null; url: string | null}>('/api/v1/site/brain', {body: {}}),
+  casePreview: (conversationId: string) => request<CasePreview>(`/api/v1/conversations/${encodeURIComponent(conversationId)}/case`),
+  publishCase: (conversationId: string, body: {title: string; takeaway: string; run_ids: string[]}) =>
+    request<CasePublished>(`/api/v1/conversations/${encodeURIComponent(conversationId)}/case`, {body}),
+  removeCase: (conversationId: string) =>
+    request<{outcome: string; message: string}>(`/api/v1/conversations/${encodeURIComponent(conversationId)}/case`, {method: 'DELETE'}),
   devLog: () => request<{lines: string[]}>('/api/v1/dev/log'),
   quota: (refresh = false) => request<GeminiQuota>(`/api/v1/account/gemini/quota${refresh ? '?refresh=true' : ''}`),
   identities: () => request<{identities: {id: string; name: string; role: string; email: string}[]; notice: string}>('/api/v1/session/identities'),

@@ -15,14 +15,19 @@ export interface BrainArea { id: string; name: string; description: string; note
  *  `weight`: how often it is named, or how many tags are shared. */
 export interface BrainLink { source: string; target: string; kind: 'related' | 'mention' | 'shared'; weight?: number }
 export interface BrainTerm { note: string; term: string }
-export interface BrainSystem extends SystemInfo { reports: number | null; documented_by: string[] }
+/** `mapped`: a portal's map (portal_map.py): the reports Gemini mapped and all it found there. */
+export interface BrainSystem extends SystemInfo { reports: number | null; documented_by: string[];
+  mapped?: {mapped: number; found: number; updated: string | null} | null }
+/** A report Gemini mapped in a portal: its name and menu path, nothing it holds. */
+export interface BrainPortalReport { system: string; id: string; name: string; path: string[]; status: 'mapped' | 'partial' }
 export interface BrainCounts {
   notes: number; areas: number; links: number; related: number; mentions?: number; glossary_terms: number; datasets: number;
-  metrics: number; signed: number; expert_checked: number; reports: number; systems: number;
+  metrics: number; signed: number; expert_checked: number; reports: number; mapped_reports?: number; systems: number;
 }
 export interface BrainMap {
   content: 'company' | 'examples' | 'none';
-  areas: BrainArea[]; notes: BrainNote[]; links: BrainLink[]; terms?: BrainTerm[]; systems: BrainSystem[]; counts: BrainCounts;
+  areas: BrainArea[]; notes: BrainNote[]; links: BrainLink[]; terms?: BrainTerm[]; systems: BrainSystem[]; portal_reports?: BrainPortalReport[];
+  counts: BrainCounts;
   knowledge_synced_at: string | null; pg_name: string;
 }
 
@@ -38,6 +43,8 @@ export interface BrainNews {
 }
 export interface BrainDatabase { status: LiveStatus; message?: string; database?: string; relations?: number; schemas?: number; read_at?: number }
 export interface BrainLive { name: string; database: BrainDatabase; news: BrainNews }
+/** The Brain page as the Pages site has it (site.py): the map and the news as read when the person published them. */
+export interface BrainSnapshot { format: number; published_at: string; map: BrainMap; live: BrainLive | null }
 
 export const NEWS = 'news';
 
@@ -113,6 +120,7 @@ export function tourSteps(map: BrainMap, live: BrainLive | null): TourStep[] {
   if (systems.length) {
     const parts = systems.map(s => {
       if (s.id === 'postgresql' && live?.database.status === 'ok') return `${s.name} (${plural(live.database.relations ?? 0, 'table')} and views)`;
+      if (s.mapped?.mapped) return `${s.name} (${plural(s.mapped.mapped, 'report')} mapped)`;
       if (s.reports) return `${s.name} (${plural(s.reports, 'report')} catalogued)`;
       if (s.kind === 'portal') return `${s.name} (read live)`;
       return s.name;

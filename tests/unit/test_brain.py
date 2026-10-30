@@ -105,7 +105,39 @@ def test_the_map_counts_notes_links_terms_and_what_each_system_is_documented_by(
     assert found["terms"] == [{"note": "sales-terms", "term": "GSCM"}, {"note": "sales-terms", "term": "SI"}]
     assert by_id["platform-gscm"]["tags"] == ["gscm", "sell-in", "stock"] and by_id["sales-terms"]["words"] == 9
     assert found["counts"] == {"notes": 4, "areas": 4, "links": len(links), "related": 1, "mentions": 1, "glossary_terms": 2,
-                               "datasets": 1, "metrics": 1, "signed": 1, "expert_checked": 1, "reports": 12, "systems": 3}
+                               "datasets": 1, "metrics": 1, "signed": 1, "expert_checked": 1, "reports": 12,
+                               "mapped_reports": 0, "systems": 3}
+    assert found["portal_reports"] == [] and found["systems"][0]["mapped"] is None
+
+
+def test_the_reports_gemini_mapped_in_a_portal_are_counted_and_drawn():
+    """Owner, 30 Oct 2026: "I mapped like 120 reports. I see that /brain didnt change much though. Still says 3 reports
+    catalogued": the portal's map counts, not only the catalog."""
+    kb = KnowledgeBase([note("platform-asap", "platforms", ("asap",), type="platform")])
+    reports = [{"id": f"r{i}", "name": f"Report {i}", "path": ["Sales", "Weekly"], "status": "mapped"} for i in range(120)]
+    reports += [{"id": "p1", "name": "Half done", "status": "partial"}, {"id": "t1", "name": "Found only", "status": "todo"},
+                {"id": "f1", "name": "Failed", "status": "failed"}]
+    systems = [{"id": "asap", "name": "ASAP", "kind": "portal"}]
+    found = brain.knowledge_map(kb, systems, {"asap": 3}, "company", {"asap": {"reports": reports, "updated": "2026-10-30T09:00:00"}})
+    assert found["systems"][0]["mapped"] == {"mapped": 121, "found": 123, "updated": "2026-10-30T09:00:00"}
+    assert found["systems"][0]["reports"] == 3 and found["counts"]["mapped_reports"] == 121
+    assert found["portal_reports"][0] == {"system": "asap", "id": "r0", "name": "Report 0", "path": ["Sales", "Weekly"], "status": "mapped"}
+    assert {r["id"] for r in found["portal_reports"]} >= {"r119", "p1"} and "t1" not in {r["id"] for r in found["portal_reports"]}
+
+
+def test_the_brain_api_reads_the_portal_map_on_this_pc(tmp_path: Path):
+    import json
+    settings = make_settings(tmp_path, WIZARD_PORTAL_GSCM_URL="https://gscm.corp.example.com/", WIZARD_LOCAL_USER_EMAIL="o@corp.test")
+    settings.install_mode = True
+    maps = settings.data_dir / "portal-maps"
+    maps.mkdir(parents=True)
+    (maps / "gscm.json").write_text(json.dumps({"format": 1, "system": "gscm", "reports": [
+        {"id": "inv", "name": "Inventory by week", "path": ["Inventory"], "status": "mapped"}]}), encoding="utf-8")
+    with TestClient(create_app(settings)) as client:
+        login(client, "local-owner")
+        found = client.get("/api/v1/brain").json()
+        assert {s["id"]: s.get("mapped") for s in found["systems"]}["gscm"]["mapped"] == 1
+        assert [r["name"] for r in found["portal_reports"]] == ["Inventory by week"]
 
 
 def test_a_note_mentions_the_notes_it_names_by_id_title_or_alias():

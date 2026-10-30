@@ -49,6 +49,9 @@ WORK_LINES = 15  # steps of an earlier answer a follow-up prompt carries: what w
 EXPLORE_TOOL_CALLS = 80
 EXPLORE_ROUNDS = 30
 EXPLORE_STALLS = 2
+# A new chat's name from Gemini (owner, 30 Oct 2026): asked beside the first answer; the answer waits at most this long
+# for it before it is shown finished, so the chat list it refreshes already has the name.
+TITLE_WAIT_S = 5.0
 
 
 def wrap_up_s(timeout_s: int) -> int:
@@ -224,6 +227,7 @@ class ActiveRun:
     maps_changed: set[str] = field(default_factory=set)  # portals whose map this run added to (published after it)
     needs_sign_in: bool = False  # a portal asked for a sign-in during this run
     task: asyncio.Task[None] | None = None
+    title_task: asyncio.Task[None] | None = None  # Gemini naming a new chat, beside the answer
 
 
 class Recorder:
@@ -468,8 +472,22 @@ class RunManager:
                         choice=choice, ever_on=None if choice is None else choice.on,
                         offers_ask=bool(choice and choice.off()))
         self.active[run_id] = run
-        run.task = asyncio.get_running_loop().create_task(self._execute(run))
+        loop = asyncio.get_running_loop()
+        if kind == "ask" and hasattr(self.runtime, "title") and len(self.store.runs(conversation_id)) == 1:
+            run.title_task = loop.create_task(self._title(run, question[:80]))
+        run.task = loop.create_task(self._execute(run))
         return row
+
+    async def _title(self, run: ActiveRun, fallback: str) -> None:
+        """Gemini names a new chat from its first question (the Code Assist runtime only; the others keep the question).
+        The name replaces the question only while the chat still carries it: a name the person gave it stays."""
+        try:
+            title = await self.runtime.title(self.settings.user_home(run.identity.id), run.identity.id,  # type: ignore[attr-defined]
+                                             run.id, run.question)
+            if title and title != fallback:
+                self.store.retitle_conversation(run.identity.id, run.conversation_id, fallback, title)
+        except Exception:  # noqa: BLE001 - a missing name never touches the answer
+            log.exception("run %s: naming the chat failed", run.id)
 
     def cancel(self, user_id: str, run_id: str) -> bool:
         run = self.active.get(run_id)
@@ -958,6 +976,9 @@ class RunManager:
                 if parent.get("report_id"):
                     self.store.update_report(parent["report_id"], check={"status": check_status, "summary": check_summary,
                                                                          "checked_by_run": run.id, "checked_at": created})
+        if run.title_task and not run.title_task.done():
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(asyncio.shield(run.title_task), TITLE_WAIT_S)
         self._publish(run, "run_finished", {"status": "succeeded", "report_id": report_id, "answer": answer,
                                             "data_mode": data_mode, "check_status": check_status,
                                             "check_summary": check_summary, "warnings": run.warnings,
