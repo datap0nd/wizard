@@ -22,6 +22,7 @@ NO_TRANSCRIPT = ("**Replay mode** has no recorded transcript for this question, 
 
 class ReplayRuntime:
     kind: RuntimeKind = "replay"
+    steering = False  # a recorded transcript cannot read a note
     model = "replay"
 
     def __init__(self, directory: Path, delay_s: float = 0.0):

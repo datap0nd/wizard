@@ -13,6 +13,9 @@ from .runtime import Turn
 SYSTEM_PROMPT_PATH = Path(__file__).parent / "prompts" / "system.md"
 MAX_TURNS = 6
 MAX_ANSWER_CHARS = 4000
+STOPPED = "(The person stopped this answer before it finished.)"
+# What a note about one step of the run says it got wrong (the person's pick under Not this).
+REASONS = {"table": "wrong table", "filter": "wrong filter", "period": "wrong period", "other": "not this"}
 
 CHECK_REQUEST = (
     "The user pressed Check my data for your previous answer. Use wizard_check_my_data on the important figures in that "
@@ -106,15 +109,97 @@ def calendar_block(today: date) -> str:
     ])
 
 
-def compose(question: str, history: list[Turn], kind: str, today: date, files: list[dict[str, Any]] | None = None) -> str:
+def systems_block(on: list[str], off: list[str]) -> str:
+    """The person chose which systems this request may use (the composer's systems picker); Auto adds no block."""
+    return "\n".join([
+        "<systems>",
+        f"The person chose the systems for this request. On: {', '.join(on)}.",
+        f"Switched off: {', '.join(off)}." if off else "Nothing is switched off.",
+        "Use only the systems that are on; the tools of a switched-off system refuse. If the answer needs a system that is "
+        "off, say which one and why, and call wizard_ask_for_system so the person can switch it on with one click. Never "
+        "fill in a switched-off system's data.",
+        "</systems>",
+    ])
+
+
+def remembered_block(notes: list[str]) -> str:
+    """Notes the person asked Wizard to remember (Remember this under a note or a question): their own instructions."""
+    return "\n".join(["<remembered_by_this_person>",
+                      "This person asked Wizard to remember these notes, usually corrections to earlier answers. They are "
+                      "the person's own instructions: follow them unless this request says otherwise.",
+                      *[f"- {note}" for note in notes],
+                      "</remembered_by_this_person>"])
+
+
+def steer_text(text: str, about: dict[str, Any] | None = None, reason: str | None = None, at: str = "") -> str:
+    """A note the person sent while Gemini works, as Gemini reads it before its next step."""
+    lines = [f"<note_from_the_person{f' at={at!r}' if at else ''}>",
+             "The person sent this while you were working. It is their instruction for this request: follow it, and change "
+             "your plan where it differs."]
+    if about:
+        lines.append(f"It is about one of your steps: {step_words(about)}. The person says: "
+                     f"{REASONS.get(reason or 'other', 'not this')}.")
+    if text:
+        lines.append(f"Their words: {text}")
+    if about and about.get("evidence_id"):
+        lines.append(f"Do not use or cite {about['evidence_id']} in your answer.")
+    lines.append("</note_from_the_person>")
+    return "\n".join(lines)
+
+
+def systems_changed_text(on: list[str], off: list[str], switched_on: list[str], switched_off: list[str]) -> str:
+    changes = [f"switched on {', '.join(switched_on)}" if switched_on else "", f"switched off {', '.join(switched_off)}"
+               if switched_off else ""]
+    lines = ["<note_from_the_person>",
+             f"The person changed the systems for this request: {'; '.join(c for c in changes if c)}.",
+             f"On now: {', '.join(on)}." if on else "Every system is on now (Auto).",
+             *([f"Switched off: {', '.join(off)}. Their tools refuse."] if off else []),
+             "</note_from_the_person>"]
+    return "\n".join(lines)
+
+
+def step_words(about: dict[str, Any]) -> str:
+    """One step of a run in words: what it did, its SQL or report, its evidence id."""
+    detail = about.get("detail")
+    words = str(about.get("label") or about.get("name") or "a step")
+    if detail:
+        words += f" ({squeeze(str(detail), 400)})"
+    if about.get("evidence_id"):
+        words += f", evidence {about['evidence_id']}"
+    return words
+
+
+def correction_question(text: str, about: dict[str, Any] | None = None, reason: str | None = None) -> str:
+    """A note sent after the answer (or one that stopped a run to ask again): the follow-up question the person sees."""
+    if not about:
+        return text
+    head = f"Not this step: {about.get('label') or 'a step'}"
+    if about.get("evidence_id"):
+        head += f" [{about['evidence_id']}]"
+    return f"{head}, {REASONS.get(reason or 'other', 'not this')}." + (f" {text}" if text else "") + " Redo the answer."
+
+
+def squeeze(text: str, limit: int) -> str:
+    flat = " ".join(text.split())
+    return flat if len(flat) <= limit else flat[:limit - 3] + "..."
+
+
+def compose(question: str, history: list[Turn], kind: str, today: date, files: list[dict[str, Any]] | None = None,
+            systems: tuple[list[str], list[str]] | None = None, remembered: list[str] | None = None) -> str:
+    """systems: (names on, names off) when the person chose the systems for this request; None is Auto."""
     parts = [calendar_block(today)]
+    if remembered:
+        parts.append(remembered_block(remembered))
+    if systems is not None:
+        parts.append(systems_block(*systems))
     if files:
         parts.append(attachments_block(files))
     if history:
         lines = ["<conversation_so_far>"]
         for turn in history[-MAX_TURNS:]:
             answer = turn.answer if len(turn.answer) <= MAX_ANSWER_CHARS else turn.answer[:MAX_ANSWER_CHARS] + " [...]"
-            lines.append(f"User: {turn.question}\nWizard: {answer}")
+            work = ("\nWhat Wizard did for it:\n" + "\n".join(f"- {line}" for line in turn.work)) if turn.work else ""
+            lines.append(f"User: {turn.question}{work}\nWizard: {answer}")
         lines.append("</conversation_so_far>")
         lines.append("Evidence ids from earlier turns (E1, E2, ...) remain valid in this conversation.")
         parts.append("\n\n".join(lines))

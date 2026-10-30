@@ -1428,6 +1428,33 @@
       }
     },
     {
+      "name": "wizard_ask_for_system",
+      "description": "Only when the person chose which systems this request may use and the answer needs one they switched off: name that system and why. The person gets a button under your answer to switch it on and continue. Never guess that system's data instead.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "system": {
+            "description": "The switched-off system the answer needs: its id or name as the request's systems list gives it (e.g. gscm, ASAP) (1-60 characters)",
+            "type": "string"
+          },
+          "reason": {
+            "description": "One short sentence for the person: what that system would add to this answer (1-300 characters)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "system",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
       "name": "wizard_check_my_data",
       "description": "Optional verification. Recompute figures you state from the cited evidence rows, check that each figure covers the period you claim, and optionally re-run cited requests to detect changed source data. Reports MATCH, DISCREPANCY, PERIOD_MISMATCH or NOT_VERIFIABLE per figure; it never edits your answer.",
       "inputSchema": {

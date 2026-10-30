@@ -31,6 +31,13 @@ class NoArgs(Args):
     pass
 
 
+class AskForSystemArgs(Args):
+    system: str = Field(min_length=1, max_length=60, description="The switched-off system the answer needs: its id or "
+                        "name as the request's systems list gives it (e.g. gscm, ASAP).")
+    reason: str = Field(min_length=1, max_length=300, description="One short sentence for the person: what that system "
+                        "would add to this answer.")
+
+
 class CatalogSearchArgs(Args):
     query: str = Field(min_length=1, max_length=200, description="Words describing the data you need, e.g. 'smart switch apple'.")
     limit: int = Field(default=10, ge=1, le=25)
@@ -348,11 +355,16 @@ class CheckArgs(Args):
     replay_evidence_ids: list[str] = Field(default_factory=list, max_length=10, description="Evidence ids whose source request should be re-run to detect changed data.")
 
 
+def _on(ctx: ToolContext, system: str) -> bool:
+    """The system is on for this request: Auto, or the person chose it."""
+    return ctx.choice is None or ctx.choice.allows(system)
+
+
 def list_sources(ctx: ToolContext, _: NoArgs) -> dict[str, Any]:
     guides = {n.id: n for n in ctx.services.knowledge.notes if n.id.startswith("platform-")}
     systems = []
     for system in ctx.services.catalog.systems:
-        if not ctx.identity.can_use_system(system.id):
+        if not ctx.identity.can_use_system(system.id) or not _on(ctx, system.id):
             continue
         reports = visible_reports(ctx, system.id)
         markets = ctx.identity.allowed_markets(system.id)
@@ -364,7 +376,7 @@ def list_sources(ctx: ToolContext, _: NoArgs) -> dict[str, Any]:
                         "your_market_access": "all markets" if markets is None else sorted(markets),
                         "platform_guide": f"wizard_lookup_definitions('{guide.title}')" if guide else None,
                         "how_to_navigate": f"{system.id}_search_reports → {system.id}_get_report_schema → {system.id}_run_report"})
-    if ctx.services.postgres and _postgres_allowed(ctx):
+    if ctx.services.postgres and _postgres_allowed(ctx) and _on(ctx, "postgresql"):
         systems.append({"system": "postgresql", "name": f"{ctx.services.postgres_name} (the company PostgreSQL database)",
                         "description": f"The company's PostgreSQL server, which people call the {ctx.services.postgres_name}, "
                                        "read live with your own SQL. The dataset notes describe its materialized views.",
@@ -372,13 +384,34 @@ def list_sources(ctx: ToolContext, _: NoArgs) -> dict[str, Any]:
                         "how_to_navigate": "wizard_browse_knowledge(area='datasets') → wizard_read_knowledge → "
                                            "wizard_query_postgresql"})
     for portal in ctx.services.portals.settings.portals if ctx.services.portals else ():
-        if ctx.identity.can_use_system(portal.id):
+        if ctx.identity.can_use_system(portal.id) and _on(ctx, portal.id):
             systems.append({"system": portal.id, "name": f"{portal.name} (live, in the person's own browser)",
                             "description": f"The {portal.name} web portal, read live in the person's own signed-in "
                                            "Wizard browser with your own steps and scripts.",
                             "connector_status": "BROWSER_SESSION", "data_mode": "LIVE",
                             "how_to_navigate": f"portal_guide('{portal.id}') → portal_run(system='{portal.id}', ...)"})
-    return {"sources": systems, "note": "Only sources and reports you are entitled to are listed."}
+    note = "Only sources and reports you are entitled to are listed."
+    if ctx.choice is not None:
+        off = [ctx.choice.name(s) for s in ctx.choice.off()]
+        note += (" The person chose the systems for this request; switched off (not listed): "
+                 f"{', '.join(off)}." if off else "")
+    return {"sources": systems, "note": note}
+
+
+def ask_for_system(ctx: ToolContext, args: AskForSystemArgs) -> dict[str, Any]:
+    choice = ctx.choice
+    if choice is None:
+        raise ToolError("all_systems_on", "Every system is already on for this request (Auto): use its tools.")
+    wanted = args.system.strip().casefold()
+    found = next((s for s in choice.names if wanted in (s.casefold(), choice.name(s).casefold())), None)
+    if found is None:
+        off = ", ".join(f"{s} ({choice.name(s)})" for s in choice.off()) or "none"
+        raise ToolError("unknown_system", f"'{args.system}' is not a system this person can switch on. Switched off: {off}.")
+    if choice.allows(found):
+        raise ToolError("already_on", f"{choice.name(found)} is already on for this request: use its tools.")
+    return {"system": found, "name": choice.name(found), "reason": args.reason.strip(),
+            "next": "A button under your answer lets the person switch it on and continue. Answer with what the systems "
+                    "that are on show, and say what this one would add; never fill in its data."}
 
 
 def search_catalog(ctx: ToolContext, args: CatalogSearchArgs) -> dict[str, Any]:
@@ -762,6 +795,9 @@ def check_my_data(ctx: ToolContext, args: CheckArgs) -> dict[str, Any]:
 
     def replay(evidence_id: str) -> tuple[str, str]:
         original = evidence[evidence_id]
+        system = str(original.get("system") or "")
+        if ctx.choice is not None and system and not ctx.choice.allows(system):
+            return "UNAVAILABLE", f"{ctx.choice.name(system)} is switched off for this request"
         if original.get("tool") == "portal_run":
             return "UNAVAILABLE", "a portal read is not repeated here; run the portal steps again to read it fresh"
         if original.get("system") == "postgresql":
@@ -851,6 +887,10 @@ CORE_TOOLS = [
              "[E3]) and shows the user the email on a card. Nothing is scheduled until the user presses Create in "
              "Metronome; the Flow then belongs to Metronome's Wizard user.", BriefArgs, schedule_brief, "wizard",
              "present"),
+    ToolSpec("wizard_ask_for_system", "Only when the person chose which systems this request may use and the answer "
+             "needs one they switched off: name that system and why. The person gets a button under your answer to "
+             "switch it on and continue. Never guess that system's data instead.", AskForSystemArgs, ask_for_system,
+             "wizard", "present"),
     ToolSpec("wizard_check_my_data", "Optional verification. Recompute figures you state from the cited evidence rows, "
              "check that each figure covers the period you claim, and optionally re-run cited requests to detect changed "
              "source data. Reports MATCH, DISCREPANCY, PERIOD_MISMATCH or NOT_VERIFIABLE per figure; it never edits your "
