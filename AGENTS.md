@@ -81,6 +81,10 @@ around a precomputed result is withdrawn. Its credential, entitlement, DLP and h
   [docs/decisions/2026-10-31-tasks.md](docs/decisions/2026-10-31-tasks.md)) are instructions in the repository's
   `tasks/` folder, run from Settings → Tasks; only a task run may save notes to the knowledge base
   (`wizard_kb_save_notes`: whole notes, validated, one commit per save). Tasks hold instructions, never company content.
+  A task may ask for a folder or file on the person's PC (owner decision,
+  [docs/decisions/2026-11-01-folder-tasks.md](docs/decisions/2026-11-01-folder-tasks.md)): Gemini reads it only with the
+  task-file tools, only inside that path, only in that task's run, and never changes a file (its content is
+  `USER_PROVIDED` data); a task that goes through every file runs in rounds until each is marked done.
   Access requests in the Big Data Portal's information catalog (owner decisions,
   [docs/decisions/2026-10-28-bdp-access-requests.md](docs/decisions/2026-10-28-bdp-access-requests.md),
   [docs/decisions/2026-11-01-bdp-dataset-access.md](docs/decisions/2026-11-01-bdp-dataset-access.md),

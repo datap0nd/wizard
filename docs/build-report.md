@@ -3,7 +3,45 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-01 (latest) — Wizard sends the access requests the person approves, the way their own one went
+## 2026-11-01 (latest) — Tasks that read a folder: digest the company's presentations, and write its presentation guide
+
+The owner: "Can we have Wizard a task that asks me for a folder, and I point it to that folder, and it digests the whole
+thing and adds to the knowledge base? And also ... another task that also you ask for a folder or a file, I give a
+path, and then it creates an MD of how to create PowerPoints." [Decision](decisions/2026-11-01-folder-tasks.md).
+
+**What changed.**
+- A task may ask for a path (`input: folder | file | folder or file`, `input_label`): Settings → Tasks shows a path box
+  (quotes from Copy as path allowed, the last path filled in), checked before the run (exists, right kind, not a drive or
+  the home folder, holds readable files).
+- Four task-file tools, offered only in a task run with a path and refused elsewhere (`task_tools.py`,
+  `task_files.py`): `wizard_task_files` (subfolders, stable ids, done and left), `wizard_task_read_file` (text through
+  the attachment converter, converted once, with the knowledge standard's source id; evidence `USER_PROVIDED`),
+  `wizard_task_design` (how up to 4 presentations look, plus what every deck read so far shares) and
+  `wizard_task_files_done`. Each call answers within 150 seconds.
+- How a presentation looks (`wizard_documents/design.py`, `wizard_docs.py design`): slide size, theme colors and fonts
+  (Latin and East Asian), the master's title and body styles, layouts and their use, what is on every slide (logo,
+  footer, confidentiality label, page number) and where, fonts, sizes and colors used, fills, charts, tables, pictures,
+  words per slide, the outline. Through PowerPoint (COM, read-only, no window) when it runs, so protected decks open;
+  else from the file's XML. No slide body text.
+- `every_file: true` runs a task in rounds (`runs.py`): up to 100 tool calls a round (saving and marking done allowed at
+  the limit), each from the files left and the earlier summaries, until none is left, two rounds mark nothing, the
+  person stops it, or 60 rounds. Progress per task and folder on the PC; a changed file is to do again; **Continue** and
+  **Start over** in Settings. In a task, listing files and re-reading a note it saved are not refused as repeats.
+- Notes a task saves are in this Wizard's knowledge base at once (`KnowledgeBase.with_saved`), so a later round adds to
+  them.
+- Knowledge standard: note type `guide`, area `presentations/`, section 12 (the five presentation notes); section 8 says
+  task-read files get the same source ids.
+- Tasks `digest-presentations` and `presentation-guide`; tasks/README, AGENTS.md, README, work-PC guide, documentation
+  guide, contracts (four tools, the run body).
+
+**Tests.** Unit `test_task_files.py` 18 (design from a synthetic deck and through fake PowerPoint objects, decks
+combined, the design command; path checks; listing, ids, done until changed, conversion kept, source id; the tools
+inside the path and refused outside; a saved note read and found before the sync; a folder run in rounds from Settings
+to the end with refused paths, Start over and the tools hidden from a question; rounds that mark nothing stop; a one-file
+task runs once; the two tasks ship). Web `TasksPanel.test.tsx` 5. Settings → Tasks checked in Chromium: Run waits for a path, a quoted path is accepted, the row shows the round and files done. `verify_all.sh --allow-blocked=live-parity,postgres`: every layer PASS (python-tests 618 passed / 5 skipped, gemini-cli, portal-browser 19, web-unit 114, e2e 26 with Playwright's Chromium (`CI=1`), types, lint, contracts, web-dist); postgres and live-parity BLOCKED (allowed).
+Not verified: real PowerPoint on protected decks and a real 300-deck folder (first run on the work PC).
+
+## 2026-11-01 — Wizard sends the access requests the person approves, the way their own one went
 
 The owner: "if one works, I want to tell Gemini that this worked and to reproduce the requests so whenever we need a
 request, I just need to give permission, but Gemini should be filling in the requests. Not the person."

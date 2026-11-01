@@ -106,7 +106,10 @@ Tasks are instructions the Wizard team writes for Gemini. They live in the Wizar
 appear in **Settings → Tasks** without an update (Wizard reads the folder from GitHub when the section opens; with no
 network it shows the ones that came with the installed version). **Run** starts the task in a conversation of its own
 (**Watch it**); what it produces is saved to the company knowledge base with this PC's write token (Settings →
-Knowledge base). The numbered Gemini CLI tasks of earlier versions are gone: setup removes `tasks\` and the
+Knowledge base). A task that asks for a folder or file shows a path box: in File Explorer, right-click the folder and
+choose **Copy as path**, paste it, and press **Run**. One that goes through every file (for example "Digest a folder of
+presentations") runs in rounds until each file is done; if it stops, **Continue** picks up where it left off. Keep
+PowerPoint installed and signed in: protected decks open only through it. The numbered Gemini CLI tasks of earlier versions are gone: setup removes `tasks\` and the
 `/wizard:tasks` command. The documentation kit (`.\docs.ps1`) is still there for converting files and exporting mail.
 
 ## The loop

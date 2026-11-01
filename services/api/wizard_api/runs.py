@@ -24,6 +24,7 @@ from wizard_connectors.entitlements import Identity
 from wizard_connectors.tools import Services, ToolContext, ToolError, ToolOutcome, ToolRegistry
 from wizard_connectors.tools.kb_tools import TASK_ONLY
 from wizard_connectors.tools.systems import ASK_FOR_SYSTEM, SystemChoice, offered, system_of
+from wizard_connectors.tools.task_tools import TASK_FILE_NAMES
 
 from .attachments import AttachmentError, Attachments
 from .attachments import public as public_attachment
@@ -54,6 +55,15 @@ MAP_WRITES = ("portal_map_save", "portal_map_route")  # still allowed once a rou
 LANES = {"explore": "Wizard is already mapping a portal for you. Stop it in Settings → Portals first.",
          "task": "A task is already running for you. Wait for it or stop it in its conversation."}
 EXPLORE_STALLS = 2
+# A task that goes through every file of a folder (owner, 1 Nov 2026: "digests the whole thing") runs in rounds the same
+# way: each round a fresh session of at most TASK_ROUND_TOOL_CALLS tool calls that continues from the files marked done,
+# until none is left, two rounds in a row mark nothing done, the person stops it, or TASK_ROUNDS have run.
+TASK_ROUND_TOOL_CALLS = 100
+TASK_ROUNDS = 60
+TASK_STALLS = 2
+TASK_WRITES = ("wizard_kb_save_notes", "wizard_kb_note_source", "wizard_task_files_done")  # still allowed to save a round's work
+# In a task these read what the task itself changes (the files left, a note it saved), so the same call can answer anew.
+TASK_REREADS = frozenset({"wizard_task_files", "wizard_kb_note_source", "wizard_browse_knowledge"})
 # A new chat's name from Gemini (owner, 30 Oct 2026): asked beside the first answer; the answer waits at most this long
 # for it before it is shown finished, so the chat list it refreshes already has the name.
 TITLE_WAIT_S = 5.0
@@ -193,6 +203,19 @@ class Exploration:
 
 
 @dataclass
+class TaskRounds:
+    """A task going through every file of a folder for one person: its rounds run one after another in one conversation."""
+    work: dict[str, Any]  # Task.work(path): id, title, body, input, path, every_file
+    conversation_id: str
+    round: int = 0
+    run_id: str | None = None
+    state: str = "running"  # running | done | stopped | failed
+    message: str = ""
+    stalls: int = 0
+    done_before: int = 0
+
+
+@dataclass
 class ActiveRun:
     id: str
     identity: Identity
@@ -229,7 +252,7 @@ class ActiveRun:
     waited_s: float = 0.0
     files_made: list[str] = field(default_factory=list)  # edited copies made in this run, announced to the page
     explore: dict[str, Any] | None = None  # a mapping round: {system, name, round}
-    work: dict[str, Any] | None = None  # a task from Settings → Tasks: {id, title, body}
+    work: dict[str, Any] | None = None  # a task from Settings → Tasks: Task.work(), plus round and counts in rounds
     maps_changed: set[str] = field(default_factory=set)  # portals whose map this run added to (published after it)
     needs_sign_in: bool = False  # a portal asked for a sign-in during this run
     task: asyncio.Task[None] | None = None
@@ -461,6 +484,8 @@ class RunManager:
         self.attachments = Attachments(settings, store)
         self.awake = KeepAwake()
         self.explorations: dict[str, Exploration] = {}  # by person
+        self.task_rounds: dict[str, TaskRounds] = {}  # by person
+        self.task_board: Any = None  # tasks.TaskBoard, set by the app: records each round's run
 
     @property
     def semaphore(self) -> asyncio.Semaphore:
@@ -581,8 +606,10 @@ class RunManager:
         catalogs = [s.id for s in self.services.catalog.systems]
         portals = [p.id for p in self.services.portals.settings.portals] if self.services.portals else []
         shown = None if run.choice is None or run.ever_on is None else SystemChoice(run.ever_on, run.choice.names)
+        reads_path = run.kind == "task" and bool((run.work or {}).get("path"))
         return [t for t in self.registry.describe(scope)
-                if (run.offers_ask if t["name"] == ASK_FOR_SYSTEM else offered(t["name"], shown, catalogs, portals))]
+                if (run.offers_ask if t["name"] == ASK_FOR_SYSTEM else offered(t["name"], shown, catalogs, portals))
+                and (reads_path or t["name"] not in TASK_FILE_NAMES)]
 
     def subscribe(self, run_id: str) -> asyncio.Queue[dict[str, Any]] | None:
         run = self.active.get(run_id)
@@ -655,7 +682,7 @@ class RunManager:
         outcome = self._bound(run, name, args, spec.category if spec else None)
         if outcome is None:
             context = ToolContext(identity=run.identity, run_id=run.id, recorder=Recorder(self.store, run, self.attachments),
-                                  services=self.services, choice=run.choice)
+                                  services=self.services, choice=run.choice, task=run.work if run.kind == "task" else None)
             outcome = await asyncio.to_thread(self.registry.execute, name, args, context)
         if spec and spec.category == "source":
             self.store.audit(run.identity.id, f"tool:{name}", run_id=run.id,
@@ -703,17 +730,26 @@ class RunManager:
         """Stop a run from spinning without choosing its route: refuse an identical repeat, and once the run keeps
         repeating or nears its time limit, refuse further research so Gemini answers with what it has. A refusal is a
         tool error Gemini reads; the run goes on. None means the call may run."""
-        limit = min(EXPLORE_TOOL_CALLS, self.settings.max_tool_calls) if run.kind == "explore" else self.settings.max_tool_calls
-        if run.tool_calls > limit and not (run.kind == "explore" and name in MAP_WRITES):
+        in_rounds = run.kind == "task" and bool((run.work or {}).get("every_file"))
+        limit = (min(EXPLORE_TOOL_CALLS, self.settings.max_tool_calls) if run.kind == "explore" else
+                 min(TASK_ROUND_TOOL_CALLS, self.settings.max_tool_calls) if in_rounds else self.settings.max_tool_calls)
+        if run.tool_calls > limit and not ((run.kind == "explore" and name in MAP_WRITES) or (in_rounds and name in TASK_WRITES)):
             return ToolOutcome(False, {}, 0, "tool_budget_exhausted",
                                f"This run reached its limit of {limit} tool calls. " + (
                                    "Save what you learned with portal_map_save if you have not, then summarise this round; "
                                    "Wizard starts the next round." if run.kind == "explore" else
+                                   "Save what you have with wizard_kb_save_notes, mark the files you finished with "
+                                   "wizard_task_files_done, then summarise this round; Wizard starts the next round with "
+                                   "the files left." if in_rounds else
                                    "Answer with what you have and say what is missing."))
         if name in TASK_ONLY and run.kind != "task":
             return ToolOutcome(False, {}, 0, "task_only",
                                f"{name} changes the company knowledge base, so it runs only in a task from Settings → "
                                "Tasks. Answer the question without it.")
+        if name in TASK_FILE_NAMES and not (run.kind == "task" and (run.work or {}).get("path")):
+            return ToolOutcome(False, {}, 0, "task_only",
+                               f"{name} reads the folder or file the person chose for a task in Settings → Tasks; this run "
+                               "has none. To read a file the person attached, use wizard_read_attachment.")
         system = system_of(name, args)
         if run.choice is not None and system and not run.choice.allows(system):
             on = ", ".join(run.choice.name(s) for s in run.choice.names if s in run.choice.on)
@@ -722,7 +758,7 @@ class RunManager:
                                f"those, or call {ASK_FOR_SYSTEM} if the answer needs {run.choice.name(system)}.")
         signature = call_signature(name, args)
         run.calls_seen[signature] = seen = run.calls_seen.get(signature, 0) + 1
-        if seen > REPEAT_LIMIT:
+        if seen > REPEAT_LIMIT and not (run.kind == "task" and name in TASK_REREADS):
             run.repeats_refused += 1
             log.warning("run %s: Gemini repeated an identical %s call (%d times); refused", run.id, name, seen)
             return ToolOutcome(False, {}, 0, "repeated_call",
@@ -755,8 +791,10 @@ class RunManager:
                 answer = STOPPED
             else:
                 continue
-            # A mapping round continues from the portal map, not from the earlier rounds' steps.
-            work = [] if run.kind == "explore" else work_log(self.store.events(previous["id"]))
+            # A mapping round continues from the portal map, and a task's round from the files marked done, not from
+            # the earlier rounds' steps.
+            rounds = run.kind == "explore" or (run.kind == "task" and bool((run.work or {}).get("every_file")))
+            work = [] if rounds else work_log(self.store.events(previous["id"]))
             turns.append(Turn(run_title(previous["kind"], previous["question"]), answer, work))
         return turns
 
@@ -767,6 +805,16 @@ class RunManager:
             await self._publish_map(system)
         if run.kind == "explore":
             await self._next_round(run)
+        if run.kind == "task":
+            try:
+                self._next_task_round(run)
+            except Exception:  # noqa: BLE001 - a task's rounds must end in a state the person sees, never stay "running"
+                log.exception("task round after run %s", run.id)
+                rounds = self.task_rounds.get(run.identity.id)
+                if rounds is not None and rounds.state == "running":
+                    rounds.state, rounds.message = "failed", "Wizard could not start the next round: press Continue."
+                    if self.task_board is not None:
+                        self.task_board.ended(rounds.work["id"], rounds.run_id or run.id, rounds.state, rounds.message)
 
     # Portal maps -------------------------------------------------------------------------------------------------------
     async def _publish_map(self, system: str) -> None:
@@ -852,6 +900,80 @@ class RunManager:
             self._round(run.identity, exploration)
         except Busy as busy:
             exploration.state, exploration.message = "failed", str(busy)
+
+    # Tasks ---------------------------------------------------------------------------------------------------------------
+    def start_task(self, identity: Identity, conversation_id: str, work: dict[str, Any]) -> dict[str, Any]:
+        """Run a task: once, or, when it goes through every file of a folder, in rounds until each file is done."""
+        if not work.get("every_file"):
+            row = self.start(identity, conversation_id, f"Task: {work['title']}", kind="task", work=work)
+            if self.task_board is not None:
+                self.task_board.started(work["id"], row["id"], conversation_id, work.get("path"))
+            return row
+        current = self.task_rounds.get(identity.id)
+        if current is not None and current.state == "running":
+            raise Busy(LANES["task"])
+        rounds = TaskRounds(work, conversation_id)
+        self.task_rounds[identity.id] = rounds
+        try:
+            return self._task_round(identity, rounds)
+        except Busy:
+            del self.task_rounds[identity.id]
+            raise
+
+    def _task_counts(self, work: dict[str, Any]) -> dict[str, int]:
+        files = self.services.task_files
+        return files.counts(str(work["id"]), Path(str(work["path"]))) if files else {"total": 0, "done": 0, "left": 0}
+
+    def _task_round(self, identity: Identity, rounds: TaskRounds) -> dict[str, Any]:
+        counts = self._task_counts(rounds.work)
+        rounds.done_before = counts["done"]
+        rounds.round += 1
+        title = f"Task: {rounds.work['title']}" + (f" (round {rounds.round})" if rounds.round > 1 else "")
+        row = self.start(identity, rounds.conversation_id, title, kind="task",
+                         work={**rounds.work, "round": rounds.round, **counts})
+        rounds.run_id = row["id"]
+        rounds.message = f"Round {rounds.round}: {counts['done']} of {counts['total']} files done."
+        if self.task_board is not None:
+            self.task_board.started(rounds.work["id"], row["id"], rounds.conversation_id, rounds.work.get("path"), rounds.round)
+        return row
+
+    def _next_task_round(self, run: ActiveRun) -> None:
+        rounds = self.task_rounds.get(run.identity.id)
+        if rounds is None or rounds.run_id != run.id or rounds.state != "running":
+            return
+        finished = self.store.run(run.identity.id, run.id) or {}
+        status, code = finished.get("status"), finished.get("error_code")
+        try:
+            counts = self._task_counts(rounds.work)
+        except OSError as error:
+            counts, status, code = {"total": 0, "done": 0, "left": 0}, "failed", "path_gone"
+            finished["error_message"] = f"the folder could not be read: {error}"
+        progressed = counts["done"] > rounds.done_before
+        rounds.stalls = 0 if progressed else rounds.stalls + 1
+        if status == "cancelled":
+            rounds.state, rounds.message = "stopped", f"Stopped during round {rounds.round}: {counts['done']} of {counts['total']} files done."
+        elif code in ("gemini_signin_required", "runtime_unavailable", "model_quota", "model_permission_denied",
+                      "gemini_project_unresolved", "path_gone"):
+            rounds.state = "failed"
+            rounds.message = f"Round {rounds.round} could not run: {finished.get('error_message') or code}"
+        elif counts["left"] == 0:
+            rounds.state, rounds.message = "done", f"All {counts['total']} files done in {rounds.round} round(s)."
+        elif rounds.stalls >= TASK_STALLS:
+            rounds.state = "failed"
+            rounds.message = (f"Stopped after round {rounds.round}: {TASK_STALLS} rounds in a row marked no file done "
+                              f"({counts['left']} left). Open the conversation to see why.")
+        elif rounds.round >= TASK_ROUNDS:
+            rounds.state = "done"
+            rounds.message = f"Paused after {TASK_ROUNDS} rounds with {counts['left']} file(s) left: press Continue to go on."
+        if rounds.state == "running":
+            try:
+                self._task_round(run.identity, rounds)
+                return
+            except Busy as busy:
+                rounds.state, rounds.message = "failed", str(busy)
+        log.info("task %s for %s: %s", rounds.work["id"], run.identity.id, rounds.message)
+        if self.task_board is not None:
+            self.task_board.ended(rounds.work["id"], run.id, rounds.state, rounds.message)
 
     async def _answer(self, run: ActiveRun) -> None:
         try:

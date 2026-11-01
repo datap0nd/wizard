@@ -46,7 +46,7 @@ class SaveArgs(Args):
 
 def note_source(ctx: ToolContext, args: SourceArgs) -> dict[str, Any]:
     knowledge = ctx.services.knowledge
-    if knowledge.root is None:
+    if knowledge.root is None and not knowledge.saved:
         raise ToolError("not_found", "This Wizard has no knowledge-base files to read.")
     found, missing = [], []
     for note_id in dict.fromkeys(args.ids):
@@ -54,7 +54,7 @@ def note_source(ctx: ToolContext, args: SourceArgs) -> dict[str, Any]:
         if note is None:
             missing.append(note_id)
             continue
-        found.append({"id": note.id, "path": note.path, "text": (knowledge.root / note.path).read_text(encoding="utf-8-sig")})
+        found.append({"id": note.id, "path": note.path, "text": knowledge.source(note)})
     if not found:
         raise ToolError("unknown_note", f"No note with id {', '.join(missing)}. Find ids with wizard_browse_knowledge.")
     return {"notes": found, "missing": missing or None}
@@ -102,8 +102,11 @@ def save_notes(ctx: ToolContext, args: SaveArgs) -> dict[str, Any]:
     result = writer(files, f"Wizard task: {args.message}")
     if result.outcome == "failed":
         raise ToolError("publish_failed", f"Not saved: {result.message}")
+    # This Wizard sees the saved notes now (search, browse, read, note source), so the rest of the task builds on them.
+    ctx.services.knowledge = ctx.services.knowledge.with_saved({n.path: n.text for n in args.notes})
     return {"saved": paths, "outcome": result.outcome, "commit": result.commit, "warnings": warnings or None,
-            "note": "Saved to the company knowledge base. Every Wizard picks it up at its next knowledge-base sync."}
+            "note": "Saved to the company knowledge base. This Wizard uses it from now on; every other Wizard picks it "
+                    "up at its next knowledge-base sync."}
 
 
 KB_TOOLS = [

@@ -17,13 +17,27 @@ added: 2026-10-31
 The instructions for Gemini: what to read, what to change, what to leave alone, what to say at the end.
 ```
 
+A task may ask for a folder or a file on the person's PC before it runs (Settings → Tasks shows a path box):
+
+```
+input: folder            # or: file, or: folder or file
+input_label: The folder with the presentations
+every_file: true         # it goes through every file: Wizard runs it in rounds until each one is marked done
+```
+
+Gemini reads that path only with the task-file tools, never outside it: `wizard_task_files` (the files, with ids),
+`wizard_task_read_file` (one file as text, with its source id), `wizard_task_design` (how presentations look: theme,
+fonts, layouts, logo and labels, read by PowerPoint) and `wizard_task_files_done` (a file is done). A task with
+`every_file` runs in rounds of about 100 tool calls; each round continues with the files left, and **Continue** picks up
+after a stop or a restart.
+
 Rules:
 
 - This repository is public: a task holds instructions only, never company content (names of reports, people,
   figures). Gemini finds those with its tools on the person's PC.
 - A task runs with Wizard's tools: the knowledge tools, `wizard_kb_note_source`, `wizard_kb_standard`, `wizard_kb_save_notes`, the portal
-  map and portal tools, the database and catalog tools. A task that needs a tool Wizard does not have needs an update
-  first.
+  map and portal tools, the database and catalog tools, and the task-file tools when it asks for a path. A task that
+  needs a tool Wizard does not have needs an update first.
 - Say what must not change, and what to do with a SIGNED note (usually: leave it and propose the change in the
   summary).
 - Delete a task's file when it is no longer needed; Wizard drops it from the list.

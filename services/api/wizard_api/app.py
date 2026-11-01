@@ -33,6 +33,7 @@ from wizard_connectors.entitlements import Identity, IdentityDirectory, SystemRi
 from wizard_connectors.paths import ROOT
 from wizard_connectors.portal_browser import PortalBrowser, PortalBrowsers, PortalError
 from wizard_connectors.portal_map import PortalMaps, Published
+from wizard_connectors.task_files import TaskFiles, TaskFolderError, check_path
 from wizard_connectors.tools import build_registry, build_services
 from wizard_connectors.tools.systems import SystemChoice
 
@@ -46,7 +47,7 @@ from .security import REQUEST_HEADER, SECURITY_HEADERS, SESSION_COOKIE, session_
 from .site import Site, SiteError, brain_snapshot, build_case, case_id
 from .site import turns as case_turns
 from .store import Store
-from .tasks import TaskBoard
+from .tasks import Documents, TaskBoard
 
 OWNER_ID = "local-owner"
 DOWNLOAD_TYPES = {".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -121,6 +122,11 @@ class RunBody(Body):
     attachment_ids: list[str] = Field(default_factory=list, max_length=5)
     # The systems picker: the ids of the systems this question may use; None (or absent) is Auto.
     systems: list[str] | None = Field(default=None, max_length=30)
+
+
+class TaskRunBody(Body):
+    path: str | None = Field(default=None, max_length=1000)  # the folder or file a task asks for, as the person typed it
+    fresh: bool = False  # start a task that goes through every file over: forget which files are done
 
 
 class SteerBody(Body):
@@ -315,6 +321,7 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
     if settings.kb_repo and settings.kb_write_token:  # what a task produces is committed there (kb_tools.py)
         services.kb_writer, services.kb_prefix = map_writer(settings, "these notes"), settings.kb_path
     task_board = TaskBoard(settings.data_dir, ROOT / "tasks", settings.proxy)
+    services.task_files = TaskFiles(settings.data_dir, Documents(settings))  # what a task that asks for a folder reads
     portal_ids = [p.id for p in settings.portals.portals] if settings.portals else []
     registry = build_registry(services)
     identities = IdentityDirectory.load(settings.identities_file)
@@ -335,6 +342,7 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
     interrupted = store.mark_interrupted()
     runtime = runtime or build_runtime(settings, secret_box, registry.scopes())
     manager = RunManager(settings, store, registry, services, runtime)
+    manager.task_board = task_board
     kb = kb_source(settings)
     activity = {"last": time.monotonic()}
 
@@ -1355,18 +1363,37 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
             raise HTTPException(403, "Tasks run on the Wizard installed on your own PC.")
         return identity
 
+    def task_progress(task_id: str, path: str | None) -> dict[str, int] | None:
+        """How many of the files in the folder last chosen for a task that goes through every file are done."""
+        if not path or services.task_files is None or not Path(path).exists():
+            return None
+        try:
+            return services.task_files.counts(task_id, Path(path))
+        except OSError:
+            return None
+
     def task_view(identity: Identity, cache: dict[str, Any] | None = None) -> dict[str, Any]:
         found, source = task_board.tasks(cache)
         runs = task_board.runs()
+        rounds = manager.task_rounds.get(identity.id)
         listed = []
         for task in found:
             last = runs.get(task.id) or {}
             row = store.run(identity.id, last["run_id"]) if last.get("run_id") else None
             state = TASK_STATES.get(str(row["status"]), "running") if row else "todo"
+            message = row.get("error_message") if row and state == "failed" else None
+            if rounds is not None and rounds.work["id"] == task.id and rounds.state == "running":
+                state, message = "running", rounds.message  # between two rounds the last one has already finished
+            elif row and last.get("outcome") and state != "running":
+                state, message = str(last["outcome"]), str(last.get("message") or "") or None
+            path = str(last.get("path") or "") or None
             listed.append({"id": task.id, "title": task.title, "summary": task.summary, "added": task.added or None,
                            "state": state, "conversation_id": last.get("conversation_id") if row else None,
                            "at": (row.get("finished_at") or last.get("started_at")) if row else None,
-                           "message": row.get("error_message") if row and state == "failed" else None})
+                           "message": message, "input": task.input, "input_label": task.input_label or None,
+                           "every_file": task.every_file, "path": path if task.input else None,
+                           "round": last.get("round") if task.every_file and row else None,
+                           "progress": task_progress(task.id, path) if task.every_file else None})
         cached = cache or {}
         return {"tasks": listed, "source": source, "checked": cached.get("checked"), "message": cached.get("message"),
                 "can_save": services.kb_writer is not None}
@@ -1378,19 +1405,35 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         return task_view(identity, cache)
 
     @app.post("/api/v1/tasks/{task_id}/run")
-    async def run_task(request: Request, task_id: str) -> dict[str, Any]:
+    async def run_task(request: Request, task_id: str, body: TaskRunBody | None = None) -> dict[str, Any]:
         identity = task_owner(request)
         task = task_board.task(task_id)
         if task is None:
             raise HTTPException(404, "No such task.")
+        body = body or TaskRunBody()
+        path: Path | None = None
+        if task.input:  # the folder or file it asks for, on this PC; Gemini reads only inside it (task_files.py)
+            assert services.task_files is not None
+            try:
+                chosen = await asyncio.to_thread(check_path, body.path or "", task.input)
+                files, _ = await asyncio.to_thread(services.task_files.listing, chosen, True)
+            except TaskFolderError as error:
+                raise HTTPException(400, error.message) from None
+            if not files:
+                raise HTTPException(400, "Wizard found no PowerPoint, Word, Excel, email or text files there.")
+            path = chosen
+            if task.every_file:
+                if body.fresh:
+                    services.task_files.reset(task.id, chosen)
+                if services.task_files.counts(task.id, chosen)["left"] == 0:
+                    raise HTTPException(400, "Every file there is already done. Press Run again to start over.")
         conversation_id = store.create_conversation(identity.id, f"Task: {task.title}"[:80])
         try:
-            row = manager.start(identity, conversation_id, f"Task: {task.title}", kind="task",
-                                work={"id": task.id, "title": task.title, "body": task.body})
+            row = manager.start_task(identity, conversation_id, task.work(path))
         except Busy as busy:
             raise HTTPException(429, str(busy)) from None
-        task_board.started(task.id, row["id"], conversation_id)
-        store.audit(identity.id, "tasks:run", run_id=row["id"], detail={"task": task.id})
+        store.audit(identity.id, "tasks:run", run_id=row["id"], detail={"task": task.id, "path_chosen": bool(path),
+                                                                        "fresh": body.fresh})
         return task_view(identity)
 
     @app.post("/api/v1/portals/{system}/map")

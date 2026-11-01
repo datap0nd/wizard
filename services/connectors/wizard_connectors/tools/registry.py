@@ -27,6 +27,7 @@ from ..metronome import MetronomeSettings
 from ..portal_browser import PortalBrowsers
 from ..portal_map import PortalMaps, Writer
 from ..postgres_query import PostgresQuery
+from ..task_files import TaskFiles
 from .systems import SystemChoice
 
 MAX_RESULT_BYTES = 400_000
@@ -71,6 +72,8 @@ class Services:
     # Commits files to the company knowledge-base repository with this PC's write token (tasks); None = no token here.
     kb_writer: Writer | None = None
     kb_prefix: str = ""  # the knowledge base's folder in that repository (WIZARD_KB_PATH)
+    # The folder or file a task run reads (task_files.py), with the converter the API gives it; None = no tasks here.
+    task_files: TaskFiles | None = None
     now: Callable[[], datetime] = field(default=lambda: datetime.now(UTC))
 
 
@@ -81,6 +84,7 @@ class ToolContext:
     recorder: Recorder
     services: Services
     choice: SystemChoice | None = None  # the systems the person chose for this request; None = Auto, every system
+    task: dict[str, Any] | None = None  # the task this run does (Settings → Tasks): {id, title, input, path, every_file}
 
 
 @dataclass

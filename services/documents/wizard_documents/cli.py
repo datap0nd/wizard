@@ -2,6 +2,7 @@
 
   check                                     pywin32 and the Office applications on this PC
   convert <file> --out <folder> [--json]    one document -> <folder>/text.md (+ assets/, attachments/)
+  design <deck> [<deck> ...]                how presentations look (theme, fonts, layouts), one JSON line each
   extract <content>                         every document in <content>/inbox -> inbox/_text/ + manifest.csv
   outlook-folders                           list Outlook mail folders with item counts
   outlook-export <content> --folder Inbox/Projects --since 2026-01-01 [--match word ...] [--max 500]
@@ -84,6 +85,22 @@ def cmd_convert(args: argparse.Namespace) -> int:
         print(f"{result['status']}: " + (f"{result.get('chars')} characters via {result.get('method')}"
                                          if result["status"] != "failed" else str(result.get("note"))))
     return 0 if result["status"] != "failed" else 1
+
+
+def cmd_design(args: argparse.Namespace) -> int:
+    """How presentations look (design.py), for a presentation guide: one JSON line per file, in the order given."""
+    from .design import profile
+    failed = 0
+    with Converter(args.office) as converter:
+        for path in args.files:
+            result: dict[str, object]
+            try:
+                result = {"file": str(path), "status": "ok", "profile": profile(path, converter.session())}
+            except (ConversionError, OSError) as error:
+                result = {"file": str(path), "status": "failed", "note": str(error)[:400]}
+                failed += 1
+            print(json.dumps(result, ensure_ascii=False, default=str), flush=True)
+    return 1 if failed and failed == len(args.files) else 0
 
 
 def cmd_edit(args: argparse.Namespace) -> int:
@@ -258,6 +275,10 @@ def main(argv: list[str] | None = None) -> int:
         sub.add_argument("--slide-images", choices=("auto", "all", "none"), default="auto")
         sub.add_argument("--max-rows", type=int, default=1000)
         sub.add_argument("--keep-contacts", action="store_true", help="do not mask email addresses and phone numbers")
+    design = commands.add_parser("design", help="how presentations look (theme, fonts, layouts, recurring elements), "
+                                                "one JSON line per file")
+    design.add_argument("files", type=Path, nargs="+")
+    design.add_argument("--office", choices=("auto", "always", "never"), default="auto")
     edit_parser = commands.add_parser("edit", help="apply operations (JSON) to a copy of a workbook")
     edit_parser.add_argument("file", type=Path)
     edit_parser.add_argument("--operations", type=Path, required=True)
@@ -325,6 +346,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_convert(args)
         if args.command == "extract":
             return cmd_extract(args)
+        if args.command == "design":
+            return cmd_design(args)
         if args.command == "edit":
             return cmd_edit(args)
         if args.command == "save-copy":

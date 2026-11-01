@@ -16,7 +16,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 FRONT_MATTER = re.compile(r"\A---\n(.*?)\n---\n(.*)\Z", re.DOTALL)
-NOTE_TYPES = ("overview", "entity", "concept", "process", "metric", "platform", "glossary", "faq", "decision", "dataset")
+NOTE_TYPES = ("overview", "entity", "concept", "process", "metric", "platform", "glossary", "faq", "decision", "dataset",
+              "guide")
 STOPWORDS = frozenset("""a about after all also an and any are as at be been before but by can could did do does each
 for from had has have how i if in into is it its me more most my no not of on or our out over should so some such than
 that the their them then there these they this those to under up us was we were what when where which while who why
@@ -116,14 +117,19 @@ def front_matter(text: str) -> tuple[dict[str, str], str] | None:
 
 
 def parse_note(path: Path, root: Path) -> Note:
-    parsed = front_matter(path.read_text(encoding="utf-8-sig"))
+    return parse_text(path.read_text(encoding="utf-8-sig"), path.relative_to(root).as_posix())
+
+
+def parse_text(source: str, relative: str) -> Note:
+    """One note from its file's text; relative is its path from the content folder (knowledge/<area>/<id>.md)."""
+    parsed = front_matter(source)
     if parsed is None:
-        raise ValueError(f"{path} has no front matter")
+        raise ValueError(f"{relative} has no front matter")
     meta, body = parsed
     text = {key: unquote(meta.get(key, "")) for key in ("title", "owner", "type", "summary", "updated", "reviewed",
                                                         "reviewed_by")}
     return Note(id=meta["id"], title=text["title"], status=meta["status"], owner=text["owner"] or "TBD",
-                tags=parse_list(meta.get("tags", "")), body=body, path=path.relative_to(root).as_posix(),
+                tags=parse_list(meta.get("tags", "")), body=body, path=relative,
                 type=text["type"], summary=text["summary"], aliases=parse_list(meta.get("aliases", "")),
                 related=parse_list(meta.get("related", "")), sources=parse_list(meta.get("sources", "")),
                 updated=text["updated"], reviewed=text["reviewed"], reviewed_by=text["reviewed_by"])
@@ -182,6 +188,7 @@ class KnowledgeBase:
         self.notes = notes
         self.areas = areas or {}
         self.root: Path | None = None  # the folder holding knowledge/, so a note's file is root / note.path
+        self.saved: dict[str, str] = {}  # files a task saved since this content loaded, by path (with_saved)
         self.by_id = {note.id: note for note in notes}
         self.sections = {note.id: split_sections(note) for note in notes}
         self._chunks: list[tuple[Note, Section, Counter[str], int]] = []
@@ -228,6 +235,26 @@ class KnowledgeBase:
         base = cls(notes, areas)
         base.root = directory.parent
         return base
+
+    def with_saved(self, files: dict[str, str]) -> KnowledgeBase:
+        """This knowledge base with notes a task just saved to the repository (path -> text), so the rest of the task,
+        and questions, see them before the next sync brings them back as files."""
+        changed = {}
+        for path, text in files.items():
+            note = parse_text(text, path)
+            changed[note.id] = note
+        notes = [changed.pop(n.id, n) for n in self.notes] + list(changed.values())
+        base = KnowledgeBase(notes, self.areas)
+        base.root, base.saved = self.root, {**self.saved, **files}
+        return base
+
+    def source(self, note: Note) -> str:
+        """A note's file as it is: the version a task saved, else the file in the content folder."""
+        if note.path in self.saved:
+            return self.saved[note.path]
+        if self.root is None:
+            raise FileNotFoundError(note.path)
+        return (self.root / note.path).read_text(encoding="utf-8-sig")
 
     def find(self, query: str, limit: int = 5) -> list[Hit]:
         wanted = list(dict.fromkeys(terms(query)))
