@@ -43,6 +43,9 @@ purpose, the DPA / DSA box's purpose and subsidiary, the subsidiary's address) a
 
 Rules: never request access yourself (Wizard refuses it), never read data rows, change no knowledge note. End with the
 number of requests prepared, the datasets skipped because the person has them or they were already prepared, any that
-could not be prepared and why, and this for the person: "Open Settings → Portals → Prepared requests and press Open
-the next request. Wizard opens each dataset's page and its request form and fills it; check every field, press Submit,
-then press Next request in Wizard's note at the bottom of the page."
+could not be prepared and why, and this for the person (the guide's `access_request_form.sending_on` says which): if
+sending is on, "Open Settings → Portals → Prepared requests and press Send the N not sent: Wizard opens each dataset's
+form, fills it, submits it the way your own request went and stops at the first that does not go through"; if it is off,
+"Open Settings → Portals → Prepared requests and press Open the next request. Wizard opens the dataset's page and its
+request form and fills it; check every field and press Submit. If the catalog accepts it, press 'It worked: let Wizard
+send the requests I approve' there, then Send the N not sent for the rest."

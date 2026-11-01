@@ -214,6 +214,16 @@ class AccessRequestBody(Body):
     form_button: str = Field(default="", max_length=80)
 
 
+class AccessSendingBody(Body):
+    enabled: bool  # on: from the request the person submitted themselves; off: Wizard only fills again
+
+
+class AccessSendBody(Body):
+    # The prepared requests the person approves Wizard sending: the ones named, or every one not sent yet.
+    ids: list[str] = Field(default_factory=list, max_length=100)
+    waiting: bool = False
+
+
 class AccessQueueRemoveBody(Body):
     ids: list[str] = Field(default_factory=list, max_length=200)
     opened: bool = False  # also every prepared request already opened
@@ -1501,6 +1511,46 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
             status = await asyncio.to_thread(browser.status_now)
         store.audit(identity.id, "portals:access_request", system=portal.id,
                     detail={"tables": tables, **({"queued": queued} if queued else {})})
+        return status
+
+    @app.post("/api/v1/portals/{system}/access-sending")
+    async def access_sending(request: Request, system: str, body: AccessSendingBody) -> dict[str, Any]:
+        """Turn sending on (the person says the request they submitted themselves worked) or off. Only the person, here."""
+        identity, browser, portal = request_portal(request, system)
+        try:
+            state = access_requests.set_sending(browser.root, portal.id, body.enabled)
+        except access_requests.AccessFormError as error:
+            raise HTTPException(400, str(error)) from None
+        proof = state["proof"] or {}
+        store.audit(identity.id, "portals:access_sending", system=portal.id,
+                    detail={"enabled": body.enabled, **({"button": proof.get("button"), "method": proof.get("method"),
+                                                         "path": proof.get("path")} if body.enabled else {})})
+        return access_requests.form(browser.root, portal)
+
+    @app.post("/api/v1/portals/{system}/access-send")
+    async def send_access_requests(request: Request, system: str, body: AccessSendBody) -> dict[str, Any]:
+        """The person's permission: Wizard sends these prepared requests in its visible window, the way their proven one
+        went. Gemini cannot call this; only the person's click in Wizard does."""
+        identity, browser, portal = request_portal(request, system)
+        if not access_requests.sending(browser.root, portal.id)["enabled"]:
+            raise HTTPException(409, "Sending is off. Submit one request yourself first, then turn sending on in "
+                                     "Settings → Portals.")
+        items = access_requests.to_send(browser.root, portal.id, None if body.waiting else body.ids)
+        if not items:
+            raise HTTPException(404, "Nothing to send: these requests are sent or no longer prepared.")
+        try:
+            status = await asyncio.to_thread(browser.send_requests, portal, [i["id"] for i in items])
+        except PortalError as error:
+            raise HTTPException(409, error.message) from None
+        store.audit(identity.id, "portals:access_send", system=portal.id,
+                    detail={"approved": len(items), "tables": [t for i in items for t in i.get("tables") or []][:100]})
+        return status
+
+    @app.post("/api/v1/portals/{system}/access-send/stop")
+    async def stop_sending_access_requests(request: Request, system: str) -> dict[str, Any]:
+        identity, browser, portal = request_portal(request, system)
+        status = await asyncio.to_thread(browser.stop_sending)
+        store.audit(identity.id, "portals:access_send", system=portal.id, outcome="stopped")
         return status
 
     @app.post("/api/v1/portals/{system}/access-queue/remove")

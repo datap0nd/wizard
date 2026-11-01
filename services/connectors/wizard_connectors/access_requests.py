@@ -123,7 +123,7 @@ def form(root: Path, portal: Portal) -> dict[str, Any]:
     fields += [f for f in own if key(f) in by_key]
     return {"system": portal.id, "page": str(saved.get("page") or ""), "fields": fields,
             "seen": [str(s) for s in saved.get("seen", [])][:MAX_SEEN], "default_page": request_page(portal),
-            "queue": queue(root, portal.id)}
+            "queue": queue(root, portal.id), "sending": sending(root, portal.id)}
 
 
 def clean_fields(raw: Any) -> list[dict[str, str]]:
@@ -187,14 +187,14 @@ def remember_seen(root: Path, portal_id: str, labels: list[str]) -> None:
     _write(root, forms)
 
 
-def answers(saved: list[dict[str, Any]], extra: list[dict[str, str]], tables: list[str]) -> list[dict[str, str]]:
+def answers(saved: list[dict[str, Any]], extra: list[dict[str, str]], tables: list[str]) -> list[dict[str, Any]]:
     """What the window fills: the saved answers, then this request's own (which replace a saved one of the same section
     and label, keeping its kind), and the tables under 'Table' when no answer names a table field already."""
-    merged = {key(f): _answer(f) for f in saved if str(f.get("value") or "").strip()}
+    merged: dict[tuple[str, str], dict[str, Any]] = {key(f): _answer(f) for f in saved if str(f.get("value") or "").strip()}
     for item in extra:
         merged[key(item)] = {**merged.get(key(item), {}), **_answer(item)}
     if tables and not any(TABLE_LABEL.search(label) for _, label in merged):
-        merged[("", "table")] = {"label": "Table", "value": ", ".join(tables)}
+        merged[("", "table")] = {"label": "Table", "value": ", ".join(tables), "auto": True}  # Wizard's, if a field asks
     return list(merged.values())[:MAX_FIELDS]
 
 
@@ -364,3 +364,99 @@ def remember_page(root: Path, portal_id: str, tables: list[str], url: str) -> No
 
 def pages_seen(root: Path, portal_id: str) -> list[dict[str, Any]]:
     return [p for p in ((_read(root).get(portal_id) or {}).get("pages") or []) if isinstance(p, dict)][:MAX_PAGES_SEEN]
+
+
+# Sending (owner, 1 November 2026: "if one works ... whenever we need a request, I just need to give permission, but
+# Gemini should be filling in the requests. Not the person."). The request window watches the person submit one request
+# themselves; once they say it worked, Wizard keeps that submission (the control they pressed, the request it sent, the
+# portal's answer) as the proof, and sends the requests they approve the same way: only that control, only that request.
+EXPECT_KEYS = re.compile(r"^(success|succeeded|ok|result|resultcode|result_code|code|status|state|rescode|errorcode|error)$", re.I)
+
+
+def path_pattern(url: str) -> dict[str, str]:
+    """A request's host and path with the parts that change per request (ids: anything with a digit, long tokens) as *."""
+    parts = urlsplit(url)
+    segments = [("*" if re.search(r"\d", s) or len(s) > 40 else s) for s in (parts.path or "/").split("/")]
+    return {"host": (parts.hostname or "").lower(), "path": "/".join(segments)}
+
+
+def path_matches(pattern: dict[str, str], url: str) -> bool:
+    parts = urlsplit(url)
+    if (parts.hostname or "").lower() != pattern.get("host"):
+        return False
+    wanted, path = str(pattern.get("path") or "").split("/"), (parts.path or "/").split("/")
+    return len(wanted) == len(path) and all(w in ("*", p) for w, p in zip(wanted, path, strict=True))
+
+
+def expect_fields(text: str | None) -> dict[str, Any]:
+    """The answer's success fields (success, code, result...: scalars at its top level), to find the same on a send."""
+    try:
+        value = json.loads(text or "")
+    except ValueError:
+        return {}
+    if not isinstance(value, dict):
+        return {}
+    return {k: v for k, v in value.items() if EXPECT_KEYS.match(str(k)) and isinstance(v, (str, int, float, bool))
+            and len(str(v)) <= 60}
+
+
+def sending(root: Path, portal_id: str) -> dict[str, Any]:
+    """{enabled, proof (the submission sending copies), last_submission (the latest one the window saw)}."""
+    entry = _read(root).get(portal_id) or {}
+    proof = entry.get("proof") if isinstance(entry.get("proof"), dict) else None
+    last = entry.get("last_submission") if isinstance(entry.get("last_submission"), dict) else None
+    return {"enabled": bool(proof), "proof": proof, "last_submission": last}
+
+
+def remember_submission(root: Path, portal_id: str, submission: dict[str, Any]) -> None:
+    forms = _read(root)
+    forms[portal_id] = {**(forms.get(portal_id) or {}), "last_submission": submission}
+    _write(root, forms)
+
+
+def set_sending(root: Path, portal_id: str, enabled: bool) -> dict[str, Any]:
+    """Turn sending on from the last submission the person made themselves (answered 2xx), or off."""
+    forms = _read(root)
+    entry = forms.get(portal_id) or {}
+    if enabled:
+        last = entry.get("last_submission")
+        if not isinstance(last, dict) or not (200 <= int(last.get("status") or 0) < 300) or not last.get("button"):
+            raise AccessFormError("Submit one request yourself first, in the window Wizard opens: Wizard sends the "
+                                  "others the way it saw that one go through.")
+        entry = {**entry, "proof": {**last, "proved_at": time.strftime("%Y-%m-%dT%H:%M:%S")}}
+    else:
+        entry = {k: v for k, v in entry.items() if k != "proof"}
+    forms[portal_id] = entry
+    _write(root, forms)
+    return sending(root, portal_id)
+
+
+def _set_state(root: Path, portal_id: str, request_id_: str, **state: Any) -> dict[str, Any] | None:
+    forms = _read(root)
+    entry = forms.get(portal_id) or {}
+    items = queue(root, portal_id)
+    found = next((i for i in items if i["id"] == request_id_), None)
+    if found is not None:
+        found.update(state)
+        forms[portal_id] = {**entry, "queue": items}
+        _write(root, forms)
+    return found
+
+
+def mark_sent(root: Path, portal_id: str, request_id_: str, by: str, status: int, path: str) -> dict[str, Any] | None:
+    """A prepared request went through: by the person (the window saw it) or by Wizard (on their approval)."""
+    now = time.strftime("%Y-%m-%dT%H:%M:%S")
+    item = next((i for i in queue(root, portal_id) if i["id"] == request_id_), None)
+    return _set_state(root, portal_id, request_id_, sent={"at": now, "by": by, "status": status, "path": path[:200]},
+                      failed=None, opened=(item or {}).get("opened") or now)
+
+
+def mark_failed(root: Path, portal_id: str, request_id_: str, reason: str) -> dict[str, Any] | None:
+    return _set_state(root, portal_id, request_id_,
+                      failed={"at": time.strftime("%Y-%m-%dT%H:%M:%S"), "reason": reason[:400]})
+
+
+def to_send(root: Path, portal_id: str, ids: list[str] | None = None) -> list[dict[str, Any]]:
+    """The prepared requests to send, in list order: the ones named, or every one not sent yet."""
+    items = [i for i in queue(root, portal_id) if not i.get("sent")]
+    return [i for i in items if i["id"] in ids] if ids is not None else items

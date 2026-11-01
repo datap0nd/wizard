@@ -177,6 +177,22 @@ document.getElementById('q').addEventListener('keydown', e => {
 });
 </script>""")
 
+# The same form whose Submit asks "Do you want to submit the request?", sends the request as JSON to the catalog's API
+# (the id in its path), then clears a draft, and shows the catalog's answer.
+SEND_TABLE = DIS_TABLE.replace(
+    '<button id="send" type="submit" style="background:#5b5bd6;color:#fff">Submit</button>',
+    '<button id="send" type="button" style="background:#5b5bd6;color:#fff" onclick="sendRequest()">Submit</button>'
+).replace("</script></body>", """function sendRequest() {
+  if (!confirm('Do you want to submit the request?')) return;
+  const data = Object.fromEntries(new FormData(document.getElementById('request')));
+  fetch('/dis-api/requests/{id}', {method: 'POST', headers: {'content-type': 'application/json'},
+                                   body: JSON.stringify({table: document.title, ...data})})
+    .then(r => r.json()).then(j => { const p = document.createElement('p'); p.id = 'done';
+      p.textContent = j.success ? 'Request submitted' : 'Request failed'; document.body.append(p); });
+  fetch('/dis-api/deleteDraft/{id}', {method: 'POST', body: '{}'});
+}
+</script></body>""")
+
 MENU = {"ROOT": [{"id": "S", "name": "01.Sales"}, {"id": "F", "name": "02.Finance"}],
         "S": {"id": "S", "name": "01.Sales", "children": [{"id": "G", "name": "Sell-out", "child": [{"id": "R1", "name": "Weekly Sell-out"}]}]},
         "F": {"id": "F", "name": "02.Finance", "children": [{"id": "R2", "name": "P&L"}]}}
@@ -205,7 +221,9 @@ class Portal(SimpleHTTPRequestHandler):
                  "/superset": "<title>Superset</title><div id=app data-bootstrap='{}'>SQL Lab</div>",
                  "/catalog": CATALOG_PAGE, "/catalog/table/sales_daily": TABLE_PAGE,
                  "/catalog/dis/t1": DIS_TABLE.replace("{name}", "t1"), "/catalog/dis/t2": DIS_TABLE.replace("{name}", "t2"),
-                 "/catalog/spa": SPA_CATALOG, "/catalog/oneclick": CATALOG_PAGE}
+                 "/catalog/spa": SPA_CATALOG, "/catalog/oneclick": CATALOG_PAGE,
+                 **{f"/catalog/send/{name}": SEND_TABLE.replace("{name}", name).replace("{id}", str(n))
+                    for n, name in ((5, "t5"), (6, "t6"), (7, "tfail"), (8, "t8"))}}
         self.reply(pages.get(self.path.split("?")[0], "<title>Not found</title>"), status=200 if self.path.split("?")[0] in pages else 404)
 
     def do_POST(self) -> None:  # noqa: N802
@@ -221,6 +239,11 @@ class Portal(SimpleHTTPRequestHandler):
             week = body.split("week:string=")[1].split("\x1f")[0]
             self.reply(f"SSV:utf-8\x1eErrorCode:int=0\x1fErrorMsg:string=OK\x1eDataset:ds_out\x1e_RowType_\x1fMARKET:STRING(8)"
                        f"\x1fWEEK:STRING(8)\x1fQTY:INT(4)\x1eN\x1fAE\x1f{week}\x1f10\x1eN\x1fSA\x1f{week}\x1f\x03\x1e\x1e", "text/plain")
+        elif self.path.startswith("/dis-api/requests/"):  # the catalog's answer: success, unless the table is "tfail"
+            failed = '"table": "tfail"' in body or '"table":"tfail"' in body
+            self.hits.append(f"BODY {body}")
+            self.reply(json.dumps({"success": not failed, "code": "E01" if failed else "0000", "id": self.path[-1]}),
+                       "application/json")
         else:
             self.reply("ok", "text/plain")
 
@@ -773,3 +796,75 @@ def test_a_table_without_its_own_address_is_reached_and_its_request_form_opened_
     wait_until(lambda: any(hit.startswith("POST /api/v1/access-requests") for hit in Portal.hits))
     assert any(hit.startswith("POST /api/v1/access-requests") for hit in Portal.hits)
     assert browser.finish_sign_in()["window"] is None
+
+
+def test_the_person_submits_one_request_then_wizard_sends_the_ones_they_approve_the_same_way(setup, portal_url):
+    services = setup[0]
+    browser = services.portals.for_user("owner")
+    browser.show_windows = False  # the person's window, headless on a test machine
+    audits: list[tuple[str, dict[str, Any]]] = []
+    browser.audit = lambda action, **detail: audits.append((action, detail))
+    portal = services.portals.settings.portal("bdp")
+    root = browser.root
+    access_requests.remove(root, "bdp", [i["id"] for i in access_requests.queue(root, "bdp")])
+    access_requests.set_sending(root, "bdp", False)
+    access_requests.remember_submission(root, "bdp", {})  # an earlier test's Submit
+    access_requests.save(root, portal, "", [
+        {"label": "Purpose", "value": "Will be used for analytics in the MENA region", "kind": "text"},
+        {"label": "Purpose", "section": "DPA / DSA", "value": "5", "kind": "choice"},
+        {"label": "Subsidiary Name (Full Legal Name)", "section": "DPA / DSA", "value": "ABC", "kind": "choice"},
+        {"label": "Subsidiary Address", "section": "DPA / DSA", "value": "1 Example Street", "kind": "text"}])
+    ids = {}
+    for name in ("t5", "t6", "tfail", "t8"):
+        proposal = call(setup, "portal_request_access", {"system": "bdp", "address": catalog_address(portal_url) + f"/send/{name}",
+                                                         "tables": [name]}, systems=("bdp",))
+        assert proposal.ok and proposal.data["access_request"]["can_send"] is False
+        ids[name] = proposal.data["access_request"]["id"]
+
+    def page() -> Any:
+        return browser._context.pages[0]
+
+    def state(name: str) -> dict[str, Any]:
+        return next(i for i in access_requests.queue(root, "bdp") if i["id"] == ids[name])
+
+    # 1. The person's own test: Wizard opens the form and fills it; they press Submit and OK the page's question.
+    Portal.hits.clear()
+    item = state("t5")
+    access_requests.mark_opened(root, "bdp", item["id"])
+    saved = access_requests.form(root, portal)["fields"]
+    browser.open_access_request(portal, item["address"], access_requests.answers(saved, [], item["tables"]),
+                                queued=item["id"], route=item)
+    wait_until(lambda: len(browser.status()["access_request"]["filled"]) >= 4, seconds=20)
+    assert not any(hit.startswith("POST /dis-api") for hit in Portal.hits), "nothing sent before the person's Submit"
+    browser.run(lambda: page().click("#send"))
+    wait_until(lambda: (access_requests.sending(root, "bdp")["last_submission"] or {}).get("path") == "/dis-api/requests/5")
+    seen = access_requests.sending(root, "bdp")["last_submission"]
+    assert {k: seen[k] for k in ("button", "method", "match", "path", "status", "expect", "dialog", "tables")} == {
+        "button": "Submit", "method": "POST", "match": {"host": "localhost", "path": "/dis-api/requests/*"},
+        "path": "/dis-api/requests/5", "status": 200, "expect": {"success": True, "code": "0000"},
+        "dialog": "Do you want to submit the request?", "tables": ["t5"]}, "the Submit's own request, not the draft cleared after"
+    assert state("t5")["sent"]["by"] == "you" and access_requests.sending(root, "bdp")["enabled"] is False
+    wait_until(lambda: "Wizard saw this request go out" in (browser.status()["access_request"].get("note") or ""))
+    assert "Request submitted" in browser.run(lambda: page().inner_text("body")), "the page's question was answered OK"
+
+    # 2. The person says it worked; then approves the other three. Wizard sends them until one does not go through.
+    access_requests.set_sending(root, "bdp", True)
+    sends_before = sum(1 for hit in Portal.hits if hit.startswith("POST /dis-api/requests/"))
+    drafts_before = sum(1 for hit in Portal.hits if hit.startswith("POST /dis-api/deleteDraft"))
+    browser.send_requests(portal, [ids["t6"], ids["tfail"], ids["t8"]])
+    wait_until(lambda: state("tfail").get("failed") is not None, seconds=60)
+    assert state("t6")["sent"]["by"] == "wizard" and state("t6")["sent"]["status"] == 200
+    assert "success = False where your own request had True" in state("tfail")["failed"]["reason"]
+    assert not state("t8").get("sent") and not state("t8").get("opened"), "sending stopped at the first that failed"
+    posted = [hit for hit in Portal.hits if hit.startswith("POST /dis-api/requests/")]
+    assert len(posted) - sends_before == 2 and posted[-2].startswith("POST /dis-api/requests/6")
+    assert any('"table": "t6"' in hit or '"table":"t6"' in hit for hit in Portal.hits if hit.startswith("BODY"))
+    assert any("Will be used for analytics" in hit for hit in Portal.hits if hit.startswith("BODY") and "t6" in hit)
+    assert sum(1 for hit in Portal.hits if hit.startswith("POST /dis-api/deleteDraft")) == drafts_before, \
+        "while Wizard submits, only the proven request goes through: the draft change was stopped"
+    note = browser.status()["access_request"].get("note") or ""
+    assert note.startswith("Wizard stopped sending") and "1 other approved request(s) were not sent" in note
+    sent_by_wizard = [d for a, d in audits if a == "portals:access_submitted" and d.get("detail", {}).get("by") == "wizard"]
+    assert [d["detail"]["tables"] for d in sent_by_wizard] == [["t6"], ["tfail"]]
+    assert browser.finish_sign_in()["window"] is None
+    access_requests.set_sending(root, "bdp", False)

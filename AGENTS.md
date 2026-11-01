@@ -83,17 +83,20 @@ around a precomputed result is withdrawn. Its credential, entitlement, DLP and h
   (`wizard_kb_save_notes`: whole notes, validated, one commit per save). Tasks hold instructions, never company content.
   Access requests in the Big Data Portal's information catalog (owner decisions,
   [docs/decisions/2026-10-28-bdp-access-requests.md](docs/decisions/2026-10-28-bdp-access-requests.md),
-  [docs/decisions/2026-11-01-bdp-dataset-access.md](docs/decisions/2026-11-01-bdp-dataset-access.md)):
-  `portal_request_access` only proposes one and adds it to the person's prepared requests; the person opens it with a
-  button in a visible window of their Wizard browser, where Wizard fills their saved answers into the form's empty
-  fields on that portal's own pages. To get there, the window follows the steps Gemini proved to reach the table's page
-  (navigation only, with the same click refusals as Gemini's own steps) and presses the control that opens the request
-  form once, with the portal's writes stopped for a few seconds so a one-click button cannot file the request. In the
-  form, Wizard never presses a key, clicks a button, a link or anything that submits, or submits; its only clicks there
-  open one of the form's own drop-downs that matched a saved answer and choose the option that matches it (typing into
-  that list's search box to find it). The person checks the form and submits it; moving to the next prepared request is
-  their click. Keep the button, the visible window, empty-fields-only, the guarded press, the drop-down-only clicks and
-  no-submit; Gemini's own steps still refuse every access request.
+  [docs/decisions/2026-11-01-bdp-dataset-access.md](docs/decisions/2026-11-01-bdp-dataset-access.md),
+  [docs/decisions/2026-11-01-bdp-access-sending.md](docs/decisions/2026-11-01-bdp-access-sending.md)):
+  `portal_request_access` only proposes one and adds it to the person's prepared requests; nothing opens or is sent
+  without the person's click. In a visible window of their Wizard browser, Wizard reaches the table's page with the
+  steps Gemini proved (navigation only, Gemini's click refusals), presses the control that opens the request form once
+  with the portal's writes stopped, and fills their saved answers into the form's empty fields on that portal's own
+  pages; in the form its only clicks open a drop-down that matched a saved answer and choose the matching option, and
+  it presses no key. The person submits the first request themselves; once they say in Settings that it worked, Wizard
+  submits the requests they approve (Send request, or Send in the prepared list) the way that one went: only the
+  control they pressed, only the request it sent (same method, host and path; every other change stopped), a complete
+  form, the same success answer, stopping at the first that differs. Gemini has no tool that sends. Keep the permission
+  click, the proof from the person's own submission, the visible window, empty-fields-only, the guarded presses, the
+  proven-request-only submit with its answer check and stop-on-failure; Gemini's own steps still refuse every access
+  request.
 - Change a file the person attached in place. `wizard_edit_attachment` writes an edited copy the person downloads
   ([decision](docs/decisions/2026-10-23-edited-attachments.md)); the original is opened read-only. On the person's own
   PC, Download saves the copy into their Downloads folder (Excel writes it; never over an existing file).

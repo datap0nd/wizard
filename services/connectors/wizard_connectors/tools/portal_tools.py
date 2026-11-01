@@ -293,6 +293,7 @@ def guide(ctx: ToolContext, args: GuideArgs) -> dict[str, Any]:
                                        "saved_labels": [access_requests.name(f) for f in form["fields"] if f.get("value")],
                                        "labels_seen_on_the_form": form["seen"],
                                        "form_pages_seen": access_requests.pages_seen(browser.root, portal.id),
+                                       "sending_on": access_requests.sending(browser.root, portal.id)["enabled"],
                                        "prepared_requests": {"total": len(form["queue"]),
                                                              "not_opened": sum(1 for i in form["queue"] if not i.get("opened")),
                                                              "tables": sorted({t for i in form["queue"] for t in i.get("tables") or []})[:200],
@@ -552,14 +553,21 @@ def request_access(ctx: ToolContext, args: RequestAccessArgs) -> dict[str, Any]:
             "steps you just ran from that address to the table's page (fill the search with its name, press Enter, "
             "click the result), and form_button: the text of the control there that opens the request form."))
     route = {"open_steps": steps, "form_button": button}
+    can_send = access_requests.sending(browser.root, portal.id)["enabled"]
     request = {"id": access_requests.request_id(portal.id, address, tables, extra, route), "system": portal.id,
                "portal": portal.name, "address": address, "tables": tables, "answers": extra,
                **({"open_steps": steps} if steps else {}), **({"form_button": button} if button else {}),
-               "saved": [access_requests.name(f) for f in saved["fields"] if f.get("value")]}
-    note = ("The person now sees a button, 'Open the request form': it opens this page in Wizard's browser window on "
-            "their PC and fills their saved answers and yours into the form's empty fields. Tell them to check every "
-            "field and submit the request themselves; Wizard never submits it, and portal reads wait until they close "
-            "that window.")
+               "saved": [access_requests.name(f) for f in saved["fields"] if f.get("value")], "can_send": can_send}
+    if can_send:
+        note = ("The person now sees 'Send request': with their click, Wizard opens the table's page in its browser "
+                "window on their PC, fills the form from their saved answers and yours and submits it the way their "
+                "own proven request went, and checks the catalog's answer. Nothing is sent without that click. Portal "
+                "reads wait until the window is closed.")
+    else:
+        note = ("The person now sees a button, 'Open the request form': it opens this page in Wizard's browser window "
+                "on their PC and fills their saved answers and yours into the form's empty fields. Tell them to check "
+                "every field and submit the request themselves; Wizard does not submit it until they have submitted "
+                "one themselves and turned sending on. Portal reads wait until they close that window.")
     try:
         place = access_requests.enqueue(browser.root, portal.id, request)
         note += (f" It is also number {place['position']} in their prepared requests ({place['waiting']} not opened "

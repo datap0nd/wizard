@@ -38,7 +38,8 @@ def test_the_form_starts_with_the_portals_predefined_fields_for_the_person_to_an
     bdp = portal()
     form = access_requests.form(tmp_path, bdp)
     assert {k: v for k, v in form.items() if k != "fields"} == {
-        "system": "bdp", "page": "", "seen": [], "default_page": "https://catalog.corp.example.com/home", "queue": []}
+        "system": "bdp", "page": "", "seen": [], "default_page": "https://catalog.corp.example.com/home", "queue": [],
+        "sending": {"enabled": False, "proof": None, "last_submission": None}}
     assert [access_requests.name(f) for f in form["fields"]] == PRESET_NAMES
     assert all(f["preset"] and f["value"] == "" and f["hint"] for f in form["fields"]), "the person sets every value"
     assert [f["kind"] for f in form["fields"]] == ["text", "choice", "choice", "text"]
@@ -98,7 +99,7 @@ def test_what_the_window_fills_saved_answers_this_requests_own_and_the_tables():
              {"label": "Duration", "value": ""}]
     assert access_requests.answers(saved, [{"label": "purpose", "value": "GCC sell-out review"}], ["sales_daily", "stock"]) == [
         {"label": "purpose", "value": "GCC sell-out review"}, {"label": "Manager", "value": "Head of Sales"},
-        {"label": "Table", "value": "sales_daily, stock"}]
+        {"label": "Table", "value": "sales_daily, stock", "auto": True}]
     named = access_requests.answers(saved, [{"label": "Table name", "value": "sales_daily"}], ["sales_daily"])
     assert [a["label"] for a in named] == ["Purpose", "Manager", "Table name"], "a table field Gemini named is not doubled"
     boxed = [{"label": "Purpose", "value": "Analytics", "kind": "text", "preset": True, "hint": "h"},
@@ -169,7 +170,7 @@ def test_gemini_proposes_a_request_and_never_sends_it(tmp_path: Path):
     assert request["address"] == "https://catalog.corp.example.com/home#/table/sales_daily", "the table's own page"
     assert "open_steps" not in request and "form_button" not in request
     assert request["tables"] == ["sales_daily"] and request["answers"] == [{"label": "Reason", "value": "GCC sell-out review"}]
-    assert request["saved"] == [] and "Settings → Portals" in outcome.data["note"] and "never submits" in outcome.data["note"]
+    assert request["saved"] == [] and "Settings → Portals" in outcome.data["note"] and "submit the request themselves" in outcome.data["note"]
     assert request["id"].startswith("AR-") and outcome.data["queued"] == {"position": 1, "waiting": 1}
     queued = access_requests.queue(tmp_path / "owner" / "portal-browser", "bdp")
     assert [(i["id"], i["tables"], i["opened"]) for i in queued] == [(request["id"], ["sales_daily"], None)], \
@@ -186,7 +187,7 @@ def test_gemini_proposes_a_request_and_never_sends_it(tmp_path: Path):
     guide = registry.execute("portal_guide", {"system": "bdp"}, context)
     assert guide.ok and guide.data["access_request_form"] == {
         "request_page": "https://catalog.corp.example.com/request", "saved_labels": ["Purpose"], "labels_seen_on_the_form": [],
-        "form_pages_seen": [], "prepared_requests": {"total": 2, "not_opened": 2, "tables": ["sales_daily"],
+        "form_pages_seen": [], "sending_on": False, "prepared_requests": {"total": 2, "not_opened": 2, "tables": ["sales_daily"],
                                                      "to_prepare_again": []}}
     assert "portal_request_access" in guide.data["guide"]
 
@@ -273,7 +274,7 @@ def test_the_api_keeps_the_form_and_opens_the_request_window(tmp_path: Path, mon
             {"label": "Purpose", "value": "Weekly sales", "kind": "text"}, {"label": "Duration", "value": "6 months"}])
         assert opened[1] == ("bdp", "https://catalog.corp.example.com/t/sales_daily", [
             {"label": "Purpose", "value": "Weekly sales", "kind": "text"}, {"label": "Duration", "value": "3 months"},
-            {"label": "Reason", "value": "GCC review"}, {"label": "Table", "value": "sales_daily"}])
+            {"label": "Reason", "value": "GCC review"}, {"label": "Table", "value": "sales_daily", "auto": True}])
         assert queued == [None, None], "neither is a prepared request"
         away = client.post("/api/v1/portals/bdp/access-request", json={"address": "https://evil.example.net/"}, headers=HEADERS)
         assert away.status_code == 400 and len(opened) == 2
@@ -285,7 +286,7 @@ def test_the_api_keeps_the_form_and_opens_the_request_window(tmp_path: Path, mon
                                                   "tables": [f"t{n}"], "answers": [{"label": "Reason", "value": f"r{n}"}]})
         assert client.post("/api/v1/portals/bdp/access-request", json={"queued": "next"}, headers=HEADERS).status_code == 200
         assert opened[-1][1] == "https://catalog.corp.example.com/t/t1" and queued[-1] == "AR-0000000001"
-        assert {"label": "Reason", "value": "r1"} in opened[-1][2] and {"label": "Table", "value": "t1"} in opened[-1][2]
+        assert {"label": "Reason", "value": "r1"} in opened[-1][2] and {"label": "Table", "value": "t1", "auto": True} in opened[-1][2]
         assert client.post("/api/v1/portals/bdp/access-request", json={"queued": "next"}, headers=HEADERS).status_code == 200
         assert queued[-1] == "AR-0000000002"
         assert client.post("/api/v1/portals/bdp/access-request", json={"queued": "next"}, headers=HEADERS).status_code == 404
@@ -340,3 +341,78 @@ def test_the_stage_and_activity_name_the_request(tmp_path: Path):
     assert tool_label("portal_request_access", {"system": "bdp", "tables": ["sales_daily"]}, context.services) == \
         "Prepared an access request in Big Data Portal: sales_daily"
     assert "submit" in tool_summary("portal_request_access", ToolOutcome(True, {"access_request": {}}, 1))
+
+
+def test_sending_is_turned_on_only_from_a_request_the_person_submitted_and_sends_only_what_they_approve(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from fastapi.testclient import TestClient
+
+    from wizard_api.app import create_app
+    # The submission the window saw: its pattern takes the ids out, its answer keeps the success fields.
+    pattern = access_requests.path_pattern("https://catalog.corp.example.com/dis-api/requests/123?x=1")
+    assert pattern == {"host": "catalog.corp.example.com", "path": "/dis-api/requests/*"}
+    assert access_requests.path_matches(pattern, "https://catalog.corp.example.com/dis-api/requests/9")
+    assert not access_requests.path_matches(pattern, "https://catalog.corp.example.com/dis-api/delete/9")
+    assert not access_requests.path_matches(pattern, "https://other.corp.example.com/dis-api/requests/9")
+    assert access_requests.expect_fields('{"success": true, "code": "0000", "data": {"id": 5}, "message": "ok"}') == \
+        {"success": True, "code": "0000"}
+    assert access_requests.expect_fields("<html>") == {}
+
+    sent: list[list[str]] = []
+
+    def fake_send(self: PortalBrowser, portal_: Any, ids: list[str]) -> dict[str, Any]:
+        sent.append(ids)
+        return {"signing_in": True, "window": "access_request"}
+
+    monkeypatch.setattr(PortalBrowser, "send_requests", fake_send)
+    settings = make_settings(tmp_path, **BDP, WIZARD_LOCAL_USER_EMAIL="owner@example.com")
+    settings.install_mode = True
+    with TestClient(create_app(settings)) as client:
+        login(client, "local-owner")
+        root = settings.user_home("local-owner") / "portal-browser"
+        for n in (1, 2, 3):
+            access_requests.enqueue(root, "bdp", {"id": f"AR-{n:010d}", "address": f"https://catalog.corp.example.com/t/{n}",
+                                                  "tables": [f"t{n}"], "answers": []})
+        off = client.post("/api/v1/portals/bdp/access-send", json={"waiting": True}, headers=HEADERS)
+        assert off.status_code == 409 and "Submit one request yourself" in off.json()["error"] and sent == []
+        refused = client.post("/api/v1/portals/bdp/access-sending", json={"enabled": True}, headers=HEADERS)
+        assert refused.status_code == 400, "no submission of the person's own yet"
+        access_requests.remember_submission(root, "bdp", {"tables": ["t1"], "button": "Submit", "method": "POST",
+                                                          "match": pattern, "path": "/dis-api/requests/123", "status": 500})
+        assert client.post("/api/v1/portals/bdp/access-sending", json={"enabled": True}, headers=HEADERS).status_code == 400, \
+            "a submission the portal refused proves nothing"
+        access_requests.remember_submission(root, "bdp", {"tables": ["t1"], "button": "Submit", "method": "POST",
+                                                          "match": pattern, "path": "/dis-api/requests/123", "status": 200,
+                                                          "expect": {"success": True}, "request_id": "AR-0000000001"})
+        access_requests.mark_sent(root, "bdp", "AR-0000000001", "you", 200, "/dis-api/requests/123")
+        on = client.post("/api/v1/portals/bdp/access-sending", json={"enabled": True}, headers=HEADERS).json()
+        assert on["sending"]["enabled"] and on["sending"]["proof"]["button"] == "Submit" and on["sending"]["proof"]["proved_at"]
+        assert on["queue"][0]["sent"]["by"] == "you"
+        assert client.post("/api/v1/portals/bdp/access-send", json={"waiting": True}, headers=HEADERS).status_code == 200
+        assert sent[-1] == ["AR-0000000002", "AR-0000000003"], "every approved request not sent yet, in order"
+        assert client.post("/api/v1/portals/bdp/access-send", json={"ids": ["AR-0000000003"]}, headers=HEADERS).status_code == 200
+        assert sent[-1] == ["AR-0000000003"]
+        none = client.post("/api/v1/portals/bdp/access-send", json={"ids": ["AR-0000000001"]}, headers=HEADERS)
+        assert none.status_code == 404, "a request already sent is not sent again"
+        assert client.post("/api/v1/portals/bdp/access-send", json={"waiting": True}).status_code == 403, "needs the Wizard header"
+        off_again = client.post("/api/v1/portals/bdp/access-sending", json={"enabled": False}, headers=HEADERS).json()
+        assert not off_again["sending"]["enabled"] and off_again["sending"]["last_submission"]["status"] == 200
+        assert client.post("/api/v1/portals/bdp/access-send", json={"waiting": True}, headers=HEADERS).status_code == 409
+        actions = [e["action"] for e in client.app.state.store.audit_entries()]
+        assert actions.count("portals:access_sending") == 2 and actions.count("portals:access_send") == 2
+
+
+def test_gemini_offers_send_only_when_the_person_turned_sending_on(tmp_path: Path):
+    registry, context = tool_setup(tmp_path)
+    root = tmp_path / "owner" / "portal-browser"
+    args = {"system": "bdp", "tables": ["t1"], "address": "https://catalog.corp.example.com/t/t1"}
+    first = registry.execute("portal_request_access", args, context)
+    assert first.ok and first.data["access_request"]["can_send"] is False and "Open the request form" in first.data["note"]
+    access_requests.remember_submission(root, "bdp", {"button": "Submit", "method": "POST", "status": 200,
+                                                      "match": {"host": "catalog.corp.example.com", "path": "/r"}})
+    access_requests.set_sending(root, "bdp", True)
+    second = registry.execute("portal_request_access", {**args, "tables": ["t2"]}, context)
+    assert second.data["access_request"]["can_send"] is True and "Send request" in second.data["note"]
+    assert "Nothing is sent without that click" in second.data["note"]
+    assert registry.execute("portal_guide", {"system": "bdp"}, context).data["access_request_form"]["sending_on"] is True
+    assert not any("send" in name for name in registry.specs if name.startswith("portal_")), "Gemini has no send tool"
