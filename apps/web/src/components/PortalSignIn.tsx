@@ -19,6 +19,17 @@ function landed(p: PortalCheck['portals'][number]): string {
   return where ? ` (${where})` : '';
 }
 
+/** What the open access request window shows: which prepared request, what Wizard filled, and what is left. */
+function requestLine(request: PortalStatus['access_request']): string {
+  const place = request?.queued;
+  const what = place ? `Prepared request ${place.position} of ${place.total} is open` : 'An access request form is open';
+  const filled = request?.filled.length ? `; Wizard filled ${request.filled.join(', ')}` : '';
+  const left = request?.missing.length ? ` Fill in yourself: ${request.missing.join(', ')}.` : '';
+  const then = place && place.waiting > 0 ? 'press Next request on the page for the next one, or close the window or press Done'
+    : 'close the window or press Done';
+  return `${what} in Wizard's browser window on this PC${filled}. Check every field, submit it there yourself, then ${then}.${left}`;
+}
+
 /** Signing in to the company portals in Wizard's own browser: a visible window opens on this PC with one tab per
  * portal; the person signs in and closes it, and Gemini then reads the portals in the background with that sign-in. */
 export function PortalSignIn({compact = false}: {compact?: boolean}) {
@@ -58,8 +69,7 @@ export function PortalSignIn({compact = false}: {compact?: boolean}) {
       {status.signing_in ? (
         <div className="flex flex-wrap items-center gap-2">
           <p className="flex-1 text-xs text-ink-2" role="status">{status.window === 'access_request'
-            ? `An access request form is open in Wizard's browser window on this PC${status.access_request?.filled.length
-              ? `; Wizard filled ${status.access_request.filled.join(', ')}` : ''}. Check every field, submit it there yourself, then close the window or press Done.`
+            ? requestLine(status.access_request)
             : 'A Wizard browser window is open on this PC. Sign in to each portal there, then close the window or press Done.'}</p>
           <Button size="xs" variant="accent" onClick={() => void act('done')} disabled={busy !== null} data-testid="portal-done">
             {busy === 'done' ? <Loader2 className="animate-spin" /> : <CheckCircle2 />}Done</Button>

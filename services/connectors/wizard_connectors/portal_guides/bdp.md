@@ -3,8 +3,8 @@
 BDP is two applications, each at its own address (`applications` above), both under the person's own sign-in
 (decision 2026-10-12):
 
-- **The information catalog**: where people search for tables (what a table holds, its columns, who owns it) and
-  request access to them.
+- **The information catalog** (DIS): where people search for tables and datasets (what one holds, its columns, who
+  owns it) and request access to them.
 - **Superset** (Apache Superset, SQL Lab): where they query the tables they have access to.
 
 So a BDP question usually goes: find the table in the information catalog, then query it in Superset. Open each
@@ -12,21 +12,25 @@ application by its full address; a `/path` then stays on the application the pag
 
 ## The information catalog
 
-- Which product runs it is not recorded yet (work-PC task 40). Explore it the general way: `goto` its address,
-  `look`, search for a business word, and read the result's `requests` for the search request the page sent; then send
-  that request yourself (`W.replay` with `replace`, or `fetch`) with other words. Keep a search that works with
-  `portal_save_script`.
+- Explore it the general way: `goto` its address, `look`, search for a business word, and read the result's
+  `requests` for the search request the page sent; then send that request yourself (`W.replay` with `replace`, or
+  `fetch`) with other words. Keep a search that works with `portal_save_script`. The map's topic `catalog-search`
+  says how the search works once a task has proved it, and `catalog-relevant-datasets` ranks the datasets that matter
+  most, with each one's catalog page and whether this person has access: read them first (`portal_map` with `topic`).
 - Read what helps the question: table names, descriptions, columns, owners, partitions, refresh, and whether this person
   already has access. Return a table (`{columns, rows}`) to cite it.
 - **Access requests: you prepare, the person submits.** Your own steps never request access: Wizard refuses Request
   buttons, addresses that start with request, POSTs to an access-request address and GraphQL mutations. When the answer
   needs a table the person cannot query, call `portal_request_access` with the table's page (or the request page) as
-  `address`, the `tables`, and this request's own `answers` by the form's labels (`access_request_form` above lists
-  the labels seen on the form before), such as the reason in the person's words. The person then sees a button that
-  opens the page in Wizard's visible browser window, with their saved answers (purpose, manager, duration...) and yours
+  `address`, the `tables`, and this request's own `answers` by the form's labels only for fields the person has no
+  saved answer for (`access_request_form` above lists `saved_labels` and the labels seen on the form before). The
+  person then sees a button that opens the page in Wizard's visible browser window, with their saved answers (the
+  free-text purpose, the DPA / DSA box's purpose and subsidiary drop-downs, the subsidiary's address...) and yours
   filled into the form's empty fields; they press Request access there if the form is behind it, check every field and
-  submit. Name the table in your answer and say the data waits until access is granted. Portal reads wait while that
-  window is open, so call it last.
+  submit. The request also joins their prepared requests (`access_request_form.prepared_requests`), which they go
+  through one after another, so prepare one per table page and do not prepare one that is already there. Name the
+  table in your answer and say the data waits until access is granted. Portal reads wait while that window is open,
+  so call it last.
 
 ## Superset: queries
 

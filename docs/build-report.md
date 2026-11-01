@@ -3,7 +3,51 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-10-31 (latest) — Tasks run from Settings and save to the knowledge base; Settings sections start collapsed
+## 2026-11-01 (latest) — Big Data Portal access: the form's own fields, drop-downs Wizard chooses, prepared requests, two tasks
+
+The owner: mapping BDP keeps reaching dashboards whose tables they cannot read; "add tasks for first of all, identify
+the most relevant datasets in DIS ... Then send access requests for the 50 most relevant ones", and the request page in
+Settings should have the form's own boxes (a free-text Purpose; a DPA / DSA box with a Purpose drop-down, the fifth
+option, a Subsidiary Name drop-down searched by typing, the subsidiary's address) for them to set once, so "wizard
+fills that up everytime". [Decision](decisions/2026-11-01-bdp-dataset-access.md).
+
+**What changed.**
+- `access_requests.py`: predefined fields per portal (`PRESETS`), fields keyed by section and label with a kind (text
+  or choice), an answer saved before moving into its preset; prepared requests (`enqueue`, `next_waiting`, `place`,
+  `mark_opened`, `remove`, at most 100); `search_texts`.
+- `portal_fill.js`: free text only into text boxes, drop-down answers only into drop-downs (selects, a portal's own by
+  role, list-box trigger, read-only input or class, or a type-ahead input); a section prefers fields under its heading;
+  options matched by text, text without its number, number, or whole words, never a guess between several; the note on
+  the page says which prepared request this is and has **Next request** and **Hide**; it counts only fields Wizard
+  filled.
+- `portal_pick.js` (new) and `PortalBrowser._pick`: click the matched drop-down open, type into its list's search box
+  when needed, click the option that appeared; clear and close when nothing matches; one try per field and page.
+  The request window is reused for the next request, gets its full time per request, refreshes between jobs, and Next
+  is audited.
+- `portal_request_access` adds the request to the prepared list (and accepts a `section` on an answer); the guide shows
+  the saved answers by name and the prepared requests. API: `access-request` takes `queued` (an id or `next`), a card's
+  request opens as its prepared one, new `access-queue/remove` (audited `portals:access_queue`).
+- Settings → Portals → Access request form: the predefined fields (the DPA / DSA box apart, with a kind badge, hint and
+  example), other fields, and **Prepared requests** with Open the next request, open or remove each, and remove the
+  opened ones. The portals status line names the open prepared request and the fields left to fill.
+- Tasks: `tasks/bdp-relevant-datasets.md` (rank the catalog's datasets, kept as the BDP map's topic
+  `catalog-relevant-datasets`) and `tasks/bdp-request-dataset-access.md` (prepare requests for the 50 most relevant ones
+  the person lacks). They appear in Settings → Tasks from GitHub without an update; the second needs this version.
+- BDP guide, AGENTS.md, README, threat model, the 28 October decision (amended), contracts.
+
+**Tests.** `tests/unit/test_access_requests.py` 10 (3 new: predefined fields, prepared list, search texts; the tool and
+API tests extended). New real-Chromium test in `tests/integration/test_portal_browser.py` against a catalog-shaped
+form with made-up options: both Purpose fields, a library-style drop-down chosen by number, a combobox found by typing
+its code, the requester and email left, no request until the person's Submit, Next request to the second prepared
+request (audited), and a subsidiary the list lacks left empty with the typing cleared. New
+`AccessRequestForm.test.tsx` (3). `verify_all.sh --allow-blocked=live-parity,postgres`: lock, spec, secrets,
+contracts, lint, types (no issues), python-tests 593 passed / 5 skipped, portal-browser 17 passed, evals-schema,
+web-types, web-unit 109 passed, web-build PASS; web-dist PASS after committing the rebuilt `dist`; gemini-cli 5 passed
+once the CLI was installed in `.tools`; e2e 26 passed with Playwright's Chromium (`CI=1`; this Linux container has no
+Edge, the local default); postgres and live-parity BLOCKED (allowed: no PostgreSQL server or live credentials here).
+Not verified: the real catalog's form and drop-downs, and the two tasks run by Gemini (work PC).
+
+## 2026-10-31 — Tasks run from Settings and save to the knowledge base; Settings sections start collapsed
 
 The owner: tasks are "pending tasks where you write it for Gemini to execute ... we push them and they stay as tasks",
 appear "without needing to update the app", and "the output of the task is the GitHub repo"; scrap the old ones; and

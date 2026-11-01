@@ -2068,7 +2068,7 @@
     },
     {
       "name": "portal_request_access",
-      "description": "Prepare an access request in a portal's information catalog (the Big Data Portal) for tables the person cannot query yet. Wizard never sends it: the person gets a button that opens the request page in Wizard's visible browser window, with their saved answers (purpose, manager, duration...) and your answers for this request filled into the form's empty fields; they check every field and submit it themselves. Use it after you found the table and saw that the person lacks access, and name the table in your answer.",
+      "description": "Prepare an access request in a portal's information catalog (the Big Data Portal) for tables the person cannot query yet. Wizard never sends it: the person gets a button that opens the request page in Wizard's visible browser window, with their saved answers (purpose, the DPA / DSA drop-downs, subsidiary...) and your answers for this request filled into the form's empty fields; they check every field and submit it themselves. It is also added to their prepared requests (Settings → Portals), which they go through one after another. Use it after you found the table and saw that the person lacks access, one call per table page, and name the table in your answer.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2089,7 +2089,7 @@
             "type": "array"
           },
           "answers": {
-            "description": "This request's own fields by the form's labels (the guide lists labels seen before), e.g. the reason, in the person's words from the question. Their saved answers (purpose, manager, duration...) are filled too.",
+            "description": "This request's own fields by the form's labels (the guide lists labels seen before), only for fields the person has no saved answer for (the guide lists saved_labels), e.g. a reason in the person's words from the question. Their saved answers (purpose, the DPA / DSA box, subsidiary...) are filled too.",
             "items": {
               "additionalProperties": false,
               "properties": {
@@ -2100,6 +2100,10 @@
                 "value": {
                   "type": "string",
                   "description": "(0-2000 characters)"
+                },
+                "section": {
+                  "description": "The box the field sits in, only when two fields share a label (e.g. DPA / DSA) (0-120 characters)",
+                  "type": "string"
                 }
               },
               "required": [

@@ -1,6 +1,8 @@
 # 2026-10-28 — Wizard opens the access request form, filled from the person's saved answers
 
-**Owner:** project owner. **Status:** decided (28 October 2026). Builds on
+**Owner:** project owner. **Status:** decided (28 October 2026); amended 1 November 2026
+([predefined fields, drop-downs and prepared requests](2026-11-01-bdp-dataset-access.md)): Wizard now also chooses the
+person's option in the form's own drop-downs. Builds on
 [the information catalog decision](2026-10-28-bdp-information-catalog.md), which made every access request the
 person's own step and refused it inside the tool.
 

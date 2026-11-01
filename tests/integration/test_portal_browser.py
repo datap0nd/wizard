@@ -104,6 +104,58 @@ TABLE_PAGE = """<!doctype html><html><head><title>sales_daily</title></head><bod
 <label>Password <input type="password" name="pw"></label>
 <button id="send" type="submit">Send request</button></form></div></body></html>"""
 
+# A catalog table page like the Big Data Portal's (owner, 1 November 2026): a free-text purpose, then the DPA / DSA box
+# with the requester and email already filled, a Purpose drop-down whose list opens outside the form (as UI libraries
+# draw it), a subsidiary combobox that lists matches only as one types (and matches the code, not the full name), the
+# subsidiary's address, and a Submit button. The option texts and companies are made up.
+DIS_TABLE = """<!doctype html><html><head><title>{name}</title><style>
+.el-select-dropdown { position: absolute; background: #fff; border: 1px solid #ccc; display: none; z-index: 10 }
+.el-select-dropdown li, #sub-list li { padding: 4px 8px; list-style: none; cursor: pointer }
+#sub-list { position: absolute; background: #fff; border: 1px solid #ccc; display: none; margin: 0; padding: 0; z-index: 10 }
+.el-select, .combo { width: 360px; border: 1px solid #999; padding: 2px }
+</style></head><body>
+<nav><ul><li>Home</li><li>Catalog</li></ul></nav><h1>{name}</h1>
+<button id="ask" type="button" onclick="document.getElementById('dialog').style.display = 'block'">Request access</button>
+<div id="dialog" class="modal" style="display:none"><form id="request" method="post" action="/api/requestAccess">
+<div class="row"><p class="tit">Purpose</p><textarea name="purpose"></textarea></div>
+<div class="dpa"><div class="tit">DPA / DSA <em>*</em></div>
+<div class="row"><span class="tit">Requester</span><input name="requester" value="Test Person" readonly></div>
+<div class="row"><span class="tit">Email</span><input name="email" value="person@example.com" readonly></div>
+<div class="row"><p class="tit">Purpose</p><div class="el-select" id="purpose"><div class="el-input">
+<input class="el-input__inner" name="dpa_purpose" readonly placeholder="Select Purpose"></div></div></div>
+<div class="row"><p class="tit">Subsidiary Name(Full Legal Name)</p><div class="combo">
+<input id="sub" name="subsidiary" role="combobox" aria-controls="sub-list" aria-expanded="false" autocomplete="off"><span>&#128269;</span></div></div>
+<div class="row"><p class="tit">Subsidiary Address(Full Legal Address)</p><input name="address"></div>
+</div><button id="send" type="submit" style="background:#5b5bd6;color:#fff">Submit</button></form></div>
+<div class="el-select-dropdown el-popper" id="purpose-pop"><ul>
+<li class="el-select-dropdown__item"><span>1. Joint work with headquarters (Service improvement)</span></li>
+<li class="el-select-dropdown__item"><span>2. Joint work with headquarters (New services)</span></li>
+<li class="el-select-dropdown__item"><span>3. Joint work with headquarters (Data analysis)</span></li>
+<li class="el-select-dropdown__item"><span>4. Use by the subsidiary (Marketing analysis)</span></li>
+<li class="el-select-dropdown__item"><span>5. Use by the subsidiary (Local devices and services)</span></li></ul></div>
+<ul id="sub-list" role="listbox"></ul>
+<script>
+const pop = document.getElementById('purpose-pop'), box = document.getElementById('purpose'), field = box.querySelector('input');
+box.addEventListener('click', () => {
+  const r = box.getBoundingClientRect();
+  pop.style.left = r.left + 'px'; pop.style.top = (r.bottom + window.scrollY) + 'px';
+  pop.style.display = pop.style.display === 'block' ? 'none' : 'block';
+});
+pop.addEventListener('click', e => { const li = e.target.closest('li'); if (li) { field.value = li.innerText.trim(); pop.style.display = 'none'; } });
+const SUBS = ['(ABC) Example Electronics Co., Ltd.', '(ABD) Example Display Ltd.', '(ACE) Another Company Ltd.'];
+const sub = document.getElementById('sub'), list = document.getElementById('sub-list');
+sub.addEventListener('input', () => {
+  const q = sub.value.trim().toLowerCase();
+  const found = q.length < 2 ? [] : SUBS.filter(s => s.slice(1, 4).toLowerCase().startsWith(q) || s.slice(6).toLowerCase().includes(q));
+  list.replaceChildren(...found.map(s => { const li = document.createElement('li'); li.textContent = s; li.setAttribute('role', 'option'); return li; }));
+  const r = sub.getBoundingClientRect();
+  list.style.left = r.left + 'px'; list.style.top = (r.bottom + window.scrollY) + 'px';
+  list.style.display = found.length ? 'block' : 'none';
+  sub.setAttribute('aria-expanded', String(found.length > 0));
+});
+list.addEventListener('click', e => { const li = e.target.closest('[role=option]'); if (li) { sub.value = li.textContent; list.style.display = 'none'; } });
+</script></body></html>"""
+
 MENU = {"ROOT": [{"id": "S", "name": "01.Sales"}, {"id": "F", "name": "02.Finance"}],
         "S": {"id": "S", "name": "01.Sales", "children": [{"id": "G", "name": "Sell-out", "child": [{"id": "R1", "name": "Weekly Sell-out"}]}]},
         "F": {"id": "F", "name": "02.Finance", "children": [{"id": "R2", "name": "P&L"}]}}
@@ -130,7 +182,8 @@ class Portal(SimpleHTTPRequestHandler):
                  "/help": "<title>Help</title><p>Trouble with single sign-on? Call the desk.</p><input type=text>",
                  "/report": "<title>Report</title><table><tr><th>A</th></tr><tr><td>1</td></tr></table>",
                  "/superset": "<title>Superset</title><div id=app data-bootstrap='{}'>SQL Lab</div>",
-                 "/catalog": CATALOG_PAGE, "/catalog/table/sales_daily": TABLE_PAGE}
+                 "/catalog": CATALOG_PAGE, "/catalog/table/sales_daily": TABLE_PAGE,
+                 "/catalog/dis/t1": DIS_TABLE.replace("{name}", "t1"), "/catalog/dis/t2": DIS_TABLE.replace("{name}", "t2")}
         self.reply(pages.get(self.path.split("?")[0], "<title>Not found</title>"), status=200 if self.path.split("?")[0] in pages else 404)
 
     def do_POST(self) -> None:  # noqa: N802
@@ -553,3 +606,86 @@ def test_the_sign_in_outlives_its_window_and_a_restart():
         again.shutdown()
         server.shutdown()
         shutil.rmtree(root.parent, ignore_errors=True)
+
+
+def test_the_portals_own_drop_downs_are_chosen_and_the_window_walks_through_the_prepared_requests(setup, portal_url):
+    services = setup[0]
+    browser = services.portals.for_user("owner")
+    browser.show_windows = False  # the person's window, headless on a test machine
+    audits: list[tuple[str, dict[str, Any]]] = []
+    browser.audit = lambda action, **detail: audits.append((action, detail))
+    portal = services.portals.settings.portal("bdp")
+    access_requests.remove(browser.root, "bdp", [i["id"] for i in access_requests.queue(browser.root, "bdp")])
+    access_requests.save(browser.root, portal, "", [
+        {"label": "Purpose", "value": "Will be used for analytics in the MENA region", "kind": "text"},
+        {"label": "Purpose", "section": "DPA / DSA", "value": "5", "kind": "choice"},
+        {"label": "Subsidiary Name (Full Legal Name)", "section": "DPA / DSA", "value": "(ABC) Example Electronics Co., Ltd.",
+         "kind": "choice"},
+        {"label": "Subsidiary Address", "section": "DPA / DSA", "value": "1 Example Street, Example City", "kind": "text"}])
+    ids = []
+    for table in ("t1", "t2"):  # Gemini prepares two requests (a task's run): nothing opens
+        outcome = call(setup, "portal_request_access", {"system": "bdp", "address": catalog_address(portal_url) + f"/dis/{table}",
+                                                        "tables": [table]}, systems=("bdp",))
+        assert outcome.ok, outcome.error_message
+        ids.append(outcome.data["access_request"]["id"])
+    assert browser.status()["window"] is None
+    Portal.hits.clear()
+    first = access_requests.next_waiting(browser.root, "bdp")
+    assert first["id"] == ids[0]
+    saved = access_requests.form(browser.root, portal)["fields"]
+    access_requests.mark_opened(browser.root, "bdp", first["id"])  # as the API does: Open the next request
+    browser.open_access_request(portal, first["address"], access_requests.answers(saved, first["answers"], first["tables"]),
+                                queued=first["id"])
+
+    def page() -> Any:
+        return browser._context.pages[0]
+
+    def banner() -> str:  # read without waiting: the browser's own thread draws the note between jobs
+        return browser.run(lambda: page().evaluate("() => document.getElementById('wizard-access-banner')?.innerText || ''"))
+
+    def values() -> dict[str, str]:
+        return browser.run(lambda: page().evaluate(
+            "() => Object.fromEntries([...document.querySelectorAll('#request [name]')].map(e => [e.name, e.value]))"))
+
+    assert browser.status()["access_request"]["queued"] == {"id": ids[0], "position": 1, "total": 2, "waiting": 1}
+    assert "Prepared request 1 of 2: t1" in banner()
+    browser.run(lambda: page().click("#ask"))  # the person presses Request access; the form appears
+    wait_until(lambda: len(browser.status()["access_request"]["filled"]) >= 4, seconds=20)
+    status = browser.status()["access_request"]
+    assert sorted(status["filled"]) == ["DPA / DSA › Purpose", "DPA / DSA › Subsidiary Address",
+                                        "DPA / DSA › Subsidiary Name (Full Legal Name)", "Purpose"]
+    assert status["missing"] == ["Table"], "the table is the page's own: no field asks for it"
+    assert values() == {"purpose": "Will be used for analytics in the MENA region", "requester": "Test Person",
+                        "email": "person@example.com",
+                        "dpa_purpose": "5. Use by the subsidiary (Local devices and services)",
+                        "subsidiary": "(ABC) Example Electronics Co., Ltd.", "address": "1 Example Street, Example City"}, \
+        "the free text and the drop-down of the same label each got their own answer; the form's own values stayed"
+    assert browser.run(lambda: page().evaluate(
+        "() => [...document.querySelectorAll('#purpose-pop, #sub-list')].every(e => getComputedStyle(e).display === 'none')")), \
+        "the lists Wizard opened are closed"
+    wait_until(lambda: "filled 4 fields" in banner())
+    assert not any("requestAccess" in hit for hit in Portal.hits), "Wizard never submits the request"
+    browser.run(lambda: page().click("#send"))  # the person submits
+    wait_until(lambda: any(hit.startswith("POST /api/requestAccess") for hit in Portal.hits))
+    posted = next(hit for hit in Portal.hits if hit.startswith("POST /api/requestAccess"))
+    assert "purpose=Will+be+used+for+analytics" in posted, "the person sent what Wizard filled"
+
+    # The person's subsidiary changes before the next one, to an option the list does not have: Wizard leaves it.
+    access_requests.save(browser.root, portal, "", [{**f, "value": "(XYZ) Nowhere Ltd."} if "Subsidiary Name" in f["label"] else f
+                                                    for f in access_requests.form(browser.root, portal)["fields"]])
+    browser.run(lambda: page().goto(catalog_address(portal_url) + "/dis/t1"))  # the submitted form's page, reloaded
+    wait_until(lambda: "Next request" in banner())
+    browser.run(lambda: page().get_by_role("button", name="Next request (1 to go)").click())  # the person, in Wizard's note
+    wait_until(lambda: (browser.status()["access_request"].get("queued") or {}).get("position") == 2)
+    assert browser.run(lambda: page().url).endswith("/dis/t2")
+    assert ("portals:access_request", {"system": "bdp", "detail": {"tables": ["t2"], "queued": ids[1], "by": "next"}}) in audits
+    assert all(i["opened"] for i in access_requests.queue(browser.root, "bdp"))
+    wait_until(lambda: "last prepared request" in banner())
+    browser.run(lambda: page().click("#ask"))
+    wait_until(lambda: "DPA / DSA › Subsidiary Name (Full Legal Name)" in browser.status()["access_request"]["missing"],
+               seconds=20)
+    wait_until(lambda: len(browser.status()["access_request"]["filled"]) >= 3)
+    after = values()
+    assert after["subsidiary"] == "" and after["dpa_purpose"].startswith("5."), "no guess: what Wizard typed is cleared"
+    assert browser.run(lambda: page().evaluate("() => getComputedStyle(document.getElementById('sub-list')).display")) == "none"
+    assert browser.finish_sign_in()["window"] is None

@@ -1,6 +1,7 @@
 """The person's Wizard browser: Google Chrome (or Edge) driven by Playwright, with its own profile, where Gemini's
 portal scripts run in the background (headless), the person signs in once in a visible window, and an access request
-form opens visibly, filled from the person's saved answers, for them to check and submit.
+form opens visibly, filled from the person's saved answers, for them to check and submit, one prepared request after
+another.
 
 One PortalBrowser per person. Playwright's synchronous objects belong to the thread that made them, so each browser has
 one thread that owns Playwright and runs every job in turn; tool calls hand it work and wait. The profile is Wizard's
@@ -14,8 +15,9 @@ While Gemini drives (headless) every request goes through HostPolicy and write_r
 click_refusal, downloads and service workers are off, and the data requests the page makes are kept so Gemini can call
 them again itself. While the person signs in (headed) nothing is filtered: the hosts their sign-in goes through are
 remembered so a later background session can renew it. The access request window is the person's too, unfiltered so
-they can submit; Wizard only fills the form's empty fields on the portals' own pages (portal_fill.js), and Gemini's
-steps wait until the window is closed."""
+they can submit; Wizard only fills the form's empty fields on the portals' own pages (portal_fill.js), clicking only to
+open one of the form's own drop-downs and choose the person's saved option in it (portal_pick.js), and Gemini's steps
+wait until the window is closed."""
 from __future__ import annotations
 
 import contextlib
@@ -40,6 +42,8 @@ log = logging.getLogger("wizard.portals")
 HELPERS = Path(__file__).with_name("portal_helpers.js").read_text(encoding="utf-8")
 CAPTURE = Path(__file__).with_name("portal_capture.js").read_text(encoding="utf-8")
 FILL = Path(__file__).with_name("portal_fill.js").read_text(encoding="utf-8")
+PICK = Path(__file__).with_name("portal_pick.js").read_text(encoding="utf-8")
+PICK_WAIT_MS = 2500         # how long a drop-down's list may take to show the option after it opens or is searched
 FILL_EVERY_S = 1.5          # the access request window looks for its form's fields this often
 IDLE_CLOSE_S = 600          # a background browser nobody used for this long is closed
 SIGN_IN_LIMIT_S = 20 * 60   # a sign-in window left open this long is closed
@@ -87,9 +91,12 @@ class AccessWindow:
     portal: Portal
     address: str
     answers: list[dict[str, str]]
-    done: dict[str, list[str]] = field(default_factory=dict)
+    queued: str | None = None  # the prepared request this window shows, when it walks through them
+    done: dict[str, list[str]] = field(default_factory=dict)  # per page: the fields handled (filled, kept or tried)
+    page_filled: dict[str, list[str]] = field(default_factory=dict)  # per page: the fields Wizard filled
     filled: list[str] = field(default_factory=list)
     missing: list[str] = field(default_factory=list)
+    unpicked: list[str] = field(default_factory=list)  # drop-downs whose saved option Wizard could not find
     seen: list[str] = field(default_factory=list)
     last: float = 0.0
 
@@ -130,6 +137,7 @@ class PortalBrowser:
         self.session_file = root / "session.bin"
         self._session: list[dict[str, Any]] = self._load_session()
         self._seen: list[dict[str, Any]] | None = None  # the sign-in window's cookies, the last time Wizard looked
+        self.audit: Callable[..., None] | None = None  # the audit log: (action, system=..., detail=...)
 
     # State without secrets: the hosts sign-in went through and when it last happened --------------------------------
     def _state(self) -> dict[str, Any]:
@@ -239,6 +247,8 @@ class PortalBrowser:
             finally:
                 self._last_used = time.monotonic()
                 self._note_session()
+            if self._request is not None and self._headed and time.monotonic() - self._request.last >= FILL_EVERY_S:
+                self._idle()  # a steady stream of jobs never starves the person's request window
 
     def _idle(self) -> None:
         if self._context is None:
@@ -431,7 +441,7 @@ class PortalBrowser:
         self._note_session()
         if self._window == "access_request" and self._request is not None:
             with contextlib.suppress(Exception):  # the window may be gone; what was seen is already kept
-                self._fill_request()
+                self._fill_request(closing=True)
             access_requests.remember_seen(self.root, self._request.portal.id, self._request.seen)
         elif self._window == "sign_in":
             hosts = {h for h in self._sign_in_hosts if "." in h and not h.replace(".", "").isdigit()}
@@ -445,36 +455,83 @@ class PortalBrowser:
         self._headed, self._window, self._request = False, None, None
 
     # The access request window ---------------------------------------------------------------------------------------
-    def open_access_request(self, portal: Portal, address: str, answers: list[dict[str, str]]) -> dict[str, Any]:
+    def open_access_request(self, portal: Portal, address: str, answers: list[dict[str, str]],
+                            queued: str | None = None) -> dict[str, Any]:
         """Open the portal's request page in a visible window and fill the person's answers into the form's empty fields,
-        now and whenever the form appears (after they press Request access); they check it and submit it themselves."""
+        now and whenever the form appears (after they press Request access); they check it and submit it themselves.
+        An open request window is reused. queued: the prepared request this is, so the window's note offers the next."""
         def job() -> dict[str, Any]:
             if self._headed and self._window == "sign_in":
                 raise PortalError("signing_in", "Finish signing in first: close the Wizard sign-in window, then open the "
                                                 "request form again.")
-            context = self._launch(headed=True, window="access_request")
-            self._headed_since = time.monotonic()
-            self._request = AccessWindow(portal, address, answers)
-            page = context.pages[0] if context.pages else context.new_page()
-            with contextlib.suppress(Exception):  # the person sees the page and its error
-                page.goto(address, wait_until="domcontentloaded", timeout=45_000)
-            self._fill_request()
+            page = self._request_page()
+            if page is None:
+                context = self._launch(headed=True, window="access_request")
+                page = context.pages[0] if context.pages else context.new_page()
+            self._show_request(page, AccessWindow(portal, address, answers, queued=queued))
             with contextlib.suppress(Exception):
                 page.bring_to_front()
             return self.status_now()
         return self.run(job, timeout=90)
 
-    def _fill_request(self) -> None:
+    def _request_page(self) -> Any:
+        """The open access request window's page, to show the next request in."""
+        if not (self._headed and self._window == "access_request" and self._context is not None):
+            return None
+        try:
+            pages = [p for p in self._context.pages if not p.is_closed()]
+        except Exception:  # noqa: BLE001 - the window was closed
+            return None
+        return pages[0] if pages else None
+
+    def _show_request(self, page: Any, request: AccessWindow) -> None:
+        if self._request is not None:
+            access_requests.remember_seen(self.root, self._request.portal.id, self._request.seen)
+        self._request = request
+        self._headed_since = time.monotonic()  # each request has the window's full time, so a long list is not cut short
+        with contextlib.suppress(Exception):  # the person sees the page and its error
+            page.goto(request.address, wait_until="domcontentloaded", timeout=45_000)
+        self._fill_request()
+
+    def _next_request(self, page: Any) -> None:
+        """The person pressed Next request in the window's note: show the next prepared request that is not opened."""
+        request = self._request
+        if request is None:
+            return
+        portal = request.portal
+        item = access_requests.next_waiting(self.root, portal.id, after=request.queued)
+        if item is None:
+            return
+        try:
+            address = access_requests.check_address(portal, str(item["address"]))
+        except access_requests.AccessFormError:
+            access_requests.remove(self.root, portal.id, [item["id"]])
+            return
+        access_requests.mark_opened(self.root, portal.id, item["id"])
+        saved = access_requests.form(self.root, portal)["fields"]
+        answers = access_requests.answers(saved, item.get("answers") or [], item.get("tables") or [])
+        if self.audit is not None:
+            with contextlib.suppress(Exception):  # the audit never stops the person's window
+                self.audit("portals:access_request", system=portal.id, detail={"tables": item.get("tables") or [],
+                                                                              "queued": item["id"], "by": "next"})
+        self._show_request(page, AccessWindow(portal, address, answers, queued=item["id"]))
+
+    def _fill_request(self, closing: bool = False) -> None:
         request = self._request
         if request is None or self._context is None:
             return
         request.last = time.monotonic()
+        place = access_requests.place(self.root, request.portal.id, request.queued) if request.queued else None
+        queue = {**place, "tables": ", ".join(next((i.get("tables") or [] for i in access_requests.queue(
+            self.root, request.portal.id) if i["id"] == request.queued), []))[:300]} if place else None
         for page in list(self._context.pages):
             if not access_requests.on_portal(request.portal, (urlsplit(page.url).hostname or "").lower()):
                 continue  # only this portal's own pages: never another site's form
             done = request.done.setdefault(page.url.split("#")[0], [])
+            page_filled = request.page_filled.setdefault(page.url.split("#")[0], [])
             try:
-                result = page.evaluate(FILL, {"answers": request.answers, "done": done})
+                result = page.evaluate(FILL, {"answers": request.answers, "done": done, "queue": queue,
+                                              "filled_before": len(page_filled)})
             except Exception as error:  # noqa: BLE001 - navigating, or the page closed: the next round fills it
                 log.debug("access request fill skipped a page: %s", _first_line(error))
                 continue
@@ -483,18 +540,88 @@ class PortalBrowser:
             for label in [*result.get("filled", []), *result.get("kept", [])]:
                 if label not in done:
                     done.append(label)
+            if not closing:
+                for pick in result.get("picks") or []:
+                    if not isinstance(pick, dict) or pick.get("name") in done:
+                        continue
+                    done.append(str(pick.get("name")))  # one try per field and page: never a tug of war with the person
+                    if self._pick(page, pick):
+                        result.setdefault("filled", []).append(pick["name"])
+                    elif pick["name"] not in request.unpicked:
+                        request.unpicked.append(str(pick["name"]))
+            page_filled.extend(n for n in result.get("filled", []) if n not in page_filled)
             request.filled = list(dict.fromkeys([*request.filled, *result.get("filled", [])]))
-            request.missing = [str(m) for m in result.get("missing", [])][:20]
+            request.missing = list(dict.fromkeys([*[str(m) for m in result.get("missing", [])], *request.unpicked]))[:20]
             for label in result.get("seen", []):
                 if isinstance(label, str) and label not in request.seen and len(request.seen) < access_requests.MAX_SEEN:
                     request.seen.append(label[:access_requests.MAX_LABEL])
+            if result.get("next") and not closing:
+                self._next_request(page)
+                return
+
+    def _pick(self, page: Any, pick: dict[str, Any]) -> bool:
+        """Choose the saved option in one of the form's own drop-downs: click it open, type the answer into the list's
+        search box when the option is not shown, click the option that matches. Only the drop-down portal_fill.js marked
+        and an option of the list it opened are clicked (portal_pick.js refuses buttons, links and submits); nothing is
+        pressed. When no option matches, what Wizard typed is cleared and the list it opened is closed again."""
+        mark, value = str(pick.get("mark") or ""), str(pick.get("value") or "")
+        control = page.locator(f'[data-wizard-pick="{mark}"]').first
+        opened = typed = False
+        try:
+            page.evaluate(PICK, {"mode": "before", "mark": mark})
+            if not pick.get("typing"):
+                control.click(timeout=3000)
+                opened = True
+                if self._choose(page, mark, value, wait_ms=600):
+                    return True
+            for text in access_requests.search_texts(value):
+                if not page.evaluate(PICK, {"mode": "search", "mark": mark}):
+                    break
+                page.locator("[data-wizard-search]").first.fill(text, timeout=3000)
+                typed = True
+                if self._choose(page, mark, value, wait_ms=PICK_WAIT_MS):
+                    return True
+            if typed:
+                with contextlib.suppress(Exception):
+                    page.locator("[data-wizard-search]").first.fill("", timeout=2000)
+            if opened and (page.evaluate(PICK, {"mode": "options", "mark": mark, "value": ""}) or {}).get("open"):
+                with contextlib.suppress(Exception):
+                    control.click(timeout=2000)
+            return False
+        except Exception as error:  # noqa: BLE001 - the drop-down moved or went: the person chooses it
+            log.debug("access request pick failed: %s", _first_line(error))
+            return False
+        finally:
+            with contextlib.suppress(Exception):
+                page.evaluate(PICK, {"mode": "clear"})
+
+    def _choose(self, page: Any, mark: str, value: str, wait_ms: int) -> bool:
+        deadline = time.monotonic() + wait_ms / 1000
+        while True:
+            found = page.evaluate(PICK, {"mode": "options", "mark": mark, "value": value}) or {}
+            if found.get("found"):
+                page.locator("[data-wizard-option]").first.click(timeout=3000)
+                page.wait_for_timeout(250)
+                state = page.evaluate(PICK, {"mode": "state", "mark": mark}) or {}
+                if not state.get("empty", True):
+                    with contextlib.suppress(Exception):
+                        page.evaluate("m => { const e = document.querySelector(`[data-wizard-pick=\"${m}\"]`); if (e) {"
+                                      " e.style.outline = '2px solid #6d4aff'; e.style.outlineOffset = '1px';"
+                                      " e.title = e.title || 'Chosen by Wizard from your saved answers'; } }", mark)
+                    return True
+                return False
+            if found.get("several") or time.monotonic() >= deadline:
+                return False
+            page.wait_for_timeout(200)
 
     def status_now(self) -> dict[str, Any]:
         state = self._state()
         request = self._request if self._headed else None
+        place = access_requests.place(self.root, request.portal.id, request.queued) if request and request.queued else None
         return {"browser": portals.CHANNELS[self.settings.channel], "signing_in": self._headed,
                 "window": self._window if self._headed else None,
-                **({"access_request": {"system": request.portal.id, "filled": request.filled, "missing": request.missing}}
+                **({"access_request": {"system": request.portal.id, "filled": request.filled, "missing": request.missing,
+                                       **({"queued": {"id": request.queued, **place}} if place else {})}}
                    if request else {}),
                 "running": self._context is not None, "last_sign_in": state.get("last_sign_in"),
                 "portals": [{"id": p.id, "name": p.name, "host": p.host,
@@ -856,11 +983,13 @@ class PortalBrowsers:
     """One browser per person, made when first needed."""
 
     def __init__(self, settings: PortalSettings, home_for: Callable[[str], Path],
-                 launcher: Callable[..., Any] | None = None, secrets: SecretStore | None = None):
+                 launcher: Callable[..., Any] | None = None, secrets: SecretStore | None = None,
+                 audit: Callable[..., None] | None = None):
         self.settings = settings
         self.home_for = home_for
         self.launcher = launcher
         self.secrets = secrets
+        self.audit = audit  # (user_id, action, system=..., detail=...): what the person's windows do on their own
         self._browsers: dict[str, PortalBrowser] = {}
         self._lock = threading.Lock()
 
@@ -870,6 +999,9 @@ class PortalBrowsers:
             if browser is None:
                 browser = PortalBrowser(self.settings, self.home_for(user_id) / "portal-browser", self.launcher,
                                         self.secrets)
+                if self.audit is not None:
+                    audit = self.audit
+                    browser.audit = lambda action, _user=user_id, **detail: audit(_user, action, **detail)
                 self._browsers[user_id] = browser
             return browser
 

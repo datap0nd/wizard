@@ -190,6 +190,9 @@ class LinkCompleteBody(Body):
 class AnswerBody(Body):
     label: str = Field(max_length=200)
     value: str = Field(default="", max_length=2000)
+    # The box the field sits in (DPA / DSA) and how it is answered: typed text, or an option chosen in a drop-down.
+    section: str = Field(default="", max_length=200)
+    kind: Literal["text", "choice"] | None = None
 
 
 class AccessFormBody(Body):
@@ -203,6 +206,13 @@ class AccessRequestBody(Body):
     address: str | None = Field(default=None, max_length=2000)
     tables: list[str] = Field(default_factory=list, max_length=20)
     answers: list[AnswerBody] = Field(default_factory=list, max_length=20)
+    # A prepared request (its id), or "next": the first one not opened yet. Its own page, tables and answers are used.
+    queued: str | None = Field(default=None, pattern=r"^(next|AR-[0-9a-f]{10})$")
+
+
+class AccessQueueRemoveBody(Body):
+    ids: list[str] = Field(default_factory=list, max_length=200)
+    opened: bool = False  # also every prepared request already opened
 
 
 class InternalCall(Body):
@@ -295,6 +305,8 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
     registry = build_registry(services)
     identities = IdentityDirectory.load(settings.identities_file)
     store = Store(settings.data_dir / "wizard.sqlite3")
+    if services.portals is not None:  # the person's own windows (the access request window's Next) are audited too
+        services.portals.audit = lambda user_id, action, **detail: store.audit(user_id, action, **detail)
     if settings.install_mode or settings.local_user_email:
         # The person at this PC, with every platform right. Their email is the Google account they link (so `whoami
         # /upn` returning nothing, or a different domain, never blocks them); until then the configured one, if any.
@@ -1449,19 +1461,45 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         this request's into the form's empty fields. The person checks them and submits; Wizard never submits."""
         identity, browser, portal = request_portal(request, system)
         saved = access_requests.form(browser.root, portal)
+        queued: str | None = None
         try:
-            address = access_requests.check_address(portal, body.address or saved["page"] or saved["default_page"])
-            extra = access_requests.clean_fields([a.model_dump() for a in body.answers])
+            if body.queued:
+                item = (access_requests.next_waiting(browser.root, portal.id) if body.queued == "next"
+                        else next((i for i in saved["queue"] if i["id"] == body.queued), None))
+                if item is None:
+                    raise HTTPException(404, "Every prepared request has been opened." if body.queued == "next"
+                                        else "That prepared request is no longer in the list.")
+                address = access_requests.check_address(portal, str(item["address"]))
+                extra, tables, queued = item.get("answers") or [], item.get("tables") or [], str(item["id"])
+            else:
+                address = access_requests.check_address(portal, body.address or saved["page"] or saved["default_page"])
+                extra = access_requests.clean_fields([a.model_dump() for a in body.answers if a.value.strip()])
+                tables = [" ".join(t.split())[:200] for t in body.tables if t.strip()]
+                # A card Gemini put under an answer is the same request as its place in the prepared list.
+                same = access_requests.request_id(portal.id, address, tables, extra)
+                queued = same if any(i["id"] == same for i in saved["queue"]) else None
         except access_requests.AccessFormError as error:
             raise HTTPException(400, str(error)) from None
-        tables = [" ".join(t.split())[:200] for t in body.tables if t.strip()]
         answers = access_requests.answers(saved["fields"], extra, tables)
         try:
-            status = await asyncio.to_thread(browser.open_access_request, portal, address, answers)
+            status = await asyncio.to_thread(browser.open_access_request, portal, address, answers, queued)
         except PortalError as error:
             raise HTTPException(409, error.message) from None
-        store.audit(identity.id, "portals:access_request", system=portal.id, detail={"tables": tables})
+        if queued:
+            access_requests.mark_opened(browser.root, portal.id, queued)
+            status = await asyncio.to_thread(browser.status_now)
+        store.audit(identity.id, "portals:access_request", system=portal.id,
+                    detail={"tables": tables, **({"queued": queued} if queued else {})})
         return status
+
+    @app.post("/api/v1/portals/{system}/access-queue/remove")
+    async def remove_queued_requests(request: Request, system: str, body: AccessQueueRemoveBody) -> dict[str, Any]:
+        """Take prepared requests off this person's list (the ones named, and every opened one when asked)."""
+        identity, browser, portal = request_portal(request, system)
+        access_requests.remove(browser.root, portal.id, body.ids, opened=body.opened)
+        store.audit(identity.id, "portals:access_queue", system=portal.id,
+                    detail={"removed": body.ids[:50], "opened": body.opened})
+        return access_requests.form(browser.root, portal)
 
     # Settings pane, model picker and updates (a person's own install only) ----------------------------------------------
     def settings_owner(request: Request) -> Identity:

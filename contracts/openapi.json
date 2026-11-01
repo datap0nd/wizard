@@ -2458,6 +2458,58 @@
         }
       }
     },
+    "/api/v1/portals/{system}/access-queue/remove": {
+      "post": {
+        "summary": "Remove Queued Requests",
+        "description": "Take prepared requests off this person's list (the ones named, and every opened one when asked).",
+        "operationId": "remove_queued_requests_api_v1_portals__system__access_queue_remove_post",
+        "parameters": [
+          {
+            "name": "system",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "System"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccessQueueRemoveBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Remove Queued Requests Api V1 Portals  System  Access Queue Remove Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/settings": {
       "get": {
         "summary": "Get Settings",
@@ -2843,6 +2895,26 @@
         "type": "object",
         "title": "AccessFormBody"
       },
+      "AccessQueueRemoveBody": {
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Ids"
+          },
+          "opened": {
+            "type": "boolean",
+            "title": "Opened",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "AccessQueueRemoveBody"
+      },
       "AccessRequestBody": {
         "properties": {
           "address": {
@@ -2872,6 +2944,18 @@
             "type": "array",
             "maxItems": 20,
             "title": "Answers"
+          },
+          "queued": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(next|AR-[0-9a-f]{10})$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queued"
           }
         },
         "additionalProperties": false,
@@ -2890,6 +2974,27 @@
             "maxLength": 2000,
             "title": "Value",
             "default": ""
+          },
+          "section": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Section",
+            "default": ""
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "text",
+                  "choice"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
           }
         },
         "additionalProperties": false,
