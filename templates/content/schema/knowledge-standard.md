@@ -27,6 +27,7 @@ safe to quote on its own, and honest about how sure we are. Wizard tells executi
 | `glossary/` | acronyms, jargon and **ambiguous terms**, grouped by domain | glossary |
 | `faq/` | recurring executive questions and where their answer lives | faq |
 | `decisions/` | standing decisions that change how data is read ("share comes from panel X since 2026") | decision |
+| `presentations/` | how the company's presentations are made: template, look, slide types, charts and tables, wording (section 12) | guide |
 | top level | `calendar.md`, `markets-and-models.md`, `reporting-conventions.md` | concept |
 
 A folder may hold a `README.md`: its first paragraph is shown as the area's description. Create a new folder only when
@@ -64,7 +65,7 @@ reviewed_by:
 | Field | Required | Rule |
 |---|---|---|
 | `id`, `title`, `status`, `owner`, `tags` | yes | `status` is `DRAFT_UNSIGNED` or `SIGNED`; only the owner signs |
-| `type` | recommended | overview, entity, concept, process, metric, platform, glossary, faq, decision, dataset |
+| `type` | recommended | overview, entity, concept, process, metric, platform, glossary, faq, decision, dataset, guide |
 | `summary` | recommended | one sentence, at most 200 characters, says exactly what the note covers |
 | `aliases` | recommended | every other name: acronyms, spellings, old names, names in other languages |
 | `tags` | yes | 8 to 15 lowercase words people would search with |
@@ -150,7 +151,8 @@ Never edit a SIGNED note directly: write the proposed change in `register/propos
 
 Every converted document has a source id in `inbox/_text/manifest.csv`: `S-` plus the first 8 characters of the file's
 SHA-256. The same file always gets the same id, so a deck attached to five emails is one source. Notes cite ids only;
-the files stay on this PC.
+the files stay on this PC. A task that reads a folder the person chose (Settings → Tasks) gives each file its source id
+the same way (`wizard_task_read_file` returns it), so a deck read by a task and by the kit is one source.
 
 ## 9. Checklist before saving a note
 
@@ -224,3 +226,27 @@ dataset note's `related`, and the measure's name and aliases to the dataset note
 "Questions this note answers". Mapped portal reports link back themselves: their `definitions` name the metric note
 when Wizard maps or routes them, and Wizard shows them with the note. This section says what the data can answer and how to reach it; Wizard may follow it or adapt it.
 It is not a rule for how an answer must be built.
+
+## 12. Presentation guides
+
+The notes in `presentations/` (`type: guide`) say how a presentation is made in this company, precisely enough that
+someone who has never seen one, or Wizard, can build a deck that looks and reads like the company's own. They are
+written from the company's decks and templates (the task "Write the company's presentation guide from its decks"),
+and Wizard follows them when it makes or plans a presentation.
+
+- `presentation-standard` comes first: which template to use, the order of decisions a deck maker follows, and a final
+  checklist; it links the others in `related`.
+- `presentation-look`: slide size, the template's name, the color palette as a table (hex value, theme slot, what it
+  is used for), fonts (Latin and East Asian) with sizes for each text level, the logo, the confidentiality label (its
+  exact text), page number, footer and margins, and what is never done.
+- `presentation-slide-types`: each slide type with its layout name, what goes on it and how much text.
+- `presentation-charts-and-tables`: which chart for which message, series colors in order, labels, units, periods,
+  the source line, table style and number formats.
+- `presentation-writing`: how titles, bullets, numbers, dates, periods and units are written, the storyline, language
+  and tone.
+
+Exact values only (hex colors, font names, point sizes, centimetres, positions), each from the decks that show it and
+cited by their source ids; what most decks share is the standard, what one team does is a variant and is named as
+such. Examples are written with placeholders (`<market> sell-out grew <x>% in <period>`), never a deck's real figures,
+names or plans. Up to about 600 words per note; tables are welcome.
+

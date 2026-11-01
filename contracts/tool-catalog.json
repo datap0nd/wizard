@@ -1718,6 +1718,131 @@
       }
     },
     {
+      "name": "wizard_task_files",
+      "description": "Only in a task that asks for a folder or file: list the files in the folder the person chose (PowerPoint, Word, Excel, email, text; subfolders included), each with an id, its path inside the folder, kind, size and date, and how many are done and left.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "left": {
+            "description": "Only the files not marked done yet (default). False lists every file with whether it is done (default true)",
+            "type": "boolean"
+          },
+          "find": {
+            "description": "Only files whose path contains these words, e.g. 'strategy' or '.potx' (0-100 characters)",
+            "type": "string"
+          },
+          "offset": {
+            "description": "Continue the list from the next_offset you were given (default 0)",
+            "maximum": 100000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "limit": {
+            "description": "How many files to list (default 100) (default 100)",
+            "maximum": 300,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "wizard_task_read_file",
+      "description": "Only in a task that asks for a folder or file: read one of its files as text (slides with their charts' values, tables and speaker notes; sheets; documents), by id from wizard_task_files. The first call lists the file's parts; read a long file part by part. Returns the file's source id to cite in knowledge notes.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "description": "The file's id from wizard_task_files, e.g. 'f3a9c21b0' (pattern ^f[0-9a-f]{8}$)",
+            "type": "string"
+          },
+          "part": {
+            "description": "Only this part, e.g. 'Slide 4' or 'Sheet: Sales' (names come back in 'parts'). Omit to read from the start (0-120 characters)",
+            "type": "string"
+          },
+          "offset": {
+            "description": "Continue a long file from the next_offset you were given (default 0)",
+            "maximum": 50000000,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "wizard_task_design",
+      "description": "Only in a task that asks for a folder or file: how up to 4 presentations look, read by PowerPoint: slide size, the theme's colors and fonts, the master's title and body styles, the layouts and how often each is used, what is on every slide (logo, footer, confidentiality label, page number), fonts, sizes and colors used, fills, charts, tables, pictures, words per slide and the outline of slide titles; plus what every presentation read so far shares.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "files": {
+            "description": "Ids of up to 4 presentations from wizard_task_files.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 4,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "files"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "wizard_task_files_done",
+      "description": "Only in a task that asks for a folder: mark files done once what they hold is saved in the knowledge base (or they hold nothing to keep), so the next round of the task skips them.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "files": {
+            "description": "Ids of the files whose content is now saved in the knowledge base, or that hold nothing to keep.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "type": "array"
+          },
+          "note": {
+            "description": "What was taken from them, or why nothing was (e.g. 'only pictures', 'duplicate of f1a2b3c4d') (0-300 characters)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "files"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
       "name": "portal_guide",
       "description": "How a company portal (ASAP, GSCM, the Big Data Portal: its information catalog, where tables are found, and Superset, where they are queried) works and how to read it with portal_run: its applications and addresses, its structure, where its data really comes from, the background data requests to call instead of clicking, the W.* JavaScript helpers, pitfalls, and the scripts saved for it on this PC. Read it before writing steps for a portal.",
       "inputSchema": {

@@ -394,6 +394,16 @@ export interface TaskItem {
   conversation_id: string | null;
   at: string | null;
   message: string | null;
+  /** What the task asks for before it runs: a folder, a file, or either (both). Absent: nothing. */
+  input?: 'folder' | 'file' | 'either' | null;
+  input_label?: string | null;
+  /** It goes through every file of the folder, in rounds, until each is done. */
+  every_file?: boolean;
+  /** The path chosen last time on this PC. */
+  path?: string | null;
+  round?: number | null;
+  /** Files done in that folder (a task that goes through every file). */
+  progress?: {total: number; done: number; left: number} | null;
 }
 
 export interface TasksView {

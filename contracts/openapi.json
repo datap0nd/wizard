@@ -2146,6 +2146,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/TaskRunBody"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -3614,6 +3631,30 @@
         "additionalProperties": false,
         "type": "object",
         "title": "SystemsBody"
+      },
+      "TaskRunBody": {
+        "properties": {
+          "path": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
+          "fresh": {
+            "type": "boolean",
+            "title": "Fresh",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TaskRunBody"
       },
       "TitleBody": {
         "properties": {

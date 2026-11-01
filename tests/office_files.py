@@ -125,3 +125,68 @@ def eml(path: Path, attachment: Path | None = None) -> Path:
                                filename=attachment.name)
     path.write_bytes(bytes(message))
     return path
+
+
+def designed_pptx(path: Path, title: str = "Quarterly business review", accent: str = "1428A0") -> Path:
+    """A deck with a theme, a master (logo top right, a confidentiality label, the slide number), two layouts, and
+    slides that use them with explicit fonts, sizes, colors, a filled shape, a column chart and a table."""
+    theme = (f'<a:theme {NS_A} name="Company Theme"><a:themeElements><a:clrScheme name="Company">'
+             '<a:dk1><a:sysClr val="windowText" lastClr="000000"/></a:dk1><a:lt1><a:sysClr val="window" lastClr="FFFFFF"/></a:lt1>'
+             '<a:dk2><a:srgbClr val="1F1F1F"/></a:dk2><a:lt2><a:srgbClr val="F2F2F2"/></a:lt2>'
+             f'<a:accent1><a:srgbClr val="{accent}"/></a:accent1><a:accent2><a:srgbClr val="00B3E3"/></a:accent2>'
+             '<a:accent3><a:srgbClr val="A5A5A5"/></a:accent3><a:accent4><a:srgbClr val="FFC000"/></a:accent4>'
+             '<a:accent5><a:srgbClr val="5B9BD5"/></a:accent5><a:accent6><a:srgbClr val="70AD47"/></a:accent6>'
+             '<a:hlink><a:srgbClr val="0563C1"/></a:hlink><a:folHlink><a:srgbClr val="954F72"/></a:folHlink></a:clrScheme>'
+             '<a:fontScheme name="Company"><a:majorFont><a:latin typeface="Company Sans Bold"/><a:ea typeface="Company Gothic"/>'
+             '</a:majorFont><a:minorFont><a:latin typeface="Company Sans"/><a:ea typeface="Company Gothic"/></a:minorFont>'
+             '</a:fontScheme></a:themeElements></a:theme>')
+
+    def box(x: int, y: int, cx: int, cy: int) -> str:
+        return f'<p:spPr><a:xfrm><a:off x="{x}" y="{y}"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm></p:spPr>'
+
+    master = (f'<p:sldMaster {NS_P} {NS_A} {NS_R}><p:cSld><p:spTree>'
+              f'<p:pic><p:nvPicPr><p:cNvPr id="2" name="Logo"/></p:nvPicPr>{box(10_500_000, 200_000, 1_400_000, 400_000)}</p:pic>'
+              f'<p:sp><p:nvSpPr><p:cNvPr id="3" name="Label"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>{box(300_000, 6_400_000, 2_000_000, 300_000)}'
+              '<p:txBody><a:p><a:r><a:t>Confidential - internal use only</a:t></a:r></a:p></p:txBody></p:sp>'
+              f'<p:sp><p:nvSpPr><p:cNvPr id="4" name="Number"/><p:cNvSpPr/><p:nvPr><p:ph type="sldNum"/></p:nvPr></p:nvSpPr>{box(11_000_000, 6_400_000, 800_000, 300_000)}'
+              '<p:txBody><a:p><a:fld type="slidenum"><a:t>1</a:t></a:fld></a:p></p:txBody></p:sp>'
+              '</p:spTree></p:cSld><p:txStyles><p:titleStyle><a:lvl1pPr><a:defRPr sz="2800" b="1"><a:solidFill><a:schemeClr val="accent1"/>'
+              '</a:solidFill><a:latin typeface="+mj-lt"/></a:defRPr></a:lvl1pPr></p:titleStyle><p:bodyStyle><a:lvl1pPr><a:defRPr sz="1600">'
+              '<a:solidFill><a:schemeClr val="tx1"/></a:solidFill><a:latin typeface="+mn-lt"/></a:defRPr></a:lvl1pPr><a:lvl2pPr>'
+              '<a:defRPr sz="1400"/></a:lvl2pPr></p:bodyStyle></p:txStyles></p:sldMaster>')
+
+    def layout(name: str) -> str:
+        return f'<p:sldLayout {NS_P} {NS_A} {NS_R}><p:cSld name="{name}"><p:spTree/></p:cSld></p:sldLayout>'
+
+    def slide(heading: str, body: str, extra: str = "") -> str:
+        return (f'<p:sld {NS_P} {NS_A} {NS_R}><p:cSld><p:spTree>'
+                + _shape(f'<a:p><a:r><a:rPr sz="2800" b="1"><a:solidFill><a:schemeClr val="accent1"/></a:solidFill></a:rPr><a:t>{heading}</a:t></a:r></a:p>', "title")
+                + _shape(f'<a:p><a:r><a:rPr sz="1400"><a:latin typeface="Company Sans"/></a:rPr><a:t>{body}</a:t></a:r></a:p>')
+                + extra + '</p:spTree></p:cSld></p:sld>')
+
+    filled = ('<p:sp><p:nvSpPr><p:cNvPr id="9" name="Box"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:solidFill>'
+              '<a:schemeClr val="accent1"/></a:solidFill></p:spPr></p:sp>'
+              '<p:graphicFrame><a:graphic><a:graphicData><a:tbl><a:tr><a:tc><a:txBody><a:p><a:r><a:t>Market</a:t></a:r>'
+              '</a:p></a:txBody></a:tc></a:tr></a:tbl></a:graphicData></a:graphic></p:graphicFrame>')
+    chart = (f'<c:chartSpace {NS_C} {NS_A}><c:chart><c:plotArea><c:barChart><c:barDir val="col"/></c:barChart></c:plotArea>'
+             '</c:chart></c:chartSpace>')
+    rel = lambda rid, kind, target: f'<Relationship Id="{rid}" Type="{TYPE}/{kind}" Target="{target}"/>'  # noqa: E731
+    return _zip(path, {
+        "ppt/presentation.xml": f'<p:presentation {NS_P} {NS_R}><p:sldIdLst><p:sldId id="256" r:id="rId2"/><p:sldId id="257" '
+                                'r:id="rId3"/></p:sldIdLst><p:sldSz cx="12192000" cy="6858000"/></p:presentation>',
+        "ppt/_rels/presentation.xml.rels": f'<Relationships {RELS}>{rel("rId1", "slideMaster", "slideMasters/slideMaster1.xml")}'
+                                           f'{rel("rId2", "slide", "slides/slide1.xml")}{rel("rId3", "slide", "slides/slide2.xml")}</Relationships>',
+        "ppt/slideMasters/slideMaster1.xml": master,
+        "ppt/slideMasters/_rels/slideMaster1.xml.rels": f'<Relationships {RELS}>{rel("rId1", "theme", "../theme/theme1.xml")}'
+                                                        f'{rel("rId2", "slideLayout", "../slideLayouts/slideLayout1.xml")}'
+                                                        f'{rel("rId3", "slideLayout", "../slideLayouts/slideLayout2.xml")}</Relationships>',
+        "ppt/theme/theme1.xml": theme,
+        "ppt/slideLayouts/slideLayout1.xml": layout("Title Slide"),
+        "ppt/slideLayouts/slideLayout2.xml": layout("Title and Content"),
+        "ppt/slides/slide1.xml": slide(title, "Prepared by the strategy office"),
+        "ppt/slides/_rels/slide1.xml.rels": f'<Relationships {RELS}>{rel("rId1", "slideLayout", "../slideLayouts/slideLayout1.xml")}</Relationships>',
+        "ppt/slides/slide2.xml": slide("Sell-out grew in every market", "Growth came from the mid-range line-up", filled),
+        "ppt/slides/_rels/slide2.xml.rels": f'<Relationships {RELS}>{rel("rId1", "slideLayout", "../slideLayouts/slideLayout2.xml")}'
+                                            f'{rel("rId2", "chart", "../charts/chart1.xml")}</Relationships>',
+        "ppt/charts/chart1.xml": chart,
+    })

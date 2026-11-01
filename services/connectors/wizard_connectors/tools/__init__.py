@@ -15,6 +15,7 @@ from .kb_tools import KB_TOOLS
 from .portal_tools import PORTAL_TOOLS
 from .registry import Recorder, Services, ToolContext, ToolError, ToolOutcome, ToolRegistry, ToolSpec, flatten_schema
 from .source_tools import make_source_tools
+from .task_tools import TASK_FILE_TOOLS
 
 __all__ = ["Recorder", "Services", "ToolContext", "ToolError", "ToolOutcome", "ToolRegistry", "ToolSpec",
            "build_registry", "build_services", "flatten_schema"]
@@ -37,6 +38,7 @@ def build_registry(services: Services) -> ToolRegistry:
         specs.extend(make_source_tools(system.id, system.name))
     specs.extend(CORE_TOOLS)
     specs.extend(KB_TOOLS)
+    specs.extend(TASK_FILE_TOOLS)
     if services.portals is not None:
         specs.extend(PORTAL_TOOLS)
     return ToolRegistry(specs)

@@ -51,6 +51,13 @@ saves the notes it writes to the company knowledge base (`wizard_kb_save_notes`:
 standard, one commit per save). The numbered Gemini CLI tasks of earlier versions are retired. The documentation kit
 below still converts files and exports mail on the work PC.
 
+A task may ask for a folder or file on the PC ([decision](decisions/2026-11-01-folder-tasks.md)). "Digest a folder of
+presentations into the knowledge base" reads every deck in a folder, in rounds, and adds terms, measure definitions,
+processes, organisation, products, markets and standing decisions to the notes, each fact cited by its deck's source
+id. "Write the company's presentation guide from its decks" reads how the decks look (theme, fonts, layouts, logo and
+labels, as PowerPoint reads them) and how they are built, and writes the `presentations/` notes (knowledge standard,
+section 12).
+
 **Converting documents.** Gemini cannot open Office files or Outlook mail. `.\docs.ps1` drives Office through
 pywin32: it borrows a running application before starting one, opens files read-only where they are, never runs macros
 and never saves a source. PowerPoint gives text, tables, SmartArt, chart values, speaker notes and pictures of mostly

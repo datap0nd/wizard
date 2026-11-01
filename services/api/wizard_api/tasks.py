@@ -8,11 +8,18 @@ route the update check uses on the work network, so a task pushed to the reposit
 no network it shows the copy bundled with this version. A run is a Gemini run of kind `task` in a conversation of its
 own; what it produces goes to the company's knowledge-base repository through the task tools (kb_tools.py).
 
-The list is public instructions only: a task never carries company content, which lives in the knowledge base."""
+The list is public instructions only: a task never carries company content, which lives in the knowledge base.
+
+A task may ask for a folder or a file on this PC (owner, 1 Nov 2026: "a task that asks me for a folder, and I point it to
+that folder, and it digests the whole thing"): front matter `input: folder` (or `file`, or `folder or file`) with an
+`input_label` shown above the path box, and `every_file: true` when it goes through every file, which runs it in rounds
+until each file is done (runs.py). Gemini reads the path only with the task-file tools (task_files.py)."""
 from __future__ import annotations
 
 import json
 import re
+import subprocess
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -23,6 +30,11 @@ import httpx
 
 from wizard_agent import outbound
 from wizard_connectors.knowledge import front_matter, unquote
+from wizard_connectors.paths import ROOT
+from wizard_connectors.task_files import input_kind
+
+from .attachments import OFFICE
+from .config import Settings
 
 LISTING = "https://api.github.com/repos/datap0nd/wizard/contents/tasks?ref=main"
 TASK_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,80}$")
@@ -36,6 +48,15 @@ class Task:
     summary: str
     added: str
     body: str
+    input: str | None = None  # folder | file | either: what the person chooses before it runs
+    input_label: str = ""
+    every_file: bool = False  # goes through every file of the folder, in rounds
+
+    def work(self, path: Path | None = None) -> dict[str, Any]:
+        """What a run of it carries (runs.py, prompting.py, the task-file tools)."""
+        return {"id": self.id, "title": self.title, "body": self.body, "input": self.input,
+                "path": str(path) if path else None, "chosen": ("folder" if path.is_dir() else "file") if path else None,
+                "every_file": self.every_file and bool(path)}
 
 
 def parse(text: str) -> Task | None:
@@ -46,8 +67,59 @@ def parse(text: str) -> Task | None:
     task_id = unquote(meta.get("id", ""))
     if not TASK_ID.match(task_id) or not body.strip():
         return None
+    wanted = input_kind(unquote(meta.get("input", "")))
+    label = unquote(meta.get("input_label", "")) or {"folder": "The folder", "file": "The file",
+                                                      "either": "The folder or file"}.get(wanted or "", "")
     return Task(task_id, unquote(meta.get("title", "")) or task_id, unquote(meta.get("summary", "")),
-                unquote(meta.get("added", "")), body.strip())
+                unquote(meta.get("added", "")), body.strip(), wanted, label,
+                bool(wanted) and unquote(meta.get("every_file", "")).casefold() in ("true", "yes"))
+
+
+TOOL_S = 150  # a task-file tool call answers within this (the Gemini CLI route gives a tool call 180 seconds)
+
+
+class Documents:
+    """The documentation kit for the task-file tools: each call runs scripts/wizard_docs.py in its own process,
+    time-limited and one Office job at a time (the lock attached files use), as attachments.py does. A design read
+    prints one line per deck as it goes, so the decks read before the time ran out are kept."""
+
+    def __init__(self, settings: Settings):
+        self.settings = settings
+
+    def _lines(self, arguments: list[str], timeout: float) -> tuple[list[dict[str, Any]], str]:
+        command = [sys.executable, str(ROOT / "scripts" / "wizard_docs.py"), *arguments]
+        with OFFICE:
+            try:
+                completed = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                                           timeout=timeout)
+                output, error = completed.stdout or "", completed.stderr or ""
+            except subprocess.TimeoutExpired as expired:
+                raw = expired.stdout or b""
+                output = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else raw
+                error = f"Office did not finish within {round(timeout)} seconds (a dialog may be open in Office)"
+        found = []
+        for line in output.splitlines():
+            if line.startswith("{"):
+                try:
+                    found.append(json.loads(line))
+                except ValueError:
+                    continue
+        return found, (error.strip().splitlines() or ["no output"])[-1][:300]
+
+    def convert(self, source: Path, out: Path) -> dict[str, Any]:
+        lines, error = self._lines(["convert", str(source), "--out", str(out), "--json", "--slide-images", "none",
+                                    "--office", self.settings.attachment_office], min(self.settings.attachment_timeout_s, TOOL_S))
+        return lines[-1] if lines else {"status": "failed", "note": error}
+
+    def design(self, sources: list[Path]) -> list[dict[str, Any]]:
+        office = "never" if self.settings.attachment_office == "never" else "auto"
+        lines, _ = self._lines(["design", *map(str, sources), "--office", office],
+                               min(self.settings.attachment_timeout_s * len(sources), TOOL_S))
+        return lines
+
+    def combine(self, profiles: list[dict[str, Any]]) -> dict[str, Any]:
+        from wizard_documents.design import combine
+        return combine(profiles)
 
 
 def _sorted(tasks: list[Task]) -> list[Task]:
@@ -139,11 +211,26 @@ class TaskBoard:
         return next((t for t in self.tasks()[0] if t.id == task_id), None)
 
     # Runs ----------------------------------------------------------------------------------------------------------------
-    def started(self, task_id: str, run_id: str, conversation_id: str) -> None:
+    def started(self, task_id: str, run_id: str, conversation_id: str, path: str | None = None, round_number: int = 1) -> None:
+        """A run of the task began (each round of one that goes through every file is a run); the path is kept to fill
+        in the path box next time."""
         with self._lock:
             state = self._read("state.json")
-            state[task_id] = {"run_id": run_id, "conversation_id": conversation_id, "started_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+            entry: dict[str, Any] = {"run_id": run_id, "conversation_id": conversation_id,
+                                     "started_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+            if path:
+                entry.update(path=path, round=round_number)
+            state[task_id] = entry
             self._write("state.json", state)
+
+    def ended(self, task_id: str, run_id: str, outcome: str, message: str) -> None:
+        """How a task's rounds ended (done, failed, stopped), in words, when that is more than its last run says."""
+        with self._lock:
+            state = self._read("state.json")
+            entry = state.get(task_id)
+            if isinstance(entry, dict) and entry.get("run_id") == run_id:
+                entry.update(outcome=outcome, message=message)
+                self._write("state.json", state)
 
     def runs(self) -> dict[str, dict[str, Any]]:
         return self._read("state.json")

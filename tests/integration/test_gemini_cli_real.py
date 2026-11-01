@@ -106,8 +106,10 @@ def test_cli_tool_declarations(live_server, tmp_path):
     """The model-facing declarations: exactly the Wizard tools an Auto run offers, no shell/file/web tools."""
     app, sent = sent_to_google(live_server, tmp_path)
     names = sorted(f["name"] for t in sent["config"]["tools"] for f in t["functionDeclarations"])
-    # Auto offers every tool but the one that asks to switch a system on (nothing is off).
-    assert names == sorted(f"mcp_{s.name}" for s in app.state.registry.list() if s.name != "wizard_ask_for_system")
+    # Auto offers every tool but the one that asks to switch a system on (nothing is off), and the task-file tools,
+    # which only a task that asks for a folder or file is offered.
+    assert names == sorted(f"mcp_{s.name}" for s in app.state.registry.list()
+                           if s.name != "wizard_ask_for_system" and not s.name.startswith("wizard_task_"))
     assert not [n for n in names if any(w in n for w in ("shell", "write", "file", "web", "fetch", "memory"))]
     assert sent["config"]["systemInstruction"].startswith("You are Wizard")
     assert sent["config"]["thinkingConfig"]["thinkingLevel"] == "HIGH"

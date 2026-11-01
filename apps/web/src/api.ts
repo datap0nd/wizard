@@ -140,7 +140,8 @@ export const api = {
   publishMap: (system: string) => request<PortalMapView>(`/api/v1/portals/${encodeURIComponent(system)}/map/publish`, {body: {}}),
   forgetMap: (system: string) => request<PortalMapView>(`/api/v1/portals/${encodeURIComponent(system)}/map`, {method: 'DELETE'}),
   tasks: (refresh = false) => request<TasksView>(`/api/v1/tasks${refresh ? '?refresh=true' : ''}`),
-  runTask: (id: string) => request<TasksView>(`/api/v1/tasks/${encodeURIComponent(id)}/run`, {body: {}}),
+  runTask: (id: string, choice: {path?: string; fresh?: boolean} = {}) =>
+    request<TasksView>(`/api/v1/tasks/${encodeURIComponent(id)}/run`, {body: choice}),
   health: () => request<{status: string; version: string}>('/api/v1/health'),
 };
 
