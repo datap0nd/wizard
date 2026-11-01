@@ -206,8 +206,12 @@ class AccessRequestBody(Body):
     address: str | None = Field(default=None, max_length=2000)
     tables: list[str] = Field(default_factory=list, max_length=20)
     answers: list[AnswerBody] = Field(default_factory=list, max_length=20)
-    # A prepared request (its id), or "next": the first one not opened yet. Its own page, tables and answers are used.
+    # A prepared request (its id), or "next": the first one not opened yet. Its own page, tables and answers are used;
+    # a card's request no longer on the list opens with the fields given here.
     queued: str | None = Field(default=None, pattern=r"^(next|AR-[0-9a-f]{10})$")
+    # The way to the table's request form: steps from address to the table's page, and the control that opens the form.
+    open_steps: list[dict[str, Any]] = Field(default_factory=list, max_length=12)
+    form_button: str = Field(default="", max_length=80)
 
 
 class AccessQueueRemoveBody(Body):
@@ -1462,27 +1466,34 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         identity, browser, portal = request_portal(request, system)
         saved = access_requests.form(browser.root, portal)
         queued: str | None = None
+        item = None
         try:
             if body.queued:
                 item = (access_requests.next_waiting(browser.root, portal.id) if body.queued == "next"
                         else next((i for i in saved["queue"] if i["id"] == body.queued), None))
-                if item is None:
+                if item is None and (body.queued == "next" or not body.address):
                     raise HTTPException(404, "Every prepared request has been opened." if body.queued == "next"
                                         else "That prepared request is no longer in the list.")
+            if item is not None:
                 address = access_requests.check_address(portal, str(item["address"]))
                 extra, tables, queued = item.get("answers") or [], item.get("tables") or [], str(item["id"])
+                route = {"open_steps": access_requests.clean_steps(item.get("open_steps")),
+                         "form_button": access_requests.clean_button(item.get("form_button"))}
             else:
                 address = access_requests.check_address(portal, body.address or saved["page"] or saved["default_page"])
                 extra = access_requests.clean_fields([a.model_dump() for a in body.answers if a.value.strip()])
                 tables = [" ".join(t.split())[:200] for t in body.tables if t.strip()]
+                route = {"open_steps": access_requests.clean_steps(body.open_steps),
+                         "form_button": access_requests.clean_button(body.form_button)}
                 # A card Gemini put under an answer is the same request as its place in the prepared list.
-                same = access_requests.request_id(portal.id, address, tables, extra)
+                same = access_requests.request_id(portal.id, address, tables, extra, route)
                 queued = same if any(i["id"] == same for i in saved["queue"]) else None
         except access_requests.AccessFormError as error:
             raise HTTPException(400, str(error)) from None
         answers = access_requests.answers(saved["fields"], extra, tables)
         try:
-            status = await asyncio.to_thread(browser.open_access_request, portal, address, answers, queued)
+            status = await asyncio.to_thread(browser.open_access_request, portal, address, answers, queued,
+                                             {"tables": tables, **route})
         except PortalError as error:
             raise HTTPException(409, error.message) from None
         if queued:

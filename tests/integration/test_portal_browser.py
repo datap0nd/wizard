@@ -25,7 +25,7 @@ from tests.helpers import TEST_TMP, MemoryRecorder
 from wizard_agent.secret_box import SecretBox
 from wizard_connectors import access_requests
 from wizard_connectors.entitlements import Identity, SystemRights
-from wizard_connectors.portal_browser import FILL_EVERY_S, PortalBrowser, PortalBrowsers
+from wizard_connectors.portal_browser import FILL_EVERY_S, OPEN_GUARD_S, PortalBrowser, PortalBrowsers
 from wizard_connectors.portals import settings_from
 from wizard_connectors.tools import ToolContext, build_registry, build_services
 
@@ -156,6 +156,27 @@ sub.addEventListener('input', () => {
 list.addEventListener('click', e => { const li = e.target.closest('[role=option]'); if (li) { sub.value = li.textContent; list.style.display = 'none'; } });
 </script></body></html>"""
 
+# A catalog that shows every table at one address, as a single-page application may (the address does not change when
+# a table opens): search, Enter, a result, the table's details with Request access, then the same form as above.
+SPA_CATALOG = DIS_TABLE.replace("{name}", "Data catalog").replace(
+    """<h1>Data catalog</h1>
+<button id="ask" type="button" onclick="document.getElementById('dialog').style.display = 'block'">Request access</button>""",
+    """<h1>Data catalog</h1><input id="q" type="search" placeholder="Search tables"><ul id="results"></ul>
+<section id="detail" style="display:none"><h2 id="dname"></h2><p>Rows by day and market</p>
+<button id="ask" type="button" onclick="document.getElementById('dialog').style.display = 'block'">Request access</button></section>
+<script>
+document.getElementById('q').addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  const q = e.target.value.trim();
+  document.getElementById('results').replaceChildren(...['t3', 't30'].filter(n => n.startsWith(q)).map(n => {
+    const a = document.createElement('a'); a.href = '#'; a.textContent = n;
+    a.addEventListener('click', ev => { ev.preventDefault(); document.getElementById('detail').style.display = 'block';
+      document.getElementById('dname').textContent = n; });
+    const li = document.createElement('li'); li.append(a); return li;
+  }));
+});
+</script>""")
+
 MENU = {"ROOT": [{"id": "S", "name": "01.Sales"}, {"id": "F", "name": "02.Finance"}],
         "S": {"id": "S", "name": "01.Sales", "children": [{"id": "G", "name": "Sell-out", "child": [{"id": "R1", "name": "Weekly Sell-out"}]}]},
         "F": {"id": "F", "name": "02.Finance", "children": [{"id": "R2", "name": "P&L"}]}}
@@ -183,7 +204,8 @@ class Portal(SimpleHTTPRequestHandler):
                  "/report": "<title>Report</title><table><tr><th>A</th></tr><tr><td>1</td></tr></table>",
                  "/superset": "<title>Superset</title><div id=app data-bootstrap='{}'>SQL Lab</div>",
                  "/catalog": CATALOG_PAGE, "/catalog/table/sales_daily": TABLE_PAGE,
-                 "/catalog/dis/t1": DIS_TABLE.replace("{name}", "t1"), "/catalog/dis/t2": DIS_TABLE.replace("{name}", "t2")}
+                 "/catalog/dis/t1": DIS_TABLE.replace("{name}", "t1"), "/catalog/dis/t2": DIS_TABLE.replace("{name}", "t2"),
+                 "/catalog/spa": SPA_CATALOG, "/catalog/oneclick": CATALOG_PAGE}
         self.reply(pages.get(self.path.split("?")[0], "<title>Not found</title>"), status=200 if self.path.split("?")[0] in pages else 404)
 
     def do_POST(self) -> None:  # noqa: N802
@@ -688,4 +710,66 @@ def test_the_portals_own_drop_downs_are_chosen_and_the_window_walks_through_the_
     after = values()
     assert after["subsidiary"] == "" and after["dpa_purpose"].startswith("5."), "no guess: what Wizard typed is cleared"
     assert browser.run(lambda: page().evaluate("() => getComputedStyle(document.getElementById('sub-list')).display")) == "none"
+    assert browser.finish_sign_in()["window"] is None
+
+
+def test_a_table_without_its_own_address_is_reached_and_its_request_form_opened_but_never_filed(setup, portal_url):
+    services = setup[0]
+    browser = services.portals.for_user("owner")
+    browser.show_windows = False  # the person's window, headless on a test machine
+    portal = services.portals.settings.portal("bdp")
+    access_requests.remove(browser.root, "bdp", [i["id"] for i in access_requests.queue(browser.root, "bdp")])
+    access_requests.save(browser.root, portal, "", [
+        {"label": "Purpose", "value": "Will be used for analytics in the MENA region", "kind": "text"},
+        {"label": "Purpose", "section": "DPA / DSA", "value": "5", "kind": "choice"},
+        {"label": "Subsidiary Name (Full Legal Name)", "section": "DPA / DSA", "value": "ABC", "kind": "choice"},
+        {"label": "Subsidiary Address", "section": "DPA / DSA", "value": "1 Example Street", "kind": "text"}])
+    spa = catalog_address(portal_url) + "/spa"
+    steps = [{"action": "fill", "selector": "#q", "value": "t3"}, {"action": "press", "value": "Enter"},
+             {"action": "click", "role": "link", "name": "t3"}]
+    proved = call(setup, "portal_run", {"system": "bdp", "steps": [{"action": "goto", "url": spa}, *steps,
+                                                                   {"action": "wait", "selector": "#ask"}]}, systems=("bdp",))
+    assert proved.ok and not proved.data.get("stopped"), "Gemini proves the steps in the background first"
+    proposal = call(setup, "portal_request_access", {"system": "bdp", "address": spa, "tables": ["t3"], "open_steps": steps,
+                                                     "form_button": "Request access"}, systems=("bdp",))
+    assert proposal.ok, proposal.error_message
+    item = access_requests.queue(browser.root, "bdp")[0]
+    Portal.hits.clear()
+    saved = access_requests.form(browser.root, portal)["fields"]
+    browser.open_access_request(portal, item["address"], access_requests.answers(saved, [], item["tables"]), queued=item["id"],
+                                route=item)
+
+    def page() -> Any:
+        return browser._context.pages[0]
+
+    wait_until(lambda: len(browser.status()["access_request"]["filled"]) >= 4, seconds=20)
+    status = browser.status()["access_request"]
+    assert status["note"] == "Wizard pressed Request access to open the request form."
+    assert sorted(status["filled"]) == ["DPA / DSA › Purpose", "DPA / DSA › Subsidiary Address",
+                                        "DPA / DSA › Subsidiary Name (Full Legal Name)", "Purpose"]
+    values = browser.run(lambda: page().evaluate(
+        "() => Object.fromEntries([...document.querySelectorAll('#request [name]')].map(e => [e.name, e.value]))"))
+    assert values["subsidiary"] == "(ABC) Example Electronics Co., Ltd." and values["dpa_purpose"].startswith("5.")
+    assert browser.run(lambda: page().evaluate("() => document.getElementById('dname').textContent")) == "t3"
+    assert not any(hit.startswith("POST") for hit in Portal.hits), "reaching the table and opening its form sent nothing"
+    assert access_requests.pages_seen(browser.root, "bdp")[0]["tables"] == ["t3"], "where the form appeared, for Gemini"
+    assert browser.finish_sign_in()["window"] is None
+
+    # A request prepared earlier with only the catalog's start page says so instead of pressing anything there.
+    browser.open_access_request(portal, catalog_address(portal_url), [], route={"tables": ["old_table"]})
+    assert (browser.status()["access_request"].get("note") or "").startswith("This request opens only the catalog's start page")
+    assert browser.finish_sign_in()["window"] is None
+
+    # A Request access that files the request itself in one click: what it sends is stopped, and the person is told.
+    oneclick = call(setup, "portal_request_access", {"system": "bdp", "address": catalog_address(portal_url) + "/oneclick",
+                                                     "tables": ["sales_daily"]}, systems=("bdp",))
+    assert oneclick.ok, oneclick.error_message
+    browser.open_access_request(portal, oneclick.data["access_request"]["address"], [], route={"tables": ["sales_daily"]})
+    note = browser.status()["access_request"].get("note") or ""
+    assert note.startswith("Wizard pressed Request access and stopped what the page sent then (POST /api/v1/access-requests)")
+    assert not any("access-requests" in hit for hit in Portal.hits), "the request was never filed by Wizard's press"
+    time.sleep(OPEN_GUARD_S + 2 * FILL_EVERY_S)  # later the person presses it themselves: it goes through
+    browser.run(lambda: page().click("#ask"))
+    wait_until(lambda: any(hit.startswith("POST /api/v1/access-requests") for hit in Portal.hits))
+    assert any(hit.startswith("POST /api/v1/access-requests") for hit in Portal.hits)
     assert browser.finish_sign_in()["window"] is None

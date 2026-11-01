@@ -343,7 +343,7 @@ export interface PortalStatus {
   window?: 'sign_in' | 'access_request' | null;
   /** The open access request window: the saved answers it filled, those it found no field (or no option) for, and
    *  which prepared request it shows when it walks through them. */
-  access_request?: {system: string; filled: string[]; missing: string[];
+  access_request?: {system: string; filled: string[]; missing: string[]; note?: string;
     queued?: {id: string; position: number; total: number; waiting: number}};
   running: boolean;
   last_sign_in: string | null;
@@ -421,6 +421,8 @@ export interface QueuedRequest {
   answers: Answer[];
   added: string;
   opened: string | null;
+  open_steps?: OpenStep[];
+  form_button?: string;
 }
 
 /** The answers this person gives on every access request in a portal's information catalog, kept on their PC. */
@@ -447,7 +449,15 @@ export interface AccessRequest {
   /** This request's own answers; the saved ones (by label) are filled too. */
   answers: Answer[];
   saved: string[];
+  /** For a catalog that keeps one address for every table: the steps from address to the table's page. */
+  open_steps?: OpenStep[];
+  /** The control on the table's page that opens the request form, which Wizard presses with writes stopped. */
+  form_button?: string;
 }
+
+/** One navigation step to a table's page (as Gemini ran it with portal_run). */
+export interface OpenStep { action: 'goto' | 'click' | 'fill' | 'select' | 'press' | 'wait'; url?: string; selector?: string;
+  role?: string; name?: string; text?: string; frame?: string; nth?: number; value?: string; timeout_ms?: number }
 
 export interface PortalCheck {
   portals: {id: string; name: string; signed_in: boolean; title?: string; host?: string; error?: string}[];

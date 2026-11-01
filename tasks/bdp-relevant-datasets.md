@@ -31,7 +31,9 @@ Then explore the information catalog in the background:
   areas of the blocked dashboards. Open the promising results and read what helps rank them: full name (project,
   dataset, table as the catalog shows it), its page address in the catalog, description, owner, refresh and partitions,
   the markets or regions it covers, its row grain, and how the catalog requests access (per table, per dataset, or
-  several at once in a cart or one form).
+  several at once in a cart or one form). Note whether the address changes when a dataset's page opens: if it does,
+  that address is the dataset's catalog page; if it stays the same, describe in `catalog-search` the steps that open a
+  dataset from it (search box, Enter, the result to click) and the text of the control that opens the request form.
 - Whether this person already has access: what the catalog says, otherwise one Superset query that reads no data
   (`SELECT 1 FROM <table> WHERE FALSE`, in that database's dialect, with a one-day partition filter if the table needs
   one). A permission error means no access. Do not read rows.

@@ -109,10 +109,25 @@ class Answer(Args):
     section: str | None = Field(default=None, max_length=access_requests.MAX_LABEL, description="The box the field sits in, only when two fields share a label (e.g. DPA / DSA).")
 
 
+class OpenStep(Args):
+    action: Literal["goto", "click", "fill", "select", "press", "wait"] = Field(description="As in portal_run: goto a url, click / fill / select an element, press Enter (to run a search), wait.")
+    url: str | None = Field(default=None, max_length=2000)
+    selector: str | None = Field(default=None, max_length=500)
+    role: str | None = Field(default=None, max_length=40)
+    name: str | None = Field(default=None, max_length=200)
+    text: str | None = Field(default=None, max_length=200)
+    frame: str | None = Field(default=None, max_length=200)
+    nth: int | None = Field(default=None, ge=0, le=50)
+    value: str | None = Field(default=None, max_length=500, description="fill / select: the value (e.g. the table's name in the catalog's search box); press: Enter.")
+    timeout_ms: int | None = Field(default=None, ge=500, le=access_requests.STEP_TIMEOUT_MS)
+
+
 class RequestAccessArgs(Args):
     system: str = Field(pattern=SYSTEM, description="The portal where access is requested: bdp (its information catalog).")
     address: str | None = Field(default=None, max_length=2000, description="The page with the request form, or the table's page in the catalog where the person presses Request access (the full address you read it at). Omit to use the request page the person saved, else the catalog's start page.")
     tables: list[str] = Field(default_factory=list, max_length=20, description="The tables the person needs, as the catalog names them.")
+    open_steps: list[OpenStep] = Field(default_factory=list, max_length=access_requests.MAX_STEPS, description="Only when the catalog shows every table at one address (the address does not change when a table opens): the steps from address to the table's own page, e.g. fill the search box with the table's name, press Enter, click the result. Run exactly these steps with portal_run first and see the table's page. The person's window follows them.")
+    form_button: str | None = Field(default=None, max_length=80, description="The visible text of the control on the table's page that opens the request form, as you saw it (e.g. Request access). Wizard presses it in the person's window, with writes stopped, so the form opens; leave it out to let Wizard look for one.")
     answers: list[Answer] = Field(default_factory=list, max_length=20, description="This request's own fields by the form's labels (the guide lists labels seen before), only for fields the person has no saved answer for (the guide lists saved_labels), e.g. a reason in the person's words from the question. Their saved answers (purpose, the DPA / DSA box, subsidiary...) are filled too.")
 
 
@@ -277,9 +292,15 @@ def guide(ctx: ToolContext, args: GuideArgs) -> dict[str, Any]:
         data["access_request_form"] = {"request_page": form["page"] or None,
                                        "saved_labels": [access_requests.name(f) for f in form["fields"] if f.get("value")],
                                        "labels_seen_on_the_form": form["seen"],
+                                       "form_pages_seen": access_requests.pages_seen(browser.root, portal.id),
                                        "prepared_requests": {"total": len(form["queue"]),
                                                              "not_opened": sum(1 for i in form["queue"] if not i.get("opened")),
-                                                             "tables": sorted({t for i in form["queue"] for t in i.get("tables") or []})[:200]}}
+                                                             "tables": sorted({t for i in form["queue"] for t in i.get("tables") or []})[:200],
+                                                             "to_prepare_again": sorted({
+                                                                 t for i in form["queue"] if not i.get("opened")
+                                                                 and not i.get("open_steps")
+                                                                 and access_requests.start_page(portal, str(i["address"]))
+                                                                 for t in i.get("tables") or []})[:200]}}
         data["start_page_note"] = ("This portal is several applications, each at its own address: goto one by its full "
                                    "address; a '/path' then stays on that application.")
     return data
@@ -519,10 +540,21 @@ def request_access(ctx: ToolContext, args: RequestAccessArgs) -> dict[str, Any]:
     tables = [" ".join(t.split())[:200] for t in args.tables if t.strip()]
     try:
         extra = access_requests.clean_fields([a.model_dump(exclude_none=True) for a in args.answers if a.value.strip()])
+        steps = access_requests.clean_steps([s.model_dump(exclude_none=True) for s in args.open_steps])
+        button = access_requests.clean_button(args.form_button)
     except access_requests.AccessFormError as error:
         raise ToolError("invalid_arguments", str(error)) from None
-    request = {"id": access_requests.request_id(portal.id, address, tables, extra), "system": portal.id,
+    if tables and not steps and address != saved["page"] and access_requests.start_page(portal, address):
+        raise ToolError("invalid_arguments", (
+            f"{address} is the start page: the person would have to find {', '.join(tables)} themselves, and the "
+            "request form would not open. Open the table in the catalog with portal_run and pass the address its page "
+            "shows (page.url) as address. If the address stays the same whatever table is open, pass open_steps: the "
+            "steps you just ran from that address to the table's page (fill the search with its name, press Enter, "
+            "click the result), and form_button: the text of the control there that opens the request form."))
+    route = {"open_steps": steps, "form_button": button}
+    request = {"id": access_requests.request_id(portal.id, address, tables, extra, route), "system": portal.id,
                "portal": portal.name, "address": address, "tables": tables, "answers": extra,
+               **({"open_steps": steps} if steps else {}), **({"form_button": button} if button else {}),
                "saved": [access_requests.name(f) for f in saved["fields"] if f.get("value")]}
     note = ("The person now sees a button, 'Open the request form': it opens this page in Wizard's browser window on "
             "their PC and fills their saved answers and yours into the form's empty fields. Tell them to check every "
@@ -573,7 +605,10 @@ PORTAL_TOOLS = [
              "your answers for this request filled into the form's empty fields; they check every field and submit it "
              "themselves. It is also added to their prepared requests (Settings → Portals), which they go through one "
              "after another. Use it after you found the table and saw that the person lacks access, one call per "
-             "table page, and name the table in your answer.",
+             "table, and name the table in your answer. address must be the table's own page in the catalog, where "
+             "its request control is; when the catalog keeps one address for every table, give open_steps that reach "
+             "the table from it (proved with portal_run) and form_button, the text of the control that opens the "
+             "form.",
              RequestAccessArgs, request_access, "portal", "present"),
     ToolSpec("portal_map",
              "The map Wizard keeps of a company portal (GSCM, ASAP, the Big Data Portal): what Gemini learned exploring "

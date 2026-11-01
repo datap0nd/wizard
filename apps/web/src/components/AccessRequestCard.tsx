@@ -22,12 +22,16 @@ function shortAddress(address: string): string {
 export function AccessRequestCard({request}: {request: AccessRequest}) {
   const [state, setState] = useState<'ready' | 'opening' | 'open'>('ready');
   const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const steps = request.open_steps?.length ?? 0;
   const tables = request.tables.join(', ');
 
   async function open() {
     setState('opening'); setError(null);
     try {
-      await api.openAccessRequest(request.system, {address: request.address, tables: request.tables, answers: request.answers});
+      const status = await api.openAccessRequest(request.system, {queued: request.id, address: request.address, tables: request.tables,
+        answers: request.answers, open_steps: request.open_steps ?? [], form_button: request.form_button ?? ''});
+      setNote(status.access_request?.note ?? null);
       setState('open');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'The request form could not be opened.');
@@ -47,7 +51,9 @@ export function AccessRequestCard({request}: {request: AccessRequest}) {
       </header>
       <div className="space-y-1.5 px-4 py-3">
         {tables && <Row icon={Table2} label="Tables">{tables}</Row>}
-        <Row icon={Globe} label="Opens">{shortAddress(request.address)}</Row>
+        <Row icon={Globe} label="Opens">{shortAddress(request.address)}
+          {steps > 0 && <>, then {steps} step{steps === 1 ? '' : 's'} to the table's page</>}
+          {request.form_button ? <>, and presses {request.form_button}</> : null}</Row>
         <Row icon={ListChecks} label="Fills in">
           {request.saved.length > 0 ? <>Your saved answers ({request.saved.join(', ')})</> : <>No saved answers yet</>}
           {request.answers.length > 0 && <>; for this request: {request.answers.map(a => a.label).join(', ')}</>}
@@ -60,8 +66,8 @@ export function AccessRequestCard({request}: {request: AccessRequest}) {
         {state === 'open' ? (
           <p className="flex items-start gap-1.5 text-ok" role="status" data-testid="access-request-open">
             <Check className="mt-0.5 size-4 shrink-0" />
-            <span>Open in Wizard's browser window on this PC. Check every field Wizard filled (outlined), submit the request
-              there, then close the window. Until then Wizard waits to read the portals.</span>
+            <span>{note ? `${note} ` : ''}Open in Wizard's browser window on this PC. Check every field Wizard filled (outlined),
+              submit the request there, then close the window. Until then Wizard waits to read the portals.</span>
           </p>
         ) : (
           <>

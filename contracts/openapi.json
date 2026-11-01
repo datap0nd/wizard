@@ -2956,6 +2956,21 @@
               }
             ],
             "title": "Queued"
+          },
+          "open_steps": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "maxItems": 12,
+            "title": "Open Steps"
+          },
+          "form_button": {
+            "type": "string",
+            "maxLength": 80,
+            "title": "Form Button",
+            "default": ""
           }
         },
         "additionalProperties": false,

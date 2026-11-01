@@ -1,6 +1,6 @@
 import type {BrainLive, BrainMap} from './brain';
 import type {CasePreview, CasePublished, SiteStatus} from './cases';
-import type {AccessForm, Answer, Attachment, Bootstrap, Cadence, ConversationSummary, Evidence, GeminiAccount, GeminiQuota, LocalFile, Memory, PortalCheck, PortalMapView, PortalStatus, RecurringList, Report, RunRecord, SavedFile, Schedule, SettingsSaved, SettingsView, SourceCatalog, SourceSummary, Steer, SteerReason, TasksView, UpdateInfo} from './types';
+import type {AccessForm, Answer, Attachment, Bootstrap, Cadence, ConversationSummary, Evidence, GeminiAccount, GeminiQuota, LocalFile, Memory, OpenStep, PortalCheck, PortalMapView, PortalStatus, RecurringList, Report, RunRecord, SavedFile, Schedule, SettingsSaved, SettingsView, SourceCatalog, SourceSummary, Steer, SteerReason, TasksView, UpdateInfo} from './types';
 
 /** What a note to Wizard did: reached the running answer (steer), or became the next question (follow_up). */
 export interface SteerResult {
@@ -124,7 +124,8 @@ export const api = {
   accessForm: (system: string) => request<AccessForm>(`/api/v1/portals/${encodeURIComponent(system)}/access-form`),
   saveAccessForm: (system: string, form: {page: string; fields: Answer[]}) =>
     request<AccessForm>(`/api/v1/portals/${encodeURIComponent(system)}/access-form`, {body: form}),
-  openAccessRequest: (system: string, request_: {address?: string; tables?: string[]; answers?: Answer[]; queued?: string} = {}) =>
+  openAccessRequest: (system: string, request_: {address?: string; tables?: string[]; answers?: Answer[]; queued?: string;
+                                                  open_steps?: OpenStep[]; form_button?: string} = {}) =>
     request<PortalStatus>(`/api/v1/portals/${encodeURIComponent(system)}/access-request`, {body: request_}),
   removeQueuedRequests: (system: string, body: {ids?: string[]; opened?: boolean}) =>
     request<AccessForm>(`/api/v1/portals/${encodeURIComponent(system)}/access-queue/remove`, {body}),

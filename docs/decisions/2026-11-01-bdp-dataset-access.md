@@ -1,6 +1,6 @@
 # 2026-11-01 — Access to the Big Data Portal's datasets: the form's own fields, drop-downs, and prepared requests
 
-**Owner:** project owner. **Status:** decided (1 November 2026). Amends
+**Owner:** project owner. **Status:** decided (1 November 2026); updated the same day (reaching the table and opening its form, below). Amends
 [the access request decision](2026-10-28-bdp-access-requests.md); builds on [tasks](2026-10-31-tasks.md).
 
 **Context.** Mapping the Big Data Portal keeps reaching dashboards whose tables the person cannot read (permission
@@ -71,3 +71,45 @@ options and companies): the free-text Purpose and the DPA / DSA Purpose each get
 drop-down whose list opens outside the form is chosen by number; a combobox that matches only on the code is found by
 typing the code; the requester and email are left; nothing is sent until the person's Submit; Next request opens the
 second prepared request and is audited; a subsidiary the list does not have is left empty with what was typed cleared.
+
+## Update, 1 November 2026: the window reaches the table and opens its request form
+
+**Context.** The first request on the work PC (a table found in the catalog) opened the catalog's start page: "the
+request form opens the generic website. doesnt open the reqeust form." Gemini had found the table through the
+catalog's search, which gives no page address, and the tool fell back to the start page without a word.
+
+**Decision.**
+- **A table needs its way there.** `portal_request_access` refuses a request for tables whose address is a start page
+  of the portal (the catalog's or Superset's; the person's saved request page excepted). Gemini gives the table's own
+  page, or, for a catalog that keeps one address whatever table is open, `open_steps`: the navigation it ran with
+  `portal_run` from that address to the table's page (goto, fill, select, click, press Enter, wait; at most 12), and
+  `form_button`, the text of the control there that opens the request form (it may request access; a name that saves,
+  sends, submits or confirms is refused).
+- **The window follows them.** In the person's window, Wizard runs those steps with the same refusals as Gemini's own
+  steps (no click on a control named for a change, only this portal's pages), then presses the control that opens the
+  form (form_button, else a usual name such as Request access when exactly one is shown; never a POST form's submit
+  button), once. For four seconds after that press, any request the portal's write rules (`write_reason`) call a
+  change is stopped: if pressing it would file the request in one click, nothing is filed, and the note on the page
+  says so and asks the person to press it themselves (their own press later goes through). The form then fills as
+  before; the person checks it and submits.
+- **What was prepared before.** A prepared request that opens only a start page says so in the window instead of
+  pressing anything; the guide lists them (`to_prepare_again`), and preparing a table again replaces its unopened
+  request in place. Where a request form appeared is kept (`form_pages_seen`, last 20) so Gemini learns the catalog's
+  addresses.
+
+**Consequences.** AGENTS.md's exception names the steps and the guarded press. API `access-request` takes
+`open_steps` and `form_button`; a card opens its prepared request by id. The request task finds once how a dataset's
+page is reached and gives the way for each.
+
+**Residual risk.** A step proved in the background can fail in the window when the page changed; the note says which
+step and the person finds the table. A one-click request whose write the rules do not recognise by name would not be
+stopped; the request window's press happens only after the person's own Open, on a control Gemini named or a usual
+request name, and AGENTS.md's network rules remain the backstop.
+
+**Evidence.** `tests/unit/test_access_requests.py`: start pages refused for a table (catalog, with a trailing slash,
+Superset), a table page and open_steps accepted, bad steps and buttons refused, the list keeping the way there and a
+table prepared again replacing its unopened request, `to_prepare_again`, and the API's route for a card no longer on
+the list. `tests/integration/test_portal_browser.py`, in a real Chromium: a catalog at one address, reached by search,
+Enter and the result, its Request access pressed and the form filled with nothing sent; a one-click Request access
+whose POST is stopped and reported, and goes through when the person presses it later; a request prepared with only
+the start page says so. `AccessRequestCard.test.tsx`.
