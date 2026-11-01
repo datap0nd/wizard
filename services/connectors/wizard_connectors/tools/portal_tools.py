@@ -106,13 +106,14 @@ class SaveArgs(Args):
 class Answer(Args):
     label: str = Field(min_length=1, max_length=access_requests.MAX_LABEL, description="The field's label as the request form shows it, e.g. Reason, Table name.")
     value: str = Field(max_length=access_requests.MAX_VALUE)
+    section: str | None = Field(default=None, max_length=access_requests.MAX_LABEL, description="The box the field sits in, only when two fields share a label (e.g. DPA / DSA).")
 
 
 class RequestAccessArgs(Args):
     system: str = Field(pattern=SYSTEM, description="The portal where access is requested: bdp (its information catalog).")
     address: str | None = Field(default=None, max_length=2000, description="The page with the request form, or the table's page in the catalog where the person presses Request access (the full address you read it at). Omit to use the request page the person saved, else the catalog's start page.")
     tables: list[str] = Field(default_factory=list, max_length=20, description="The tables the person needs, as the catalog names them.")
-    answers: list[Answer] = Field(default_factory=list, max_length=20, description="This request's own fields by the form's labels (the guide lists labels seen before), e.g. the reason, in the person's words from the question. Their saved answers (purpose, manager, duration...) are filled too.")
+    answers: list[Answer] = Field(default_factory=list, max_length=20, description="This request's own fields by the form's labels (the guide lists labels seen before), only for fields the person has no saved answer for (the guide lists saved_labels), e.g. a reason in the person's words from the question. Their saved answers (purpose, the DPA / DSA box, subsidiary...) are filled too.")
 
 
 MAP_ID = r"^[a-z0-9][a-z0-9_.-]{0,79}$"
@@ -274,8 +275,11 @@ def guide(ctx: ToolContext, args: GuideArgs) -> dict[str, Any]:
     if portal.id in access_requests.REQUEST_PORTALS:
         form = access_requests.form(browser.root, portal)
         data["access_request_form"] = {"request_page": form["page"] or None,
-                                       "saved_labels": [f["label"] for f in form["fields"] if f.get("value")],
-                                       "labels_seen_on_the_form": form["seen"]}
+                                       "saved_labels": [access_requests.name(f) for f in form["fields"] if f.get("value")],
+                                       "labels_seen_on_the_form": form["seen"],
+                                       "prepared_requests": {"total": len(form["queue"]),
+                                                             "not_opened": sum(1 for i in form["queue"] if not i.get("opened")),
+                                                             "tables": sorted({t for i in form["queue"] for t in i.get("tables") or []})[:200]}}
         data["start_page_note"] = ("This portal is several applications, each at its own address: goto one by its full "
                                    "address; a '/path' then stays on that application.")
     return data
@@ -513,18 +517,30 @@ def request_access(ctx: ToolContext, args: RequestAccessArgs) -> dict[str, Any]:
     except access_requests.AccessFormError as error:
         raise ToolError("invalid_arguments", str(error)) from None
     tables = [" ".join(t.split())[:200] for t in args.tables if t.strip()]
-    extra = [{"label": " ".join(a.label.split()), "value": a.value.strip()} for a in args.answers if a.value.strip()]
+    try:
+        extra = access_requests.clean_fields([a.model_dump(exclude_none=True) for a in args.answers if a.value.strip()])
+    except access_requests.AccessFormError as error:
+        raise ToolError("invalid_arguments", str(error)) from None
     request = {"id": access_requests.request_id(portal.id, address, tables, extra), "system": portal.id,
                "portal": portal.name, "address": address, "tables": tables, "answers": extra,
-               "saved": [f["label"] for f in saved["fields"] if f.get("value")]}
+               "saved": [access_requests.name(f) for f in saved["fields"] if f.get("value")]}
     note = ("The person now sees a button, 'Open the request form': it opens this page in Wizard's browser window on "
             "their PC and fills their saved answers and yours into the form's empty fields. Tell them to check every "
             "field and submit the request themselves; Wizard never submits it, and portal reads wait until they close "
             "that window.")
+    try:
+        place = access_requests.enqueue(browser.root, portal.id, request)
+        note += (f" It is also number {place['position']} in their prepared requests ({place['waiting']} not opened "
+                 "yet), in Settings → Portals → Prepared requests, where 'Open the next request' and the window's own "
+                 "'Next request' take them through the list.")
+    except access_requests.AccessFormError as error:
+        place = None
+        note += f" It is not in their prepared requests: {error}"
     if not request["saved"]:
         note += (" They have no saved answers yet: they can add the ones they give every time in Settings → Portals → "
                  "Access request form.")
-    return {"access_request": request, "form_labels_seen": saved["seen"], "note": note}
+    return {"access_request": request, **({"queued": place} if place else {}), "form_labels_seen": saved["seen"],
+            "note": note}
 
 
 PORTAL_TOOLS = [
@@ -553,9 +569,11 @@ PORTAL_TOOLS = [
     ToolSpec("portal_request_access",
              "Prepare an access request in a portal's information catalog (the Big Data Portal) for tables the person "
              "cannot query yet. Wizard never sends it: the person gets a button that opens the request page in Wizard's "
-             "visible browser window, with their saved answers (purpose, manager, duration...) and your answers for "
-             "this request filled into the form's empty fields; they check every field and submit it themselves. Use it "
-             "after you found the table and saw that the person lacks access, and name the table in your answer.",
+             "visible browser window, with their saved answers (purpose, the DPA / DSA drop-downs, subsidiary...) and "
+             "your answers for this request filled into the form's empty fields; they check every field and submit it "
+             "themselves. It is also added to their prepared requests (Settings → Portals), which they go through one "
+             "after another. Use it after you found the table and saw that the person lacks access, one call per "
+             "table page, and name the table in your answer.",
              RequestAccessArgs, request_access, "portal", "present"),
     ToolSpec("portal_map",
              "The map Wizard keeps of a company portal (GSCM, ASAP, the Big Data Portal): what Gemini learned exploring "

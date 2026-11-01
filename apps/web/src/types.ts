@@ -341,8 +341,10 @@ export interface PortalStatus {
   /** A visible Wizard browser window is open: the person's sign-in, or an access request form. */
   signing_in: boolean;
   window?: 'sign_in' | 'access_request' | null;
-  /** The open access request window: the saved answers it filled, and those it found no field for. */
-  access_request?: {system: string; filled: string[]; missing: string[]};
+  /** The open access request window: the saved answers it filled, those it found no field (or no option) for, and
+   *  which prepared request it shows when it walks through them. */
+  access_request?: {system: string; filled: string[]; missing: string[];
+    queued?: {id: string; position: number; total: number; waiting: number}};
   running: boolean;
   last_sign_in: string | null;
   /** parts: the applications of a portal that has several (the Big Data Portal's Superset and information catalog). */
@@ -404,14 +406,31 @@ export interface TasksView {
   can_save: boolean;
 }
 
-export interface Answer { label: string; value: string }
+/** A form field and its answer. section: the box it sits in (DPA / DSA); kind: typed text, or an option chosen in a
+ *  drop-down (none: either, by label). */
+export interface Answer { label: string; value: string; section?: string; kind?: 'text' | 'choice' }
+
+/** A saved field: the portal's predefined ones (preset, with a hint and an example) come first. */
+export interface AccessField extends Answer { preset?: boolean; hint?: string; example?: string }
+
+/** A request Gemini prepared, waiting in the person's list until they open it (and submit it themselves). */
+export interface QueuedRequest {
+  id: string;
+  address: string;
+  tables: string[];
+  answers: Answer[];
+  added: string;
+  opened: string | null;
+}
 
 /** The answers this person gives on every access request in a portal's information catalog, kept on their PC. */
 export interface AccessForm {
   system: string;
   /** The catalog's request page, when it has one for every request ('' when not saved). */
   page: string;
-  fields: Answer[];
+  fields: AccessField[];
+  /** The requests Gemini prepared, oldest first. */
+  queue: QueuedRequest[];
   /** Labels Wizard saw on the request form the last time it was open. */
   seen: string[];
   /** Where a request opens when nothing else names a page: the catalog's start page. */

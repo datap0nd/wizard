@@ -27,15 +27,47 @@ def portal() -> Any:
     return settings.portal("bdp")
 
 
+PRESET_NAMES = ["Purpose", "DPA / DSA › Purpose", "DPA / DSA › Subsidiary Name (Full Legal Name)", "DPA / DSA › Subsidiary Address"]
+
+
+def own(fields: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [f for f in fields if not f.get("preset")]
+
+
+def test_the_form_starts_with_the_portals_predefined_fields_for_the_person_to_answer(tmp_path: Path):
+    bdp = portal()
+    form = access_requests.form(tmp_path, bdp)
+    assert {k: v for k, v in form.items() if k != "fields"} == {
+        "system": "bdp", "page": "", "seen": [], "default_page": "https://catalog.corp.example.com/home", "queue": []}
+    assert [access_requests.name(f) for f in form["fields"]] == PRESET_NAMES
+    assert all(f["preset"] and f["value"] == "" and f["hint"] for f in form["fields"]), "the person sets every value"
+    assert [f["kind"] for f in form["fields"]] == ["text", "choice", "choice", "text"]
+    # The free-text Purpose and the DPA / DSA box's Purpose drop-down are two fields: each keeps its own answer.
+    saved = access_requests.save(tmp_path, bdp, "", [
+        {"label": "Purpose", "value": "Will be used for analytics in the MENA region", "kind": "text"},
+        {"label": "Purpose", "section": "DPA / DSA", "value": "5", "kind": "choice"},
+        {"label": "Subsidiary Name (Full Legal Name)", "section": "DPA / DSA", "value": "(ABC) Example Co.", "kind": "choice"},
+        {"label": "Duration", "value": "6 months"}])
+    assert [(access_requests.name(f), f["value"]) for f in saved["fields"]] == [
+        ("Purpose", "Will be used for analytics in the MENA region"), ("DPA / DSA › Purpose", "5"),
+        ("DPA / DSA › Subsidiary Name (Full Legal Name)", "(ABC) Example Co."), ("DPA / DSA › Subsidiary Address", ""),
+        ("Duration", "6 months")]
+    assert own(saved["fields"]) == [{"label": "Duration", "value": "6 months"}]
+    with pytest.raises(AccessFormError, match="dpa / dsa › purpose' is there twice"):
+        access_requests.save(tmp_path, bdp, "", [{"label": "Purpose", "section": "DPA / DSA", "value": "1"},
+                                                 {"label": "purpose", "section": "dpa / dsa", "value": "2"}])
+    with pytest.raises(AccessFormError, match="drop-down"):
+        access_requests.save(tmp_path, bdp, "", [{"label": "Purpose", "value": "1", "kind": "radio"}])
+
+
 def test_the_saved_answers_are_checked_and_kept_per_portal(tmp_path: Path):
     bdp = portal()
-    assert access_requests.form(tmp_path, bdp) == {"system": "bdp", "page": "", "fields": [], "seen": [],
-                                                    "default_page": "https://catalog.corp.example.com/home"}
     saved = access_requests.save(tmp_path, bdp, "https://catalog.corp.example.com/request", [
         {"label": "  Purpose  ", "value": "Weekly sales reporting "}, {"label": "Manager", "value": "Head of Sales"},
         {"label": "", "value": "dropped"}])
     assert saved["page"] == "https://catalog.corp.example.com/request"
-    assert saved["fields"] == [{"label": "Purpose", "value": "Weekly sales reporting"}, {"label": "Manager", "value": "Head of Sales"}]
+    assert saved["fields"][0]["value"] == "Weekly sales reporting", "an answer saved before the presets fills its preset"
+    assert own(saved["fields"]) == [{"label": "Manager", "value": "Head of Sales"}]
     access_requests.remember_seen(tmp_path, "bdp", ["Purpose", "Duration"])
     access_requests.remember_seen(tmp_path, "bdp", ["Cost centre", "Purpose"])
     assert access_requests.form(tmp_path, bdp)["seen"] == ["Cost centre", "Purpose", "Duration"]
@@ -69,6 +101,45 @@ def test_what_the_window_fills_saved_answers_this_requests_own_and_the_tables():
         {"label": "Table", "value": "sales_daily, stock"}]
     named = access_requests.answers(saved, [{"label": "Table name", "value": "sales_daily"}], ["sales_daily"])
     assert [a["label"] for a in named] == ["Purpose", "Manager", "Table name"], "a table field Gemini named is not doubled"
+    boxed = [{"label": "Purpose", "value": "Analytics", "kind": "text", "preset": True, "hint": "h"},
+             {"label": "Purpose", "section": "DPA / DSA", "value": "5", "kind": "choice", "preset": True}]
+    assert access_requests.answers(boxed, [{"label": "Purpose", "value": "GCC review"}], []) == [
+        {"label": "Purpose", "value": "GCC review", "kind": "text"},
+        {"label": "Purpose", "value": "5", "section": "DPA / DSA", "kind": "choice"}], \
+        "this request's purpose replaces the free-text one, keeps its kind, and leaves the drop-down's"
+
+
+def test_prepared_requests_wait_in_order_until_the_person_opens_them(tmp_path: Path):
+    def request(n: int) -> dict[str, Any]:
+        return {"id": f"AR-{n:010d}", "address": f"https://catalog.corp.example.com/t/{n}", "tables": [f"t{n}"], "answers": []}
+    assert access_requests.enqueue(tmp_path, "bdp", request(1)) == {"position": 1, "waiting": 1}
+    assert access_requests.enqueue(tmp_path, "bdp", request(2)) == {"position": 2, "waiting": 2}
+    assert access_requests.enqueue(tmp_path, "bdp", request(1)) == {"position": 1, "waiting": 2}, "the same request once"
+    access_requests.enqueue(tmp_path, "bdp", request(3))
+    assert access_requests.next_waiting(tmp_path, "bdp")["id"] == "AR-0000000001"
+    access_requests.mark_opened(tmp_path, "bdp", "AR-0000000001")
+    assert access_requests.next_waiting(tmp_path, "bdp", after="AR-0000000001")["id"] == "AR-0000000002"
+    assert access_requests.next_waiting(tmp_path, "bdp", after="AR-0000000003")["id"] == "AR-0000000002", "it wraps round"
+    assert access_requests.place(tmp_path, "bdp", "AR-0000000002") == {"position": 2, "total": 3, "waiting": 1}, \
+        "the others still to show"
+    assert [i["opened"] is not None for i in access_requests.queue(tmp_path, "bdp")] == [True, False, False]
+    assert [i["id"] for i in access_requests.remove(tmp_path, "bdp", ["AR-0000000003"], opened=True)] == ["AR-0000000002"]
+    for n in range(4, 4 + access_requests.MAX_QUEUE - 1):
+        access_requests.enqueue(tmp_path, "bdp", request(n))
+    with pytest.raises(AccessFormError, match="waiting"):
+        access_requests.enqueue(tmp_path, "bdp", request(999))
+    access_requests.mark_opened(tmp_path, "bdp", "AR-0000000002")
+    assert access_requests.enqueue(tmp_path, "bdp", request(999))["position"] == access_requests.MAX_QUEUE, \
+        "an opened request makes room"
+    assert "AR-0000000002" not in [i["id"] for i in access_requests.queue(tmp_path, "bdp")]
+    assert access_requests.form(tmp_path, portal())["queue"][0]["id"] == "AR-0000000004"
+
+
+def test_what_wizard_types_to_find_an_option_in_a_drop_downs_search():
+    assert access_requests.search_texts("(ABC) Example Electronics Co., Ltd.") == [
+        "(ABC) Example Electronics Co., Ltd.", "ABC", "Example"]
+    assert access_requests.search_texts("abc") == ["abc"]
+    assert access_requests.search_texts("5") == [] and access_requests.search_texts("  ") == [], "a number picks, never types"
 
 
 def tool_setup(tmp_path: Path, systems: tuple[str, ...] = ("bdp",)) -> tuple[Any, ToolContext]:
@@ -91,7 +162,10 @@ def test_gemini_proposes_a_request_and_never_sends_it(tmp_path: Path):
     assert request["address"] == "https://catalog.corp.example.com/home", "the catalog when nothing names a page"
     assert request["tables"] == ["sales_daily"] and request["answers"] == [{"label": "Reason", "value": "GCC sell-out review"}]
     assert request["saved"] == [] and "Settings → Portals" in outcome.data["note"] and "never submits" in outcome.data["note"]
-    assert request["id"].startswith("AR-")
+    assert request["id"].startswith("AR-") and outcome.data["queued"] == {"position": 1, "waiting": 1}
+    queued = access_requests.queue(tmp_path / "owner" / "portal-browser", "bdp")
+    assert [(i["id"], i["tables"], i["opened"]) for i in queued] == [(request["id"], ["sales_daily"], None)], \
+        "prepared, never opened by Gemini"
     access_requests.save(tmp_path / "owner" / "portal-browser", portal(), "https://catalog.corp.example.com/request",
                          [{"label": "Purpose", "value": "Weekly sales"}, {"label": "Manager", "value": ""}])
     again = registry.execute("portal_request_access", {"system": "bdp"}, context)
@@ -103,7 +177,8 @@ def test_gemini_proposes_a_request_and_never_sends_it(tmp_path: Path):
     assert not gscm.ok and gscm.error_code == "invalid_arguments"
     guide = registry.execute("portal_guide", {"system": "bdp"}, context)
     assert guide.ok and guide.data["access_request_form"] == {
-        "request_page": "https://catalog.corp.example.com/request", "saved_labels": ["Purpose"], "labels_seen_on_the_form": []}
+        "request_page": "https://catalog.corp.example.com/request", "saved_labels": ["Purpose"], "labels_seen_on_the_form": [],
+        "prepared_requests": {"total": 2, "not_opened": 2, "tables": ["sales_daily"]}}
     assert "portal_request_access" in guide.data["guide"]
 
 
@@ -112,9 +187,12 @@ def test_the_api_keeps_the_form_and_opens_the_request_window(tmp_path: Path, mon
 
     from wizard_api.app import create_app
     opened: list[tuple[str, str, list[dict[str, str]]]] = []
+    queued: list[str | None] = []
 
-    def fake_open(self: PortalBrowser, portal: Any, address: str, answers: list[dict[str, str]]) -> dict[str, Any]:
+    def fake_open(self: PortalBrowser, portal: Any, address: str, answers: list[dict[str, str]],
+                  queued_: str | None = None) -> dict[str, Any]:
         opened.append((portal.id, address, answers))
+        queued.append(queued_)
         return {"signing_in": True, "window": "access_request"}
 
     monkeypatch.setattr(PortalBrowser, "open_access_request", fake_open)
@@ -124,26 +202,53 @@ def test_the_api_keeps_the_form_and_opens_the_request_window(tmp_path: Path, mon
         login(client, "local-owner")
         status = client.get("/api/v1/portals").json()
         assert [p.get("access_requests") for p in status["portals"]] == [None, True], "GSCM takes no requests; BDP does"
-        assert client.get("/api/v1/portals/bdp/access-form").json()["fields"] == []
+        assert [f["value"] for f in client.get("/api/v1/portals/bdp/access-form").json()["fields"]] == ["", "", "", ""]
         assert client.get("/api/v1/portals/gscm/access-form").status_code == 404
         form = {"page": "", "fields": [{"label": "Purpose", "value": "Weekly sales"}, {"label": "Duration", "value": "6 months"}]}
         assert client.post("/api/v1/portals/bdp/access-form", json=form).status_code == 403, "state changes need the Wizard header"
         saved = client.post("/api/v1/portals/bdp/access-form", json=form, headers=HEADERS)
-        assert saved.status_code == 200 and saved.json()["fields"] == form["fields"]
+        assert saved.status_code == 200 and saved.json()["fields"][0]["value"] == "Weekly sales"
+        assert own(saved.json()["fields"]) == [{"label": "Duration", "value": "6 months"}]
         bad = client.post("/api/v1/portals/bdp/access-form", json={"page": "https://evil.example.net/", "fields": []}, headers=HEADERS)
         assert bad.status_code == 400 and "not an address" in bad.json()["error"]
         assert client.post("/api/v1/portals/bdp/access-request", json={}, headers=HEADERS).json()["window"] == "access_request"
         client.post("/api/v1/portals/bdp/access-request", headers=HEADERS, json={
             "address": "https://catalog.corp.example.com/t/sales_daily", "tables": ["sales_daily"],
             "answers": [{"label": "Duration", "value": "3 months"}, {"label": "Reason", "value": "GCC review"}]})
-        assert opened[0] == ("bdp", "https://catalog.corp.example.com/home", form["fields"])
+        assert opened[0] == ("bdp", "https://catalog.corp.example.com/home", [
+            {"label": "Purpose", "value": "Weekly sales", "kind": "text"}, {"label": "Duration", "value": "6 months"}])
         assert opened[1] == ("bdp", "https://catalog.corp.example.com/t/sales_daily", [
-            {"label": "Purpose", "value": "Weekly sales"}, {"label": "Duration", "value": "3 months"},
+            {"label": "Purpose", "value": "Weekly sales", "kind": "text"}, {"label": "Duration", "value": "3 months"},
             {"label": "Reason", "value": "GCC review"}, {"label": "Table", "value": "sales_daily"}])
+        assert queued == [None, None], "neither is a prepared request"
         away = client.post("/api/v1/portals/bdp/access-request", json={"address": "https://evil.example.net/"}, headers=HEADERS)
         assert away.status_code == 400 and len(opened) == 2
+
+        # Prepared requests: the next one, a named one, and a card's request found in the list.
+        root = settings.user_home("local-owner") / "portal-browser"
+        for n in (1, 2):
+            access_requests.enqueue(root, "bdp", {"id": f"AR-{n:010d}", "address": f"https://catalog.corp.example.com/t/t{n}",
+                                                  "tables": [f"t{n}"], "answers": [{"label": "Reason", "value": f"r{n}"}]})
+        assert client.post("/api/v1/portals/bdp/access-request", json={"queued": "next"}, headers=HEADERS).status_code == 200
+        assert opened[-1][1] == "https://catalog.corp.example.com/t/t1" and queued[-1] == "AR-0000000001"
+        assert {"label": "Reason", "value": "r1"} in opened[-1][2] and {"label": "Table", "value": "t1"} in opened[-1][2]
+        assert client.post("/api/v1/portals/bdp/access-request", json={"queued": "next"}, headers=HEADERS).status_code == 200
+        assert queued[-1] == "AR-0000000002"
+        assert client.post("/api/v1/portals/bdp/access-request", json={"queued": "next"}, headers=HEADERS).status_code == 404
+        assert client.post("/api/v1/portals/bdp/access-request", json={"queued": "AR-0000000001"}, headers=HEADERS).status_code == 200
+        assert client.post("/api/v1/portals/bdp/access-request", json={"queued": "AR-ffffffffff"}, headers=HEADERS).status_code == 404
+        assert client.post("/api/v1/portals/bdp/access-request", json={"queued": "../x"}, headers=HEADERS).status_code == 400
+        card = {"address": "https://catalog.corp.example.com/t/t9", "tables": ["t9"], "answers": []}
+        access_requests.enqueue(root, "bdp", {"id": access_requests.request_id("bdp", card["address"], ["t9"], []), **card})
+        client.post("/api/v1/portals/bdp/access-request", json=card, headers=HEADERS)
+        assert queued[-1] == access_requests.request_id("bdp", card["address"], ["t9"], []), "the card's request is in the list"
+        listed = client.get("/api/v1/portals/bdp/access-form").json()["queue"]
+        assert all(i["opened"] for i in listed), "each open is noted"
+        left = client.post("/api/v1/portals/bdp/access-queue/remove", json={"ids": ["AR-0000000001"]}, headers=HEADERS)
+        assert [i["id"] for i in left.json()["queue"]] == ["AR-0000000002", listed[-1]["id"]]
+        assert client.post("/api/v1/portals/bdp/access-queue/remove", json={"opened": True}, headers=HEADERS).json()["queue"] == []
         actions = [e["action"] for e in client.app.state.store.audit_entries()]
-        assert "portals:access_request" in actions and "portals:access_form" in actions
+        assert {"portals:access_request", "portals:access_form", "portals:access_queue"} <= set(actions)
 
 
 def test_a_reopened_answer_keeps_its_access_request(tmp_path: Path):

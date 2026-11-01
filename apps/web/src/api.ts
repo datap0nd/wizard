@@ -124,8 +124,10 @@ export const api = {
   accessForm: (system: string) => request<AccessForm>(`/api/v1/portals/${encodeURIComponent(system)}/access-form`),
   saveAccessForm: (system: string, form: {page: string; fields: Answer[]}) =>
     request<AccessForm>(`/api/v1/portals/${encodeURIComponent(system)}/access-form`, {body: form}),
-  openAccessRequest: (system: string, request_: {address?: string; tables?: string[]; answers?: Answer[]} = {}) =>
+  openAccessRequest: (system: string, request_: {address?: string; tables?: string[]; answers?: Answer[]; queued?: string} = {}) =>
     request<PortalStatus>(`/api/v1/portals/${encodeURIComponent(system)}/access-request`, {body: request_}),
+  removeQueuedRequests: (system: string, body: {ids?: string[]; opened?: boolean}) =>
+    request<AccessForm>(`/api/v1/portals/${encodeURIComponent(system)}/access-queue/remove`, {body}),
   mapPortal: (system: string) => request<PortalMapView>(`/api/v1/portals/${encodeURIComponent(system)}/map`, {body: {}}),
   stopMapping: (system: string) => request<PortalMapView>(`/api/v1/portals/${encodeURIComponent(system)}/map/stop`, {body: {}}),
   publishMap: (system: string) => request<PortalMapView>(`/api/v1/portals/${encodeURIComponent(system)}/map/publish`, {body: {}}),
