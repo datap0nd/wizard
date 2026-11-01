@@ -24,6 +24,7 @@ import contextlib
 import json
 import logging
 import queue
+import re
 import threading
 import time
 from collections.abc import Callable
@@ -43,6 +44,14 @@ HELPERS = Path(__file__).with_name("portal_helpers.js").read_text(encoding="utf-
 CAPTURE = Path(__file__).with_name("portal_capture.js").read_text(encoding="utf-8")
 FILL = Path(__file__).with_name("portal_fill.js").read_text(encoding="utf-8")
 PICK = Path(__file__).with_name("portal_pick.js").read_text(encoding="utf-8")
+CLICKS = Path(__file__).with_name("portal_clicks.js").read_text(encoding="utf-8")
+SEND_WAIT_S = 60            # a request Wizard sends must have its whole form filled within this long, or sending stops
+SUBMIT_WAIT_MS = 20_000     # how long the request Wizard's Submit sends may take to be answered
+SUBMISSION_WINDOW_S = 8     # the person's Submit and the request it sends: at most this far apart
+CLICK_SLACK_S = 1.5         # the note of the person's press can reach Wizard a moment after what it set off
+# A question the page asks when a request is submitted ("Do you want to submit the request?"): answered OK only right
+# after the person's own press (or Wizard's, when sending), and only with these words; any other question is Cancel.
+SUBMITTISH = re.compile(r"(?i)(submit|request|apply|send|proceed|continue|register|신청|제출|요청|등록|진행)")
 PICK_WAIT_MS = 2500         # how long a drop-down's list may take to show the option after it opens or is searched
 OPEN_GUARD_S = 4.0          # after Wizard presses the control that opens a request form, the portal's writes stop this long
 FILL_EVERY_S = 1.5          # the access request window looks for its form's fields this often
@@ -100,6 +109,9 @@ class AccessWindow:
     form_seen: bool = False  # an answer found its field: the form is open
     note: str | None = None  # what the window says about reaching the table and opening its form
     stopped: list[str] = field(default_factory=list)  # writes Wizard stopped while the form opened
+    kept: list[str] = field(default_factory=list)  # answers whose field already had a value
+    form_page: Any = None  # the page the form is on
+    shown_at: float = field(default_factory=time.monotonic)
     done: dict[str, list[str]] = field(default_factory=dict)  # per page: the fields handled (filled, kept or tried)
     page_filled: dict[str, list[str]] = field(default_factory=dict)  # per page: the fields Wizard filled
     filled: list[str] = field(default_factory=list)
@@ -148,6 +160,13 @@ class PortalBrowser:
         self.audit: Callable[..., None] | None = None  # the audit log: (action, system=..., detail=...)
         self._guard_until = 0.0  # the portal's writes stop until then, while a request form Wizard opened appears
         self._guarded: Any = None  # the page whose requests the guard sees
+        self._guard_allow: dict[str, str] | None = None  # while Wizard sends: the one request its Submit may send
+        self._acting: str | None = None  # Wizard's own clicks in the person's window ("pick", "open", "submit")
+        self._person_click: dict[str, Any] | None = None  # the control the person last pressed in the request window
+        self._writes: list[dict[str, Any]] = []  # requests that could change something, sent from the request window
+        self._last_dialog: tuple[float, str] | None = None
+        self._batch: list[str] = []  # prepared requests the person approved, Wizard sending them one after another
+        self._batch_sent = 0
 
     # State without secrets: the hosts sign-in went through and when it last happened --------------------------------
     def _state(self) -> dict[str, Any]:
@@ -279,6 +298,7 @@ class PortalBrowser:
                 self._unguard()
             if self._request is not None and time.monotonic() - self._request.last >= FILL_EVERY_S:
                 self._fill_request()
+                self._drive_batch()
             if time.monotonic() - self._headed_since > SIGN_IN_LIMIT_S:
                 self._finish_window()
         elif time.monotonic() - self._last_used > IDLE_CLOSE_S:
@@ -333,6 +353,13 @@ class PortalBrowser:
         if headed:
             if window == "sign_in":
                 context.on("request", self._remember_sign_in_host)
+            elif window == "access_request":  # which control the person pressed, and what it sent
+                self._writes, self._person_click = [], None
+                with contextlib.suppress(Exception):  # a test launcher without bindings
+                    context.expose_binding("__wizardClicked", self._clicked)
+                    context.add_init_script(CLICKS)
+                context.on("request", self._watch_write)
+                context.on("response", self._watch_response)
         else:
             context.add_init_script(CAPTURE)
             context.route("**/*", self._route)
@@ -381,11 +408,107 @@ class PortalBrowser:
             socket.close()
 
     def _dialog(self, dialog: Any) -> None:
+        if self._headed and self._window == "access_request" and dialog.type in ("confirm", "prompt"):
+            self._request_dialog(dialog)
+            return
         if self._log is not None:
             self._log.dialogs.append(f"{dialog.type}: {dialog.message[:300]}")
         with contextlib.suppress(Exception):  # already handled
             # Alerts are acknowledged; a confirmation ("Are you sure?") is always answered No.
             dialog.accept() if dialog.type in ("alert", "beforeunload") else dialog.dismiss()
+
+    def _request_dialog(self, dialog: Any) -> None:
+        """A question in the request window: OK only for a submit question set off by the person (Wizard is not pressing
+        anything) or by Wizard's Submit when it sends; otherwise Cancel, and the note says so."""
+        message = " ".join(str(dialog.message or "").split())[:300]
+        self._last_dialog = (time.monotonic(), message)
+        person = not self._acting
+        proof = (access_requests.sending(self.root, self._request.portal.id)["proof"] or {}) if self._request else {}
+        sending = self._acting == "submit" and (SUBMITTISH.search(message) or message == proof.get("dialog"))
+        answer = dialog.type == "confirm" and (sending or (person and SUBMITTISH.search(message)))
+        with contextlib.suppress(Exception):  # already handled
+            dialog.accept() if answer else dialog.dismiss()
+        if self._request is not None:
+            self._request.note = (f"The page asked \"{message[:120]}\" and Wizard answered OK"
+                                  + (" for you." if not self._acting else ".") if answer else
+                                  f"The page asked \"{message[:120]}\" and Wizard answered Cancel: it answers OK only "
+                                  "to a submit question right after Submit.")
+
+    def _clicked(self, source: Any, info: Any) -> None:
+        """The person pressed a control in the request window (portal_clicks.js); Wizard's own presses are not theirs."""
+        if self._acting or not isinstance(info, dict):
+            return
+        request = self._request
+        self._person_click = {"at": time.monotonic(), "text": str(info.get("text") or "")[:80],
+                              "in_form": bool(info.get("inForm")), "form_seen": bool(request and request.form_seen)}
+
+    def _watch_write(self, request: Any) -> None:
+        """A request from the request window that could change something (any method but GET) on the portal's pages."""
+        current = self._request
+        if current is None or request.method.upper() in ("GET", "HEAD", "OPTIONS") or \
+                request.resource_type not in DATA_TYPES or \
+                not access_requests.on_portal(current.portal, (urlsplit(request.url).hostname or "").lower()):
+            return
+        try:
+            body = request.post_data
+        except Exception:  # noqa: BLE001 - a binary body
+            body = None
+        self._writes = [*self._writes[-29:], {"request": request, "method": request.method.upper(), "url": request.url,
+                                              "body": (body or "")[:20_000], "at": time.monotonic(),
+                                              "acting": self._acting, "status": None, "response": None}]
+
+    def _watch_response(self, response: Any) -> None:
+        for write in reversed(self._writes):
+            if write["request"] is response.request and write["status"] is None:
+                write["status"], write["response"] = response.status, response
+                return
+
+    def _observe(self, request: AccessWindow) -> None:
+        """After the person pressed a control in the filled form, the request it sent: kept as their last submission
+        (the proof sending copies, once they say it worked), and a prepared request is marked sent by them."""
+        click = self._person_click
+        if click is None or not click["form_seen"]:
+            return
+        after = [w for w in self._writes if not w.get("seen") and not w["acting"] and w["status"] is not None
+                 and -CLICK_SLACK_S <= w["at"] - click["at"] <= SUBMISSION_WINDOW_S]
+        if not after:
+            if time.monotonic() - click["at"] > SUBMISSION_WINDOW_S + 5:
+                self._person_click = None
+            return
+        # A Submit's own request is the first it sends (a draft cleared or a list refreshed comes after); after another
+        # control, only a request whose address names a change.
+        flagged = [w for w in after if portals.write_reason(w["method"], w["url"], w["body"])]
+        chosen = after[0] if SUBMITTISH.search(click["text"]) else (flagged[0] if flagged else None)
+        for write in after:
+            write["seen"] = True
+        if chosen is None:
+            return
+        self._person_click = None
+        try:
+            reply = chosen["response"].text()[:20_000]
+        except Exception:  # noqa: BLE001 - the page moved on and its body is gone
+            reply = ""
+        dialog = self._last_dialog[1] if self._last_dialog and abs(self._last_dialog[0] - click["at"]) <= 10 else None
+        path = urlsplit(chosen["url"]).path
+        submission = {"tables": request.tables, "button": click["text"], "method": chosen["method"],
+                      "match": access_requests.path_pattern(chosen["url"]), "path": path[:200],
+                      "status": chosen["status"], "expect": access_requests.expect_fields(reply),
+                      **({"dialog": dialog} if dialog else {}), "at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                      "request_id": request.queued}
+        access_requests.remember_submission(self.root, request.portal.id, submission)
+        went = 200 <= int(chosen["status"]) < 300
+        if went and request.queued:
+            access_requests.mark_sent(self.root, request.portal.id, request.queued, "you", int(chosen["status"]), path)
+        if self.audit is not None:
+            with contextlib.suppress(Exception):
+                self.audit("portals:access_submitted", system=request.portal.id,
+                           detail={"tables": request.tables, "by": "you", "method": chosen["method"], "path": path[:200],
+                                   "status": chosen["status"]})
+        enabled = access_requests.sending(self.root, request.portal.id)["enabled"]
+        request.note = (f"Wizard saw this request go out when you pressed {click['text'] or 'the button'} "
+                        f"({chosen['method']} {path[:80]}, answered {chosen['status']})."
+                        + ("" if enabled or not went else " If the catalog confirms it, press 'It worked: let Wizard "
+                           "send the requests I approve' in Settings → Portals."))
 
     def _watch_page(self, page: Any) -> None:
         if not self._headed:
@@ -464,6 +587,7 @@ class PortalBrowser:
             self._keep_session(self._seen)
             self._seen = None
         self._unguard()
+        self._batch = []
         self._close()
         self._headed, self._window, self._request = False, None, None
 
@@ -521,6 +645,16 @@ class PortalBrowser:
         """Reach the table's page from the request's address with the steps Gemini proved (search, open the result), in
         the person's window: the same click refusals as Gemini's own steps, only this portal's pages."""
         what = ", ".join(request.tables) or "the table"
+        self._acting = "follow"
+        try:
+            self._follow_steps(page, request, what)
+        finally:
+            self._acting = None
+        with contextlib.suppress(Exception):
+            page.wait_for_load_state("domcontentloaded", timeout=10_000)
+            page.wait_for_timeout(800)
+
+    def _follow_steps(self, page: Any, request: AccessWindow, what: str) -> None:
         for number, step in enumerate(request.open_steps, 1):
             try:
                 if step["action"] == "goto":
@@ -535,9 +669,6 @@ class PortalBrowser:
                 request.note = (f"Wizard could not reach {what} in the catalog (step {number}, {step['action']}: "
                                 f"{reason[:160]}). Find it yourself: Wizard fills the request form when it opens.")
                 return
-        with contextlib.suppress(Exception):
-            page.wait_for_load_state("domcontentloaded", timeout=10_000)
-            page.wait_for_timeout(800)
 
     def _open_form(self, page: Any, request: AccessWindow) -> None:
         """Press the control that opens the table's request form, once, with the portal's writes stopped for a few
@@ -557,12 +688,15 @@ class PortalBrowser:
                             + " It fills the form when it opens.")
             return
         self._guard(page)
+        self._acting = "open"
         try:
             page.locator("[data-wizard-open]").first.click(timeout=5000)
             page.wait_for_timeout(1500)
         except Exception as error:  # noqa: BLE001 - the control went away
             request.note = f"Press {found.get('text') or 'Request access'} on this page: Wizard could not ({_first_line(error)[:120]})."
             return
+        finally:
+            self._acting = None
         if request.stopped:
             request.note = (f"Wizard pressed {found.get('text')} and stopped what the page sent then "
                             f"({'; '.join(request.stopped[:2])}), in case that filed the request. If the form did not "
@@ -570,14 +704,14 @@ class PortalBrowser:
         else:
             request.note = f"Wizard pressed {found.get('text')} to open the request form."
 
-    def _guard(self, page: Any) -> None:
+    def _guard(self, page: Any, seconds: float = OPEN_GUARD_S, allow: dict[str, str] | None = None) -> None:
         self._unguard()
-        self._guard_until = time.monotonic() + OPEN_GUARD_S
-        self._guarded = page
+        self._guard_until = time.monotonic() + seconds
+        self._guarded, self._guard_allow = page, allow
         page.route("**/*", self._guard_route)
 
     def _unguard(self) -> None:
-        page, self._guarded = self._guarded, None
+        page, self._guarded, self._guard_allow = self._guarded, None, None
         if page is not None:
             with contextlib.suppress(Exception):  # the page is gone
                 page.unroute("**/*", self._guard_route)
@@ -587,7 +721,8 @@ class PortalBrowser:
         (the person's own Submit comes later, when the guard is gone)."""
         request = route.request
         reason = None
-        if time.monotonic() <= self._guard_until and request.method.upper() != "GET":
+        allowed = self._guard_allow is not None and access_requests.path_matches(self._guard_allow, request.url)
+        if time.monotonic() <= self._guard_until and request.method.upper() != "GET" and not allowed:
             try:
                 body = request.post_data
             except Exception:  # noqa: BLE001 - a binary body
@@ -605,23 +740,153 @@ class PortalBrowser:
         request = self._request
         if request is None:
             return
-        portal = request.portal
-        item = access_requests.next_waiting(self.root, portal.id, after=request.queued)
-        if item is None:
-            return
+        item = access_requests.next_waiting(self.root, request.portal.id, after=request.queued)
+        if item is not None:
+            self._open_item(page, request.portal, item, "next")
+
+    def _open_item(self, page: Any, portal: Portal, item: dict[str, Any], by: str) -> bool:
+        """Show a prepared request in the window (Next request, or Wizard sending the approved ones)."""
         try:
             address = access_requests.check_address(portal, str(item["address"]))
         except access_requests.AccessFormError:
             access_requests.remove(self.root, portal.id, [item["id"]])
-            return
+            return False
         access_requests.mark_opened(self.root, portal.id, item["id"])
         saved = access_requests.form(self.root, portal)["fields"]
         answers = access_requests.answers(saved, item.get("answers") or [], item.get("tables") or [])
         if self.audit is not None:
             with contextlib.suppress(Exception):  # the audit never stops the person's window
                 self.audit("portals:access_request", system=portal.id, detail={"tables": item.get("tables") or [],
-                                                                              "queued": item["id"], "by": "next"})
+                                                                              "queued": item["id"], "by": by})
         self._show_request(page, AccessWindow(portal, address, answers, queued=item["id"], **_route(item)))
+        return True
+
+    # Sending the requests the person approved -----------------------------------------------------------------------
+    def send_requests(self, portal: Portal, ids: list[str]) -> dict[str, Any]:
+        """Send the prepared requests the person approved, one after another in the visible request window, the way their
+        own proven request went: reach the table, open its form, fill it, press the same Submit, and check the portal
+        answers the same request the same way. The first that does not go through stops the rest."""
+        def job() -> dict[str, Any]:
+            if self._headed and self._window == "sign_in":
+                raise PortalError("signing_in", "Finish signing in first: close the Wizard sign-in window, then send again.")
+            if not access_requests.sending(self.root, portal.id)["enabled"]:
+                raise PortalError("sending_off", "Sending is off: submit one request yourself first, then turn it on.")
+            items = {i["id"]: i for i in access_requests.to_send(self.root, portal.id, ids)}
+            self._batch = [i for i in ids if i in items]
+            self._batch_sent = 0
+            if not self._batch:
+                raise PortalError("nothing_to_send", "These requests are sent or no longer prepared.")
+            page = self._request_page()
+            if page is None:
+                context = self._launch(headed=True, window="access_request")
+                page = context.pages[0] if context.pages else context.new_page()
+            if not self._open_item(page, portal, items[self._batch[0]], "send"):
+                self._batch = []
+                raise PortalError("invalid_request", "The first request's page is not an address of this portal.")
+            with contextlib.suppress(Exception):
+                page.bring_to_front()
+            self._drive_batch()
+            return self.status_now()
+        return self.run(job, timeout=150)
+
+    def stop_sending(self) -> dict[str, Any]:
+        def job() -> dict[str, Any]:
+            if self._batch and self._request is not None:
+                self._request.note = f"Sending stopped by you after {self._batch_sent} request(s)."
+            self._batch = []
+            return self.status_now()
+        return self.run(job, timeout=30)
+
+    def _complete(self, request: AccessWindow) -> list[str]:
+        """What is still missing before Wizard may press Submit: every saved answer filled or already there."""
+        handled = set(request.filled) | set(request.kept)
+        missing = [access_requests.name(a) for a in request.answers if not a.get("auto")
+                   and access_requests.name(a) not in handled]
+        return [*missing, *[u for u in request.unpicked if u not in missing]] if request.form_seen else ["the form"]
+
+    def _drive_batch(self) -> None:
+        """One step of sending: when the shown request's form is complete, submit it and show the next one."""
+        request = self._request
+        if not self._batch or request is None or request.queued != self._batch[0]:
+            return
+        missing = self._complete(request)
+        if missing:
+            if time.monotonic() - request.shown_at > SEND_WAIT_S:
+                self._stop_batch(request, f"its form was not complete after {SEND_WAIT_S} seconds "
+                                          f"({', '.join(missing[:4])} missing)")
+            return
+        page = request.form_page
+        went, detail = self._submit(page, request)
+        if not went:
+            self._stop_batch(request, detail)
+            return
+        self._batch.pop(0)
+        self._batch_sent += 1
+        while self._batch:
+            item = next((i for i in access_requests.to_send(self.root, request.portal.id, [self._batch[0]])), None)
+            if item is not None and self._open_item(page, request.portal, item, "send"):
+                return
+            self._batch.pop(0)
+        request.note = f"Wizard sent {self._batch_sent} request(s) you approved. {detail}"
+
+    def _stop_batch(self, request: AccessWindow, reason: str) -> None:
+        if request.queued:
+            access_requests.mark_failed(self.root, request.portal.id, request.queued, reason)
+        left = len(self._batch) - 1
+        self._batch = []
+        request.note = (f"Wizard stopped sending: this request did not go through ({reason}). Check it and submit it "
+                        f"yourself, or remove it; {left} other approved request(s) were not sent.")
+        if self.audit is not None:
+            with contextlib.suppress(Exception):
+                self.audit("portals:access_submitted", system=request.portal.id, outcome="failed",
+                           detail={"tables": request.tables, "by": "wizard", "reason": reason[:300]})
+
+    def _submit(self, page: Any, request: AccessWindow) -> tuple[bool, str]:
+        """Press the Submit the person pressed on their own proven request, letting through only the request it sent
+        then (same method, host and path) and stopping any other change; then check the portal's answer is the same."""
+        proof = access_requests.sending(self.root, request.portal.id)["proof"]
+        if not proof or page is None:
+            return False, "sending is off"
+        try:
+            found = page.evaluate(PICK, {"mode": "submit", "value": proof["button"]}) or {}
+        except Exception as error:  # noqa: BLE001 - navigating
+            return False, f"the form moved ({_first_line(error)[:100]})"
+        if found.get("count") != 1:
+            return False, f"Wizard found {found.get('count') or 0} controls named '{proof['button']}' on the form"
+        match = proof.get("match") or {}
+        self._guard(page, seconds=SUBMIT_WAIT_MS / 1000 + 5, allow=match)
+        self._acting = "submit"
+        try:
+            with page.expect_response(lambda r: r.request.method.upper() == proof["method"]
+                                      and access_requests.path_matches(match, r.url), timeout=SUBMIT_WAIT_MS) as answer:
+                page.locator("[data-wizard-submit]").first.click(timeout=5000)
+            response = answer.value
+            status = int(response.status)
+            try:
+                reply = response.text()[:20_000]
+            except Exception:  # noqa: BLE001 - the page moved on
+                reply = ""
+        except Exception as error:  # noqa: BLE001 - no answer: a check on the form, a question answered Cancel...
+            return False, f"no {proof['method']} {proof.get('path') or ''} went out after {proof['button']} ({_first_line(error)[:120]})"
+        finally:
+            self._acting = None
+            self._unguard()
+        path = urlsplit(response.url).path
+        if not 200 <= status < 300:
+            return False, f"the portal answered {status}"
+        got = access_requests.expect_fields(reply)
+        for key, value in (proof.get("expect") or {}).items():
+            if got.get(key) != value:
+                return False, f"the portal answered {key} = {got.get(key)!r} where your own request had {value!r}"
+        if request.queued:
+            access_requests.mark_sent(self.root, request.portal.id, request.queued, "wizard", status, path)
+        if self.audit is not None:
+            with contextlib.suppress(Exception):
+                self.audit("portals:access_submitted", system=request.portal.id,
+                           detail={"tables": request.tables, "by": "wizard", "method": proof["method"],
+                                   "path": path[:200], "status": status})
+        page.wait_for_timeout(800)
+        return True, f"The last: {', '.join(request.tables) or 'the request'} ({proof['method']} {path[:60]}, {status})."
 
     def _fill_request(self, closing: bool = False) -> None:
         request = self._request
@@ -647,6 +912,9 @@ class PortalBrowser:
             for label in [*result.get("filled", []), *result.get("kept", [])]:
                 if label not in done:
                     done.append(label)
+            request.kept = list(dict.fromkeys([*request.kept, *[str(k) for k in result.get("kept", [])]]))
+            if result.get("filled") or result.get("kept") or result.get("picks"):
+                request.form_page = page
             if not request.form_seen and (result.get("filled") or result.get("kept") or result.get("picks")):
                 request.form_seen = True
                 with contextlib.suppress(OSError):
@@ -669,6 +937,8 @@ class PortalBrowser:
             if result.get("next") and not closing:
                 self._next_request(page)
                 return
+        if not closing and self._writes:
+            self._observe(request)
 
     def _pick(self, page: Any, pick: dict[str, Any]) -> bool:
         """Choose the saved option in one of the form's own drop-downs: click it open, type the answer into the list's
@@ -678,6 +948,7 @@ class PortalBrowser:
         mark, value = str(pick.get("mark") or ""), str(pick.get("value") or "")
         control = page.locator(f'[data-wizard-pick="{mark}"]').first
         opened = typed = False
+        acting, self._acting = self._acting, self._acting or "pick"
         try:
             page.evaluate(PICK, {"mode": "before", "mark": mark})
             if not pick.get("typing"):
@@ -703,6 +974,7 @@ class PortalBrowser:
             log.debug("access request pick failed: %s", _first_line(error))
             return False
         finally:
+            self._acting = acting
             with contextlib.suppress(Exception):
                 page.evaluate(PICK, {"mode": "clear"})
 
@@ -717,7 +989,7 @@ class PortalBrowser:
                 if not state.get("empty", True):
                     with contextlib.suppress(Exception):
                         page.evaluate("m => { const e = document.querySelector(`[data-wizard-pick=\"${m}\"]`); if (e) {"
-                                      " e.style.outline = '2px solid #6d4aff'; e.style.outlineOffset = '1px';"
+                                      " e.setAttribute('data-wizard-filled', ''); e.style.outline = '2px solid #6d4aff'; e.style.outlineOffset = '1px';"
                                       " e.title = e.title || 'Chosen by Wizard from your saved answers'; } }", mark)
                     return True
                 return False
@@ -733,6 +1005,8 @@ class PortalBrowser:
                 "window": self._window if self._headed else None,
                 **({"access_request": {"system": request.portal.id, "filled": request.filled, "missing": request.missing,
                                        **({"note": request.note} if request.note else {}),
+                                       **({"sending": {"left": len(self._batch), "sent": self._batch_sent}}
+                                          if self._batch else {}),
                                        **({"queued": {"id": request.queued, **place}} if place else {})}}
                    if request else {}),
                 "running": self._context is not None, "last_sign_in": state.get("last_sign_in"),

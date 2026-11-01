@@ -6,6 +6,7 @@ import type {AccessForm, PortalStatus} from '@/types';
 
 const FORM: AccessForm = {
   system: 'bdp', page: '', seen: ['Cost centre'], default_page: 'https://catalog.example.com/', queue: [],
+  sending: {enabled: false, proof: null, last_submission: null},
   fields: [
     {label: 'Purpose', value: '', kind: 'text', preset: true, hint: 'What you will use the data for.', example: 'Analytics'},
     {label: 'Purpose', section: 'DPA / DSA', value: '', kind: 'choice', preset: true, hint: 'The option, or its number.', example: '5'},
@@ -69,5 +70,32 @@ describe('Access request form', () => {
     render(<AccessRequestForm system="bdp" name="Big Data Portal" />);
     expect((await screen.findByTestId('access-queue')).textContent).toContain('None yet.');
     expect(screen.queryByTestId('access-queue-next')).toBeNull();
+  });
+
+  it('turns sending on from the request the person submitted, and sends the ones not sent after they confirm', async () => {
+    const proof = {tables: ['t1'], button: 'Submit', method: 'POST', path: '/dis-api/requests/5', status: 200,
+      expect: {success: true}, dialog: 'Do you want to submit the request?'};
+    const queue = [{...QUEUED(1, '2026-11-01T10:05:00'), sent: {at: '2026-11-01T10:06:00', by: 'you' as const, status: 200, path: '/dis-api/requests/5'}},
+      QUEUED(2), {...QUEUED(3), failed: {at: '2026-11-01T10:09:00', reason: 'the portal answered success = False'}}];
+    vi.spyOn(api, 'accessForm').mockResolvedValue({...FORM, queue, sending: {enabled: false, proof: null, last_submission: proof}});
+    const on = vi.spyOn(api, 'setAccessSending').mockResolvedValue({...FORM, queue, sending: {enabled: true, proof, last_submission: proof}});
+    const send = vi.spyOn(api, 'sendAccessRequests').mockResolvedValue(OPEN);
+    const stop = vi.spyOn(api, 'stopSendingAccessRequests').mockResolvedValue(OPEN);
+    render(<AccessRequestForm system="bdp" name="Big Data Portal" />);
+    const panel = await screen.findByTestId('access-sending');
+    expect(panel.textContent).toContain('you pressed Submit and answered OK to "Do you want to submit the request?"; it sent POST /dis-api/requests/5, and the catalog answered 200 (success: true)');
+    expect(screen.queryByTestId('access-queue-send')).toBeNull();
+    fireEvent.click(screen.getByTestId('access-sending-on'));
+    await waitFor(() => expect(on).toHaveBeenCalledWith('bdp', true));
+    expect((await screen.findByTestId('access-sending')).getAttribute('data-enabled')).toBe('true');
+    expect(screen.getAllByTestId('access-queue-item').map(i => i.getAttribute('data-sent'))).toEqual(['you', 'no', 'failed']);
+    expect(screen.getByText('the portal answered success = False')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('access-queue-send'));
+    expect(screen.getByTestId('access-queue-confirm').textContent).toContain('Send 2 requests (t2, t3)?');
+    expect(send).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('access-queue-send-yes'));
+    await waitFor(() => expect(send).toHaveBeenCalledWith('bdp', {waiting: true}));
+    fireEvent.click(await screen.findByTestId('access-queue-stop'));
+    await waitFor(() => expect(stop).toHaveBeenCalledWith('bdp'));
   });
 });

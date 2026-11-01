@@ -343,7 +343,7 @@ export interface PortalStatus {
   window?: 'sign_in' | 'access_request' | null;
   /** The open access request window: the saved answers it filled, those it found no field (or no option) for, and
    *  which prepared request it shows when it walks through them. */
-  access_request?: {system: string; filled: string[]; missing: string[]; note?: string;
+  access_request?: {system: string; filled: string[]; missing: string[]; note?: string; sending?: {left: number; sent: number};
     queued?: {id: string; position: number; total: number; waiting: number}};
   running: boolean;
   last_sign_in: string | null;
@@ -423,7 +423,27 @@ export interface QueuedRequest {
   opened: string | null;
   open_steps?: OpenStep[];
   form_button?: string;
+  /** Went through: by the person (the window saw it) or by Wizard on their approval. */
+  sent?: {at: string; by: 'you' | 'wizard'; status: number; path: string} | null;
+  /** Wizard tried to send it and stopped: why. */
+  failed?: {at: string; reason: string} | null;
 }
+
+/** A request the person submitted themselves, as the request window saw it: the control, the request, the answer. */
+export interface Submission {
+  tables?: string[];
+  button: string;
+  method: string;
+  path: string;
+  status: number;
+  expect?: Record<string, string | number | boolean>;
+  dialog?: string;
+  at?: string;
+  proved_at?: string;
+}
+
+/** Sending: on once the person says their own submitted request worked; Wizard then sends the ones they approve. */
+export interface AccessSending { enabled: boolean; proof: Submission | null; last_submission: Submission | null }
 
 /** The answers this person gives on every access request in a portal's information catalog, kept on their PC. */
 export interface AccessForm {
@@ -433,6 +453,7 @@ export interface AccessForm {
   fields: AccessField[];
   /** The requests Gemini prepared, oldest first. */
   queue: QueuedRequest[];
+  sending: AccessSending;
   /** Labels Wizard saw on the request form the last time it was open. */
   seen: string[];
   /** Where a request opens when nothing else names a page: the catalog's start page. */
@@ -453,6 +474,8 @@ export interface AccessRequest {
   open_steps?: OpenStep[];
   /** The control on the table's page that opens the request form, which Wizard presses with writes stopped. */
   form_button?: string;
+  /** Sending is on: the card offers Send request (the person's permission). */
+  can_send?: boolean;
 }
 
 /** One navigation step to a table's page (as Gemini ran it with portal_run). */

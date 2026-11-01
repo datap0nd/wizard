@@ -207,6 +207,7 @@
     return el.value === value;
   }
   const outline = el => {
+    el.setAttribute('data-wizard-filled', '');
     el.style.outline = '2px solid #6d4aff';
     el.style.outlineOffset = '1px';
     if (!el.title) el.title = 'Filled by Wizard from your saved answers';

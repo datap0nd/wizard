@@ -22,6 +22,10 @@ function landed(p: PortalCheck['portals'][number]): string {
 /** What the open access request window shows: which prepared request, what Wizard filled, and what is left. */
 function requestLine(request: PortalStatus['access_request']): string {
   const place = request?.queued;
+  if (request?.sending) {
+    return `Wizard is sending the requests you approved in its browser window on this PC: ${request.sending.sent} sent, `
+      + `${request.sending.left} to go.${request?.note ? ` ${request.note}` : ''} Close the window or press Done to stop.`;
+  }
   const what = place ? `Prepared request ${place.position} of ${place.total} is open` : 'An access request form is open';
   const filled = request?.filled.length ? `; Wizard filled ${request.filled.join(', ')}` : '';
   const left = (request?.note ? ` ${request.note}` : '') + (request?.missing.length ? ` Fill in yourself: ${request.missing.join(', ')}.` : '');

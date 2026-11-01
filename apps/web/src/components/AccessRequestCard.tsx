@@ -1,5 +1,5 @@
 import {useState} from 'react';
-import {AlertTriangle, Check, ExternalLink, Globe, ListChecks, Loader2, Table2} from 'lucide-react';
+import {AlertTriangle, Check, ExternalLink, Globe, ListChecks, Loader2, Send, Table2} from 'lucide-react';
 import {api} from '@/api';
 import {Button} from './ui/button';
 import {Row} from './RecurringCard';
@@ -20,11 +20,24 @@ function shortAddress(address: string): string {
  *  the page in Wizard's browser window on this PC, with the person's saved answers and this request's filled into the
  *  form's empty fields; they check every field and submit the request there themselves. */
 export function AccessRequestCard({request}: {request: AccessRequest}) {
-  const [state, setState] = useState<'ready' | 'opening' | 'open'>('ready');
+  const [state, setState] = useState<'ready' | 'opening' | 'open' | 'sending'>('ready');
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const steps = request.open_steps?.length ?? 0;
   const tables = request.tables.join(', ');
+
+  /** The person's permission: Wizard fills and submits this request in its window, the way their proven one went. */
+  async function send() {
+    setState('opening'); setError(null);
+    try {
+      const status = await api.sendAccessRequests(request.system, {ids: [request.id]});
+      setNote(status.access_request?.note ?? null);
+      setState('sending');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'The request could not be sent.');
+      setState('ready');
+    }
+  }
 
   async function open() {
     setState('opening'); setError(null);
@@ -63,7 +76,13 @@ export function AccessRequestCard({request}: {request: AccessRequest}) {
         )}
       </div>
       <footer className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-2.5 text-[13px]">
-        {state === 'open' ? (
+        {state === 'sending' ? (
+          <p className="flex items-start gap-1.5 text-ok" role="status" data-testid="access-request-sending">
+            <Send className="mt-0.5 size-4 shrink-0" />
+            <span>Wizard is sending it in its browser window on this PC: it fills the form with your answers, presses Submit and
+              checks the catalog's answer. Settings → Portals → Prepared requests shows it as sent, or why not.</span>
+          </p>
+        ) : state === 'open' ? (
           <p className="flex items-start gap-1.5 text-ok" role="status" data-testid="access-request-open">
             <Check className="mt-0.5 size-4 shrink-0" />
             <span>{note ? `${note} ` : ''}Open in Wizard's browser window on this PC. Check every field Wizard filled (outlined),
@@ -71,10 +90,18 @@ export function AccessRequestCard({request}: {request: AccessRequest}) {
           </p>
         ) : (
           <>
-            <Button size="sm" onClick={() => void open()} disabled={state === 'opening'} data-testid="access-request-open-form">
-              {state === 'opening' ? <Loader2 className="animate-spin" /> : <ExternalLink />}Open the request form
+            {request.can_send && (
+              <Button size="sm" onClick={() => void send()} disabled={state === 'opening'} data-testid="access-request-send">
+                {state === 'opening' ? <Loader2 className="animate-spin" /> : <Send />}Send request
+              </Button>
+            )}
+            <Button size="sm" variant={request.can_send ? 'outline' : undefined} onClick={() => void open()} disabled={state === 'opening'}
+              data-testid="access-request-open-form">
+              {state === 'opening' && !request.can_send ? <Loader2 className="animate-spin" /> : <ExternalLink />}Open the request form
             </Button>
-            <span className="text-xs text-ink-3">Nothing is requested until you submit the form yourself.</span>
+            <span className="text-xs text-ink-3">{request.can_send
+              ? 'Send request is your permission: Wizard fills and submits it. Open the request form to check it and submit it yourself.'
+              : 'Nothing is requested until you submit the form yourself.'}</span>
           </>
         )}
         {error && <p className="flex w-full items-start gap-1.5 text-danger" role="alert"><AlertTriangle className="mt-0.5 size-4 shrink-0" />{error}</p>}

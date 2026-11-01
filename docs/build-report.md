@@ -3,7 +3,38 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-01 (latest) — An access request opens the table's page and its form, not the catalog's start page
+## 2026-11-01 (latest) — Wizard sends the access requests the person approves, the way their own one went
+
+The owner: "if one works, I want to tell Gemini that this worked and to reproduce the requests so whenever we need a
+request, I just need to give permission, but Gemini should be filling in the requests. Not the person."
+[Decision](decisions/2026-11-01-bdp-access-sending.md).
+
+**What changed.**
+- The request window sees the person's own submission: `portal_clicks.js` names the control they pressed; the requests
+  the page then sends are watched; the Submit's own request (the first after a submit-like control), the catalog's
+  answer and its success fields, and the page's question are kept as the last submission, and the prepared request is
+  marked sent by them. A submit question right after their press is answered OK (until now every question was Cancel,
+  which would have stopped their own Submit); any other is Cancel and the note says so.
+- Settings → Portals: what Wizard saw, **It worked: let Wizard send the requests I approve** (only from a 2xx
+  submission) and **Turn off**; the list shows sent (by you or Wizard), not sent (with why), **Send the N not sent**
+  with a confirmation, a Send on each row and **Stop sending**. A card offers **Send request** when sending is on.
+- Sending (`PortalBrowser.send_requests`, driven between jobs): reach the table, open and fill the form, wait for every
+  saved answer, press the one control with the proven text in that form, let through only the proven method, host and
+  path (other changes stopped), require 2xx and the same success fields, mark sent and show the next; the first that
+  differs stops the rest. API `access-sending`, `access-send`, `access-send/stop`, all audited; Gemini has no send tool.
+- AGENTS.md, decision, threat model, README, guide, the request task's closing words.
+
+**Tests.** Unit `test_access_requests.py` 13 (patterns, success fields, enabling only from a 2xx submission, Send refused
+while off or for a sent request, approved order, audit, Send offered only when on, no send tool). Real Chromium: the
+person submits one (question answered OK, the draft request after it not taken for the submission); Wizard sends the
+next approved one with the person's answers, stops the draft change, stops at a `success: false` answer and leaves the
+next unsent. Web `AccessRequestForm.test.tsx` 4, `AccessRequestCard.test.tsx` 2. `verify_all.sh
+--allow-blocked=live-parity,postgres`: every layer PASS (python-tests 596 passed / 5 skipped, portal-browser 19, web-unit
+112, gemini-cli, types, lint, contracts, web-dist) except e2e, which looks for Edge, absent in this Linux container: 26
+passed with Playwright's Chromium (`CI=1`); postgres and live-parity BLOCKED (allowed).
+Not verified: the real catalog's Submit (the owner's test on the work PC comes first).
+
+## 2026-11-01 — An access request opens the table's page and its form, not the catalog's start page
 
 The owner, on the work PC: "the request form opens the generic website. doesnt open the reqeust form." The card for a
 table showed the catalog's start page: Gemini had found the table through the catalog's search, which gives no page,
@@ -25,7 +56,8 @@ and `portal_request_access` fell back to the start page silently. [Decision upda
 **Tests.** Unit `test_access_requests.py` 12 (start pages refused, routes, replacement, `to_prepare_again`, the API's
 fallback). Real Chromium: a one-address catalog reached by search, Enter and the result, Request access pressed and the
 form filled with nothing sent; a one-click Request access stopped and reported, then the person's own press goes
-through; a start-page-only request says so. Web `AccessRequestCard.test.tsx` (1). Full run below.
+through; a start-page-only request says so. Web `AccessRequestCard.test.tsx` (1). Full run: python-tests 594, portal-browser
+18, web-unit 110, e2e 26 on Chromium.
 Not verified: the real catalog (work PC).
 
 ## 2026-11-01 — Big Data Portal access: the form's own fields, drop-downs Wizard chooses, prepared requests, two tasks

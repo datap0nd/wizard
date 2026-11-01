@@ -33,7 +33,9 @@ application by its full address; a `/path` then stays on the application the pag
   person then sees a button that opens the page in Wizard's visible browser window, with their saved answers (the
   free-text purpose, the DPA / DSA box's purpose and subsidiary drop-downs, the subsidiary's address...) and yours
   filled into the form's empty fields; they press Request access there if the form is behind it, check every field and
-  submit. The request also joins their prepared requests (`access_request_form.prepared_requests`), which they go
+  submit. Once the person has submitted one request themselves and turned sending on (`access_request_form.sending_on`),
+  the card offers **Send request**: their click lets Wizard fill and submit it the way their own one went; you never
+  send. The request also joins their prepared requests (`access_request_form.prepared_requests`), which they go
   through one after another, so prepare one per table page and do not prepare one that is already there. Name the
   table in your answer and say the data waits until access is granted. Portal reads wait while that window is open,
   so call it last.

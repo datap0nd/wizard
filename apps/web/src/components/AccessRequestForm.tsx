@@ -1,9 +1,9 @@
 import {useCallback, useEffect, useState} from 'react';
-import {CheckCircle2, ExternalLink, ListChecks, Loader2, Plus, RefreshCw, Save, Trash2, X} from 'lucide-react';
+import {CheckCircle2, ExternalLink, ListChecks, Loader2, Plus, RefreshCw, Save, Send, Square, Trash2, X} from 'lucide-react';
 import {api, ApiError} from '@/api';
 import {formatDate} from '@/format';
 import {Button} from './ui/button';
-import type {AccessField, AccessForm, Answer, QueuedRequest} from '@/types';
+import type {AccessField, AccessForm, AccessSending, Answer, QueuedRequest, Submission} from '@/types';
 
 const input = 'h-8 w-full rounded-lg border border-line bg-canvas px-2.5 text-[13px] outline-none focus:border-accent';
 const blank: Answer = {label: '', value: ''};
@@ -20,6 +20,49 @@ function where(item: QueuedRequest): string {
   } catch {
     return item.address;
   }
+}
+
+function state(item: QueuedRequest): string {
+  if (item.sent) return `sent by ${item.sent.by === 'you' ? 'you' : 'Wizard'} ${formatDate(item.sent.at, true)}`;
+  if (item.failed) return 'not sent';
+  return item.opened ? `opened ${formatDate(item.opened, true)}` : 'not opened';
+}
+
+/** What the window saw when a request went out: the control, the request and the catalog's answer. */
+function described(s: Submission): string {
+  const expect = Object.entries(s.expect ?? {}).map(([k, v]) => `${k}: ${String(v)}`).join(', ');
+  return `you pressed ${s.button || 'a button'}${s.dialog ? ` and answered OK to "${s.dialog}"` : ''}; it sent ${s.method} ${s.path}, `
+    + `and the catalog answered ${s.status}${expect ? ` (${expect})` : ''}`;
+}
+
+/** Sending: Wizard watches the person submit one request; once they say it worked, it sends the ones they approve. */
+function SendingPanel({sending, busy, onToggle}: {sending: AccessSending; busy: boolean; onToggle: (on: boolean) => void}) {
+  const last = sending.last_submission;
+  const went = !!last && last.status >= 200 && last.status < 300;
+  if (sending.enabled && sending.proof) {
+    return (
+      <div className="rounded-md bg-emerald-50 px-2.5 py-2 text-xs text-emerald-900" data-testid="access-sending" data-enabled="true">
+        <p>Wizard sends the requests you approve, the way your own request{sending.proof.tables?.length ? ` for ${sending.proof.tables.join(', ')}` : ''} went
+          ({described(sending.proof)}), and stops at the first that does not go through the same way.</p>
+        <Button size="xs" variant="ghost" className="mt-1" onClick={() => onToggle(false)} disabled={busy} data-testid="access-sending-off">Turn off</Button>
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-md bg-surface px-2.5 py-2 text-xs text-ink-2" data-testid="access-sending" data-enabled="false">
+      {went && last ? (<>
+        <p>Wizard saw your request{last.tables?.length ? ` for ${last.tables.join(', ')}` : ''} go out: {described(last)}. If the catalog
+          accepted it, Wizard can send the next ones the same way, each only when you approve it.</p>
+        <Button size="xs" variant="accent" className="mt-1.5" onClick={() => onToggle(true)} disabled={busy} data-testid="access-sending-on">
+          <CheckCircle2 />It worked: let Wizard send the requests I approve</Button>
+      </>) : last ? (
+        <p>Wizard saw your last request answered {last.status}: submit one that goes through, and Wizard can send the next ones the same way.</p>
+      ) : (
+        <p>Wizard fills each request and you press Submit. Submit one yourself in Wizard's window, and Wizard can send the next ones the same
+          way, each when you approve it.</p>
+      )}
+    </div>
+  );
 }
 
 /** The portal's predefined fields, the ones sharing a section in one box (DPA / DSA). */
@@ -66,6 +109,10 @@ export function AccessRequestForm({system, name}: {system: string; name: string}
   const unused = (form?.seen ?? []).filter(label => ![...presets, ...fields].some(f => f.label.trim().toLowerCase() === label.toLowerCase()));
   const queue = form?.queue ?? [];
   const waiting = queue.filter(item => !item.opened).length;
+  const unsent = queue.filter(item => !item.sent);
+  const canSend = !!form?.sending?.enabled;
+  const [confirming, setConfirming] = useState(false);
+  const [sendingNow, setSendingNow] = useState(false);
 
   const payload = () => ({page: page.trim(), fields: [...presets.map(saved), ...fields.filter(f => f.label.trim()).map(saved)]});
   async function save() {
@@ -91,6 +138,37 @@ export function AccessRequestForm({system, name}: {system: string; name: string}
       if (queued) reload();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'The request page could not be opened.');
+    } finally { setBusy(null); }
+  }
+
+  async function toggle(on: boolean) {
+    setBusy('sending'); setError(null); setNotice(null);
+    try {
+      setForm(await api.setAccessSending(system, on));
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'That did not work.');
+    } finally { setBusy(null); }
+  }
+
+  /** The person's permission: Wizard sends these (or every request not sent yet) in its window. */
+  async function send(ids?: string[]) {
+    setBusy('send'); setError(null); setNotice(null); setConfirming(false);
+    try {
+      await api.sendAccessRequests(system, ids ? {ids} : {waiting: true});
+      setSendingNow(true);
+      setNotice(`Wizard is sending ${ids ? ids.length : unsent.length} request(s) in its browser window on this PC, one after another, and stops at the first that does not go through. Press Refresh to see each one marked sent.`);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Sending did not start.');
+    } finally { setBusy(null); }
+  }
+
+  async function stop() {
+    setBusy('stop');
+    try {
+      await api.stopSendingAccessRequests(system);
+      setSendingNow(false); setNotice('Sending stopped.'); reload();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'That did not work.');
     } finally { setBusy(null); }
   }
 
@@ -177,6 +255,7 @@ export function AccessRequestForm({system, name}: {system: string; name: string}
             <span className="font-normal text-ink-3">{queue.length ? `· ${waiting} not opened of ${queue.length}` : ''}</span></p>
           <Button size="xs" variant="ghost" aria-label="Refresh the prepared requests" onClick={reload} disabled={busy !== null}><RefreshCw /></Button>
         </div>
+        {form.sending && <SendingPanel sending={form.sending} busy={busy !== null} onToggle={on => void toggle(on)} />}
         {queue.length === 0 ? (
           <p className="text-xs text-ink-3">None yet. When Gemini finds a table you lack, in an answer or a task, it prepares the request here.</p>
         ) : (<>
@@ -185,21 +264,45 @@ export function AccessRequestForm({system, name}: {system: string; name: string}
           <div className="flex flex-wrap items-center gap-2">
             <Button size="xs" variant="accent" onClick={() => void open('next')} disabled={busy !== null || waiting === 0} data-testid="access-queue-next">
               {busy === 'next' ? <Loader2 className="animate-spin" /> : <ExternalLink />}Open the next request</Button>
+            {canSend && unsent.length > 0 && !confirming && (
+              <Button size="xs" variant="accent" onClick={() => setConfirming(true)} disabled={busy !== null} data-testid="access-queue-send">
+                <Send />Send the {unsent.length} not sent</Button>
+            )}
+            {sendingNow && (
+              <Button size="xs" variant="ghost" onClick={() => void stop()} disabled={busy !== null} data-testid="access-queue-stop"><Square />Stop sending</Button>
+            )}
             {queue.some(item => item.opened) && (
               <Button size="xs" variant="ghost" onClick={() => void remove({opened: true})} disabled={busy !== null} data-testid="access-queue-clear">
                 <Trash2 />Remove the opened ones</Button>
             )}
           </div>
+          {confirming && (
+            <div className="rounded-md border border-accent/40 bg-canvas px-2.5 py-2 text-xs" data-testid="access-queue-confirm">
+              <p>Send {unsent.length} request{unsent.length === 1 ? '' : 's'} ({unsent.slice(0, 3).map(where).join(', ')}{unsent.length > 3 ? ', …' : ''})?
+                Wizard opens each in its browser window, fills the form with your answers, presses {form.sending.proof?.button || 'Submit'} and checks the
+                catalog's answer.</p>
+              <div className="mt-1.5 flex gap-2">
+                <Button size="xs" variant="accent" onClick={() => void send()} disabled={busy !== null} data-testid="access-queue-send-yes">
+                  {busy === 'send' ? <Loader2 className="animate-spin" /> : <Send />}Yes, send them</Button>
+                <Button size="xs" variant="ghost" onClick={() => setConfirming(false)}>Cancel</Button>
+              </div>
+            </div>
+          )}
           <ol className="max-h-72 space-y-1 overflow-y-auto pr-1">
             {queue.map((item, index) => (
-              <li key={item.id} className="flex items-center gap-2 rounded-md bg-surface px-2 py-1.5 text-xs" data-testid="access-queue-item"
-                data-opened={item.opened ? 'true' : 'false'}>
+              <li key={item.id} className="flex flex-wrap items-center gap-2 rounded-md bg-surface px-2 py-1.5 text-xs" data-testid="access-queue-item"
+                data-opened={item.opened ? 'true' : 'false'} data-sent={item.sent ? item.sent.by : item.failed ? 'failed' : 'no'}>
                 <span className="w-6 shrink-0 text-right text-ink-3">{index + 1}.</span>
                 <span className="min-w-0 flex-1 truncate" title={item.address}>{where(item)}</span>
-                <span className="shrink-0 text-ink-3">{item.opened ? `opened ${formatDate(item.opened, true)}` : 'not opened'}</span>
+                <span className={item.sent ? 'shrink-0 text-emerald-800' : item.failed ? 'shrink-0 text-danger' : 'shrink-0 text-ink-3'}
+                  title={item.failed?.reason}>{state(item)}</span>
+                {canSend && !item.sent && (
+                  <Button size="xs" variant="ghost" onClick={() => void send([item.id])} disabled={busy !== null} aria-label={`Send the request for ${where(item)}`}><Send /></Button>
+                )}
                 <Button size="xs" variant="ghost" onClick={() => void open(item.id)} disabled={busy !== null} aria-label={`Open the request for ${where(item)}`}>
                   {busy === item.id ? <Loader2 className="animate-spin" /> : <ExternalLink />}</Button>
                 <Button size="xs" variant="ghost" onClick={() => void remove({ids: [item.id]})} disabled={busy !== null} aria-label={`Remove the request for ${where(item)}`}><X /></Button>
+                {item.failed && !item.sent && <span className="w-full pl-8 text-danger">{item.failed.reason}</span>}
               </li>
             ))}
           </ol>

@@ -2458,6 +2458,151 @@
         }
       }
     },
+    "/api/v1/portals/{system}/access-sending": {
+      "post": {
+        "summary": "Access Sending",
+        "description": "Turn sending on (the person says the request they submitted themselves worked) or off. Only the person, here.",
+        "operationId": "access_sending_api_v1_portals__system__access_sending_post",
+        "parameters": [
+          {
+            "name": "system",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "System"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccessSendingBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Access Sending Api V1 Portals  System  Access Sending Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/portals/{system}/access-send": {
+      "post": {
+        "summary": "Send Access Requests",
+        "description": "The person's permission: Wizard sends these prepared requests in its visible window, the way their proven one\nwent. Gemini cannot call this; only the person's click in Wizard does.",
+        "operationId": "send_access_requests_api_v1_portals__system__access_send_post",
+        "parameters": [
+          {
+            "name": "system",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "System"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccessSendBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Send Access Requests Api V1 Portals  System  Access Send Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/portals/{system}/access-send/stop": {
+      "post": {
+        "summary": "Stop Sending Access Requests",
+        "operationId": "stop_sending_access_requests_api_v1_portals__system__access_send_stop_post",
+        "parameters": [
+          {
+            "name": "system",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "System"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Stop Sending Access Requests Api V1 Portals  System  Access Send Stop Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/portals/{system}/access-queue/remove": {
       "post": {
         "summary": "Remove Queued Requests",
@@ -2976,6 +3121,40 @@
         "additionalProperties": false,
         "type": "object",
         "title": "AccessRequestBody"
+      },
+      "AccessSendBody": {
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Ids"
+          },
+          "waiting": {
+            "type": "boolean",
+            "title": "Waiting",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "AccessSendBody"
+      },
+      "AccessSendingBody": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "AccessSendingBody"
       },
       "AnswerBody": {
         "properties": {
