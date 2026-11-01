@@ -155,11 +155,19 @@ def tool_setup(tmp_path: Path, systems: tuple[str, ...] = ("bdp",)) -> tuple[Any
 def test_gemini_proposes_a_request_and_never_sends_it(tmp_path: Path):
     registry, context = tool_setup(tmp_path, ("bdp", "gscm"))
     assert registry.specs["portal_request_access"].read_only and registry.specs["portal_request_access"].category == "present"
+    # A table with only the catalog's start page would open the catalog, not the table's request form (owner, 1 Nov).
+    for start in ({}, {"address": "https://catalog.corp.example.com/home/"}, {"address": "https://superset.corp.example.com/sqllab"}):
+        refused = registry.execute("portal_request_access", {"system": "bdp", "tables": ["sales_daily"], **start}, context)
+        assert not refused.ok and refused.error_code == "invalid_arguments" and "start page" in (refused.error_message or "")
+        assert "open_steps" in (refused.error_message or "")
+    assert access_requests.queue(tmp_path / "owner" / "portal-browser", "bdp") == [], "nothing prepared"
     outcome = registry.execute("portal_request_access", {"system": "bdp", "tables": ["sales_daily"],
+                                                         "address": "https://catalog.corp.example.com/home#/table/sales_daily",
                                                          "answers": [{"label": "Reason", "value": "GCC sell-out review"}]}, context)
     assert outcome.ok, outcome.error_message
     request = outcome.data["access_request"]
-    assert request["address"] == "https://catalog.corp.example.com/home", "the catalog when nothing names a page"
+    assert request["address"] == "https://catalog.corp.example.com/home#/table/sales_daily", "the table's own page"
+    assert "open_steps" not in request and "form_button" not in request
     assert request["tables"] == ["sales_daily"] and request["answers"] == [{"label": "Reason", "value": "GCC sell-out review"}]
     assert request["saved"] == [] and "Settings → Portals" in outcome.data["note"] and "never submits" in outcome.data["note"]
     assert request["id"].startswith("AR-") and outcome.data["queued"] == {"position": 1, "waiting": 1}
@@ -178,8 +186,51 @@ def test_gemini_proposes_a_request_and_never_sends_it(tmp_path: Path):
     guide = registry.execute("portal_guide", {"system": "bdp"}, context)
     assert guide.ok and guide.data["access_request_form"] == {
         "request_page": "https://catalog.corp.example.com/request", "saved_labels": ["Purpose"], "labels_seen_on_the_form": [],
-        "prepared_requests": {"total": 2, "not_opened": 2, "tables": ["sales_daily"]}}
+        "form_pages_seen": [], "prepared_requests": {"total": 2, "not_opened": 2, "tables": ["sales_daily"],
+                                                     "to_prepare_again": []}}
     assert "portal_request_access" in guide.data["guide"]
+
+
+def test_a_catalog_that_keeps_one_address_is_reached_with_steps_gemini_proved(tmp_path: Path):
+    registry, context = tool_setup(tmp_path)
+    root = tmp_path / "owner" / "portal-browser"
+    steps = [{"action": "fill", "selector": "input[type=search]", "value": "sales_daily"}, {"action": "press", "value": "Enter"},
+             {"action": "click", "role": "link", "name": "sales_daily"}]
+    outcome = registry.execute("portal_request_access", {"system": "bdp", "tables": ["sales_daily"],
+                                                         "open_steps": steps, "form_button": "Request access"}, context)
+    assert outcome.ok, outcome.error_message
+    request = outcome.data["access_request"]
+    assert request["address"] == "https://catalog.corp.example.com/home" and request["form_button"] == "Request access"
+    assert [s["action"] for s in request["open_steps"]] == ["fill", "press", "click"]
+    assert access_requests.queue(root, "bdp")[0]["open_steps"] == request["open_steps"], "the list keeps the way there"
+    for bad, why in (({"open_steps": [{"action": "press", "value": "Tab"}]}, "only Enter"),
+                     ({"open_steps": [{"action": "evaluate", "script": "x"}]}, "open_steps"),
+                     ({"open_steps": [{"action": "click"}]}, "name the element"),
+                     ({"open_steps": steps, "form_button": "Submit"}, "not a control that opens"),
+                     ({"open_steps": steps, "form_button": "Save request"}, "not a control that opens")):
+        refused = registry.execute("portal_request_access", {"system": "bdp", "tables": ["sales_daily"], **bad}, context)
+        assert not refused.ok and refused.error_code == "invalid_arguments" and why in (refused.error_message or ""), (bad, refused)
+    assert access_requests.clean_button(" Request  access ") == "Request access" and access_requests.clean_button("") == ""
+    # Prepared again for the same table with a better route: it takes the earlier one's place, not a second row.
+    first = registry.execute("portal_request_access", {"system": "bdp", "tables": ["stock_daily"],
+                                                       "address": "https://catalog.corp.example.com/t/1"}, context)
+    better = registry.execute("portal_request_access", {"system": "bdp", "tables": ["stock_daily"],
+                                                        "address": "https://catalog.corp.example.com/t/stock_daily"}, context)
+    listed = access_requests.queue(root, "bdp")
+    assert [i["tables"] for i in listed] == [["sales_daily"], ["stock_daily"]]
+    assert listed[1]["id"] == better.data["access_request"]["id"] != first.data["access_request"]["id"]
+    assert listed[1]["address"].endswith("/t/stock_daily") and better.data["queued"]["position"] == 2
+    access_requests.mark_opened(root, "bdp", listed[1]["id"])
+    registry.execute("portal_request_access", {"system": "bdp", "tables": ["stock_daily"],
+                                               "address": "https://catalog.corp.example.com/t/stock_daily?v=2"}, context)
+    assert len(access_requests.queue(root, "bdp")) == 3, "an opened request stays as it was; the new one is added"
+    # A request prepared before the way to the table was required opens only the start page: the guide says so.
+    access_requests.enqueue(root, "bdp", {"id": "AR-00000000aa", "address": "https://catalog.corp.example.com/home",
+                                          "tables": ["old_table"], "answers": []})
+    guide = registry.execute("portal_guide", {"system": "bdp"}, context)
+    assert guide.data["access_request_form"]["prepared_requests"]["to_prepare_again"] == ["old_table"]
+    access_requests.remember_page(root, "bdp", ["sales_daily"], "https://catalog.corp.example.com/home#/req/9")
+    assert access_requests.pages_seen(root, "bdp")[0]["url"].endswith("#/req/9")
 
 
 def test_the_api_keeps_the_form_and_opens_the_request_window(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -189,10 +240,13 @@ def test_the_api_keeps_the_form_and_opens_the_request_window(tmp_path: Path, mon
     opened: list[tuple[str, str, list[dict[str, str]]]] = []
     queued: list[str | None] = []
 
+    routes: list[dict[str, Any] | None] = []
+
     def fake_open(self: PortalBrowser, portal: Any, address: str, answers: list[dict[str, str]],
-                  queued_: str | None = None) -> dict[str, Any]:
+                  queued_: str | None = None, route: dict[str, Any] | None = None) -> dict[str, Any]:
         opened.append((portal.id, address, answers))
         queued.append(queued_)
+        routes.append(route)
         return {"signing_in": True, "window": "access_request"}
 
     monkeypatch.setattr(PortalBrowser, "open_access_request", fake_open)
@@ -237,6 +291,14 @@ def test_the_api_keeps_the_form_and_opens_the_request_window(tmp_path: Path, mon
         assert client.post("/api/v1/portals/bdp/access-request", json={"queued": "next"}, headers=HEADERS).status_code == 404
         assert client.post("/api/v1/portals/bdp/access-request", json={"queued": "AR-0000000001"}, headers=HEADERS).status_code == 200
         assert client.post("/api/v1/portals/bdp/access-request", json={"queued": "AR-ffffffffff"}, headers=HEADERS).status_code == 404
+        # A card whose request left the list opens with its own fields, its way to the table included.
+        gone = {"queued": "AR-ffffffffff", "address": "https://catalog.corp.example.com/home", "tables": ["t7"],
+                "open_steps": [{"action": "fill", "selector": "#q", "value": "t7"}, {"action": "press", "value": "Enter"}],
+                "form_button": "Request access"}
+        assert client.post("/api/v1/portals/bdp/access-request", json=gone, headers=HEADERS).status_code == 200
+        assert queued[-1] is None and routes[-1] == {"tables": ["t7"], "open_steps": gone["open_steps"], "form_button": "Request access"}
+        bad = {**gone, "open_steps": [{"action": "evaluate", "script": "1"}]}
+        assert client.post("/api/v1/portals/bdp/access-request", json=bad, headers=HEADERS).status_code == 400
         assert client.post("/api/v1/portals/bdp/access-request", json={"queued": "../x"}, headers=HEADERS).status_code == 400
         card = {"address": "https://catalog.corp.example.com/t/t9", "tables": ["t9"], "answers": []}
         access_requests.enqueue(root, "bdp", {"id": access_requests.request_id("bdp", card["address"], ["t9"], []), **card})

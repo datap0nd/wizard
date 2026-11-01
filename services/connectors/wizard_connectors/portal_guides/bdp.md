@@ -21,8 +21,14 @@ application by its full address; a `/path` then stays on the application the pag
   already has access. Return a table (`{columns, rows}`) to cite it.
 - **Access requests: you prepare, the person submits.** Your own steps never request access: Wizard refuses Request
   buttons, addresses that start with request, POSTs to an access-request address and GraphQL mutations. When the answer
-  needs a table the person cannot query, call `portal_request_access` with the table's page (or the request page) as
-  `address`, the `tables`, and this request's own `answers` by the form's labels only for fields the person has no
+  needs a table the person cannot query, call `portal_request_access` with the table's own page in the catalog as
+  `address` (where its Request access control is: open the table with `portal_run` and use the page's url, never the
+  catalog's start page, which Wizard refuses for a table). If the catalog keeps one address whatever table is open,
+  give `open_steps` instead: the steps you ran with `portal_run` from that address to the table's page (fill the search
+  with the table's name, press Enter, click the result), and `form_button`, the text of the control there that opens
+  the request form; the person's window follows them and presses it with the portal's writes stopped.
+  `access_request_form.form_pages_seen` lists where request forms appeared before, which shows the catalog's addresses.
+  Give the `tables`, and this request's own `answers` by the form's labels only for fields the person has no
   saved answer for (`access_request_form` above lists `saved_labels` and the labels seen on the form before). The
   person then sees a button that opens the page in Wizard's visible browser window, with their saved answers (the
   free-text purpose, the DPA / DSA box's purpose and subsidiary drop-downs, the subsidiary's address...) and yours

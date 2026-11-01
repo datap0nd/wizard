@@ -3,7 +3,11 @@
 // types the answer into the list's search box when the option is not shown, and clicks the matching option. This script
 // only finds and marks what those clicks may touch: the drop-down itself and an option of the list it opened, never a
 // button, a link or anything that submits.
-// args: {mode: 'before' | 'options' | 'search' | 'state' | 'clear', mark, value}
+// It also finds the control that opens a table's request form (opener), for portal_browser.py to press once with the
+// portal's writes stopped: never a form's submit button.
+// args: {mode: 'before' | 'options' | 'search' | 'state' | 'clear' | 'opener', mark, value}
+//   opener: the one visible control whose text is value (or, without value, a usual name such as Request access),
+//           marked data-wizard-open: {count, text}
 //   before: mark the options already on the page, so the list the drop-down opens is told apart from them
 //   options: the best option for value among those that appeared, marked data-wizard-option: {found, text, count, open}
 //   search: the list's search box (where the focus went, in the drop-down, or in the list), marked data-wizard-search
@@ -54,6 +58,18 @@
       for (const el of document.querySelectorAll(`[${name}]`)) el.removeAttribute(name);
     }
     return true;
+  }
+  if (args.mode === 'opener') {
+    for (const old of document.querySelectorAll('[data-wizard-open]')) old.removeAttribute('data-wizard-open');
+    const USUAL = /^(request( for)? access|access request|request (permission|authority|access permission)|apply for access|request|권한\s?신청|신청)$/i;
+    const wanted = norm(args.value);
+    const submits = el => el.matches('input[type="submit"], input[type="image"], button[type="submit"], button:not([type])')
+      && el.form && String(el.form.getAttribute('method') || 'get').toLowerCase() === 'post';
+    const found = [...document.querySelectorAll('button, a, [role="button"], input[type="button"]')]
+      .filter(el => shown(el) && !el.disabled && !el.closest('#wizard-access-banner') && !submits(el))
+      .filter(el => { const t = clean(textOf(el) || el.value || el.getAttribute('aria-label')); return wanted ? norm(t) === wanted : USUAL.test(t); });
+    if (found.length === 1) found[0].setAttribute('data-wizard-open', '');
+    return {count: found.length, text: found.length ? clean(textOf(found[0]) || found[0].value || '') : ''};
   }
   if (!control) return null;
   if (args.mode === 'before') {

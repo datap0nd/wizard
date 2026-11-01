@@ -24,7 +24,7 @@ function requestLine(request: PortalStatus['access_request']): string {
   const place = request?.queued;
   const what = place ? `Prepared request ${place.position} of ${place.total} is open` : 'An access request form is open';
   const filled = request?.filled.length ? `; Wizard filled ${request.filled.join(', ')}` : '';
-  const left = request?.missing.length ? ` Fill in yourself: ${request.missing.join(', ')}.` : '';
+  const left = (request?.note ? ` ${request.note}` : '') + (request?.missing.length ? ` Fill in yourself: ${request.missing.join(', ')}.` : '');
   const then = place && place.waiting > 0 ? 'press Next request on the page for the next one, or close the window or press Done'
     : 'close the window or press Done';
   return `${what} in Wizard's browser window on this PC${filled}. Check every field, submit it there yourself, then ${then}.${left}`;

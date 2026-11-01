@@ -5,6 +5,7 @@
 // data-wizard-pick and hands it back under picks.
 // args: {answers: [{label, value, section?, kind?}], done: [names already handled on this page],
 //        filled_before: how many fields Wizard filled on this page before,
+//        note: what the window says about reaching the table and opening its form,
 //        queue: {position, total, waiting, tables} | null (the window walks through the prepared requests)}
 //   A name is "Section › Label", or the label alone. kind: 'text' (typed) or 'choice' (a drop-down); none: either.
 // returns {seen: [the form's field labels], filled: [names filled now], kept: [names whose field already had a value],
@@ -258,7 +259,7 @@
   const total = (args.filled_before || 0) + filled.length;
   const queue = args.queue || null;
   let banner = document.getElementById('wizard-access-banner');
-  if ((total || queue) && !banner) {
+  if ((total || queue || args.note) && !banner) {
     banner = document.createElement('div');
     banner.id = 'wizard-access-banner';
     banner.setAttribute('role', 'status');
@@ -272,6 +273,7 @@
       lines.push(`Prepared request ${queue.position} of ${queue.total}` + (queue.tables ? `: ${queue.tables}.` : '.') +
         (total ? '' : ' Press Request access on this page if the form is behind it; Wizard fills it as it appears.'));
     }
+    if (args.note) lines.push(String(args.note));
     if (total) {
       lines.push(`Wizard filled ${total} field${total === 1 ? '' : 's'} from your saved answers (outlined). ` +
         'Check every field, then submit the request yourself: Wizard never submits it.');

@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from .portals import HostPolicy, Portal, PortalSettings
+from .portals import HostPolicy, Portal, PortalSettings, click_refusal
 
 # Portals whose tables are requested in an information catalog.
 REQUEST_PORTALS = ("bdp",)
@@ -27,6 +27,15 @@ MAX_LABEL = 120
 MAX_VALUE = 2000
 MAX_SEEN = 60
 MAX_QUEUE = 100
+MAX_PAGES_SEEN = 20
+# The steps that reach a table's page in a catalog that shows every table at one address (search, open the result):
+# Gemini proves them with portal_run, and the request window follows them in the person's window. Navigation only.
+STEP_ACTIONS = ("goto", "click", "fill", "select", "press", "wait")
+STEP_TEXT = ("url", "selector", "role", "name", "text", "frame", "value")
+MAX_STEPS = 12
+STEP_TIMEOUT_MS = 15_000
+# Words the control that opens a request form is allowed to carry beside a write word's refusal: it requests access.
+OPENER_WORDS = re.compile(r"(?i)\b(request|requests|apply)\b")
 TABLE_LABEL = re.compile(r"table|dataset", re.I)
 # How a field is answered: typed text (an input or a text box), or an option chosen in a drop-down (a select, or a
 # portal's own drop-down, searched by typing the answer when the list has a search box). No kind: either, by label.
@@ -189,9 +198,64 @@ def answers(saved: list[dict[str, Any]], extra: list[dict[str, str]], tables: li
     return list(merged.values())[:MAX_FIELDS]
 
 
-def request_id(system: str, address: str, tables: list[str], extra: list[dict[str, str]]) -> str:
-    digest = hashlib.sha256(json.dumps([system, address, tables, extra], sort_keys=True).encode("utf-8")).hexdigest()
+def request_id(system: str, address: str, tables: list[str], extra: list[dict[str, str]],
+               route: dict[str, Any] | None = None) -> str:
+    payload: list[Any] = [system, address, tables, extra]
+    if route and (route.get("open_steps") or route.get("form_button")):
+        payload.append({"open_steps": route.get("open_steps") or [], "form_button": route.get("form_button") or ""})
+    digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
     return f"AR-{digest[:10]}"
+
+
+def clean_steps(raw: Any) -> list[dict[str, Any]]:
+    """The steps from a request's page to the table's own page: goto, click, fill, select, press (Enter only) and wait,
+    each naming its element the way portal_run does. At most 12; nothing that runs a script or sends a request."""
+    if not raw:
+        return []
+    if not isinstance(raw, list) or len(raw) > MAX_STEPS:
+        raise AccessFormError(f"open_steps is a list of at most {MAX_STEPS} steps")
+    steps: list[dict[str, Any]] = []
+    for number, item in enumerate(raw, 1):
+        action = item.get("action") if isinstance(item, dict) else None
+        if action not in STEP_ACTIONS:
+            raise AccessFormError(f"Step {number}: open_steps only go to the table's page ({', '.join(STEP_ACTIONS)})")
+        step: dict[str, Any] = {"action": action}
+        for name in STEP_TEXT:
+            value = item.get(name)
+            if value not in (None, ""):
+                step[name] = str(value)[:2000 if name == "url" else 500]
+        if item.get("nth") not in (None, ""):
+            step["nth"] = max(0, min(int(item["nth"]), 50))
+        if item.get("timeout_ms") not in (None, ""):
+            step["timeout_ms"] = max(500, min(int(item["timeout_ms"]), STEP_TIMEOUT_MS))
+        targeted = any(step.get(k) for k in ("selector", "role", "text"))
+        if action in ("click", "fill", "select") and not targeted:
+            raise AccessFormError(f"Step {number} ({action}): name the element with selector, role (+ name) or text")
+        if action == "goto" and not step.get("url"):
+            raise AccessFormError(f"Step {number} (goto): give the url")
+        if action == "press" and step.get("value", "Enter") != "Enter":
+            raise AccessFormError(f"Step {number} (press): only Enter, to run a search")
+        steps.append(step)
+    return steps
+
+
+def clean_button(text: Any) -> str:
+    """The text of the control on the table's page that opens the request form (e.g. Request access). It may request
+    access; it may not save, send, submit or confirm anything."""
+    label = _words(text)[:80]
+    if label:
+        refusal = click_refusal({"text": OPENER_WORDS.sub(" ", label)})
+        if refusal:
+            raise AccessFormError(f"'{label}' is not a control that opens a request form: {refusal}")
+    return label
+
+
+def start_page(portal: Portal, address: str) -> bool:
+    """The address is a start page of the portal (the catalog's, or one of its applications'), not a table's page."""
+    def norm(url: str) -> str:
+        parts = urlsplit(url.strip())
+        return f"{(parts.hostname or '').lower()}{parts.path.rstrip('/')}?{parts.query}#{parts.fragment.strip('/')}"
+    return norm(address) in {norm(u) for u in [portal.url, *[part.url for part in portal.parts]]}
 
 
 # Prepared requests: what Gemini proposed, waiting for the person to open and send ----------------------------------------
@@ -202,20 +266,29 @@ def queue(root: Path, portal_id: str) -> list[dict[str, Any]]:
 
 
 def enqueue(root: Path, portal_id: str, request: dict[str, Any]) -> dict[str, int]:
-    """Add a prepared request (once: the same request again keeps its place). When the list is full the oldest opened
-    ones make room; a list full of unopened ones refuses. Returns its position and how many wait unopened."""
+    """Add a prepared request (once: the same request again keeps its place). One prepared again for the same tables,
+    not opened yet, replaces the earlier one in its place (a better route to the table). When the list is full the
+    oldest opened ones make room; a list full of unopened ones refuses. Returns its position and how many wait."""
     forms = _read(root)
     entry = forms.get(portal_id) or {}
     items = queue(root, portal_id)
     if not any(i["id"] == request["id"] for i in items):
-        while len(items) >= MAX_QUEUE and any(i.get("opened") for i in items):
-            items.remove(next(i for i in items if i.get("opened")))
-        if len(items) >= MAX_QUEUE:
-            raise AccessFormError(f"{MAX_QUEUE} prepared requests are waiting: the person opens or removes some in "
-                                  "Settings → Portals first.")
-        items.append({"id": request["id"], "address": request["address"], "tables": list(request.get("tables") or []),
-                      "answers": list(request.get("answers") or []), "added": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                      "opened": None})
+        tables = sorted(request.get("tables") or [])
+        fresh = {"id": request["id"], "address": request["address"], "tables": list(request.get("tables") or []),
+                 "answers": list(request.get("answers") or []), "added": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                 "opened": None,
+                 **({"open_steps": request["open_steps"]} if request.get("open_steps") else {}),
+                 **({"form_button": request["form_button"]} if request.get("form_button") else {})}
+        same = next((i for i in items if tables and not i.get("opened") and sorted(i.get("tables") or []) == tables), None)
+        if same is not None:
+            items[items.index(same)] = {**fresh, "added": same.get("added") or fresh["added"]}
+        else:
+            while len(items) >= MAX_QUEUE and any(i.get("opened") for i in items):
+                items.remove(next(i for i in items if i.get("opened")))
+            if len(items) >= MAX_QUEUE:
+                raise AccessFormError(f"{MAX_QUEUE} prepared requests are waiting: the person opens or removes some "
+                                      "in Settings → Portals first.")
+            items.append(fresh)
         forms[portal_id] = {**entry, "queue": items}
         _write(root, forms)
     position = next(n for n, i in enumerate(items, 1) if i["id"] == request["id"])
@@ -277,3 +350,17 @@ def search_texts(value: str) -> list[str]:
     if words:
         found.append(words[0].strip(".,;:"))
     return [t for t in dict.fromkeys(found) if len(t) >= 2][:3]
+
+
+def remember_page(root: Path, portal_id: str, tables: list[str], url: str) -> None:
+    """Where a request form appeared for these tables, so Gemini learns the catalog's addresses (form_pages_seen)."""
+    forms = _read(root)
+    entry = forms.get(portal_id) or {}
+    pages = [p for p in entry.get("pages", []) if isinstance(p, dict) and p.get("url") != url]
+    pages.insert(0, {"tables": tables[:20], "url": url[:2000], "at": time.strftime("%Y-%m-%dT%H:%M:%S")})
+    forms[portal_id] = {**entry, "pages": pages[:MAX_PAGES_SEEN]}
+    _write(root, forms)
+
+
+def pages_seen(root: Path, portal_id: str) -> list[dict[str, Any]]:
+    return [p for p in ((_read(root).get(portal_id) or {}).get("pages") or []) if isinstance(p, dict)][:MAX_PAGES_SEEN]

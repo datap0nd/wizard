@@ -2068,7 +2068,7 @@
     },
     {
       "name": "portal_request_access",
-      "description": "Prepare an access request in a portal's information catalog (the Big Data Portal) for tables the person cannot query yet. Wizard never sends it: the person gets a button that opens the request page in Wizard's visible browser window, with their saved answers (purpose, the DPA / DSA drop-downs, subsidiary...) and your answers for this request filled into the form's empty fields; they check every field and submit it themselves. It is also added to their prepared requests (Settings → Portals), which they go through one after another. Use it after you found the table and saw that the person lacks access, one call per table page, and name the table in your answer.",
+      "description": "Prepare an access request in a portal's information catalog (the Big Data Portal) for tables the person cannot query yet. Wizard never sends it: the person gets a button that opens the request page in Wizard's visible browser window, with their saved answers (purpose, the DPA / DSA drop-downs, subsidiary...) and your answers for this request filled into the form's empty fields; they check every field and submit it themselves. It is also added to their prepared requests (Settings → Portals), which they go through one after another. Use it after you found the table and saw that the person lacks access, one call per table, and name the table in your answer. address must be the table's own page in the catalog, where its request control is; when the catalog keeps one address for every table, give open_steps that reach the table from it (proved with portal_run) and form_button, the text of the control that opens the form.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2087,6 +2087,74 @@
             },
             "maxItems": 20,
             "type": "array"
+          },
+          "open_steps": {
+            "description": "Only when the catalog shows every table at one address (the address does not change when a table opens): the steps from address to the table's own page, e.g. fill the search box with the table's name, press Enter, click the result. Run exactly these steps with portal_run first and see the table's page. The person's window follows them.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "description": "As in portal_run: goto a url, click / fill / select an element, press Enter (to run a search), wait.",
+                  "enum": [
+                    "goto",
+                    "click",
+                    "fill",
+                    "select",
+                    "press",
+                    "wait"
+                  ],
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string",
+                  "description": "(0-2000 characters)"
+                },
+                "selector": {
+                  "type": "string",
+                  "description": "(0-500 characters)"
+                },
+                "role": {
+                  "type": "string",
+                  "description": "(0-40 characters)"
+                },
+                "name": {
+                  "type": "string",
+                  "description": "(0-200 characters)"
+                },
+                "text": {
+                  "type": "string",
+                  "description": "(0-200 characters)"
+                },
+                "frame": {
+                  "type": "string",
+                  "description": "(0-200 characters)"
+                },
+                "nth": {
+                  "maximum": 50,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "value": {
+                  "description": "fill / select: the value (e.g. the table's name in the catalog's search box); press: Enter (0-500 characters)",
+                  "type": "string"
+                },
+                "timeout_ms": {
+                  "maximum": 15000,
+                  "minimum": 500,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "action"
+              ],
+              "type": "object"
+            },
+            "maxItems": 12,
+            "type": "array"
+          },
+          "form_button": {
+            "description": "The visible text of the control on the table's page that opens the request form, as you saw it (e.g. Request access). Wizard presses it in the person's window, with writes stopped, so the form opens; leave it out to let Wizard look for one (0-80 characters)",
+            "type": "string"
           },
           "answers": {
             "description": "This request's own fields by the form's labels (the guide lists labels seen before), only for fields the person has no saved answer for (the guide lists saved_labels), e.g. a reason in the person's words from the question. Their saved answers (purpose, the DPA / DSA box, subsidiary...) are filled too.",

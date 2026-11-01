@@ -3,7 +3,32 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-01 (latest) — Big Data Portal access: the form's own fields, drop-downs Wizard chooses, prepared requests, two tasks
+## 2026-11-01 (latest) — An access request opens the table's page and its form, not the catalog's start page
+
+The owner, on the work PC: "the request form opens the generic website. doesnt open the reqeust form." The card for a
+table showed the catalog's start page: Gemini had found the table through the catalog's search, which gives no page,
+and `portal_request_access` fell back to the start page silently. [Decision update](decisions/2026-11-01-bdp-dataset-access.md#update-1-november-2026-the-window-reaches-the-table-and-opens-its-request-form).
+
+**What changed.**
+- `portal_request_access` refuses a table whose address is a start page; it takes `open_steps` (navigation Gemini
+  proved, for a catalog that keeps one address) and `form_button`. `access_requests.py`: `clean_steps`,
+  `clean_button`, `start_page`, the route kept on the prepared list, a table prepared again replacing its unopened
+  request, `remember_page` / `pages_seen`; the guide adds `form_pages_seen` and `to_prepare_again`.
+- The request window follows the steps (Gemini's click refusals, this portal only), presses the form's opener once
+  (`portal_pick.js` mode `opener`: the named control or a usual request name, never a POST form's submit) with the
+  portal's writes stopped for 4 seconds (`write_reason`), and shows a note on the page and in Settings: pressed, stopped
+  a one-click request, a step that failed, or a request that opens only the start page.
+- API `access-request` takes `open_steps` and `form_button`; the card opens its prepared request by id and says the
+  steps and the press. Guide, request task (find once how a dataset's page is reached), dataset task, AGENTS.md,
+  threat model, README.
+
+**Tests.** Unit `test_access_requests.py` 12 (start pages refused, routes, replacement, `to_prepare_again`, the API's
+fallback). Real Chromium: a one-address catalog reached by search, Enter and the result, Request access pressed and the
+form filled with nothing sent; a one-click Request access stopped and reported, then the person's own press goes
+through; a start-page-only request says so. Web `AccessRequestCard.test.tsx` (1). Full run below.
+Not verified: the real catalog (work PC).
+
+## 2026-11-01 — Big Data Portal access: the form's own fields, drop-downs Wizard chooses, prepared requests, two tasks
 
 The owner: mapping BDP keeps reaching dashboards whose tables they cannot read; "add tasks for first of all, identify
 the most relevant datasets in DIS ... Then send access requests for the 50 most relevant ones", and the request page in
