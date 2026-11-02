@@ -15,14 +15,18 @@ export interface BrainArea { id: string; name: string; description: string; note
  *  `weight`: how often it is named, or how many tags are shared. */
 export interface BrainLink { source: string; target: string; kind: 'related' | 'mention' | 'shared'; weight?: number }
 export interface BrainTerm { note: string; term: string }
-/** `mapped`: a portal's map (portal_map.py): the reports Gemini mapped and all it found there. */
+/** `mapped`: a portal's map (portal_map.py): the reports Gemini mapped and all it found there; `linked`: the mapped
+ *  reports that name at least one note of this knowledge base, `unlinked`: those that name none yet. */
 export interface BrainSystem extends SystemInfo { reports: number | null; documented_by: string[];
-  mapped?: {mapped: number; found: number; updated: string | null} | null }
-/** A report Gemini mapped in a portal: its name and menu path, nothing it holds. */
-export interface BrainPortalReport { system: string; id: string; name: string; path: string[]; status: 'mapped' | 'partial' }
+  mapped?: {mapped: number; found: number; updated: string | null; linked?: number; unlinked?: number} | null }
+/** A report Gemini mapped in a portal: its name and menu path, nothing it holds. `definitions`: the notes of this
+ *  knowledge base that define its terms (its map's `definitions`, portal_map_route); `use_for`: what it answers. */
+export interface BrainPortalReport { system: string; id: string; name: string; path: string[]; status: 'mapped' | 'partial';
+  definitions?: string[]; use_for?: string[] }
 export interface BrainCounts {
   notes: number; areas: number; links: number; related: number; mentions?: number; glossary_terms: number; datasets: number;
-  metrics: number; signed: number; expert_checked: number; reports: number; mapped_reports?: number; systems: number;
+  metrics: number; signed: number; expert_checked: number; reports: number; mapped_reports?: number; linked_reports?: number;
+  report_links?: number; systems: number;
 }
 export interface BrainMap {
   content: 'company' | 'examples' | 'none';
@@ -64,6 +68,13 @@ export function ringSystems(map: BrainMap): BrainSystem[] {
   return map.systems.filter(s => s.id !== 'attachment');
 }
 
+/** A portal's map in the Sources panel: how many reports Gemini mapped there and how many of them name a note of the
+ *  knowledge base (owner, 2 Nov 2026: "they're mapped but not interconnected no?"). */
+export function mappedLine(mapped: NonNullable<BrainSystem['mapped']>): string {
+  return mapped.linked === undefined ? `${plural(mapped.mapped, 'report')} mapped`
+    : `${mapped.mapped.toLocaleString()} mapped, ${mapped.linked.toLocaleString()} linked to notes`;
+}
+
 /** What the page lights up: everything, one area (or the news), the systems, or one node of the graph (by its key) and
  *  what it links to. */
 export type Focus = {kind: 'all'} | {kind: 'cluster'; id: string} | {kind: 'systems'} | {kind: 'note'; id: string};
@@ -91,6 +102,7 @@ export function areaLine(map: BrainMap, area: BrainArea): string {
     case 'processes': return `${plural(n, 'note')} on how work happens: planning, budgeting, month close, launches.`;
     case 'platforms': return `${plural(n, 'guide')} to the platforms we report from, and how to navigate each one.`;
     case 'datasets': return `${plural(n, 'dataset')} documented column by column, so Wizard writes its own SQL against them.`;
+    case 'dashboards': return `${plural(n, 'note')} on the team's dashboards: what each shows and how its figures are calculated.`;
     case 'metrics': return `${plural(n, 'metric definition')}: how each number is computed, and what must never be summed.`;
     case 'glossary': return map.counts.glossary_terms
       ? `${plural(map.counts.glossary_terms, 'term')} and acronyms, so it speaks our language, ambiguous words included.`
@@ -120,7 +132,7 @@ export function tourSteps(map: BrainMap, live: BrainLive | null): TourStep[] {
   if (systems.length) {
     const parts = systems.map(s => {
       if (s.id === 'postgresql' && live?.database.status === 'ok') return `${s.name} (${plural(live.database.relations ?? 0, 'table')} and views)`;
-      if (s.mapped?.mapped) return `${s.name} (${plural(s.mapped.mapped, 'report')} mapped)`;
+      if (s.mapped?.mapped) return `${s.name} (${plural(s.mapped.mapped, 'report')} mapped${s.mapped.linked !== undefined ? `, ${s.mapped.linked.toLocaleString()} linked to notes` : ''})`;
       if (s.reports) return `${s.name} (${plural(s.reports, 'report')} catalogued)`;
       if (s.kind === 'portal') return `${s.name} (read live)`;
       return s.name;

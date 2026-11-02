@@ -29,8 +29,9 @@ from wizard_connectors.pg import literal, quote
 from wizard_connectors.postgres_query import DATABASES, RELATIONS, PostgresQuery, sql_name
 
 AREA_NAMES = {"company": "Company", "org": "Organisation", "products": "Products", "markets": "Markets",
-              "processes": "Processes", "platforms": "Platforms", "datasets": "Data dictionary", "metrics": "Metrics",
-              "glossary": "Glossary", "faq": "Executive questions", "decisions": "Decisions", "general": "Foundations"}
+              "processes": "Processes", "platforms": "Platforms", "datasets": "Data dictionary", "dashboards": "Dashboards",
+              "metrics": "Metrics", "glossary": "Glossary", "faq": "Executive questions", "decisions": "Decisions",
+              "general": "Foundations"}
 MAX_LINKS = 9000
 SHARED_PER_NOTE = 3      # topic links kept per note: its notes with the most tags in common
 COMMON_TAG = 60          # a tag on more notes than this says little about how two notes relate
@@ -42,6 +43,9 @@ MAX_TERMS = 3000         # glossary entries drawn as points of their own
 MAX_TAGS = 15            # the knowledge standard's most tags per note
 MAPPED = ("mapped", "partial")  # a portal map's reports Gemini has mapped (the rest it has only found)
 MAX_PORTAL_REPORTS = 3000       # portal reports drawn as points of their own, as many as a map holds
+REPORT_NOTES = 8                # notes a drawn report links to: as many `definitions` as a map holds per report
+USE_FOR = 5                     # use_for phrases a drawn report carries, for its card on the page
+USE_FOR_CHARS = 120
 WORD = re.compile(r"[a-z0-9]+")
 TABLE_NAME = re.compile(r"^(?:([A-Za-z_][A-Za-z0-9_$]{0,62})\.)?([A-Za-z_][A-Za-z0-9_$]{0,62})$")
 DATABASE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_$-]{0,62}$")
@@ -153,34 +157,47 @@ def links(notes: list[Note]) -> list[dict[str, Any]]:
 
 
 def documents(system: dict[str, Any], note: Note) -> bool:
-    """A note that documents a system: a dataset note documents the database; a platform note, or any note tagged with
-    the system's id, documents that platform."""
+    """A note that documents a system: a dataset note documents the database; a note in the dashboards area documents
+    the Dashboards system (knowledge standard, section 13: one note per dashboard); a platform note, or any note tagged
+    with the system's id, documents that platform."""
     sid = str(system["id"]).casefold()
     if sid in ("knowledge", "attachment"):
         return False
     tags = {t.casefold() for t in note.tags}
     if sid == "postgresql":
         return note.type == "dataset" or note.area == "datasets" or "postgresql" in tags
+    if sid == "dashboards" and note.area == "dashboards":
+        return True
     words = set(re.split(r"[^a-z0-9]+", f"{note.id} {note.title}".casefold()))
     named = sid in words or str(system.get("name", "")).casefold() in note.title.casefold()
     return sid in tags or ((note.type == "platform" or note.area == "platforms") and named)
 
 
-def portal_reports(system: str, data: dict[str, Any]) -> list[dict[str, Any]]:
-    """The reports a portal's map holds that Gemini has mapped: name, menu path and status, metadata only."""
+def portal_reports(system: str, data: dict[str, Any], notes: frozenset[str] | set[str] = frozenset()) -> list[dict[str, Any]]:
+    """The reports a portal's map holds that Gemini has mapped: name, menu path and status, metadata only. With each, the
+    knowledge notes its `definitions` name (written by portal_map_route) that are in this knowledge base, `notes` (an id
+    no loaded note has is left out), and its `use_for` phrases for its card on the page. Owner, 2 Nov 2026: "they're
+    mapped but not interconnected no?"."""
     out = []
     for report in data.get("reports") or []:
         if isinstance(report, dict) and report.get("id") and report.get("status") in MAPPED:
             path = [str(p)[:120] for p in report.get("path") or [] if p][:8]
+            named = report.get("definitions")
+            named = named if isinstance(named, list) else []
+            phrases = report.get("use_for")
+            phrases = phrases if isinstance(phrases, list) else []
+            linked = list(dict.fromkeys(d for d in named if isinstance(d, str) and d in notes))[:REPORT_NOTES]
+            use_for = [p.strip()[:USE_FOR_CHARS] for p in phrases if isinstance(p, str) and p.strip()][:USE_FOR]
             out.append({"system": system, "id": str(report["id"])[:200], "name": str(report.get("name") or report["id"])[:200],
-                        "path": path, "status": report["status"]})
+                        "path": path, "status": report["status"], "definitions": linked, "use_for": use_for})
     return out
 
 
 def knowledge_map(kb: KnowledgeBase, systems: list[dict[str, Any]], reports: dict[str, int], content: str,
                   maps: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
     """Areas, notes, links and systems for the map, with the counts the page shows. `maps`: each portal's map (owner, 30
-    Oct 2026: "I mapped like 120 reports. I see that /brain didnt change much"), whose mapped reports are drawn too."""
+    Oct 2026: "I mapped like 120 reports. I see that /brain didnt change much"), whose mapped reports are drawn too, each
+    with the notes it names; per portal, how many of its mapped reports name a note (`linked`) and how many none yet."""
     notes = kb.notes
     terms = {note.id: sum(1 for s in kb.sections.get(note.id, ()) if s.entry) for note in notes}
     per_area = Counter(note.area for note in notes)
@@ -190,14 +207,18 @@ def knowledge_map(kb: KnowledgeBase, systems: list[dict[str, Any]], reports: dic
     areas.sort(key=lambda a: (a.pop("order"), a["name"]))
     out_systems = []
     mapped: list[dict[str, Any]] = []
+    ids = frozenset(note.id for note in notes)
     for system in systems:
         documented = [note.id for note in notes if documents(system, note)]
         data = (maps or {}).get(str(system["id"])) or {}
         listed = [r for r in data.get("reports") or [] if isinstance(r, dict)]
-        drawn = portal_reports(str(system["id"]), data)
+        drawn = portal_reports(str(system["id"]), data, ids)
         mapped += drawn
+        linked = sum(1 for r in drawn if r["definitions"])
         out_systems.append({**system, "reports": reports.get(str(system["id"])), "documented_by": documented[:300],
-                            "mapped": {"mapped": len(drawn), "found": len(listed), "updated": data.get("updated")} if listed else None})
+                            "mapped": {"mapped": len(drawn), "linked": linked, "unlinked": len(drawn) - linked,
+                                       "found": len(listed), "updated": data.get("updated")} if listed else None})
+    drawn_reports = mapped[:MAX_PORTAL_REPORTS]
     found = links(notes)
     stages = Counter(stage(note) for note in notes)
     ordered = sorted(notes, key=lambda n: (n.area, n.title.casefold()))
@@ -212,7 +233,7 @@ def knowledge_map(kb: KnowledgeBase, systems: list[dict[str, Any]], reports: dic
         "links": found,
         "terms": entries,
         "systems": out_systems,
-        "portal_reports": mapped[:MAX_PORTAL_REPORTS],
+        "portal_reports": drawn_reports,
         "counts": {"notes": len(notes), "areas": len(areas), "links": len(found),
                    "related": sum(1 for link in found if link["kind"] == "related"),
                    "mentions": sum(1 for link in found if link["kind"] == "mention"),
@@ -220,7 +241,9 @@ def knowledge_map(kb: KnowledgeBase, systems: list[dict[str, Any]], reports: dic
                    "datasets": sum(1 for n in notes if n.type == "dataset" or n.area == "datasets"),
                    "metrics": sum(1 for n in notes if n.type == "metric" or n.area == "metrics"),
                    "signed": stages["SIGNED"], "expert_checked": stages["EXPERT_CHECKED"],
-                   "reports": sum(v for v in reports.values() if v), "mapped_reports": len(mapped), "systems": len(systems)},
+                   "reports": sum(v for v in reports.values() if v), "mapped_reports": len(mapped),
+                   "linked_reports": sum(1 for r in mapped if r["definitions"]),
+                   "report_links": sum(len(r["definitions"]) for r in drawn_reports), "systems": len(systems)},
     }
 
 

@@ -1,7 +1,7 @@
 import {describe, expect, it} from 'vitest';
 import type {BrainMap, BrainNews, BrainNote} from './brain';
-import {buildGraph, DEFAULT_LAYERS, edgeShown, focusNodes, frame, Layout, louvain, nearest, networkStats, nodeShown, OTHER, projector, search,
-  SLOTS} from './graph3d';
+import {buildGraph, DEFAULT_LAYERS, EDGE_STYLE, edgeShown, focusNodes, frame, LAYERS, Layout, louvain, nearest, networkStats, nodeShown, OTHER,
+  projector, REPORT_LINK, search, SLOTS} from './graph3d';
 
 const note = (id: string, area: string, extra: Partial<BrainNote> = {}): BrainNote =>
   ({id, title: id, area, type: null, stage: 'DRAFT', summary: '', tags: [], terms: null, updated: null, ...extra});
@@ -122,6 +122,48 @@ describe('portal maps', () => {
     expect(reports.some(r => nodeShown(r, off))).toBe(false);
     expect(search(graph, 'stock by').map(n => n.label)).toEqual(['Stock by store']);
   });
+
+  // Owner, 2 Nov 2026: "they're mapped but not interconnected no?": a report links to each note its map says defines it.
+  const routed: BrainMap = {...map, systems: [...map.systems, {id: 'asap', name: 'ASAP', kind: 'portal', reports: null, documented_by: [],
+    mapped: {mapped: 5, found: 5, updated: null, linked: 3, unlinked: 2}}],
+  portal_reports: [
+    {system: 'asap', id: 'si', name: 'Sell-in by week', path: [], status: 'mapped', definitions: ['sell-in', 'missing-note'], use_for: ['weekly sell-in']},
+    {system: 'asap', id: 'both', name: 'Sell-in and dataset', path: [], status: 'mapped', definitions: ['sell-in', 'sell-in', 'bi-sell-in']},
+    {system: 'asap', id: 'none', name: 'Not routed', path: [], status: 'mapped', definitions: []},
+    {system: 'asap', id: 'old', name: 'From an older page', path: [], status: 'partial'},
+    {system: 'asap', id: 'wide', name: 'Names every note', path: [], status: 'mapped',
+      definitions: ['sell-in', 'bi-sell-in', 'terms', 'platform-gscm', 'platform-asap', 'a', 'b', 'c', 'd', 'e']},
+  ]};
+  const wide: BrainMap = {...routed, notes: [...routed.notes, ...['a', 'b', 'c', 'd', 'e'].map(id => note(id, 'glossary'))]};
+
+  it('links a mapped report to each note that defines its terms, a link kind of its own, at most eight a report', () => {
+    const graph = buildGraph(wide, null);
+    const report = (id: string) => graph.byKey.get(`report:asap:${id}`)!;
+    const named = (id: string) => graph.edges.filter(e => e.kind === 'defines' && e.a === report(id).i).map(e => graph.nodes[e.b].key);
+    expect(named('si')).toEqual(['note:sell-in']);  // a note this knowledge base does not have is not drawn
+    expect(named('both')).toEqual(['note:sell-in', 'note:bi-sell-in']);  // each note once
+    expect(named('none')).toEqual([]);
+    expect(named('wide')).toHaveLength(8);
+    expect([report('si').linked, report('both').linked, report('none').linked, report('old').linked]).toEqual([1, 2, 0, undefined]);
+    expect(networkStats(graph).byEdge.defines).toBe(1 + 2 + 8);
+    expect(EDGE_STYLE.defines.layer).toBe('definitions');
+    expect(LAYERS.find(l => l.id === 'definitions')?.edge).toBe('defines');
+    expect(DEFAULT_LAYERS.has('definitions')).toBe(true);
+    const link = graph.edges.find(e => e.kind === 'defines')!;
+    expect(edgeShown(graph, link, DEFAULT_LAYERS)).toBe(true);
+    expect(edgeShown(graph, link, new Set([...DEFAULT_LAYERS].filter(l => l !== 'definitions')))).toBe(false);
+    expect(edgeShown(graph, link, new Set([...DEFAULT_LAYERS].filter(l => l !== 'reports')))).toBe(false);  // its report is hidden
+    expect(REPORT_LINK).not.toBe(OTHER);
+    expect(SLOTS).not.toContain(REPORT_LINK);  // never a community's colour
+  });
+
+  it('lays a report that names a note out nearer that note than one that names none', () => {
+    const layout = new Layout(buildGraph(routed, null), 7, undefined, 2);
+    layout.run(1000);
+    const at = (key: string) => { const i = layout.graph.byKey.get(key)!.i; return [layout.pos[i * 3], layout.pos[i * 3 + 1]]; };
+    const gap = (a: string, b: string) => Math.hypot(at(a)[0] - at(b)[0], at(a)[1] - at(b)[1]);
+    expect(gap('report:asap:si', 'note:sell-in')).toBeLessThan(gap('report:asap:none', 'note:sell-in'));
+  });
 });
 
 describe('the layout', () => {
@@ -193,6 +235,7 @@ describe('the camera', () => {
     expect(nearest(points, 11, 10)).toBe(2);
     expect(nearest(points, 40, 40)).toBeNull();
     expect(nearest(points, 83, 80)).toBe(3);
+    expect(nearest(points, 83, 80, 5, 2)).toBeNull();  // only the first `count` points of a reused list are drawn
   });
 });
 

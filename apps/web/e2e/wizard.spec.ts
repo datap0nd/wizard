@@ -252,6 +252,33 @@ test('the Brain page draws the knowledge base as a graph of communities and walk
   await expect(page.getByTestId('conversation-title')).toBeVisible();
 });
 
+test('on the Brain page, a mapped report links to the notes it names, and the Sources panel counts the linked reports', async ({page}) => {
+  // Replay mode has no portal map: three invented mapped reports are added to what the server read, two naming a note.
+  await page.route('**/api/v1/brain', async route => {
+    const response = await route.fetch();
+    const map = await response.json() as {notes: {id: string}[]; systems: {id: string}[]; portal_reports?: unknown[]};
+    const share = map.notes.find(n => n.id === 'market-share')!.id;
+    map.systems = map.systems.map(s => (s.id === 'asap' ? {...s, mapped: {mapped: 3, found: 3, updated: null, linked: 2, unlinked: 1}} : s));
+    map.portal_reports = [
+      {system: 'asap', id: 'share', name: 'Share by vendor', path: ['Market'], status: 'mapped', definitions: [share], use_for: ['vendor share']},
+      {system: 'asap', id: 'tier', name: 'Share by price tier', path: ['Market'], status: 'mapped', definitions: [share], use_for: []},
+      {system: 'asap', id: 'orders', name: 'Open orders', path: ['Orders'], status: 'mapped', definitions: [], use_for: []},
+    ];
+    await route.fulfill({response, json: map});
+  });
+  await signIn(page, 'u-ceo');
+  await page.goto('/brain');
+  await expect(page.locator('[data-testid=brain-system][data-system=asap]')).toContainText('3 mapped, 2 linked to notes');
+  await expect(page.locator('[data-testid=brain-layer][data-layer=definitions]')).toBeChecked();
+  await page.getByTestId('brain-search').fill('Share by vendor');
+  await page.getByTestId('brain-search').press('Enter');
+  await expect(page.getByTestId('brain-report-notes')).toContainText('Defined in Market share');
+  await expect(page.getByTestId('brain-report-use')).toContainText('vendor share');
+  await page.getByTestId('brain-search').fill('Open orders');
+  await page.getByTestId('brain-search').press('Enter');
+  await expect(page.getByTestId('brain-report-notes')).toContainText('Not linked to a note yet');
+});
+
 test('on the Brain page, N plays a demo "new article came in" without moving any count', async ({page}) => {
   // A stand-in for the news table (replay mode has no company database).
   const latest = Array.from({length: 8}, (_, i) => ({title: `Headline ${i}`, category: i % 2 ? 'Competitors' : 'Smartphones',

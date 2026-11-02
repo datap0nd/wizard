@@ -3,7 +3,44 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-02 (latest) — Dashboards: the team's HTML dashboards, a system Wizard reads first
+## 2026-11-02 (latest) — The Brain page links each mapped report to the notes it names
+
+The owner: "If I check the brain section, I see ASAP and GSCM with hundreds of dots (GSCM is still at 20 but I didnt
+fully map it yet). But I dont see connections with the rest of the knowledge base. Means that they're mapped but not
+interconnected no?" The maps already link reports to notes (each report's `definitions`, from `portal_map_route`, which
+`wizard_lookup_definitions` and `wizard_read_knowledge` use); the page drew each report joined only to its portal.
+[Decision](decisions/2026-11-02-brain-report-links.md).
+
+**What changed.**
+- **Server** (`brain.py`): each drawn portal report carries `definitions` (the ids that are notes of the loaded
+  knowledge base; unknown ids dropped, repeats once, at most 8) and `use_for` (at most 5 phrases of 120 characters). Each
+  portal's `mapped` gains `linked` and `unlinked`; the counts gain `linked_reports` and `report_links`. The Dashboards
+  system is documented by every note in the `dashboards/` area, and the area is named "Dashboards" in the standard's
+  order.
+- **Page** (`graph3d.ts`, `Graph3D.tsx`, `BrainPage.tsx`): a link kind of its own, `defines`, from a report to each note
+  it names, on its own layer (**Reports to their notes**, on by default), straight and dashed in one light neutral ink
+  (never a community colour; the page has one theme, dark), in the layout as strongly as the link to the portal, so a
+  linked report sits near its notes. A report that names no note is drawn at 40 % opacity. The Sources panel says "N
+  mapped, M linked to notes" with the linked share as a bar; a report's card shows "Used for" and "Defined in" (or "Not
+  linked to a note yet"); the tour's systems step and the Edges statistic count the links. A page published before this
+  change draws its reports as before.
+- **Faster drawing**: the canvas reuses its buffers from frame to frame and groups the edges by stroke with a counting
+  sort (no per-frame string keys, arrays or point objects); `nearest` takes the count of points drawn.
+- Unchanged: the page writes nothing and is not a Gemini tool; the demo arrival (N) and the tour.
+- Docs: the decision, an update in the Brain decision, the README table. The committed `dist/` is rebuilt.
+
+**Not done.** The frame rate on a work PC's graphics card is not measured: in headless Chromium's software rendering,
+2,400 invented reports with 2,189 links turn at 26 to 28 frames a second (56 when the same reports name no note and
+gather around their portals). Reports are linked only where their map says so; nothing is inferred from names.
+
+**Tests.** `uv run python scripts/verify_spec.py` passed; `uv run python -m pytest tests -q`: 681 passed, 21 skipped
+(BLOCKED here: PostgreSQL test server, Gemini CLI, PowerShell, live parity); ruff and mypy clean; `scripts/export_contracts.py --check` matches; `npm --prefix apps/web run typecheck` and `test` (124
+passed); the Brain e2e tests (3, desktop and narrow) passed in Playwright's Chromium (`CI=1`). New:
+`tests/unit/test_brain.py` (3), `apps/web/src/graph3d.test.ts` (2), `apps/web/src/brain.test.ts` (2),
+`apps/web/src/components/brain/BrainPage.test.tsx` (2), the e2e test "on the Brain page, a mapped report links to the
+notes it names…".
+
+## 2026-11-02 — Dashboards: the team's HTML dashboards, a system Wizard reads first
 
 The owner: "I believe these dashboards should definitely be the first thing in the priority list as they are dashboards
 prepared combining logic and data that wizard will struggle to get right off the bat"; "Y:\ is indeed a risk as it's

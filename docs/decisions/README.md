@@ -28,6 +28,7 @@ Evidence**. A decision that changes repository rules also updates [AGENTS.md](..
 - [2026-11-02 Dashboards: the team's HTML dashboards are a system Wizard reads first](2026-11-02-html-dashboards.md)
 - [2026-11-02 A dashboards area in the knowledge base, and tasks that move, rename and remove notes](2026-11-02-dashboards-area.md)
 - [2026-11-02 A portal Wizard has mapped is read through its map; its report catalog is retired](2026-11-02-retire-portal-catalogs.md)
+- [2026-11-02 The Brain page links each mapped report to the notes it names](2026-11-02-brain-report-links.md)
 - [2026-10-30 The person steers an answer while it runs, and chooses the systems a question may use](2026-10-30-steering-and-systems.md)
 - [2026-10-30 Export settings: the same Wizard on another PC](2026-10-30-settings-export.md)
 - [2026-10-30 Brain and Cases on the company GitHub's Pages; Gemini names each chat](2026-10-30-pages-site.md)

@@ -112,6 +112,13 @@ only the report catalogs. It now reads each portal's map too: the Sources panel 
 counted, not drawn. **Publish** in the header (when the person at this PC can publish) puts the page, as it reads now,
 on the company GitHub's Pages, a page of its own with its own address: [decision](2026-10-30-pages-site.md).
 
+**Update (2 November 2026): mapped reports linked to their notes.** The owner: "I see ASAP and GSCM with hundreds of
+dots ... But I dont see connections with the rest of the knowledge base. Means that they're mapped but not
+interconnected no?" Each mapped report is now joined by a dashed line to the notes its map says define its terms (its
+`definitions`), on a layer of its own (**Reports to their notes**) and in the layout, so it sits near them; a report that
+names no note is drawn fainter; the Sources panel says "N mapped, M linked to notes"; and the Dashboards system joins the
+notes of the dashboards area. Still read only: [decision](2026-11-02-brain-report-links.md).
+
 **Evidence.** `tests/unit/test_brain.py` (10 since 30 October), `tests/integration/test_brain_postgres_real.py` (2, real PostgreSQL 16),
 `apps/web/src/brain.test.ts` (8), the e2e test "the Brain page maps what Wizard knows…" in `apps/web/e2e/wizard.spec.ts`,
 and screenshots of the page in Chromium at 1280×720, 1600×900 and 1920×1080 over a synthetic knowledge base of 111 notes
