@@ -48,8 +48,8 @@ most, because Wizard's tools enforce it.
 **Tasks** (owner, 31 October 2026) are instructions the Wizard team writes in the repository's `tasks/` folder. They
 appear in Wizard's **Settings → Tasks** without an update; each runs as a Gemini run in a conversation of its own and
 saves the notes it writes to the company knowledge base (`wizard_kb_save_notes`: whole notes, checked against the knowledge
-standard, one commit per save). The numbered Gemini CLI tasks of earlier versions are retired. The documentation kit
-below still converts files and exports mail on the work PC.
+standard, one commit per save; it can also move, rename or remove a note, never a SIGNED one). The numbered Gemini CLI
+tasks of earlier versions are retired. The documentation kit below still converts files and exports mail on the work PC.
 
 A task may ask for a folder or file on the PC ([decision](decisions/2026-11-01-folder-tasks.md)). "Digest a folder of
 presentations into the knowledge base" reads every deck in a folder, in rounds, and adds terms, measure definitions,

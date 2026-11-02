@@ -3,7 +3,41 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-02 (latest) — Seven tasks to fix the knowledge base after its review
+## 2026-11-02 (latest) — A dashboards area in the knowledge base; tasks move, rename and remove notes
+
+The owner: "We need dashboards area for sure." The team's HTML dashboards combine PostgreSQL data with business logic,
+and the knowledge-base review found notes about them filed under `datasets/` (one note per database object) and a note
+whose only purpose was a mandatory source order; a task could not move or remove either.
+[Decision](decisions/2026-11-02-dashboards-area.md).
+
+**What changed.**
+- Knowledge standard: a `dashboards/` area (section 1) and section 13 "Dashboard notes": one note per HTML dashboard,
+  `type: entity` (a new type would be a validator error on every PC still on an older Wizard), with what it shows, the
+  business logic behind each figure (so Wizard can reproduce it in SQL or knows not to), the dataset notes it reads, its
+  refresh and as-of, who maintains it (role), its file name and subfolder inside the dashboards folder (never a full
+  path), related metric notes, and no performance figures. Section 11: a metric's `## Where to get it` may name a
+  dashboard note, what it shows and when it is the better source. Section 2: tasks can move and rename notes.
+- `wizard_kb_save_notes` (`tools/kb_tools.py`) takes optional `moves` (`{"id", "to"}`: the same file name moves the
+  note, a new one renames it) and `removes` (ids) beside `notes`, all in one commit, still task-only. A rename sets the
+  new id in the note and in every other note's `related` in the same commit; a remove is refused while another note's
+  `related` names it, unless the same call saves that note without the link; notes whose text names the old id come
+  back as warnings. Every resulting note is validated first, nothing is committed when anything fails, and a SIGNED
+  note is never replaced, moved, renamed or removed (a whole-note save over a SIGNED note is now refused too). The
+  validator's "related note does not exist" warnings for ids that exist after the commit are no longer passed on.
+- The knowledge-base writer (`app.py` `map_writer`) commits a removal with `kb.update_branch`, only when every removed
+  file is still on the branch; a save without removals uses `kb.write_files` as before. `KnowledgeBase.with_saved`
+  drops moved, renamed and removed notes, so the rest of the run sees the change.
+- The task prompt, the tool label ("Changed the company knowledge base: ..."), `tasks/README.md` (the argument shape),
+  AGENTS.md, the documentation guide and the README's Tasks row say so. Contracts re-exported (`tool-catalog.json`).
+
+**Tests.** `tests/unit/test_tasks.py`: a move and a move with new text (one commit, the run's knowledge base, note
+source and browse following), a rename with the link in another note changed in the same commit, removes with and
+without the link updated; nine refusals that commit nothing (SIGNED move, remove, replace and a rename linked from a
+SIGNED note; a remaining link; a validator error; a destination that is another note; a path the call removes; an
+unknown id); a call with nothing to save; a question refused through the API; the writer's removal and its refusal
+when a file is gone; a `dashboards/` note written to section 13 passing the validator and saving.
+
+## 2026-11-02 — Seven tasks to fix the knowledge base after its review
 
 The owner had the knowledge base reviewed against Wizard's knowledge standard and code, and asked for tasks to address
 the findings. No code changes: seven tasks in `tasks/`, which reach Settings → Tasks without an update.

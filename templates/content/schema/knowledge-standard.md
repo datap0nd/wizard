@@ -22,7 +22,8 @@ safe to quote on its own, and honest about how sure we are. Wizard tells executi
 | `markets/` | regions, markets, channels, partners and key accounts (described, not their figures) | entity |
 | `processes/` | how work happens: planning cycle, budgeting, month close, launches, approvals, reporting rhythm | process |
 | `platforms/` | data platforms (ASAP, GSCM, NERP, PostgreSQL...): what they hold, how to navigate them | platform |
-| `datasets/` | data dictionary: one note per database object (materialized view, table): grain, columns, how each is computed, lineage, refresh | dataset |
+| `datasets/` | data dictionary: one note per database object (materialized view, table): grain, columns, how each is computed, lineage, refresh. A dashboard or report built on them is not a dataset | dataset |
+| `dashboards/` | the team's HTML dashboards, one note per dashboard: what it shows and the business logic it applies (section 13) | entity |
 | `metrics/` | how each measure is defined and computed, what must not be summed, and where the data holds it (section 11) | metric |
 | `glossary/` | acronyms, jargon and **ambiguous terms**, grouped by domain | glossary |
 | `faq/` | recurring executive questions and where their answer lives | faq |
@@ -37,8 +38,10 @@ three or more notes need it.
 
 - One entity, concept, process or decision per note. Split a note when it passes about 600 words, or when it covers two
   things someone would ask about separately. A glossary note holds at most 60 entries.
-- File name = `<id>.md`. The id is lowercase kebab-case, unique across all folders, and never changes: quizzes, answers
-  and other notes refer to it. Renaming means a new note plus updated references.
+- File name = `<id>.md`. The id is lowercase kebab-case, unique across all folders, and does not change lightly:
+  quizzes, answers and other notes refer to it. A task can move a note to the right folder or rename it
+  (`wizard_kb_save_notes`, `moves`): a rename changes the id in every other note's `related` in the same commit, and
+  text that names the old id is the task's to change. A SIGNED note is never moved or renamed by a task.
 
 ## 3. Front matter
 
@@ -161,6 +164,8 @@ the same way (`wizard_task_read_file` returns it), so a deck read by a task and 
 - [ ] Every fact has a source id, or is marked `(inferred)` or `UNKNOWN`.
 - [ ] A metric note ends with `## Where to get it`, every name and value checked against the dataset notes and the
       portal maps.
+- [ ] A dashboard note explains the business logic behind each figure and names its file inside the dashboards
+      folder, never a full path.
 - [ ] Acronyms are spelled out once and listed in `aliases`.
 - [ ] Changeable facts are dated.
 - [ ] No contact details, credentials, performance figures or restricted topics.
@@ -201,9 +206,9 @@ claim under `## Conflicting information` with both source ids.
 A metric note (`type: metric`) says what a measure means **and where Wizard reads it**. Without the second part Wizard
 knows what "sell-in" is but finds out by trial which object holds it, which rows are actuals and which column is the
 week; on the first live question that was most of a 41-step run. So every metric note ends with `## Where to get it`,
-written from the dataset notes in `datasets/` (and their export) and from the portal maps Wizard keeps
-(`data\portal-maps\<portal>.json` on the Wizard PC), never from memory. A database object and a mapped portal report
-are equal sources: list every one that holds the measure.
+written from the dataset notes in `datasets/` (and their export), the portal maps Wizard keeps
+(`data\portal-maps\<portal>.json` on the Wizard PC) and the dashboard notes in `dashboards/`, never from memory. A
+database object, a mapped portal report and a dashboard are equal sources: list every one that holds the measure.
 
 - One short block per database object that holds the measure: the dataset note id and exact name
   (`meto_db`, `schema.object`); the measure column and its unit; the filters that select the right rows, with their
@@ -212,6 +217,10 @@ are equal sources: list every one that holds the measure.
 - One short block per mapped portal report (status `mapped` or `partial`) that holds the measure: the portal and report
   id (`gscm:as470`), its name and menu path, what it answers (its `use_for`), and the filters that select the right rows
   with their values. No query: Wizard reads it through the map.
+- One short block per HTML dashboard that shows the measure: the dashboard note id and what it shows (the measure,
+  its breakdowns and periods). Say when the dashboard is the better source: it applies business logic the data alone
+  does not hold (an official definition, an exclusion, an adjustment), or it is the figure the team reports. Say
+  whether Wizard can reproduce its figure in SQL from the dashboard note's `## Business logic`, or must not.
 - Column names exactly as the database spells them, double-quoted when they have capitals, spaces or symbols
   (`"Order Week"`, `"Unit/Value"`).
 - One example query per database block: a SELECT with those filters, grouped by period and market. Check every column
@@ -221,8 +230,8 @@ are equal sources: list every one that holds the measure.
   units or revenue, actual or plan, company sell-in or an analyst's shipment estimate). Order the blocks by that, not
   by kind of source.
 
-Cite the dataset notes' sources and the maps. Then point the data back at the metric: add the metric note's id to each
-dataset note's `related`, and the measure's name and aliases to the dataset note's `aliases` or `tags` and to its
+Cite the dataset and dashboard notes' sources and the maps. Then point the data back at the metric: add the metric
+note's id to each dataset and dashboard note's `related`, and the measure's name and aliases to the dataset note's `aliases` or `tags` and to its
 "Questions this note answers". Mapped portal reports link back themselves: their `definitions` name the metric note
 when Wizard maps or routes them, and Wizard shows them with the note. This section says what the data can answer and how to reach it; Wizard may follow it or adapt it.
 It is not a rule for how an answer must be built.
@@ -250,3 +259,33 @@ cited by their source ids; what most decks share is the standard, what one team 
 such. Examples are written with placeholders (`<market> sell-out grew <x>% in <period>`), never a deck's real figures,
 names or plans. Up to about 600 words per note; tables are welcome.
 
+## 13. Dashboard notes
+
+The team's HTML dashboards combine data from PostgreSQL with business logic: definitions, filters, exclusions and
+adjustments that the data alone does not hold. A note in `dashboards/` says what one dashboard shows and how it gets
+each figure, precisely enough that Wizard can reproduce the figure in SQL, or knows when it cannot and the dashboard is
+the source. A dashboard is not a database object, so its note never goes in `datasets/`.
+
+- One note per HTML dashboard, `type: entity`. Id `<what it shows>-dashboard` in kebab-case; title the dashboard's
+  name as people say it; `aliases` hold its file name without `.html`, any other name it goes by, and the business
+  words for what it shows ("weekly sell-in", "channel stock").
+- Lead: what the dashboard shows, who uses it, how often it is refreshed, and the one thing not to get wrong when
+  reading it.
+- Sections:
+  - `## What it shows`: each measure, breakdown (market, channel, product) and period (week, month, year to date); a
+    table when there are several.
+  - `## Business logic`: every definition, filter, exclusion and adjustment the dashboard applies, and how each figure
+    is calculated, step by step, with the dataset notes, columns and values it uses. Say when Wizard should not
+    reproduce a figure (a manual adjustment, an input the database does not hold). Logic you cannot see is
+    `UNKNOWN (ask: <role>)`, never guessed.
+  - `## Where the data comes from`: the dataset note ids it is built from (also in `related`), and any other input
+    (a file, a manual entry) described by kind.
+  - `## Refresh and as-of`: how often it is refreshed and by what, and where the dashboard shows its as-of date.
+  - `## Who maintains it`: the role or team.
+  - `## File`: the file name and its subfolder inside the dashboards folder Wizard reads, e.g.
+    `sales/weekly-sell-in.html`. Never a drive letter, share path or full path: they differ by PC.
+  - `## Questions this note answers` and `## Open questions`.
+- `related` lists the dataset notes it reads and the metric notes for the measures it shows. Each of those metric notes
+  names the dashboard in its `## Where to get it` (section 11).
+- No performance figures (rule 7): the dashboard itself is the live source. Say what a figure is, never its value.
+- Up to about 600 words: keep `## What it shows` a table and `## Business logic` one short block per measure.

@@ -12,6 +12,7 @@ import logging
 import math
 import re
 from collections import Counter
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -236,16 +237,20 @@ class KnowledgeBase:
         base.root = directory.parent
         return base
 
-    def with_saved(self, files: dict[str, str]) -> KnowledgeBase:
-        """This knowledge base with notes a task just saved to the repository (path -> text), so the rest of the task,
-        and questions, see them before the next sync brings them back as files."""
+    def with_saved(self, files: Mapping[str, str | None]) -> KnowledgeBase:
+        """This knowledge base with what a task just committed to the repository (path -> text; None: the file is gone,
+        moved, renamed or removed), so the rest of the task, and questions, see it before the next sync brings the files
+        back."""
         changed = {}
         for path, text in files.items():
-            note = parse_text(text, path)
-            changed[note.id] = note
-        notes = [changed.pop(n.id, n) for n in self.notes] + list(changed.values())
-        base = KnowledgeBase(notes, self.areas)
-        base.root, base.saved = self.root, {**self.saved, **files}
+            if text is not None:
+                note = parse_text(text, path)
+                changed[note.id] = note
+        # A note whose file was removed or rewritten leaves, unless its id was saved again (a move keeps its id).
+        notes = [changed.pop(n.id, n) for n in self.notes if n.id in changed or n.path not in files]
+        base = KnowledgeBase(notes + list(changed.values()), self.areas)
+        saved = {**self.saved, **{path: text for path, text in files.items() if text is not None}}
+        base.root, base.saved = self.root, {path: text for path, text in saved.items() if files.get(path, "") is not None}
         return base
 
     def source(self, note: Note) -> str:

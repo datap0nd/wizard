@@ -357,7 +357,13 @@ def tool_label(name: str, args: dict[str, Any], services: Services) -> str:
         return f"Added to Wizard's map of {portal_name(services, args.get('system'))}: {what}"
     if name == "wizard_kb_save_notes":
         count = len([n for n in args.get("notes") or [] if isinstance(n, dict)])
-        return f"Saved {count} note(s) to the company knowledge base"
+        moves = len([m for m in args.get("moves") or [] if isinstance(m, dict)])
+        removes = len([r for r in args.get("removes") or [] if isinstance(r, str)])
+        if not (moves or removes):
+            return f"Saved {count} note(s) to the company knowledge base"
+        done = ([f"saved {count}"] if count else []) + ([f"moved or renamed {moves}"] if moves else []) + (
+            [f"removed {removes}"] if removes else [])
+        return f"Changed the company knowledge base: {', '.join(done)} note(s)"
     if name == "wizard_kb_note_source":
         return "Read knowledge notes as files: " + ", ".join(str(i) for i in args.get("ids") or [])
     if name == "wizard_kb_standard":
