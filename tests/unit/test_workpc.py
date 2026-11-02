@@ -191,3 +191,18 @@ def test_link_network_failure_is_explained_not_an_internal_error(tmp_path, failu
         assert response.status_code == 502 and "could not reach oauth2.googleapis.com" in message and "WIZARD_PROXY" in message
         assert ("TLS certificate is not trusted" if failure == "tls" else "timed out") in message
         assert "internal error" not in message
+
+
+def test_check_lines_print_on_a_windows_console(monkeypatch):
+    """A cp1252 console cannot print "→": run.py --check stopped in the installer smoke test (2 Nov 2026)."""
+    import io
+    import sys
+
+    from wizard_api import preflight
+
+    raw = io.BytesIO()
+    console = io.TextIOWrapper(raw, encoding="cp1252")
+    monkeypatch.setattr(sys, "stdout", console)
+    preflight._line("INFO", "Settings → Dashboards, \\\\server\\share\\Übersicht")
+    console.flush()
+    assert raw.getvalue().decode("cp1252").startswith("INFO  Settings ? Dashboards")

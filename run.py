@@ -17,6 +17,9 @@ for entry in ("services/checks", "services/connectors", "services/documents", "s
 
 
 def main() -> int:
+    for stream in (sys.stdout, sys.stderr):  # a Windows console (cp1252) cannot print every character a message holds
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
     parser = argparse.ArgumentParser(description="Wizard")
     parser.add_argument("--home", type=Path, default=None, help="install folder holding .env and data (default: repository)")
     parser.add_argument("--check", action="store_true", help="validate the installation and exit")

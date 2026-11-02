@@ -11,6 +11,7 @@ import os
 import shutil
 import socket
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -25,7 +26,11 @@ MARKER = "WIZARD-PREFLIGHT-PARENT-CONTEXT-MARKER"
 
 
 def _line(status: str, text: str) -> None:
-    print(f"{status:<5} {text}", flush=True)
+    """One check line. A Windows console's code page (cp1252) cannot print every character a message or a path holds
+    ("→" stopped `run.py --check` in the installer smoke test, 2 Nov 2026): what it cannot print becomes "?"."""
+    line = f"{status:<5} {text}"
+    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    print(line.encode(encoding, "replace").decode(encoding, "replace"), flush=True)
 
 
 GOOGLE_HOSTS = ("https://oauth2.googleapis.com/token", "https://cloudcode-pa.googleapis.com/")
@@ -151,7 +156,7 @@ def _check_dashboards(settings: Settings) -> None:
     """The team's dashboards folder: a WARN when this PC cannot reach it, never a failure (Wizard runs without it)."""
     from wizard_connectors.dashboards import DashboardError, Dashboards, unreachable
     if settings.html_reports_dir is None:
-        _line("INFO", "Dashboards not configured (Settings → Dashboards, or WIZARD_HTML_REPORTS_DIR)")
+        _line("INFO", "Dashboards not configured (Settings > Dashboards, or WIZARD_HTML_REPORTS_DIR)")
         return
     folder = Dashboards(settings.html_reports_dir, None, settings.dashboards_name)
     problem = folder.problem(fresh=True)

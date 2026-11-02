@@ -3,7 +3,16 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-02 (latest) — Dashboards: the team's HTML dashboards, a system Wizard reads first
+## 2026-11-02 (latest) — Fix: the installation check printed a character a Windows console cannot show
+
+The release build's smoke test stopped: `run.py --check` printed "Settings → Dashboards", and a Windows console's code
+page (cp1252) has no "→", so Python raised `UnicodeEncodeError` and the check failed (the `desktop` run for the dashboards
+merge published nothing). A work PC's console would fail the same way. `run.py` now prints with `errors="replace"`, each
+check line is encoded for the console it goes to, and that message uses ">".
+
+**Tests.** `test_check_lines_print_on_a_windows_console` (`tests/unit/test_workpc.py`); full suite and `verify_spec.py`.
+
+## 2026-11-02 — Dashboards: the team's HTML dashboards, a system Wizard reads first
 
 The owner: "I believe these dashboards should definitely be the first thing in the priority list as they are dashboards
 prepared combining logic and data that wizard will struggle to get right off the bat"; "Y:\ is indeed a risk as it's
