@@ -18,6 +18,7 @@ from pydantic import ValidationError
 
 from .catalog import SourceContract
 from .knowledge import ENTRY, FRONT_MATTER, NOTE_TYPES, front_matter, parse_list, unquote
+from .portals import KNOWN as PORTALS
 
 LIVE_ADAPTERS: set[str] = set()  # systems with an approved, parity-tested live adapter (none yet)
 SECRET_PATTERNS = {
@@ -61,6 +62,7 @@ def validate_content(root: Path) -> list[Problem]:
     files = sorted(sources.glob("*.json")) if sources.is_dir() else []
     notes = [p for p in (root / "knowledge").rglob("*.md") if p.name != "README.md"] if (root / "knowledge").is_dir() else []
     maps = sorted((root / "portal-maps").glob("*.json")) if (root / "portal-maps").is_dir() else []
+    mapped: dict[str, int] = {}  # portal -> reports its published map has mapped (or partly), as portal_map counts them
     for path in maps:
         where = path.relative_to(root).as_posix()
         text = path.read_text(encoding="utf-8")
@@ -72,6 +74,9 @@ def validate_content(root: Path) -> list[Problem]:
             continue
         if not isinstance(value, dict) or value.get("system") != path.stem:
             problems.append(Problem("error", where, f"a portal map's system must match its file name '{path.stem}'"))
+        elif path.stem in PORTALS and isinstance(value.get("reports"), list):
+            mapped[path.stem] = sum(1 for r in value["reports"] if isinstance(r, dict)
+                                    and r.get("status") in ("mapped", "partial"))
     if not files and not notes and not maps:
         problems.append(Problem("error", "contracts/sources", "nothing to load: no report catalogs (<platform>.json) and no "
                                                               "knowledge notes"))
@@ -96,6 +101,15 @@ def validate_content(root: Path) -> list[Problem]:
         system = contract.system
         if path.stem != system.id:
             problems.append(Problem("error", where, f"file name must match system id '{system.id}'"))
+        # A portal with mapped reports is read through its map, and its catalog is retired (owner, 2 Nov 2026): said
+        # once here instead of asking for a review of each entry Wizard no longer offers.
+        retired = bool(mapped.get(system.id))
+        if retired:
+            name = PORTALS[system.id][0]
+            problems.append(Problem("warning", where, f"retired: portal-maps/{system.id}.json maps {mapped[system.id]} "
+                                                      f"{name} reports, so where {name} is set up as a portal Wizard "
+                                                      "reads it through its map and does not offer this catalog; its "
+                                                      "UNCERTAIN choices need no review"))
         if system.connector.status in ("ROWS_VERIFIED", "SYNTHETIC_FIXTURE") and system.id not in LIVE_ADAPTERS:
             problems.append(Problem("warning", where, f"connector status {system.connector.status} is not allowed for real "
                                                       "content (no approved live adapter exists for this system yet): it "
@@ -128,7 +142,7 @@ def validate_content(root: Path) -> list[Problem]:
                     problems.append(Problem("error", label, f"measure {measure.key} is a percentage and must not be summed"))
             if not report.description.strip():
                 problems.append(Problem("warning", label, "missing description: Gemini will struggle to choose this report"))
-            if any(c.upper().startswith("UNCERTAIN") for c in report.caveats):
+            if not retired and any(c.upper().startswith("UNCERTAIN") for c in report.caveats):
                 problems.append(Problem("warning", label, "has UNCERTAIN choices waiting for owner review"))
     problems += validate_knowledge(root / "knowledge", root)
     for stray in root.rglob("*"):

@@ -384,13 +384,28 @@ def list_sources(ctx: ToolContext, _: NoArgs) -> dict[str, Any]:
                         "connector_status": "READ_ONLY_SQL", "data_mode": "LIVE", "your_market_access": "all markets",
                         "how_to_navigate": "wizard_browse_knowledge(area='datasets') → wizard_read_knowledge → "
                                            "wizard_query_postgresql"})
+    maps = ctx.services.portal_maps
     for portal in ctx.services.portals.settings.portals if ctx.services.portals else ():
         if ctx.identity.can_use_system(portal.id) and _on(ctx, portal.id):
-            systems.append({"system": portal.id, "name": f"{portal.name} (live, in the person's own browser)",
-                            "description": f"The {portal.name} web portal, read live in the person's own signed-in "
-                                           "Wizard browser with your own steps and scripts.",
-                            "connector_status": "BROWSER_SESSION", "data_mode": "LIVE",
-                            "how_to_navigate": f"portal_guide('{portal.id}') → portal_run(system='{portal.id}', ...)"})
+            entry: dict[str, Any] = {
+                "system": portal.id, "name": f"{portal.name} (live, in the person's own browser)",
+                "description": f"The {portal.name} web portal, read live in the person's own signed-in Wizard browser "
+                               "with your own steps and scripts.",
+                "connector_status": "BROWSER_SESSION", "data_mode": "LIVE",
+                "how_to_navigate": f"portal_guide('{portal.id}') → portal_run(system='{portal.id}', ...)"}
+            mapped = maps.mapped(portal.id) if maps else 0
+            if mapped:  # the map is where this portal's reports are found (owner, 2 Nov 2026)
+                retired = portal.id in ctx.services.retired_catalogs
+                guide = guides.get(f"platform-{portal.id}")
+                entry.update({
+                    "reports_mapped": mapped,
+                    "reports": f"Read through its map: portal_map(system='{portal.id}', find='<business words>') returns "
+                               "the matching reports, what each is for, its filters and the request that reads it in "
+                               "one portal_run." + (f" Wizard's report catalog for {portal.name} is retired: the map is "
+                                                    "where its reports are." if retired else ""),
+                    "how_to_navigate": f"portal_map(system='{portal.id}', find=...) → portal_run(system='{portal.id}', ...)",
+                    **({"platform_guide": f"wizard_lookup_definitions('{guide.title}')"} if retired and guide else {})})
+            systems.append(entry)
     note = "Only sources and reports you are entitled to are listed."
     if ctx.choice is not None:
         off = [ctx.choice.name(s) for s in ctx.choice.off()]
@@ -416,7 +431,15 @@ def ask_for_system(ctx: ToolContext, args: AskForSystemArgs) -> dict[str, Any]:
 
 
 def search_catalog(ctx: ToolContext, args: CatalogSearchArgs) -> dict[str, Any]:
-    return {"results": search(ctx, args.query, args.limit, None)}
+    data: dict[str, Any] = {"results": search(ctx, args.query, args.limit, None)}
+    portals = ctx.services.portals
+    mapped = [p for p in portals.settings.portals if p.id in ctx.services.retired_catalogs
+              and ctx.identity.can_use_system(p.id) and _on(ctx, p.id)] if portals else []
+    if mapped:  # their catalogs are retired (owner, 2 Nov 2026): say where their reports are instead
+        data["portal_maps"] = (f"Not searched here: the reports of {', '.join(p.name for p in mapped)}, which Wizard "
+                               "finds in their maps: " + ", ".join(f"portal_map(system='{p.id}', find=...)"
+                                                                   for p in mapped) + ".")
+    return data
 
 
 def _compact(fields: dict[str, Any]) -> dict[str, Any]:

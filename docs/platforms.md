@@ -27,6 +27,9 @@ adding a catalog file, a platform guide and a live adapter for its API; the MCP 
 
 ## Filling the catalogs with the real reports
 
+Catalogs are for systems that are not portals and for portals Wizard has not mapped yet: once a portal's map has
+mapped reports, its catalog is retired and the map is where Wizard finds its reports (below).
+
 1. **ASAP (~50 candidates):** `scripts/import_asap_catalog.py` walks ASAP folders through Library REST and drafts
    catalog entries from ASAP's own metadata (names, attributes, metrics, prompts). It reads metadata only, no rows. The
    draft goes to `artifacts/catalog-drafts/` and is never loaded until reviewed.
@@ -60,6 +63,12 @@ datasets and data request. Questions read the map first (`portal_map`) and read 
 often one `request` step (the portal's own data request, sent from the browser with the person's session). With the
 knowledge base's **Write token (PAT)**, the map is published to `portal-maps/` in the knowledge-base repository.
 [Decision](decisions/2026-10-30-portal-maps.md).
+
+**A mapped portal has no report catalog.** Once a portal's map has mapped reports (this PC's map or the published one),
+Wizard retires that portal's catalog at start-up: no `<platform>_*` tools, none of its reports in
+`wizard_search_catalog`, and `wizard_list_sources` points at `portal_map`. Systems that are not portals, portals with
+no mapped report yet and the synthetic examples keep their catalogs.
+[Decision](decisions/2026-11-02-retire-portal-catalogs.md).
 
 PostgreSQL is different: it has no report entries. Gemini reads the dataset notes and queries the server directly
 with `wizard_query_postgresql`

@@ -2,6 +2,11 @@
 
 Use one copy of this checklist per report or report batch. A report enters the catalog only when every box applies.
 
+Not for a company portal Wizard has mapped (ASAP, GSCM, the Big Data Portal with mapped reports): Wizard finds that
+portal's reports in its map and retires its catalog
+([decision](decisions/2026-11-02-retire-portal-catalogs.md)). Map a missing report in Wizard (Settings → Portals →
+Map) instead.
+
 1. **Permission** — named source owner approves read access for Wizard and the user population; request recorded.
 2. **Metadata indexed** — row added to `docs/source-register.csv` (metadata only, no rows): owner, report id, description,
    access method, dimensions, measures, units, grain, history, refresh, prompts, export/API rights, sensitivity.

@@ -16,7 +16,8 @@ wizard-content/
   knowledge/<area>/<note>.md        company documentation: company, org, products, markets, processes, glossary...
   schema/knowledge-standard.md      how every note is written (refreshed by Wizard updates)
   register/                         topic map, stakeholders, quiz and review logs, coverage
-  contracts/sources/<platform>.json report catalog per platform (JSON, one entry per report)
+  contracts/sources/<platform>.json report catalog per platform (JSON, one entry per report); none for a mapped portal
+  portal-maps/<portal>.json         the portal maps Wizard writes and publishes (never edited by hand)
   register/source-register.csv      tracking: one row per candidate report, owner and approval status
 ```
 
@@ -33,8 +34,11 @@ Converted text and digests stay under `inbox/` and are never committed.
 2. On the work PC, in this folder, start Gemini CLI signed in with your work account and pick the strongest model your
    enterprise plan lists under `/model`.
 3. `/wizard:platform-guide asap inbox/asap/` → writes `knowledge/platforms/asap.md`.
-4. `/wizard:report-catalog asap inbox/asap/` → writes or extends `contracts/sources/asap.json` and the register, and
-   replies with a table of uncertain choices and open questions for the owner.
+4. `/wizard:report-catalog <platform> inbox/<platform>/` → writes or extends `contracts/sources/<platform>.json` and the
+   register, and replies with a table of uncertain choices and open questions for the owner. **Not for a portal
+   Wizard has mapped** (ASAP, GSCM, the Big Data Portal with mapped reports in `portal-maps/`): Wizard reads that portal
+   through its map and does not offer its catalog, so map missing reports in Wizard (Settings → Portals → Map) instead
+   ([decision](https://github.com/datap0nd/wizard/blob/main/docs/decisions/2026-11-02-retire-portal-catalogs.md)).
 5. Validate: from the Wizard repo, `uv run python scripts/validate_content.py <path to wizard-content>`. Wizard runs the
    same checks at start-up and refuses to start on errors.
 6. Open a pull request. The **source owner** reviews every report entry (description, grain, units, aggregation rule,

@@ -69,6 +69,8 @@ class Services:
     portals: PortalBrowsers | None = None
     # What Gemini learned about each portal (portal_map.py): on this PC, published to the knowledge base when it can.
     portal_maps: PortalMaps | None = None
+    # Portals whose report catalog was retired at start-up because their map has mapped reports (tools/__init__.py).
+    retired_catalogs: frozenset[str] = frozenset()
     # Commits files to the company knowledge-base repository with this PC's write token (tasks); None = no token here.
     kb_writer: Writer | None = None
     kb_prefix: str = ""  # the knowledge base's folder in that repository (WIZARD_KB_PATH)

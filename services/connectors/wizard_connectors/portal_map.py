@@ -109,6 +109,14 @@ class PortalMaps:
             counts[report.get("status") or "todo"] = counts.get(report.get("status") or "todo", 0) + 1
         return counts
 
+    def mapped(self, system: str) -> int:
+        """How many of this portal's reports are mapped or partly mapped, in this PC's map or else the published one.
+        Read at start-up, so a malformed published map counts as none rather than stopping Wizard."""
+        reports = self.load(system).get("reports")
+        if not isinstance(reports, list):
+            return 0
+        return sum(1 for r in reports if isinstance(r, dict) and r.get("status") in ROUTED)
+
     def unrouted(self, data: dict[str, Any]) -> list[dict[str, Any]]:
         """Mapped reports that do not say yet what they are for (mapped before the map kept business routing)."""
         return [r for r in data["reports"] if r.get("status") in ROUTED and not r.get("routed")]
