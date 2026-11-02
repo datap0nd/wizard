@@ -3,8 +3,8 @@
 # Optional GitHub token (avoids the anonymous API limit on shared office IPs): the DG_GITHUB_TOKEN environment variable,
 # or a DG_GITHUB_TOKEN=<token> line in .env in the same folder.
 # Downloads the exact commit of `main`, a portable Python and locked libraries (SHA-256 verified) from this repository's
-# GitHub release, installs a clean release under releases\, keeps .env, data\, content\ and outbox\, refreshes the
-# Gemini CLI task folder, and checks the installation. Same model as the B2B installer.
+# GitHub release, installs a clean release under releases\, keeps .env, data\ and every folder you made, and checks
+# the installation. Same model as the B2B installer.
 #
 #   .\setup.ps1                 first install or refresh (uses DG_GITHUB_TOKEN from the environment or .env)
 #   .\update_app.ps1            stop Wizard, refresh, start again (the normal way to update)
@@ -254,32 +254,16 @@ try {
     if ($env:GOOGLE_CLOUD_PROJECT) { Set-EnvDefault 'GOOGLE_CLOUD_PROJECT' $env:GOOGLE_CLOUD_PROJECT 'Enterprise Gemini project (from your environment)' }
     Add-EnvPlaceholder 'WIZARD_HTML_REPORTS_DIR' 'C:\Reports\html' 'Folder with the HTML reports: remove the # and set your path'
 
-    # Folders you own (never overwritten) and Gemini CLI task files (refreshed every update).
-    foreach ($folder in @('outbox', 'data')) { New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir $folder) | Out-Null }
-    $content = Join-Path $InstallDir 'content'
-    if (-not (Test-Path -LiteralPath $content)) {
-        Copy-Tree (Join-Path $release 'templates\content') $content
-        Write-Host 'Created content\ from the documentation template (put platform documents in content\inbox\<platform>\).'
+    # Folders you own (never overwritten).
+    New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir 'data') | Out-Null
+    # Tasks run from Settings > Tasks in Wizard and are the only writer of the knowledge base (owner, 31 Oct and 2 Nov
+    # 2026): the Gemini CLI task files and the documentation kit of earlier versions go. Folders you filled yourself
+    # (content\, documents\, outbox\) stay as they are.
+    foreach ($old in @('tasks', 'templates', 'docs.ps1', 'GEMINI.md', '.gemini\commands\wizard\tasks.toml')) {
+        $path = Join-Path $InstallDir $old
+        if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force }
     }
-    # Wizard-owned parts of content\ follow the release (writing standard, schemas, Gemini commands); notes, catalogs,
-    # registers and the inbox are yours and never touched.
-    foreach ($part in @('schema', '.gemini\commands\wizard')) {
-        $target = Join-Path $content $part
-        New-Item -ItemType Directory -Force -Path $target | Out-Null
-        Copy-Item -Path (Join-Path $release "templates\content\$part\*") -Destination $target -Force
-    }
-    foreach ($folder in @('content\inbox\files', 'content\knowledge', 'content\register', 'documents\quiz-questions', 'documents\quiz-answers')) {
-        New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir $folder) | Out-Null
-    }
-    $templates = Join-Path $InstallDir 'templates'
-    if (Test-Path -LiteralPath $templates) { Remove-Item -LiteralPath $templates -Recurse -Force }
-    Copy-Tree (Join-Path $release 'workpc\templates') $templates
-    # Tasks run from Settings > Tasks in Wizard now (owner, 31 Oct 2026): the Gemini CLI task files of earlier versions go.
-    $tasks = Join-Path $InstallDir 'tasks'
-    if (Test-Path -LiteralPath $tasks) { Remove-Item -LiteralPath $tasks -Recurse -Force }
-    $oldCommand = Join-Path $InstallDir '.gemini\commands\wizard\tasks.toml'
-    if (Test-Path -LiteralPath $oldCommand) { Remove-Item -LiteralPath $oldCommand -Force }
-    Copy-Item -LiteralPath (Join-Path $release 'workpc\GEMINI.md') -Destination (Join-Path $InstallDir 'GEMINI.md') -Force
+    # Keeps a Gemini CLI session started in this folder away from sign-ins and secrets.
     Copy-Item -LiteralPath (Join-Path $release 'workpc\.geminiignore') -Destination (Join-Path $InstallDir '.geminiignore') -Force
 
     # Check before selecting the release: a release that cannot start never replaces a working one.
@@ -295,7 +279,7 @@ try {
     [IO.File]::WriteAllText($pending, $pointer, $utf8)
     $current = Join-Path $InstallDir 'current.json'
     if (Test-Path -LiteralPath $current) { [IO.File]::Replace($pending, $current, (Join-Path $InstallDir 'previous.json')) } else { [IO.File]::Move($pending, $current) }
-    foreach ($name in @('setup.ps1', 'start.ps1', 'update_app.ps1', 'docs.ps1')) { Copy-Item -LiteralPath (Join-Path $release $name) -Destination (Join-Path $InstallDir $name) -Force }
+    foreach ($name in @('setup.ps1', 'start.ps1', 'update_app.ps1')) { Copy-Item -LiteralPath (Join-Path $release $name) -Destination (Join-Path $InstallDir $name) -Force }
 
     # Keep the three newest releases (the selected and previous ones are always kept).
     $keep = @($release)
@@ -309,7 +293,6 @@ try {
     Write-Host "Active release: $release"
     if ($checkCode -eq 1) { Write-Host 'Gemini CLI is not ready yet (see the check above). Replay mode works: set WIZARD_AGENT_RUNTIME=replay in .env to demo without Gemini.' -ForegroundColor Yellow }
     Write-Host 'Next: .\start.ps1   (tasks for Gemini: Settings > Tasks in Wizard)'
-    Write-Host '.\docs.ps1 help lists the documentation kit.'
 } catch {
     Write-Host "Setup failed: $($_.Exception.Message)" -ForegroundColor Red
     exit 1

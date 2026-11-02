@@ -16,7 +16,6 @@ KINDS = {
     "text": {".txt", ".md", ".csv", ".tsv", ".json", ".html", ".htm", ".xml"},
 }
 OOXML = {".docx", ".docm", ".dotx", ".pptx", ".pptm", ".ppsx", ".potx", ".xlsx", ".xlsm", ".xltx"}
-MAX_TEXT_CHARS = 300_000
 MAX_COLUMNS = 60
 
 EMAIL_ADDRESS = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")

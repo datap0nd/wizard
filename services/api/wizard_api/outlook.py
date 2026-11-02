@@ -1,7 +1,7 @@
 """The Email button: open an answer as an unsent Outlook message on the user's own PC, for them to address and send.
 
 Wizard never sends mail and Gemini has no email tool (AGENTS.md). The page builds the message from the answer it shows;
-this module hands it to Outlook through the documentation kit's outlook-draft command, in a subprocess so a waiting
+this module hands it to Outlook through the outlook-draft document command, in a subprocess so a waiting
 Outlook dialog cannot hang the server."""
 from __future__ import annotations
 

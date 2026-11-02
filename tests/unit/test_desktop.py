@@ -215,7 +215,7 @@ def test_sync_uses_the_configured_folder_and_refuses_unsafe_archives(tmp_path):
 
 
 @pytest.mark.parametrize(("status", "words"), [(401, "invalid or expired"), (404, "Contents: read"), (403, "refuse classic tokens"),
-                                               (409, "is empty: nothing has been published")])
+                                               (409, "is empty: nothing has been saved to it yet")])
 def test_github_refusals_are_explained(tmp_path, status, words):
     github = FakeGitHub("a" * 40, {})
     github.status = status

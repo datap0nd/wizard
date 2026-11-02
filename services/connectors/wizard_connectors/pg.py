@@ -1,5 +1,4 @@
-"""Read-only PostgreSQL sessions shared by the documentation export (wizard_documents.postgres) and the live
-PostgreSQL query tool (postgres_query.py).
+"""Read-only PostgreSQL sessions for the live PostgreSQL query tool (postgres_query.py) and the Brain page's news.
 
 Settings: WIZARD_PG_HOST / _PORT / _DATABASE / _USER / _PASSWORD / _SSLMODE (Wizard's .env), else the standard
 PGHOST / PGPORT / PGDATABASE / PGUSER / PGPASSWORD / PGSSLMODE of a read-only account (data_governance's scanner).
@@ -9,7 +8,6 @@ from __future__ import annotations
 
 import contextlib
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Protocol
 
 SSL_MODES = ("disable", "prefer", "require", "verify-ca", "verify-full")
@@ -37,22 +35,6 @@ class PgSettings:
         return f"{self.user}@{self.host}:{self.port}/{self.database} (sslmode {self.sslmode}, from {self.source})"
 
 
-def read_env(path: Path | None) -> dict[str, str]:
-    values: dict[str, str] = {}
-    if path is None or not path.is_file():
-        return values
-    for raw in path.read_text(encoding="utf-8-sig").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
-            value = value[1:-1]
-        values[key.strip()] = value
-    return values
-
-
 def settings_from(values: dict[str, str], environ: dict[str, str]) -> PgSettings | None:
     """WIZARD_PG_* from `values` (or the environment), else PG* from the environment; None when neither names a host
     and a user. Raises PgError for a malformed port or sslmode."""
@@ -75,11 +57,6 @@ def settings_from(values: dict[str, str], environ: dict[str, str]) -> PgSettings
     if sslmode not in SSL_MODES:
         raise PgError("the PostgreSQL sslmode must be disable, prefer, require, verify-ca or verify-full")
     return PgSettings(host, port, get("DATABASE", "postgres"), user, get("PASSWORD"), sslmode, source)
-
-
-MISSING = ("no PostgreSQL connection settings: add WIZARD_PG_HOST, WIZARD_PG_PORT, WIZARD_PG_DATABASE, WIZARD_PG_USER "
-           "and WIZARD_PG_PASSWORD (a read-only account) to Wizard's .env, or set the PGHOST/PGUSER/PGPASSWORD variables "
-           "of the read-only scanner account")
 
 
 def error_text(error: BaseException) -> str:

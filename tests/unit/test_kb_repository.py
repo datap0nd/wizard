@@ -1,5 +1,7 @@
-"""Task 50's publisher: content\\knowledge and contracts -> the private knowledge-base repository as one commit through
-GitHub's API (work PCs have no git). A fake GitHub keeps a real tree so the tests see what the repository ends up with."""
+"""Wizard's writes to the knowledge-base repository (kb.py): the notes a task saves and the portal maps, one commit
+through GitHub's API (work PCs have no git), the write token's own check, and the first commit of an empty repository.
+A fake GitHub keeps a real tree so the tests see what the repository ends up with; like GitHub, it refuses its Git data
+API until a repository has a commit."""
 from __future__ import annotations
 
 import base64
@@ -9,9 +11,11 @@ import re
 
 import httpx
 import pytest
+from tests.helpers import make_settings
 
+from wizard_api import settings_pane
+from wizard_api.app import map_writer
 from wizard_documents import kb
-from wizard_documents.cli import main as docs_main
 
 NOTE = """---
 id: company-overview
@@ -86,6 +90,8 @@ class FakeGitHub:
         if f"{request.method} {path}" in self.refuse:
             message, headers = self.refuse[f"{request.method} {path}"]
             return httpx.Response(403, json={"message": message}, headers=headers)
+        if self.head is None and path.startswith("/git/"):  # GitHub's Git data API needs a first commit
+            return httpx.Response(409, json={"message": "Git Repository is empty."})
         if request.method == "POST" and path == "/git/refs":  # only ever Test connection's probe, which creates nothing
             assert body == {"ref": "refs/heads/wizard-write-check", "sha": "0" * 40}
             return httpx.Response(422, json={"message": "Object does not exist"})
@@ -95,10 +101,13 @@ class FakeGitHub:
             return httpx.Response(200, json={"private": self.private, "default_branch": "main", "permissions": {"push": self.push},
                                              "archived": self.archived, "visibility": self.visibility})
         if request.method == "GET" and path == "/git/ref/heads/main":
+            return httpx.Response(200, json={"object": {"sha": self.head}})
+        if request.method == "GET" and path == "/commits/main":  # the sync's and Test connection's read
             if self.head is None:
                 return httpx.Response(409, json={"message": "Git Repository is empty."})
-            return httpx.Response(200, json={"object": {"sha": self.head}})
+            return httpx.Response(200, text=self.head)
         if request.method == "PUT" and path == "/contents/README.md":
+            assert self.head is None and "branch" not in body, "only an empty repository's first commit, on its default branch"
             self._commit({"README.md": self._blob(base64.b64decode(body["content"]))}, body["message"], None)
             return httpx.Response(201, json={})
         if request.method == "GET" and path.startswith("/contents/"):
@@ -133,97 +142,62 @@ class FakeGitHub:
         return httpx.Response(404, json={"message": "Not Found"})
 
 
-def content_folder(tmp_path, notes: dict[str, str] | None = None):
-    root = tmp_path / "content"
-    for name, text in (notes or {"knowledge/company/overview.md": NOTE}).items():
-        (root / name).parent.mkdir(parents=True, exist_ok=True)
-        (root / name).write_text(text, encoding="utf-8")
-    for private in ("inbox/_text/mail-001.md", "register/stakeholders.csv", "inbox/_digests/d.md"):
-        (root / private).parent.mkdir(parents=True, exist_ok=True)
-        (root / private).write_text("internal: name@company.example", encoding="utf-8")
-    return root
+def client(github: FakeGitHub) -> httpx.Client:
+    return httpx.Client(transport=httpx.MockTransport(github))
 
 
-def publish(root, github, **kw):
-    return kb.publish(root, "acme/kb", TOKEN, client=httpx.Client(transport=httpx.MockTransport(github)), **kw)
-
-
-def test_first_publish_of_an_empty_repository_sends_only_what_wizard_reads(tmp_path):
+def test_the_first_save_into_an_empty_repository_starts_it_with_its_readme(tmp_path, monkeypatch):
+    """Owner, 2 Nov 2026: tasks are the only writer, so a brand-new, empty repository must take a task's first save
+    (and a portal map) without anything published before: Wizard's writer gives it its README first."""
     github = FakeGitHub()
-    outcome = publish(content_folder(tmp_path), github)
-    assert outcome.commit and outcome.added == ["knowledge/company/overview.md"]
-    files = github.files()
-    assert set(files) == {"README.md", "knowledge/company/overview.md"}, "no inbox, digests or registers"
-    assert files["knowledge/company/overview.md"].decode() == NOTE
-    assert any("published 1 added" in line for line in outcome.lines)
-    assert github.hosts == {"github.sec.samsung.net"}, "only the company's GitHub Enterprise Server"
-    assert outcome.lines[-1].endswith(f"https://github.sec.samsung.net/acme/kb/commit/{outcome.commit}")
+    monkeypatch.setattr(kb, "_client", lambda proxy: client(github))
+    settings = make_settings(tmp_path)
+    settings.kb_repo, settings.kb_write_token, settings.kb_ref = "acme/kb", TOKEN, "main"
+    saved = map_writer(settings, "these notes")({"knowledge/company/company-overview.md": NOTE.encode()},
+                                                "Wizard task: Company overview")
+    assert saved.outcome == "published" and saved.commit == github.head
+    assert github.files() == {"README.md": kb.README.encode(), "knowledge/company/company-overview.md": NOTE.encode()}
+    first = github.commits[github.commits[github.head]["parents"][0]]
+    assert first["message"] == "Start the Wizard knowledge base" and first["parents"] == []
+    assert "master copy" in kb.README and "kb-publish" not in kb.README and "docs.ps1" not in kb.README
+    mapped = map_writer(settings)({"portal-maps/gscm.json": b'{"system": "gscm"}'}, "Wizard: GSCM map")
+    assert mapped.outcome == "published" and set(github.files()) == {
+        "README.md", "knowledge/company/company-overview.md", "portal-maps/gscm.json"}
+    assert github.writes.count("PUT /contents/README.md") == 1, "only an empty repository gets the README"
 
 
-def test_unchanged_files_are_not_uploaded_and_deletions_follow(tmp_path):
-    github = FakeGitHub(empty=False)
-    root = content_folder(tmp_path, {"knowledge/company/overview.md": NOTE,
-                                     "knowledge/company/history.md": NOTE.replace("company-overview", "company-history")})
-    publish(root, github)
-    assert set(github.files()) == {"README.md", ".github/CODEOWNERS", "knowledge/company/overview.md",
-                                   "knowledge/company/history.md"}
-    assert github.files()["README.md"] == b"# hand-written readme\n", "a README edited on GitHub is kept"
-    github.writes.clear()
-    again = publish(root, github)
-    assert again.commit is None and github.writes == [] and "nothing changed" in again.lines[-1]
-    (root / "knowledge" / "company" / "history.md").unlink()
-    (root / "knowledge" / "company" / "overview.md").write_text(NOTE.replace("phones", "phones and tablets"), encoding="utf-8")
-    github.calls.clear()
-    third = publish(root, github)
-    assert third.changed == ["knowledge/company/overview.md"] and third.removed == ["knowledge/company/history.md"]
-    assert github.calls.count("POST /git/blobs") == 1, "only the changed note is uploaded"
-    assert set(github.files()) == {"README.md", ".github/CODEOWNERS", "knowledge/company/overview.md"}
-
-
-def test_dry_run_writes_nothing(tmp_path):
-    github = FakeGitHub(empty=False)
-    outcome = publish(content_folder(tmp_path), github, dry_run=True)
-    assert github.writes == [] and outcome.added == ["knowledge/company/overview.md"]
-    assert "DRY RUN" in outcome.lines[-1]
-
-
-@pytest.mark.parametrize(("github", "notes", "words"), [
-    (FakeGitHub(private=False), None, "not private"),
-    (FakeGitHub(push=False), None, "cannot write"),
-    (FakeGitHub(), {"knowledge/company/overview.md": "no front matter"}, "problem(s) in the notes"),
-    (FakeGitHub(), {"knowledge/company/overview.md": NOTE + '\ntoken = "' + "ghp_" + "a" * 36 + '"\n'}, "problem(s)"),
-])
-def test_refusals_happen_before_any_write(tmp_path, github, notes, words):
-    with pytest.raises(kb.PublishError, match=re.escape(words)):
-        publish(content_folder(tmp_path, notes), github)
-    assert github.writes == []
-
-
-def test_the_read_check_uses_the_users_token(tmp_path):
-    transport = httpx.MockTransport(lambda request: httpx.Response(200, text="f" * 40)
-                                    if request.url.path.endswith("/commits/main") else httpx.Response(404))
-    ok, text = kb.check_read("acme/kb", TOKEN, client=httpx.Client(transport=transport))
-    assert ok and "ffffffffffff" in text
-    refused = httpx.MockTransport(lambda request: httpx.Response(401, json={"message": "Bad credentials"}))
-    ok, text = kb.check_read("acme/kb", TOKEN, client=httpx.Client(transport=refused))
-    assert not ok and "read-only token" in text
-    empty = httpx.MockTransport(lambda request: httpx.Response(409, json={"message": "Git Repository is empty."}))
-    ok, text = kb.check_read("acme/kb", TOKEN, client=httpx.Client(transport=empty))
-    assert not ok and "is empty" in text and "kb-publish" in text
-
-
-def test_the_command_reads_repo_and_tokens_from_env_and_never_prints_them(tmp_path, capsys, monkeypatch):
-    root = content_folder(tmp_path)
-    (tmp_path / ".env").write_text("WIZARD_KB_PUBLISH_REPO=acme/kb\n", encoding="utf-8")
-    assert docs_main(["kb-publish", str(root)]) == 2
-    assert "WIZARD_KB_PUBLISH_TOKEN" in capsys.readouterr().out
+def test_test_connection_starts_an_empty_repository_once_and_refuses_what_it_may_not_write():
     github = FakeGitHub()
-    original = kb.publish
-    monkeypatch.setattr(kb, "publish", lambda *a, **k: original(*a, **{**k, "client": httpx.Client(transport=httpx.MockTransport(github))}))
-    monkeypatch.setenv("WIZARD_KB_PUBLISH_TOKEN", TOKEN)
-    assert docs_main(["kb-publish", str(root), "--dry-run"]) == 0
-    out = capsys.readouterr().out
-    assert "added    knowledge/company/overview.md" in out and TOKEN not in out and github.writes == []
+    assert kb.start("acme/kb", TOKEN, client=client(github)) is True
+    assert github.files() == {"README.md": kb.README.encode()}
+    writes = list(github.writes)
+    assert kb.start("acme/kb", TOKEN, client=client(github)) is False and github.writes == writes
+    for refused, words in ((FakeGitHub(private=False), "not private"), (FakeGitHub(push=False), "cannot write"),
+                           (FakeGitHub(archived=True), "is archived")):
+        with pytest.raises(kb.PublishError, match=words):
+            kb.start("acme/kb", TOKEN, client=client(refused))
+        assert refused.writes == [] and refused.head is None
+
+
+def test_test_connection_with_the_write_token_starts_a_new_empty_repository(tmp_path):
+    """Settings → Knowledge base: the owner creates an empty repository, enters both tokens and presses Test
+    connection; the users' read-only token can read it from then on, with no publishing step in between."""
+    github = FakeGitHub()
+    settings, values = make_settings(tmp_path), {"WIZARD_KB_REPO": "acme/kb", "WIZARD_KB_TOKEN": TOKEN}
+
+    def test(**more: str) -> dict:
+        return settings_pane.test_knowledge(settings, {**values, **more}, transport=httpx.MockTransport(github))
+
+    read_only = test()
+    assert not read_only["ok"] and "acme/kb is empty: nothing has been saved to it yet" in read_only["message"]
+    assert "with the write token gives it its first commit" in read_only["message"] and github.writes == []
+    started = test(WIZARD_KB_WRITE_TOKEN=TOKEN)
+    assert started["ok"] and started["message"].startswith("acme/kb was empty: Wizard gave it its first commit "
+                                                           "(README.md) with the write token. The token can read acme/kb")
+    assert started["message"].endswith("The write token can write to it.")
+    assert github.files() == {"README.md": kb.README.encode()}
+    again = test(WIZARD_KB_WRITE_TOKEN=TOKEN)
+    assert again["ok"] and "was empty" not in again["message"] and github.writes.count("PUT /contents/README.md") == 1
 
 
 def test_wizard_writes_only_its_own_files_in_one_commit_and_skips_unchanged_ones():

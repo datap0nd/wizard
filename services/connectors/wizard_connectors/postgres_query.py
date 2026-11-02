@@ -1,6 +1,6 @@
 """Read-only SQL on the company PostgreSQL server, written by Gemini (tool wizard_query_postgresql).
 
-Gemini writes its own query, guided by the dataset notes (task 18); Wizard does not choose the analysis. What protects
+Gemini writes its own query, guided by the dataset notes; Wizard does not choose the analysis. What protects
 the server:
 - the account (WIZARD_PG_* in .env, else PG*): a read-only role, whose grants decide what can be read;
 - every call opens its own connection and sends exactly one statement through PostgreSQL's extended protocol, which

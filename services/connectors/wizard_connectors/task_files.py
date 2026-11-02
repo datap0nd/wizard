@@ -11,7 +11,7 @@ A task that goes through every file runs in rounds (runs.py) and keeps here whic
 the next round, or the next run after a restart, starts with the files left. A file that changed since is not done.
 
 The converter runs in its own process, one file at a time; this module only receives it (Documents), so the connectors
-never import the documentation kit."""
+never import the document converter."""
 from __future__ import annotations
 
 import hashlib
@@ -46,7 +46,7 @@ class TaskFolderError(Exception):
 
 
 class Documents(Protocol):
-    """The documentation kit, run by the API in a separate process: convert(source, out) -> its JSON result (text.md in
+    """The document converter, run by the API in a separate process: convert(source, out) -> its JSON result (text.md in
     out), design(sources) -> one result per source ({status, profile} or {status, note}), combine(profiles)."""
 
     def convert(self, source: Path, out: Path) -> dict[str, Any]: ...

@@ -79,7 +79,7 @@ TOOL_S = 150  # a task-file tool call answers within this (the Gemini CLI route 
 
 
 class Documents:
-    """The documentation kit for the task-file tools: each call runs scripts/wizard_docs.py in its own process,
+    """The document converter for the task-file tools: each call runs scripts/wizard_docs.py in its own process,
     time-limited and one Office job at a time (the lock attached files use), as attachments.py does. A design read
     prints one line per deck as it goes, so the decks read before the time ran out are kept."""
 

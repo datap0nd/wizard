@@ -215,18 +215,8 @@ def portable_locks() -> None:
 
 
 def templates() -> None:
-    copy = ROOT / "templates" / "content" / "schema" / "source-contract.schema.json"
-    check(copy.is_file() and copy.read_bytes() == (ROOT / "contracts" / "source-contract.schema.json").read_bytes(),
-          "templates/content/schema/source-contract.schema.json is out of sync with contracts/ (copy it again)")
-    import tomllib
-    commands = [*(ROOT / "templates" / "content" / ".gemini" / "commands").rglob("*.toml"),
-                *(ROOT / "workpc" / ".gemini" / "commands").rglob("*.toml")]
-    for command in commands:
-        try:
-            data = tomllib.loads(command.read_text(encoding="utf-8"))
-            check({"description", "prompt"} <= set(data) and "{{args}}" in data["prompt"], f"{command.name}: needs description, prompt and {{{{args}}}}")
-        except tomllib.TOMLDecodeError as error:
-            failures.append(f"{command.name}: invalid TOML ({error})")
+    standard = ROOT / "templates" / "content" / "schema" / "knowledge-standard.md"
+    check(standard.is_file(), "templates/content/schema/knowledge-standard.md is missing (wizard_kb_standard reads it)")
 
 
 def main() -> int:

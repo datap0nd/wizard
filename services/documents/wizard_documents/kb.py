@@ -1,43 +1,35 @@
-"""Publish the company knowledge base to the private GitHub repository the desktop app syncs from (task 50).
+"""Wizard's writes to the company's knowledge-base repository: the notes a task saves and the portal maps
+(write_files), the Pages site's branch (update_branch), and the write token's own check (check_write).
 
-Only what Wizard reads is published: content/knowledge/**/*.md and content/contracts/sources/*.json, plus a README the
-first time. The inbox (raw documents), digests, registers, quiz logs and stakeholder lists stay on this PC, because
-every file in the repository reaches every PC that syncs it.
-
-Work PCs have no git, so this writes one commit through the API of the company's GitHub Enterprise Server (fixed:
-wizard_connectors.github): unchanged files are not uploaded again (their git blob ids match), notes deleted here
-are deleted there, and anything else in the repository is left alone. Before writing it checks that the repository is
-private, that the token can push, and that the content passes Wizard's own validation. The publishing token
-(WIZARD_KB_PUBLISH_TOKEN: Contents read and write) stays in this PC's .env; it is never the read-only token handed to
-users."""
+The repository is the master copy of the notes (owner, 2 November 2026); only a task run writes them. Work PCs have no
+git, so each write is one commit built through the API of the company's GitHub Enterprise Server (fixed:
+wizard_connectors.github), moved onto the branch as a fast-forward only: a commit that landed in between is never
+overwritten. Every write refuses a public or archived repository and an account without write access. GitHub's Git
+data API needs a first commit to build on, so an empty repository gets one, a README, from Wizard's first write or from
+Test connection with the write token (start)."""
 from __future__ import annotations
 
 import base64
 import hashlib
 import re
-import shutil
-import tempfile
 from collections.abc import Callable
-from dataclasses import dataclass, field
-from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import quote
 
 import httpx
 
 from wizard_agent import outbound
-from wizard_connectors.content import errors, validate_content
 from wizard_connectors.github import API, WEB, refused
 
-MANAGED = ("knowledge/", "contracts/sources/")
 MAX_FILE_BYTES = 2 * 1024 * 1024
 README = """# Wizard knowledge base
 
 Private. Wizard's desktop app reads `knowledge/` (company notes) and `contracts/sources/` (report catalogs) from this
-repository with a read-only token, and checks every commit with the same rules as `docs.ps1 validate` before using it.
+repository with a read-only token, and checks every commit with Wizard's content rules before using it.
 
-Published from the Wizard documentation kit on the owner's work PC (`.\\docs.ps1 kb-publish`, task 50). Files under
-`knowledge/` and `contracts/sources/` are replaced by the next publish, so edit them on the work PC, not here.
+This repository is the master copy of the notes. Wizard's tasks (Settings → Tasks) save them here, one checked commit
+per save, and Wizard keeps its portal maps in `portal-maps/`. A note changed here directly reaches every PC at its next
+sync.
 
 Never add credentials, raw documents, exports or personal data: every file here reaches every PC that uses Wizard.
 """
@@ -47,54 +39,15 @@ class PublishError(Exception):
     pass
 
 
-@dataclass
-class Outcome:
-    lines: list[str] = field(default_factory=list)
-    commit: str | None = None
-    added: list[str] = field(default_factory=list)
-    changed: list[str] = field(default_factory=list)
-    removed: list[str] = field(default_factory=list)
-
-
-def collect(content: Path) -> dict[str, bytes]:
-    """The files Wizard reads, keyed by their path in the repository."""
-    files: dict[str, bytes] = {}
-    for folder, pattern in (("knowledge", "*.md"), ("contracts/sources", "*.json")):
-        root = content / folder
-        if not root.is_dir():
-            continue
-        for path in sorted(root.rglob(pattern)):
-            relative = path.relative_to(content)
-            if any(part.startswith(".") for part in relative.parts) or not path.is_file():
-                continue
-            if path.stat().st_size > MAX_FILE_BYTES:
-                raise PublishError(f"{relative.as_posix()} is larger than 2 MB; a note should never be that big")
-            files[relative.as_posix()] = path.read_bytes()
-    return files
-
-
-def validate(files: dict[str, bytes]) -> list[str]:
-    """Wizard's start-up checks on exactly what would be published."""
-    scratch = Path(tempfile.mkdtemp(prefix="wizard-kb-"))
-    try:
-        for name, data in files.items():
-            target = scratch / PurePosixPath(name)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(data)
-        return [str(problem) for problem in errors(validate_content(scratch))]
-    finally:
-        shutil.rmtree(scratch, ignore_errors=True)
-
-
 def blob_id(data: bytes) -> str:
     return hashlib.sha1(b"blob %d\0" % len(data) + data, usedforsecurity=False).hexdigest()
 
 
-ARCHIVED = "{repo} is archived, so GitHub keeps it read-only: a repository admin can unarchive it (Settings → General)."
+ARCHIVED ="{repo} is archived, so GitHub keeps it read-only: a repository admin can unarchive it (Settings → General)."
 
 
 class GitHub:
-    def __init__(self, repo: str, token: str, client: httpx.Client, label: str = "publishing token"):
+    def __init__(self, repo: str, token: str, client: httpx.Client, label: str = "write token"):
         self.repo, self.client, self.label = repo, client, label
         self.visibility: str | None = None  # private, internal or public, once the repository was read
         self.route: str | None = None       # how the requests travel, for a refusal that did not come from GitHub
@@ -130,7 +83,7 @@ def _step(response: httpx.Response, repo: str) -> str:
     return f" while {words} ({request.method} {path or '/'})" if words else ""
 
 
-def explain(response: httpx.Response, repo: str, label: str = "publishing token", visibility: str | None = None,
+def explain(response: httpx.Response, repo: str, label: str = "write token", visibility: str | None = None,
             route: str | None = None) -> str:
     code = response.status_code
     try:
@@ -166,7 +119,8 @@ def explain(response: httpx.Response, repo: str, label: str = "publishing token"
                                                                          write=label != "read-only token", write_request=writing,
                                                                          visibility=visibility)
     if code == 409 and "empty" in detail.lower():
-        return f"{repo} is empty: nothing has been published to it yet. Run .\\docs.ps1 kb-publish first."
+        return (f"{repo} is empty: nothing has been saved to it yet. Test connection in Settings → Knowledge base, with "
+                "the write token, gives it its first commit.")
     if code in (409, 422) and ("protected" in detail.lower() or "rule" in detail.lower()):
         return (f"GitHub refused the commit (HTTP {code}){step}: the branch is protected, and Wizard commits straight to "
                 f'it. A repository admin can allow this account to push to it. GitHub said: "{detail}"')
@@ -180,75 +134,60 @@ def _client(proxy: str | None) -> httpx.Client:
     return httpx.Client(timeout=60, verify=outbound.ssl_context(), proxy=route, trust_env=False)
 
 
-def publish(content: Path, repo: str, token: str, *, branch: str | None = None, message: str | None = None,
-            dry_run: bool = False, proxy: str | None = None, client: httpx.Client | None = None) -> Outcome:
-    outcome = Outcome()
-    files = collect(content)
-    if not files:
-        raise PublishError(f"Nothing to publish: {content / 'knowledge'} has no notes yet.")
-    problems = validate(files)
-    if problems:
-        raise PublishError(f"{len(problems)} problem(s) in the notes; fix them first (docs.ps1 validate). First: {problems[0]}")
-    outcome.lines.append(f"PASS  {len(files)} file(s) pass Wizard's checks")
+def _writable(gh: GitHub) -> dict[str, Any]:
+    """The repository, read with the write token. Refuses a public or archived one, and an account that cannot push
+    (the account's role: a token can still lack write, which GitHub says at the first write)."""
+    info = gh.call("GET", "")
+    if not info.get("private"):
+        raise PublishError(f"{gh.repo} is not private: Wizard never writes company content to a public repository.")
+    if info.get("archived"):
+        raise PublishError(ARCHIVED.format(repo=gh.repo))
+    if not (info.get("permissions") or {}).get("push"):
+        raise PublishError(f"This account cannot write to {gh.repo}: ask an organisation owner for write access.")
+    return dict(info)
+
+
+def _empty(response: httpx.Response) -> bool:
+    """GitHub's answer for a repository without a commit: its Git data API answers 409 "Git Repository is empty"."""
+    if response.status_code != 409:
+        return False
+    try:
+        body = response.json()
+    except ValueError:
+        return False
+    return isinstance(body, dict) and "empty" in str(body.get("message", "")).lower()
+
+
+def _first_commit(gh: GitHub) -> None:
+    """An empty repository's first commit, the README, on its default branch: the contents API works on an empty
+    repository, the Git data API every other write uses does not."""
+    gh.call("PUT", "/contents/README.md", {"message": "Start the Wizard knowledge base",
+                                           "content": base64.b64encode(README.encode("utf-8")).decode("ascii")})
+
+
+def _ref(gh: GitHub, branch: str) -> httpx.Response:
+    """The branch's ref, as GitHub answers it. An empty repository gets its first commit first."""
+    url = f"{API}/repos/{gh.repo}/git/ref/heads/{quote(branch, safe='/')}"
+    ref = gh.client.get(url, headers=gh.headers)
+    if _empty(ref):
+        _first_commit(gh)
+        ref = gh.client.get(url, headers=gh.headers)
+    return ref
+
+
+def start(repo: str, token: str, *, proxy: str | None = None, client: httpx.Client | None = None) -> bool:
+    """Settings' Test connection with the write token: give an empty repository its first commit (the README), so the
+    read-only token reads it and every PC syncs it. True when it did; False when the repository already has commits."""
     with client or _client(proxy) as http:
-        gh = GitHub(repo, token, http)
+        gh = GitHub(repo, token, http, "write token")
         gh.route = outbound.describe(API, proxy, windows=True)
-        info = gh.call("GET", "")
-        if not info.get("private"):
-            raise PublishError(f"{repo} is not private. Company notes must never go to a public repository: make it "
-                               "private on GitHub (Settings → General → Danger Zone → Change visibility) first.")
-        if info.get("archived"):
-            raise PublishError(ARCHIVED.format(repo=repo))
-        if not (info.get("permissions") or {}).get("push"):  # the account's role: a token can still lack write
-            raise PublishError("This account cannot write to the repository: ask an organisation owner for write access.")
-        branch = branch or info.get("default_branch") or "main"
-        outcome.lines.append(f"PASS  {repo} is private and the token can write; branch {branch}")
-        ref = http.get(f"{API}/repos/{repo}/git/ref/heads/{branch}", headers=gh.headers)
-        if ref.status_code in (404, 409):  # an empty repository has no branch yet: its first commit is the README
-            if dry_run:
-                outcome.added = sorted(files) + ["README.md"]
-                outcome.lines.append(f"DRY RUN  the repository is empty: {len(outcome.added)} file(s) would be added")
-                return outcome
-            gh.call("PUT", "/contents/README.md", {"message": "Start the Wizard knowledge base", "branch": branch,
-                                                    "content": base64.b64encode(README.encode("utf-8")).decode("ascii")})
-            ref = http.get(f"{API}/repos/{repo}/git/ref/heads/{branch}", headers=gh.headers)
-        if ref.status_code != 200:
-            raise PublishError(explain(ref, repo))
-        parent = ref.json()["object"]["sha"]
-        base_tree = gh.call("GET", f"/git/commits/{parent}")["tree"]["sha"]
-        tree = gh.call("GET", f"/git/trees/{base_tree}?recursive=1")
-        existing = {entry["path"]: entry["sha"] for entry in tree.get("tree", []) if entry.get("type") == "blob"}
-        if tree.get("truncated"):
-            existing = {}
-            outcome.lines.append("INFO  the repository is large: every file is uploaded again")
-        if "README.md" not in existing:
-            files = {**files, "README.md": README.encode("utf-8")}
-        entries: list[dict[str, Any]] = []
-        for name, data in files.items():
-            if existing.get(name) == blob_id(data):
-                continue
-            (outcome.changed if name in existing else outcome.added).append(name)
-            if not dry_run:
-                blob = gh.call("POST", "/git/blobs", {"content": base64.b64encode(data).decode("ascii"), "encoding": "base64"})
-                entries.append({"path": name, "mode": "100644", "type": "blob", "sha": blob["sha"]})
-        for name in sorted(existing):
-            if name.startswith(MANAGED) and name not in files:
-                outcome.removed.append(name)
-                entries.append({"path": name, "mode": "100644", "type": "blob", "sha": None})
-        summary = f"{len(outcome.added)} added, {len(outcome.changed)} changed, {len(outcome.removed)} removed"
-        if not (outcome.added or outcome.changed or outcome.removed):
-            outcome.lines.append("PASS  nothing changed: the repository already matches content\\")
-            return outcome
-        if dry_run:
-            outcome.lines.append(f"DRY RUN  would publish {summary}")
-            return outcome
-        new_tree = gh.call("POST", "/git/trees", {"base_tree": base_tree, "tree": entries})
-        commit = gh.call("POST", "/git/commits", {"message": message or f"Publish the knowledge base ({summary})",
-                                                   "tree": new_tree["sha"], "parents": [parent]})
-        gh.call("PATCH", f"/git/refs/heads/{branch}", {"sha": commit["sha"], "force": False})
-        outcome.commit = commit["sha"]
-        outcome.lines.append(f"PASS  published {summary}: {WEB}/{repo}/commit/{commit['sha']}")
-    return outcome
+        info = _writable(gh)
+        branch = str(info.get("default_branch") or "main")
+        ref = http.get(f"{API}/repos/{repo}/git/ref/heads/{quote(branch, safe='/')}", headers=gh.headers)
+        if not _empty(ref):
+            return False
+        _first_commit(gh)
+        return True
 
 
 def check_write(repo: str, token: str, *, proxy: str | None = None, client: httpx.Client | None = None) -> tuple[bool, str]:
@@ -278,20 +217,15 @@ def check_write(repo: str, token: str, *, proxy: str | None = None, client: http
 
 def write_files(repo: str, token: str, files: dict[str, bytes], *, branch: str, message: str,
                 proxy: str | None = None, client: httpx.Client | None = None) -> str | None:
-    """Commit these files in one commit, leaving every other file in the repository alone (Wizard's own files, such as
-    its portal maps). Returns the commit, or None when the repository already has them. Refuses a public repository."""
+    """Commit these files in one commit, leaving every other file in the repository alone (the notes a task saves, a
+    portal map). Returns the commit, or None when the repository already has them. Refuses a public repository; an
+    empty one gets its first commit (the README) first."""
     with client or _client(proxy) as http:
         gh = GitHub(repo, token, http, "write token")
         gh.route = outbound.describe(API, proxy, windows=True)
-        info = gh.call("GET", "")
-        if not info.get("private"):
-            raise PublishError(f"{repo} is not private: Wizard never writes company notes to a public repository.")
-        if info.get("archived"):
-            raise PublishError(ARCHIVED.format(repo=repo))
-        if not (info.get("permissions") or {}).get("push"):
-            raise PublishError(f"This account cannot write to {repo}: ask an organisation owner for write access.")
+        _writable(gh)
         for attempt in range(2):  # another commit may land in between: start again from the new head once
-            ref = http.get(f"{API}/repos/{repo}/git/ref/heads/{branch}", headers=gh.headers)
+            ref = _ref(gh, branch)
             if ref.status_code != 200:
                 raise PublishError(explain(ref, repo, gh.label, gh.visibility, gh.route))
             parent = ref.json()["object"]["sha"]
@@ -308,7 +242,7 @@ def write_files(repo: str, token: str, files: dict[str, bytes], *, branch: str, 
                 return None
             tree = gh.call("POST", "/git/trees", {"base_tree": base_tree, "tree": entries})
             commit = gh.call("POST", "/git/commits", {"message": message, "tree": tree["sha"], "parents": [parent]})
-            moved = http.patch(f"{API}/repos/{repo}/git/refs/heads/{branch}", headers=gh.headers,
+            moved = http.patch(f"{API}/repos/{repo}/git/refs/heads/{quote(branch, safe='/')}", headers=gh.headers,
                                json={"sha": commit["sha"], "force": False})
             if moved.status_code == 200:
                 return str(commit["sha"])
@@ -326,19 +260,14 @@ def update_branch(repo: str, token: str, branch: str, make: Make, *, message: st
                   client: httpx.Client | None = None) -> str | None:
     """One commit on `branch` with what `make` returns, every other file left alone; a branch that does not exist yet
     starts with that commit alone (an orphan: the Pages site's branch shares no history with the notes). Returns the
-    commit, or None when nothing changed. Refuses a public repository, like every write Wizard makes."""
+    commit, or None when nothing changed. Refuses a public repository, like every write Wizard makes; an empty one gets
+    its first commit (the README, on its default branch) first."""
     with client or _client(proxy) as http:
         gh = GitHub(repo, token, http, "write token")
         gh.route = outbound.describe(API, proxy, windows=True)
-        info = gh.call("GET", "")
-        if not info.get("private"):
-            raise PublishError(f"{repo} is not private: Wizard never writes company content to a public repository.")
-        if info.get("archived"):
-            raise PublishError(ARCHIVED.format(repo=repo))
-        if not (info.get("permissions") or {}).get("push"):
-            raise PublishError(f"This account cannot write to {repo}: ask an organisation owner for write access.")
+        _writable(gh)
         for attempt in range(3):  # another commit may land in between: build again from the new head
-            ref = http.get(f"{API}/repos/{repo}/git/ref/heads/{quote(branch, safe='/')}", headers=gh.headers)
+            ref = _ref(gh, branch)
             parent: str | None = None
             existing: dict[str, str] = {}
             base_tree: str | None = None
@@ -405,16 +334,3 @@ def pages_url(repo: str, token: str, *, proxy: str | None = None, client: httpx.
     found = response.json().get("html_url") if isinstance(response.json(), dict) else None
     return str(found) if isinstance(found, str) and found.startswith("https://") else None
 
-
-def check_read(repo: str, token: str, ref: str = "main", *, proxy: str | None = None,
-               client: httpx.Client | None = None) -> tuple[bool, str]:
-    """Can the read-only token (the one users get) read the repository? The same request the desktop app makes."""
-    headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.sha",
-               "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "Wizard-Knowledge-Sync"}
-    with client or _client(proxy) as http:
-        response = http.get(f"{API}/repos/{repo}/commits/{ref}", headers=headers)
-        if response.status_code != 200:
-            return False, explain(response, repo, "read-only token")
-        commit = response.text.strip()
-    # That it cannot write is the person's check, on the token's settings page: Contents read-only, this repository only.
-    return True, f"The read-only token reads {repo}: {ref} is at commit {commit[:12]}."

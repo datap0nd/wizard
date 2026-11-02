@@ -39,7 +39,7 @@ three or more notes need it.
 - One entity, concept, process or decision per note. Split a note when it passes about 600 words, or when it covers two
   things someone would ask about separately. A glossary note holds at most 60 entries.
 - File name = `<id>.md`. The id is lowercase kebab-case, unique across all folders, and does not change lightly:
-  quizzes, answers and other notes refer to it. A task can move a note to the right folder or rename it
+  other notes and the portal maps refer to it. A task can move a note to the right folder or rename it
   (`wizard_kb_save_notes`, `moves`): a rename changes the id in every other note's `related` in the same commit, and
   text that names the old id is the task's to change. A SIGNED note is never moved or renamed by a task.
 
@@ -73,9 +73,9 @@ reviewed_by:
 | `aliases` | recommended | every other name: acronyms, spellings, old names, names in other languages |
 | `tags` | yes | 8 to 15 lowercase words people would search with |
 | `related` | optional | ids of notes a reader should see next |
-| `sources` | yes for new notes | source ids (`S-xxxxxxxx` from the extraction manifest, `A-<quiz>-<question>` for expert answers) |
+| `sources` | yes for new notes | source ids (`S-xxxxxxxx` for a file a task read, section 8; `A-...` ids already in notes for expert answers) |
 | `updated` | yes | the date the content last changed |
-| `reviewed`, `reviewed_by` | after a quiz | when an expert confirmed the note, and who (name and role) |
+| `reviewed`, `reviewed_by` | after an expert's check | when an expert confirmed the note, and who (name and role) |
 
 ## 4. Body
 
@@ -100,8 +100,8 @@ reviewed_by:
    Management (GSCM)"). Put every other name in `aliases`.
 4. **Dates on anything that changes.** Organisation, owners, processes, systems, targets: "As of September 2026, ...".
 5. **Every fact has a source.** End the sentence or bullet with its source id: `[S-1a2b3c4d]`, or `[A-finance__ana-silva-q3]`
-   for an expert answer. A statement you concluded rather than read is marked `(inferred)`; quizzes ask experts about
-   those first.
+   for an expert answer. A statement you concluded rather than read is marked `(inferred)`; experts check those
+   first.
 6. **Never guess.** When the sources are silent, write `UNKNOWN: ... (ask: <role>)` and add it under "Open questions".
    When sources disagree, give both with their ids under `## Conflicting information` and add an open question.
 7. **No performance figures.** Sales, spend, share, margins, targets and forecasts come from the data sources, where
@@ -149,17 +149,19 @@ lets Wizard ask the right clarifying question:
 | Stage | `status` | `reviewed` | Meaning |
 |---|---|---|---|
 | Draft | DRAFT_UNSIGNED | empty | Gemini wrote it from the sources; nobody has confirmed it |
-| Expert-checked | DRAFT_UNSIGNED | date + `reviewed_by` | an expert answered a quiz on it; corrections are applied |
-| Signed | SIGNED | date + `reviewed_by` | the owner approved it (`owner` holds their name and role), recorded in `register/review-log.md` |
+| Expert-checked | DRAFT_UNSIGNED | date + `reviewed_by` | an expert confirmed it; their corrections are applied |
+| Signed | SIGNED | date + `reviewed_by` | the owner approved it (`owner` holds their name and role) |
 
-Never edit a SIGNED note directly: write the proposed change in `register/proposed-changes.md` for its owner.
+The knowledge-base repository is the master copy of every note. The owner signs a note there, by setting
+`status: SIGNED`, `reviewed` and `reviewed_by`; an expert's check sets `reviewed` and `reviewed_by`. Never edit a SIGNED
+note directly: a task that would change one writes the proposed change in its summary, for the owner.
 
 ## 8. Sources
 
-Every converted document has a source id in `inbox/_text/manifest.csv`: `S-` plus the first 8 characters of the file's
-SHA-256. The same file always gets the same id, so a deck attached to five emails is one source. Notes cite ids only;
-the files stay on this PC. A task that reads a folder the person chose (Settings → Tasks) gives each file its source id
-the same way (`wizard_task_read_file` returns it), so a deck read by a task and by the kit is one source.
+A source id names the file a fact came from: `S-` plus the first 8 characters of the file's SHA-256. A task that reads
+a folder or file the person chose (Settings → Tasks) gets each file's id from `wizard_task_read_file`. The same file
+always gets the same id, so a deck found in five folders is one source. Notes cite ids only; the files stay on the
+person's PC. Ids already in notes stay valid, including `A-...` ids for experts' answers.
 
 ## 9. Checklist before saving a note
 
@@ -174,17 +176,19 @@ the same way (`wizard_task_read_file` returns it), so a deck read by a task and 
 - [ ] Changeable facts are dated.
 - [ ] No contact details, credentials, performance figures, PC-specific details or restricted topics.
 - [ ] At most about 600 words; summary at most 200 characters; 8 to 15 tags.
-- [ ] The validator passes (`.\docs.ps1 validate`) and its warnings are fixed or knowingly left (a figure it flags may
-      be structural).
+- [ ] It passes Wizard's checks: `wizard_kb_save_notes` runs the validator on every save and saves nothing when a
+      note fails; its warnings are fixed or knowingly left (a figure it flags may be structural).
 
 ## 10. Dataset notes (written from a database catalog)
 
-A dataset note documents one database object, such as a PostgreSQL materialized view, from the export
-`.\docs.ps1 postgres-catalog` writes to `inbox/postgres/<database>/`. **The export is the source of truth for
-structure**: columns, types, the SQL definition, row counts, ranges, value lists, lineage and refresh schedules come
-only from it, cited with its source id. Documents and experts explain *meaning*. When a document contradicts the
-export (a column that does not exist, another schedule, an old name), write the export's fact and put the document's
-claim under `## Conflicting information` with both source ids.
+A dataset note documents one database object, such as a PostgreSQL materialized view. **The database is the source of
+truth for structure**: columns, types, the SQL definition, value lists, lineage and refresh schedules come only from
+the server's own catalog, read with `wizard_query_postgresql` (the catalog tables: `pg_attribute` joined to `pg_class`
+for a materialized view's columns, `pg_matviews` for its definition, `pg_depend` for lineage, `cron.job` for refresh,
+and the distinct values of small code columns). A fact read there is marked `(checked in the database on <date>)`
+instead of a source id. Documents and experts explain *meaning*. When a document contradicts the database (a column
+that does not exist, another schedule, an old name), write the database's fact and put the document's claim under
+`## Conflicting information` with its source id.
 
 - `type: dataset`; id `<schema>-<object>` in kebab-case (prefix the database when two databases share a name); title
   `<schema>.<object>: <what it holds, in words>`; `aliases` include the exact name (`schema.object`), the bare object
@@ -199,19 +203,20 @@ claim under `## Conflicting information` with both source ids.
   `## Refresh and freshness`, `## Who reads it`, `## Pitfalls`, `## Example query`, `## Questions this note answers`,
   `## Open questions`.
 - `## Example query`: one or two short SELECTs for the questions the object answers most often, using the column names
-  exactly as the export spells them (double-quoted when they have capitals, spaces or symbols) and the filters from
-  `## Pitfalls`. Check every name and filter value against the export; the query is not run here. "Questions this note
-  answers" uses the words executives use ("sell-in by market last week"), not only the object's own terms.
+  exactly as the database spells them (double-quoted when they have capitals, spaces or symbols) and the filters from
+  `## Pitfalls`. Check every name and filter value in the database, and run the query with `LIMIT 0` to prove it, never
+  for its figures. "Questions this note answers" uses the words executives use ("sell-in by market last week"), not
+  only the object's own terms.
 - A dataset note may be longer than 600 words because of its column table; keep every other section short.
-- Value lists and date ranges from the export may be quoted (they describe coverage). Sums, totals and other business
-  figures may not. The owner role is a lead for the stakeholder list, not something to write in the note.
+- Value lists and date ranges from the database may be quoted (they describe coverage). Sums, totals and other
+  business figures may not.
 
 ## 11. Metric notes: where to get it
 
 A metric note (`type: metric`) says what a measure means **and where Wizard reads it**. Without the second part Wizard
 knows what "sell-in" is but finds out by trial which object holds it, which rows are actuals and which column is the
 week; on the first live question that was most of a 41-step run. So every metric note ends with `## Where to get it`,
-written from the dataset notes in `datasets/` (and their export), the portal maps Wizard keeps
+written from the dataset notes in `datasets/` (and the database itself), the portal maps Wizard keeps
 (`data\portal-maps\<portal>.json` on the Wizard PC) and the dashboard notes in `dashboards/`, never from memory. A
 database object, a mapped portal report and a dashboard are equal sources: list every one that holds the measure.
 
@@ -229,7 +234,7 @@ database object, a mapped portal report and a dashboard are equal sources: list 
 - Column names exactly as the database spells them, double-quoted when they have capitals, spaces or symbols
   (`"Order Week"`, `"Unit/Value"`).
 - One example query per database block: a SELECT with those filters, grouped by period and market. Check every column
-  name and filter value against the dataset note and the export's value lists. A value you cannot find there is
+  name and filter value against the dataset note and the database's own value lists. A value you cannot find there is
   `UNKNOWN`, not a guess.
 - When more than one source holds the measure, which one answers which variant of the question (weekly or monthly,
   units or revenue, actual or plan, company sell-in or an analyst's shipment estimate). Order the blocks by that, not
