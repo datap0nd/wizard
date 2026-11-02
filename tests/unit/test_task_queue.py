@@ -154,11 +154,14 @@ def test_run_all_queues_oldest_first_and_the_person_reorders_before_start(tmp_pa
         assert [run_order([parse(t) for t in (C, B, A)])[i].id for i in range(3)] == ["a-first", "b-second", "c-third"]  # type: ignore[misc]
 
 
-def test_the_numbered_review_tasks_run_one_to_seven():
+def test_the_numbered_review_tasks_run_in_their_numbers_order():
     root = Path(__file__).resolve().parents[2] / "tasks"
     found = [parse(p.read_text(encoding="utf-8")) for p in root.glob("kb-review-*.md")]
     ordered = [t.id for t in run_order([t for t in found if t])]
-    assert ordered == sorted(ordered) and len(ordered) == 7 and ordered[0].startswith("kb-review-1-")
+    numbers = [int(i.split("-")[2]) for i in ordered]
+    assert len(ordered) == len(found) >= 2 and numbers == sorted(numbers) == list(range(numbers[0], numbers[0] + len(numbers)))
+    assert ordered[0] == "kb-review-0-dashboards", "the dashboards are described first"
+    assert all(t and t.repeat for t in found), "every review task repeats until nothing is left"
 
 
 # Running -----------------------------------------------------------------------------------------------------------------
