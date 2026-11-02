@@ -137,6 +137,16 @@ def test_a_note_that_breaks_the_standard_saves_nothing(tmp_path: Path, path: str
     assert result.error_code == "invalid_note" and expected in (result.error_message or "") and saved == []
 
 
+def test_a_note_with_a_figure_is_saved_and_the_task_told(tmp_path: Path):
+    saved: list[tuple[dict[str, bytes], str]] = []
+    registry, context = kb_context(tmp_path, saved)
+    text = NOTE.replace("market-share", "share-snapshot") + "The tracker put our share at 41.7% last quarter.\n"
+    result = registry.execute("wizard_kb_save_notes", {"notes": [{"path": "knowledge/metrics/share-snapshot.md", "text": text}],
+                                                "message": "Share snapshot"}, context)
+    assert result.ok and len(saved) == 1, "a figure is a warning: the note is saved"
+    assert any("performance figure" in w and "41.7%" in w for w in result.data["warnings"]), result.data["warnings"]
+
+
 def test_without_a_write_token_a_task_saves_nothing(tmp_path: Path):
     registry, context = kb_context(tmp_path, None)
     result = registry.execute("wizard_kb_save_notes", {"notes": [{"path": "knowledge/metrics/market-share.md", "text": NOTE}],

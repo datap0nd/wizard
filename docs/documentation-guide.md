@@ -39,7 +39,11 @@ most, because Wizard's tools enforce it.
 - **Raw sources** (Outlook exports, decks, workbooks, PDFs), their converted text (`inbox/_text/`) and the digests
   (`inbox/_digests/`) stay in `inbox/` on the work PC and are never committed.
 - Validate with `.\docs.ps1 validate` on the work PC, or `uv run python scripts/validate_content.py <folder>`; Wizard
-  applies the same checks at start-up and will not start on errors.
+  applies the same checks at start-up and will not start on errors. Warnings list what the knowledge-base review
+  (2 November 2026) found: performance figures (rule 7), details that only work on one PC, an owner field that is not
+  one owner in the standard's form, a metric note without `## Where to get it`, a dataset note without
+  `## Example query` or with an empty `related`. They never leave a note out; the figure check can flag a number that
+  is structural, so read each one.
 - Real content can only *describe* reports: every report is `NAVIGATION_ONLY` with no data file. PostgreSQL is the
   exception, and not through reports: Gemini queries it directly with SQL, guided by the dataset notes.
 

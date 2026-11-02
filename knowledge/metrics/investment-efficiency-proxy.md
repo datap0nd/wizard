@@ -2,7 +2,7 @@
 id: investment-efficiency-proxy
 title: Marketing investment-efficiency proxy (not ROI)
 status: DRAFT_UNSIGNED
-owner: TBD - CFO / marketing owner (Step 04)
+owner: TBD - marketing owner (Step 04)
 tags: [roi, return, marketing, investment, spend, efficiency, proxy, sell-through, ranking]
 ---
 **Why a proxy.** True return on marketing investment needs incremental outcomes (what sales would have been without

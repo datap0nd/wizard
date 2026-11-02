@@ -3,7 +3,63 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-02 (latest) — Fix: a task that read a note's file stopped with an internal error
+## 2026-11-02 (latest) — The validator warns about what the knowledge-base review found
+
+The knowledge-base review (2 November 2026) found notes with performance figures, details that only work on one PC,
+owner fields naming several owners or in another form, metric notes without `## Where to get it`, and dataset notes
+without `## Example query` or with an empty `related`. The validator flagged none of them: that review is the measured
+failure these checks answer (AGENTS.md: a targeted check only after a measured failure).
+
+**What changed.**
+- `wizard_connectors/note_checks.py`, called by `validate_knowledge`: six **warnings, never errors** (a note with an
+  error is left out at load and a synced commit with errors is not applied, so a check that can be wrong must not drop
+  a note). `wizard_kb_save_notes` returns them to the task run; `.\docs.ps1 validate` and
+  `scripts/validate_content.py` print them.
+- Figures (standard rule 7): a percentage, a multiplier, a number with thousands separators or a scale word
+  (thousand, million, K, M, bn), or a currency amount, with a measure word (share, rate, attach, units, sales, revenue,
+  spend, growth, margin, price, hosts, users, devices, shipments, sell-in, sell-out, target, forecast...) a few words
+  away in the same sentence, in prose, tables or "Questions this note answers"; and a question naming a measure and one
+  specific period ("What was <brand>'s share in <quarter> <year>?"). One warning per note with up to three examples.
+  Left out: fenced and indented code, inline code, `## Columns`, `## Example query`, worked equations, unit constants
+  (per USD 1M, per 1,000), thresholds (or more, up to, a rule's limit, price bands), counts of structural things
+  (rows, stores, models), 100%, number formats, and value lists and ranges in dataset notes. Dates, ids, years and
+  version numbers never match.
+- PC-specific details (server addresses, drive letters, network share paths, paths into the documentation kit or user
+  folders, local `.bat`/`.cmd`/`.ps1`/`.vbs` scripts), the owner's form (one owner: `<Name>, <role>` or
+  `TBD - <role> (...)`), a metric note without `## Where to get it`, a dataset note without `## Example query`, a
+  dataset note with an empty `related`: one warning each, with the standard's remedy.
+- Knowledge standard: section 3 says `owner` names one owner in one of the two forms; section 6 forbids PC-specific
+  details and says what to write instead; the checklist names both and the validator's warnings.
+- `knowledge/`: four synthetic notes named two owners each; each now names the one that fits its topic
+  (`investment-efficiency-proxy` marketing owner, not also the CFO; `sell-in-sell-out` GSCM owner, not also planning;
+  `platform-asap` ASAP IT, not also the report owners; `platform-gscm` IT VOC, not also GSCM). The candidates stay in
+  [metric-contract.md](metric-contract.md) for the owners to settle. Every other repository note and the standard's own
+  examples pass the new checks unchanged. The content template's platform-guide command asked for
+  `TBD - <owning team if stated, else "ask the platform owner">`; it now asks for the standard's
+  `TBD - <owning team as the documentation names it> (ask the user)`.
+- The [folder-tasks decision](decisions/2026-11-01-folder-tasks.md) no longer claims a DRAFT_UNSIGNED check: a save is
+  refused for errors and returns warnings for figures, phone numbers and PC-specific details.
+
+**Trade-offs (false positives against misses).** A figure needs a measure word nearby, so a launch price with no
+measure word passes; plain integers ("4500 units") are not flagged; "above"/"below" before a figure passes only for an
+amount with no scale word or in a sentence that states a rule ("counts as", "needs approval"); a format mask such as 1,234
+or 12.3% given as an example, and any figure in a sentence or section about number formats, passes as a format; a count
+followed by a structural noun ("1,450 retail stores", "92% of retail outlets") passes, while markets and periods are
+not structural ("41.7% of the market" is flagged). A TBD owner may carry any note in brackets, as the repository's
+"(Step 04)" notes do; a slash, semicolon or "or" between roles counts as several owners.
+
+**Tests.** `tests/unit/test_knowledge.py` 3 new: one synthetic note per rule (figures in prose and a question, a
+server address, drive letter, share path, kit path and local script, two owners, an owner in another form, a metric
+note without `## Where to get it`, a dataset note without `## Example query` and with an empty `related`), each a
+warning, no errors, every note still loads; clean notes (dated structural counts, formula and unit constants, a worked
+equation, a threshold, number formats, value lists and ranges in a dataset note, a column table, an example query, a
+named and a TBD owner) with no warnings at all, and the same value lists in a non-dataset note flagged; the repository's
+own notes and the standard's example free of the new warnings. `tests/unit/test_tasks.py` 1 new: a note with a figure
+is saved and the warning returned to the task. Every invented figure, address and name is synthetic.
+`uv run python scripts/verify_spec.py` passed; `uv run python -m pytest tests -q`: 641 passed, 24 skipped (the
+layers marked BLOCKED without their local prerequisites: PostgreSQL test server, live parity, real Gemini CLI, portal
+browser, PowerShell), 0 failed; `ruff check` and `mypy` clean.
+## 2026-11-02 — Fix: a task that read a note's file stopped with an internal error
 
 On the work PC, "Knowledge review 1 of 7" stopped after 22 tool calls: "Wizard hit an internal error", `KeyError: 'title'`
 in `runs.py` (`tool_summary`). A step's one-line summary of a tool result named every note by its title, but

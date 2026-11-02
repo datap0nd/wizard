@@ -14,7 +14,7 @@ Write the file knowledge/platforms/<platform id>.md in exactly this format:
 id: platform-<platform id>
 title: <Platform name> platform guide (<one-line kind, e.g. MicroStrategy BI>)
 status: DRAFT_UNSIGNED
-owner: TBD - <owning team if stated, else "ask the platform owner">
+owner: TBD - <owning team as the documentation names it> (ask the user)
 tags: [<platform id>, platform, <8-15 lowercase business keywords people would search with>]
 ---
 **What it is.** 2-4 sentences: purpose, who maintains it, which business data families it holds.

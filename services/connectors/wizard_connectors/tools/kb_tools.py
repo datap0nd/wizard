@@ -6,7 +6,8 @@ token, the way portal maps are published. A save adds or replaces whole notes, a
 folder, rename it (a new id, with every other note's `related` changed to match in the same commit) or remove it (owner,
 2 Nov 2026: notes describing dashboards were filed under datasets/, and a task could not move them). Every resulting
 note is checked first with the content validator (front matter, id, type, dates, no credentials, no contact details), a
-SIGNED note is never changed, moved or removed (only its owner changes it), and nothing is committed when anything fails.
+SIGNED note is never changed, moved or removed (only its owner changes it), and nothing is committed when anything fails. The validator's warnings (performance figures, PC-specific details, the
+owner's form, missing sections...) come back with the save.
 Wizard refuses wizard_kb_save_notes outside a task run (runs.py), so answering a question never changes the knowledge
 base."""
 from __future__ import annotations

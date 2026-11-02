@@ -51,8 +51,11 @@ a portal does. (3) The documentation kit's bulk extract (`.\docs.ps1`) and a Gem
   deck or template, one run).
 
 **Consequences.**
-- The decks stay on the PC; only the notes reach the company knowledge base, through `wizard_kb_save_notes` with its
-  checks (DRAFT_UNSIGNED, no figures, no contact details).
+- The decks stay on the PC; only the notes reach the company knowledge base, through `wizard_kb_save_notes` and the
+  content validator: a note with broken front matter, credentials or an email address is refused, and the save returns
+  warnings to the task run for performance figures, phone numbers, details that only work on one PC and the other
+  findings of the knowledge-base review (2 November 2026). Warnings do not stop a save. The tasks write notes as
+  DRAFT_UNSIGNED and never change a SIGNED one; that is their instruction, not a check.
 - Wizard does not make PowerPoint files yet: that is the roadmap's "PowerPoint slides from an answer". The guide is
   written for it, and until then Wizard finds the guide when someone asks how to build a deck.
 - A long folder is a long job (hours for 300 decks); the PC stays awake while a round runs.

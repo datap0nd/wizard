@@ -2,7 +2,7 @@
 id: platform-asap
 title: ASAP platform guide (MicroStrategy BI)
 status: DRAFT_UNSIGNED
-owner: TBD - ASAP IT / report owners (Step 03, Step 09)
+owner: TBD - ASAP IT (Step 03, Step 09)
 tags: [asap, platform, microstrategy, strategy, bi, dossier, report, prompts, folders, navigation, share, smart switch, installed base]
 ---
 **What it is.** ASAP is the MicroStrategy (Strategy) BI portal. Content is organised in folders (Shared Reports →

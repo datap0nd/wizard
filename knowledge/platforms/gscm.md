@@ -2,7 +2,7 @@
 id: platform-gscm
 title: GSCM platform guide (supply chain and channel)
 status: DRAFT_UNSIGNED
-owner: TBD - GSCM / IT VOC (Step 03)
+owner: TBD - IT VOC (Step 03)
 tags: [gscm, platform, supply chain, channel, sell-in, sell-out, sell-through, stock, inventory, distributor, reports]
 ---
 **What it is.** GSCM holds supply-chain and channel data: what the company ships into the channel (sell-in), what the
