@@ -73,16 +73,23 @@ def note_source(ctx: ToolContext, args: SourceArgs) -> dict[str, Any]:
     knowledge = ctx.services.knowledge
     if knowledge.root is None and not knowledge.saved:
         raise ToolError("not_found", "This Wizard has no knowledge-base files to read.")
-    found, missing = [], []
+    found, missing, unreadable = [], [], []
     for note_id in dict.fromkeys(args.ids):
         note = knowledge.by_id.get(note_id)
         if note is None:
             missing.append(note_id)
             continue
-        found.append({"id": note.id, "path": note.path, "text": knowledge.source(note)})
+        try:
+            found.append({"id": note.id, "path": note.path, "text": knowledge.source(note)})
+        except OSError:  # its file is gone from this PC's copy: say so, never stop the run
+            unreadable.append(note_id)
+    gone = (f"The file of {', '.join(unreadable)} is not on this PC any more (a newer knowledge-base version "
+            "replaced it); read the note with wizard_read_knowledge, or leave it for the next run.") if unreadable else None
     if not found:
+        if unreadable:
+            raise ToolError("not_found", gone or "")
         raise ToolError("unknown_note", f"No note with id {', '.join(missing)}. Find ids with wizard_browse_knowledge.")
-    return {"notes": found, "missing": missing or None}
+    return {"notes": found, "missing": missing or None, **({"unreadable": gone} if gone else {})}
 
 
 def standard(ctx: ToolContext, args: NoArgs) -> dict[str, Any]:

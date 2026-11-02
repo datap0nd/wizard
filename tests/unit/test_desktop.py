@@ -182,6 +182,27 @@ def test_the_github_server_is_fixed_and_older_snapshots_are_not_used(tmp_path):
     assert knowledge_sync.active_content(tmp_path / "data", source) is None
 
 
+def test_a_sync_never_deletes_the_snapshot_the_service_reads(tmp_path):
+    """2 Nov 2026: tasks commit often and a task queue keeps the service from restarting; two syncs replaced the active
+    and previous snapshots and deleted the one the service read, so a task stopped on a missing note file."""
+    github = FakeGitHub("a" * 40, {"knowledge/company/overview.md": NOTE})
+    transport = httpx.MockTransport(github)
+    assert knowledge_sync.sync(kb(), tmp_path, transport=transport).outcome == "updated"
+    loaded = knowledge_sync.active_content(tmp_path, kb())
+    knowledge_sync.mark_in_use(tmp_path, loaded)
+    for commit in ("b", "c", "d"):
+        github.commit = commit * 40
+        github.files = {"knowledge/company/overview.md": NOTE.replace("We sell phones.", f"We sell phones ({commit}).")}
+        assert knowledge_sync.sync(kb(), tmp_path, transport=transport).outcome == "updated"
+    kept = {p.name for p in (tmp_path / "knowledge" / "snapshots").iterdir()}
+    assert kept == {"a" * 12, "c" * 12, "d" * 12}, "the one in use, the active one and the one before"
+    assert (loaded / "knowledge" / "company" / "overview.md").is_file()
+    knowledge_sync.mark_in_use(tmp_path, knowledge_sync.active_content(tmp_path, kb()))  # the service restarted on d
+    github.commit, github.files = "e" * 40, {"knowledge/company/overview.md": NOTE}
+    assert knowledge_sync.sync(kb(), tmp_path, transport=transport).outcome == "updated"
+    assert {p.name for p in (tmp_path / "knowledge" / "snapshots").iterdir()} == {"d" * 12, "e" * 12}
+
+
 def test_an_invalid_commit_keeps_the_previous_version(tmp_path):
     github = FakeGitHub("a" * 40, {"knowledge/company/overview.md": NOTE})
     transport = httpx.MockTransport(github)

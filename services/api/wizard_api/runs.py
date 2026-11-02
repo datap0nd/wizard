@@ -224,6 +224,7 @@ class TaskRounds:
     stalls: int = 0
     done_before: int = 0
     left: int | None = None  # what the last run of a repeating task said is left (its Left line)
+    failures: int = 0  # failed runs in a row of a repeating task: the first is tried once more (owner, 2 Nov 2026)
 
     @property
     def unit(self) -> str:
@@ -1014,6 +1015,7 @@ class RunManager:
             row = self.start(identity, rounds.conversation_id, title, kind="task", work={**rounds.work, "round": rounds.round})
             rounds.run_id = row["id"]
             rounds.message = f"Run {rounds.round} of up to {rounds.work['max_runs']}" + (
+                f": run {rounds.round - 1} failed, so Wizard tries once more." if rounds.failures else
                 f": {rounds.left} left after run {rounds.round - 1}." if rounds.left is not None else ".")
             if self.task_board is not None:
                 self.task_board.started(rounds.work["id"], row["id"], rounds.conversation_id, rounds.work.get("path"),
@@ -1061,7 +1063,10 @@ class RunManager:
 
     def _next_task_run(self, run: ActiveRun, rounds: TaskRounds, finished: dict[str, Any]) -> None:
         """A task that repeats until done: run it again while its summary's Left line is above 0, the run saved a note
-        or a map change, and max_runs is not reached. A summary without a Left line counts as done."""
+        or a map change, and max_runs is not reached. A summary without a Left line counts as done. A failed run is
+        tried once more (a busy Gemini, a lost file): the task fails only when the run after it fails too, so a queue
+        left running unattended does not stop at the first hiccup (owner, 2 Nov 2026: "the task is not retrying by
+        itself")."""
         status, number, limit = finished.get("status"), rounds.round, int(rounds.work["max_runs"])
         runs = f"{number} run{'s' if number != 1 else ''}"
         if status == "cancelled":
@@ -1070,8 +1075,14 @@ class RunManager:
             return
         if status != "succeeded":
             reason = finished.get("error_message") or finished.get("error_code") or "no reason given"
-            rounds.state, rounds.message = "failed", f"Run {number} failed: {reason}"
+            if not rounds.failures and number < limit:
+                rounds.failures = 1
+                log.warning("task %s run %d failed (%s); trying once more", rounds.work["id"], number, reason)
+                return  # still running: _task_round starts the next run
+            again = " again" if rounds.failures else ""
+            rounds.state, rounds.message = "failed", f"Run {number} failed{again}: {reason}"
             return
+        rounds.failures = 0
         rounds.left = left = left_to_do(str(finished.get("answer") or ""))
         progressed = run.kb_saves > 0 or bool(run.maps_changed)
         if left is None:

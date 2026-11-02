@@ -42,7 +42,8 @@ max_runs: 5              # optional: at most this many runs (default 5, never mo
 Wizard then asks Gemini to end each run's summary with one last line, `Left: <number>`: how many items the task still
 has to do (`Left: 0` when nothing is left). After a run succeeds, Wizard starts a fresh run in the same conversation
 while that number is above 0, the run saved at least one note or map change, and `max_runs` is not reached; Settings
-shows "Run 2 of up to 5". A summary without a `Left:` line counts as done. Write such a task so that a run continues
+shows "Run 2 of up to 5". A summary without a `Left:` line counts as done. A run that fails is tried once more;
+the task fails when that run fails too. Write such a task so that a run continues
 from what earlier runs changed (they are in the knowledge base) and says what it counted as left. `repeat` does not
 apply to an `every_file` task, which already runs until every file is done.
 

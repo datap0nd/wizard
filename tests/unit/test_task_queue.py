@@ -424,14 +424,27 @@ def test_the_queue_moves_on_after_a_repeating_task_ends_and_stops_when_a_repeat_
         post(client, "/api/v1/tasks/queue/start")
         view = until(client, lambda v: v["queue"]["state"] == "done")
         assert runtime.questions == ["Task: Task B", "Task: Review", "Task: Review (run 2)"]
-        runtime.plan["Review"] = ["save+left3", "fail"]
+        runtime.plan["Review"] = ["save+left3", "fail"]  # run 2 fails, is tried once more, and fails again
         runtime.questions.clear()
         view = post(client, "/api/v1/tasks/queue", {"ids": ["r-review", "b-second"]})
         view = client.post(f"/api/v1/tasks/queue/items/{key(view, 'r-review')}/move", json={"by": -1}, headers=HEADERS).json()
         post(client, "/api/v1/tasks/queue/start")
         view = until(client, lambda v: v["queue"]["state"] == "failed")
-        assert view["queue"]["message"] == "Stopped at “Review”, which failed: Run 2 failed: Gemini's quota is used up."
+        assert view["queue"]["message"] == "Stopped at “Review”, which failed: Run 3 failed again: Gemini's quota is used up."
         assert states(view) == [("r-review", "failed"), ("b-second", "waiting")]
+
+
+def test_a_failed_run_is_tried_once_more_and_the_task_goes_on(tmp_path: Path):
+    """Owner, 2 Nov 2026: \"the task is not retrying by itself\": a run that fails is tried once more."""
+    runtime = Scripted({"Review": ["save+left3", "fail", "block+save+left0"]})
+    with queue_app(tmp_path, runtime, {"r-review": repeat()}) as client:
+        login(client, "local-owner")
+        post(client, "/api/v1/tasks/r-review/run", {})
+        view = until(client, lambda v: v["tasks"][0]["round"] == 3)
+        assert view["tasks"][0]["message"] == "Run 3 of up to 5: run 2 failed, so Wizard tries once more."
+        runtime.release.set()
+        view = until(client, lambda v: v["tasks"][0]["state"] == "done")
+        assert view["tasks"][0]["message"] == "Done in 3 runs: nothing left." and len(runtime.questions) == 3
 
 
 # Restarts ------------------------------------------------------------------------------------------------------------------

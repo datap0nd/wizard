@@ -83,6 +83,18 @@ def _snapshot(data_dir: Path, name: object) -> Path | None:
     return path if path.is_dir() else None
 
 
+def mark_in_use(data_dir: Path, content: Path | None) -> None:
+    """Record the snapshot this service loaded, so a sync never deletes it while the service still reads it. Tasks commit
+    often and a running task queue keeps the service from restarting, so two syncs could replace the active and
+    previous snapshots and delete the one in use (2 Nov 2026: a task stopped on a note file that was no longer there)."""
+    snapshots = (folder(data_dir) / "snapshots").resolve()
+    name = content.name if content is not None and content.resolve().parent == snapshots else None
+    state = read_state(data_dir)
+    if state.get("in_use") != name:
+        state["in_use"] = name
+        _write_state(data_dir, state)
+
+
 def _same(state: dict[str, Any], source: Source, ref: bool = True) -> bool:
     """The state describes this repository on the company's server, this folder and, with `ref`, this branch. A state
     without "api" predates the fixed server: whatever it synced came from another GitHub."""
@@ -114,7 +126,7 @@ def status(data_dir: Path, source: Source | None, loaded: Path | None) -> dict[s
 def _record(data_dir: Path, source: Source, **changes: Any) -> None:
     state = read_state(data_dir)
     if not _same(state, source):
-        state = {key: state[key] for key in ("active", "previous", "commit", "synced_at") if key in state}
+        state = {key: state[key] for key in ("active", "previous", "commit", "synced_at", "in_use") if key in state}
         state["etag"] = None
     state.update({"api": API, "repo": source.repo, "ref": source.ref, "path": source.path, **changes})
     _write_state(data_dir, state)
@@ -297,7 +309,8 @@ def _sync(source: Source, data_dir: Path, proxy: str | None, timeout: float,
                 previous = state.get("active") if current and state.get("active") != name else state.get("previous")
                 _record(data_dir, source, active=name, previous=previous, commit=commit, etag=etag, files=files,
                         synced_at=now, checked_at=now, last_error=None)
-                _clean(data_dir, {name, *([previous] if isinstance(previous, str) else [])})
+                in_use = read_state(data_dir).get("in_use")
+                _clean(data_dir, {name, *(s for s in (previous, in_use) if isinstance(s, str))})
                 log.info("knowledge base %s@%s: commit %s active (%d files)", source.repo, source.ref, name, files)
                 return Result("updated", f"Knowledge base updated to commit {name} ({files} files).", commit)
             finally:

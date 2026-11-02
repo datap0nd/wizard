@@ -329,6 +329,7 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
                metronome_transport: httpx.BaseTransport | None = None) -> FastAPI:
     settings = settings or load_settings()
     loaded_content = settings.content_dir
+    knowledge_sync.mark_in_use(settings.data_dir, loaded_content)  # a sync never deletes what this service reads
     if settings.content_dir:
         # Company content never stops Wizard: a file with an error is left out (and logged), and catalogs load as
         # navigation only whatever they claim (owner, 23 Oct 2026: Wizard stopped on a catalog marked ROWS_VERIFIED).

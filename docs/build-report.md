@@ -3,7 +3,23 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-02 (latest) — Fix: while GitHub does not answer, an update brings its own task list
+## 2026-11-02 (latest) — Fix: a task stopped on a note file that was gone; a failed run is tried once more
+
+On the work PC, "Knowledge review 3" (build 1.0.153.0) stopped after 31 steps with `FileNotFoundError` on a note's file
+(`knowledge\metrics\market-share.md`). The service reads notes from the knowledge-base snapshot it started with; each
+sync keeps only the active snapshot and the one before, and tasks commit often while a task queue keeps the service
+from restarting, so two syncs deleted the snapshot in use. And `wizard_kb_note_source` let the error stop the run.
+- The service records the snapshot it loaded (`knowledge_sync.mark_in_use`, `state.json` `in_use`); a sync never
+  deletes it.
+- A note whose file cannot be read is a tool error Gemini reads ("not on this PC any more"), never a crash.
+- A repeating task's failed run is tried once more before the task, and the queue, stop (owner: "the task is not
+  retrying by itself"); Settings shows "Run 3 of up to 5: run 2 failed, so Wizard tries once more."
+
+**Tests.** `test_a_sync_never_deletes_the_snapshot_the_service_reads` (`test_desktop.py`),
+`test_a_note_file_that_is_gone_is_a_tool_error_not_a_crash` (`test_tasks.py`),
+`test_a_failed_run_is_tried_once_more_and_the_task_goes_on` and the updated queue failure test (`test_task_queue.py`).
+
+## 2026-11-02 — Fix: while GitHub does not answer, an update brings its own task list
 
 On the work PC the Tasks list stayed at the morning's knowledge-review tasks 1 to 7: GitHub stopped answering from that
 network ("connection timed out, a proxy is probably required"; nothing in Wizard's route to GitHub changed today), and

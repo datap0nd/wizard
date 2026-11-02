@@ -132,6 +132,16 @@ def kb_context(tmp_path: Path, saved: list[tuple[dict[str, bytes], str]] | None,
     return build_registry(services), ToolContext(identity=identity, run_id="r", recorder=MemoryRecorder(), services=services)
 
 
+def test_a_note_file_that_is_gone_is_a_tool_error_not_a_crash(tmp_path: Path):
+    """2 Nov 2026: a note's file was gone from this PC's copy and the task stopped with FileNotFoundError."""
+    registry, context = kb_context(tmp_path, None, {"knowledge/metrics/other.md": NOTE.replace("market-share", "other")})
+    (tmp_path / "content" / "knowledge" / "metrics" / "market-share.md").unlink()
+    both = registry.execute("wizard_kb_note_source", {"ids": ["market-share", "other"]}, context)
+    assert both.ok and [n["id"] for n in both.data["notes"]] == ["other"] and "market-share" in both.data["unreadable"]
+    alone = registry.execute("wizard_kb_note_source", {"ids": ["market-share"]}, context)
+    assert not alone.ok and alone.error_code == "not_found" and "not on this PC any more" in (alone.error_message or "")
+
+
 def test_a_task_reads_a_note_as_a_file_and_saves_checked_notes_to_the_knowledge_base(tmp_path: Path):
     saved: list[tuple[dict[str, bytes], str]] = []
     registry, context = kb_context(tmp_path, saved)
