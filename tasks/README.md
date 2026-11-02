@@ -9,8 +9,8 @@ One Markdown file per task, named after its id:
 
 ```
 ---
-id: where-to-get-it-portal-reports
-title: Add mapped portal reports to the metric notes' "Where to get it"
+id: kb-review-3-where-to-get-it
+title: Check and correct every metric note's "Where to get it"
 summary: One line shown in Settings: what it changes and why.
 added: 2026-10-31
 ---

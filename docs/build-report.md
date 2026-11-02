@@ -3,7 +3,37 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-01 (latest) — Tasks that read a folder: digest the company's presentations, and write its presentation guide
+## 2026-11-02 (latest) — Seven tasks to fix the knowledge base after its review
+
+The owner had the knowledge base reviewed against Wizard's knowledge standard and code, and asked for tasks to address
+the findings. No code changes: seven tasks in `tasks/`, which reach Settings → Tasks without an update.
+
+**What changed.**
+- `kb-review-1-figures`: take performance figures out of notes (standard rule 7), describing what the source shows
+  instead.
+- `kb-review-2-sources-not-rules`: rewrite notes that set a mandatory source order, tell Wizard which tool to use, or
+  point to sources no Wizard tool opens, as descriptions of each source.
+- `kb-review-3-where-to-get-it`: check every metric note's `## Where to get it` against the database (catalog tables,
+  category value lists, each example query run with `LIMIT 0`; no measure values read) and the portal maps, and
+  correct it. It replaces `where-to-get-it-portal-reports`, which added portal blocks but kept database blocks as they
+  were.
+- `kb-review-4-link-datasets`: the standard's backlink step (metric ids in dataset notes' `related`, business names in
+  their aliases, a question per metric).
+- `kb-review-5-example-queries`: `## Example query` in every dataset note, proved with `LIMIT 0`.
+- `kb-review-6-notes-to-standard`: restructure pre-standard notes; remove PC-specific details (server addresses, drive
+  letters, share and folder paths, local scripts); one owner per note; split notes over 600 words.
+- `kb-review-7-missing-metrics`: draft metric notes for measures the data holds but no note defines.
+- `digest-presentations` also fills the top-level `reporting-conventions` note.
+
+**Not covered by a task** (they need Wizard changes or the owner): `kb-publish` replaces `knowledge/` from the work PC's
+`content\knowledge` and deletes notes missing there, so it would undo what tasks saved; a task cannot move or remove a
+note; tasks cannot change the report catalogs (`contracts/sources/`); nothing reads the HTML dashboards; only owners
+sign notes.
+
+**Tests.** `uv run python scripts/verify_spec.py` passed; `uv run python -m pytest tests` passed (PostgreSQL layer
+skipped locally); every task file parses (`test_every_task_in_the_repository_is_well_formed`).
+
+## 2026-11-01 — Tasks that read a folder: digest the company's presentations, and write its presentation guide
 
 The owner: "Can we have Wizard a task that asks me for a folder, and I point it to that folder, and it digests the whole
 thing and adds to the knowledge base? And also ... another task that also you ask for a folder or a file, I give a
