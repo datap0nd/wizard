@@ -36,6 +36,9 @@ For each file:
    - Products (line-ups, families, naming, life cycle) in `products/`; markets, regions, channels and partners
      (described, not their figures) in `markets/`; strategy themes and priorities (dated, without targets) in
      `company/`; standing decisions and rules ("since 2026 share is measured from ...") in `decisions/`.
+   - How figures are reported: units, currencies and conversion, rounding, how weeks, months and fiscal periods are
+     defined, and what a period label (YTD, L4W, MTD...) covers. The top-level note `reporting-conventions`
+     (`knowledge/reporting-conventions.md`, `type: concept`); write it when it does not exist.
 3. Leave out what the standard forbids: performance figures (sales, share, spend, margins, prices, targets, forecasts),
    people's names except as a note's owner, contact details, and anything marked confidential, restricted, HR or
    legal. Leave out what does not last: agendas, meeting logistics, action items with dates, one-off project status.
