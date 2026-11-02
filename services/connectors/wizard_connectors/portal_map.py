@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -73,8 +73,9 @@ class Published:
     commit: str | None = None
 
 
-# Writes files to the knowledge-base repository: (files by repository path, commit message) -> outcome.
-Writer = Callable[[dict[str, bytes], str], Published]
+# Writes files to the knowledge-base repository: (files by repository path, commit message) -> outcome. None removes
+# that file (a task that moves, renames or removes a note).
+Writer = Callable[[Mapping[str, bytes | None], str], Published]
 
 
 class PortalMaps:

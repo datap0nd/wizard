@@ -80,7 +80,8 @@ around a precomputed result is withdrawn. Its credential, entitlement, DLP and h
   (no rows, secrets removed), and a company provisioning file never carries the write token. Tasks (owner decision,
   [docs/decisions/2026-10-31-tasks.md](docs/decisions/2026-10-31-tasks.md)) are instructions in the repository's
   `tasks/` folder, run from Settings → Tasks; only a task run may save notes to the knowledge base
-  (`wizard_kb_save_notes`: whole notes, validated, one commit per save). Tasks hold instructions, never company content.
+  (`wizard_kb_save_notes`: whole notes, moves, renames and removes, validated, never a SIGNED note, one commit per
+  save; [decision](docs/decisions/2026-11-02-dashboards-area.md)). Tasks hold instructions, never company content.
   A task may ask for a folder or file on the person's PC (owner decision,
   [docs/decisions/2026-11-01-folder-tasks.md](docs/decisions/2026-11-01-folder-tasks.md)): Gemini reads it only with the
   task-file tools, only inside that path, only in that task's run, and never changes a file (its content is

@@ -70,7 +70,7 @@ def explore_request(system: str, name: str, round_number: int) -> str:
 # produces is saved to the company knowledge base.
 TASK_REQUEST = """You are doing a task the Wizard team wrote for this company's Wizard: "{title}". The person started it from Settings → Tasks. Nobody is waiting for an answer: work through it on your own with your tools until it is done.
 
-What the task produces goes to the company's knowledge-base repository. Read wizard_kb_standard before writing a note, read a note's current file with wizard_kb_note_source before changing it, and save whole notes with wizard_kb_save_notes (each save is one commit, checked first). Change only what the task asks for, and never invent a fact: what your tools do not show is UNKNOWN.
+What the task produces goes to the company's knowledge-base repository. Read wizard_kb_standard before writing a note, read a note's current file with wizard_kb_note_source before changing it, and save whole notes with wizard_kb_save_notes (each save is one commit, checked first; it also moves, renames and removes notes). Change only what the task asks for, and never invent a fact: what your tools do not show is UNKNOWN.
 
 When you are done, end with a short summary: what you changed (note ids), what you could not do and why, and anything a person has to decide.
 

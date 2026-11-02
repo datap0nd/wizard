@@ -8,7 +8,7 @@ import json
 import logging
 import time
 from collections import deque
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Literal
@@ -268,14 +268,31 @@ def _is_loopback(host: str | None) -> bool:
 
 def map_writer(settings: Settings, what: str = "this map") -> Any:
     """Commits files (a portal map, a task's notes) to the knowledge-base repository with this PC's write token
-    (Settings → Knowledge base)."""
+    (Settings → Knowledge base). A file given as None is removed in the same commit (a task moved, renamed or removed a
+    note); every such file must still be on the branch, else nothing is committed: another Wizard changed it since this
+    PC's last sync, and removing nothing while writing the new file would leave the note twice."""
     from wizard_documents import kb
 
-    def write(files: dict[str, bytes], message: str) -> Published:
+    def removing(files: Mapping[str, bytes | None]) -> kb.Make:
+        def make(existing: set[str], read: Any) -> dict[str, bytes | None]:
+            missing = sorted(path for path, data in files.items() if data is None and path not in existing)
+            if missing:
+                raise kb.PublishError(f"{', '.join(missing)} is no longer in {settings.kb_repo} ({settings.kb_ref}): "
+                                      "another Wizard moved or removed it. Nothing was saved; the next knowledge-base "
+                                      "sync shows the notes as they are now.")
+            return dict(files)
+        return make
+
+    def write(files: Mapping[str, bytes | None], message: str) -> Published:
         assert settings.kb_repo and settings.kb_write_token
         try:
-            commit = kb.write_files(settings.kb_repo, settings.kb_write_token, files, branch=settings.kb_ref,
-                                    message=message, proxy=settings.github_proxy)
+            if any(data is None for data in files.values()):
+                commit = kb.update_branch(settings.kb_repo, settings.kb_write_token, settings.kb_ref, removing(files),
+                                          message=message, proxy=settings.github_proxy)
+            else:
+                commit = kb.write_files(settings.kb_repo, settings.kb_write_token,
+                                        {path: data for path, data in files.items() if data is not None},
+                                        branch=settings.kb_ref, message=message, proxy=settings.github_proxy)
         except kb.PublishError as error:
             return Published("failed", str(error))
         except httpx.HTTPError as error:

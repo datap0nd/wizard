@@ -1672,17 +1672,17 @@
     },
     {
       "name": "wizard_kb_save_notes",
-      "description": "Only in a task run (Settings → Tasks): add or replace whole knowledge notes in the company's knowledge-base repository, in one commit. Each note is checked against the knowledge standard first and nothing is saved when one fails.",
+      "description": "Only in a task run (Settings → Tasks): change the company's knowledge-base repository in one commit. notes adds or replaces whole notes; moves moves a note to another folder (same file name, same id) or renames it (a new file name is its new id: Wizard sets it in the note and in every other note's related); removes deletes notes no other note links to (or whose links this call removes). Every resulting note is checked against the knowledge standard first, a SIGNED note is never changed, moved or removed, and nothing is saved when anything fails.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "notes": {
-            "description": "Notes to add or replace, whole files.",
+            "description": "Notes to add or replace, whole files. A note that moves can be given here at its new path, when its text changes too.",
             "items": {
               "additionalProperties": false,
               "properties": {
                 "path": {
-                  "description": "knowledge/<area>/<note id>.md, e.g. knowledge/metrics/market-share.md. An existing note keeps its path (wizard_kb_note_source shows it) (pattern ^knowledge/([a-z0-9][a-z0-9-]*/){0,2}[a-z0-9][a-z0-9-]{0,80}\\.md$)",
+                  "description": "knowledge/<area>/<note id>.md, e.g. knowledge/metrics/market-share.md. An existing note keeps its path (wizard_kb_note_source shows it); to move or rename it, use moves (pattern ^knowledge/([a-z0-9][a-z0-9-]*/){0,2}[a-z0-9][a-z0-9-]{0,80}\\.md$)",
                   "type": "string"
                 },
                 "text": {
@@ -1697,7 +1697,38 @@
               "type": "object"
             },
             "maxItems": 20,
-            "minItems": 1,
+            "type": "array"
+          },
+          "moves": {
+            "description": "Notes to move to another folder or rename, each by its id and its new path.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "description": "The note's id now, e.g. 'sell-in-weekly' (pattern ^[a-z0-9][a-z0-9-]{0,80}$)",
+                  "type": "string"
+                },
+                "to": {
+                  "description": "Its new path, knowledge/<area>/<id>.md. The same file name moves the note to that folder and keeps its id; another file name renames it: the file name is the new id, and Wizard sets it in the note and in every other note's related (pattern ^knowledge/([a-z0-9][a-z0-9-]*/){0,2}[a-z0-9][a-z0-9-]{0,80}\\.md$)",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "to"
+              ],
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "removes": {
+            "description": "Ids of notes to delete. Refused while another note's related names one, unless this call saves that note without the link (notes).",
+            "items": {
+              "type": "string",
+              "description": "(pattern ^[a-z0-9][a-z0-9-]{0,80}$)"
+            },
+            "maxItems": 20,
             "type": "array"
           },
           "message": {
@@ -1706,7 +1737,6 @@
           }
         },
         "required": [
-          "notes",
           "message"
         ],
         "type": "object"

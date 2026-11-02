@@ -31,6 +31,24 @@ fonts, layouts, logo and labels, read by PowerPoint) and `wizard_task_files_done
 `every_file` runs in rounds of about 100 tool calls; each round continues with the files left, and **Continue** picks up
 after a stop or a restart.
 
+A task can also move, rename and remove notes, in the same save and the same single commit (owner decision,
+[docs/decisions/2026-11-02-dashboards-area.md](../docs/decisions/2026-11-02-dashboards-area.md)):
+
+```
+wizard_kb_save_notes({
+  "moves": [{"id": "weekly-sell-in-dashboard", "to": "knowledge/dashboards/weekly-sell-in-dashboard.md"}],
+  "removes": ["an-obsolete-note"],
+  "notes": [{"path": "knowledge/metrics/sell-in.md", "text": "<the whole file>"}],
+  "message": "Dashboards have their own area"})
+```
+
+- A move keeps the file name, and so the id. A new file name renames the note: the file name is its new id, and Wizard
+  sets it in the note and in every other note's `related` in the same commit. Text that names the old id is the task's
+  to change; the save's warnings list those notes.
+- A moved note whose text also changes is given whole in `notes` at its new path.
+- A remove is refused while another note's `related` names it, unless the same call saves that note without the link.
+- A SIGNED note is never replaced, moved, renamed or removed, and nothing is committed when anything is refused.
+
 Rules:
 
 - This repository is public: a task holds instructions only, never company content (names of reports, people,
@@ -38,6 +56,6 @@ Rules:
 - A task runs with Wizard's tools: the knowledge tools, `wizard_kb_note_source`, `wizard_kb_standard`, `wizard_kb_save_notes`, the portal
   map and portal tools, the database and catalog tools, and the task-file tools when it asks for a path. A task that
   needs a tool Wizard does not have needs an update first.
-- Say what must not change, and what to do with a SIGNED note (usually: leave it and propose the change in the
-  summary).
+- Say what must not change, and what to do with a SIGNED note: Wizard refuses to change one, so usually propose the
+  change in the summary.
 - Delete a task's file when it is no longer needed; Wizard drops it from the list.
