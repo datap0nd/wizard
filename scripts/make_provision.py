@@ -15,6 +15,10 @@ PostgreSQL password and Metronome's Wizard key), for example:
   WIZARD_METRONOME_CLIENT_KEY=wizard-...      printed by scripts/metronome_link.py on the Metronome host PC
   WIZARD_HTML_REPORTS_DIR=\\fileserver\team\Dashboards   the team's HTML dashboards (a mapped drive such as Y:\ is
                                               written as the network path it maps to on this PC)
+  WIZARD_PG_SCHEMAS=reporting                 the only schemas Gemini's SQL may read (empty: every schema it can read)
+  WIZARD_SOURCE_ORDER=[{"id":"dashboards"},{"id":"postgresql"},{"id":"asap"},{"id":"gscm","same":true}]
+                                              the source order (easier: set it in Settings → Source order, then
+                                              Export settings…)
 
 Put the output next to WizardSetup.exe: setup imports it, and Wizard deletes the plaintext copy after importing. Anyone
 with the file has these credentials, so share it only inside the company."""

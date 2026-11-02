@@ -423,8 +423,11 @@ def list_sources(ctx: ToolContext, _: NoArgs) -> dict[str, Any]:
     note = "Only sources and reports you are entitled to are listed."
     if ctx.choice is not None:
         off = [ctx.choice.name(s) for s in ctx.choice.off()]
-        note += (" The person chose the systems for this request; switched off (not listed): "
-                 f"{', '.join(off)}." if off else "")
+        if ctx.choice.auto:
+            note += (" Used only when the person asks for it (not listed; call wizard_ask_for_system if the answer "
+                     f"needs one): {', '.join(off)}.")
+        elif off:
+            note += f" The person chose the systems for this request; switched off (not listed): {', '.join(off)}."
     return {"sources": systems, "note": note}
 
 
@@ -845,7 +848,7 @@ def check_my_data(ctx: ToolContext, args: CheckArgs) -> dict[str, Any]:
         original = evidence[evidence_id]
         system = str(original.get("system") or "")
         if ctx.choice is not None and system and not ctx.choice.allows(system):
-            return "UNAVAILABLE", f"{ctx.choice.name(system)} is switched off for this request"
+            return "UNAVAILABLE", ctx.choice.why_off(system)
         if original.get("tool") == "portal_run":
             return "UNAVAILABLE", "a portal read is not repeated here; run the portal steps again to read it fresh"
         if system == dashboards.SYSTEM:
@@ -942,9 +945,10 @@ CORE_TOOLS = [
              "[E3]) and shows the user the email on a card. Nothing is scheduled until the user presses Create in "
              "Metronome; the Flow then belongs to Metronome's Wizard user.", BriefArgs, schedule_brief, "wizard",
              "present"),
-    ToolSpec("wizard_ask_for_system", "Only when the person chose which systems this request may use and the answer "
-             "needs one they switched off: name that system and why. The person gets a button under your answer to "
-             "switch it on and continue. Never guess that system's data instead.", AskForSystemArgs, ask_for_system,
+    ToolSpec("wizard_ask_for_system", "Only when the answer needs a system that is off for this request (the person "
+             "chose others, or the company uses it only when asked): name that system and why. The person gets a button "
+             "under your answer to switch it on and continue. Never guess that system's data instead.", AskForSystemArgs,
+             ask_for_system,
              "wizard", "present"),
     ToolSpec("wizard_check_my_data", "Optional verification. Recompute figures you state from the cited evidence rows, "
              "check that each figure covers the period you claim, and optionally re-run cited requests to detect changed "

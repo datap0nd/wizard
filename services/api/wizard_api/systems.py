@@ -8,6 +8,7 @@ from wizard_connectors.entitlements import Identity
 from wizard_connectors.tools import Services
 from wizard_connectors.tools.systems import SystemChoice
 
+from . import source_order
 from .config import Settings
 
 
@@ -40,7 +41,15 @@ def available(settings: Settings, services: Services, identity: Identity) -> lis
     found.append({"id": "attachment", "name": "Attached files", "kind": "files"})
     if can_schedule(settings, services, identity):
         found.append({"id": "metronome", "name": "Metronome", "kind": "schedules"})
-    return found
+    # Sources the company uses only when asked (Settings → Source order): Auto leaves them out, the picker says so.
+    held = source_order.held_back(settings.source_order, [s["id"] for s in found if s["kind"] in source_order.KINDS])
+    return [{**s, "only_when_asked": True} if s["id"] in held else s for s in found]
+
+
+def sources(settings: Settings, services: Services, identity: Identity) -> dict[str, str]:
+    """The data sources the source order arranges, id -> name: the dashboards, report catalogs, portals and the database
+    (not the knowledge base, attached files or Metronome)."""
+    return {s["id"]: s["name"] for s in available(settings, services, identity) if s["kind"] in source_order.KINDS}
 
 
 def choosable(settings: Settings, services: Services, identity: Identity) -> dict[str, str]:
@@ -53,10 +62,13 @@ class UnknownSystem(ValueError):
 
 
 def choice(settings: Settings, services: Services, identity: Identity, systems: Iterable[str] | None) -> SystemChoice | None:
-    """The person's choice for a request; None is Auto. Raises UnknownSystem for a system they cannot choose."""
+    """The person's choice for a request; None is Auto. Auto with sources the company uses only when asked is every
+    other system, marked `auto` (stored and shown as Auto). Raises UnknownSystem for a system they cannot choose."""
+    listed = available(settings, services, identity)
+    names = {s["id"]: s["name"] for s in listed if s["kind"] != "schedules"}
     if systems is None:
-        return None
-    names = choosable(settings, services, identity)
+        held = frozenset(s["id"] for s in listed if s.get("only_when_asked"))
+        return SystemChoice(frozenset(names) - held, names, auto=True) if held else None
     wanted = list(dict.fromkeys(systems))
     unknown = [s for s in wanted if s not in names]
     if unknown:

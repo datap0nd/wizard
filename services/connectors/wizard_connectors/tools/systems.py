@@ -3,7 +3,11 @@
 Auto (no choice) is every system the person may use, as before. A choice switches the others off: their tools are not
 offered to Gemini and the run refuses a call that names one (the portal tools name their portal in `system`). Wizard's
 own work (calculating, charts, Check my data, proposing a recurring brief) belongs to no system and stays available; the
-tools that span systems (the source list, the search across every catalog) list only the systems that are on."""
+tools that span systems (the source list, the search across every catalog) list only the systems that are on.
+
+Auto with sources the company uses only when asked (Settings → Source order; decision 2026-11-02-source-order) is a
+choice marked `auto`: every system but those, so their tools are not offered either, and Gemini asks for one with
+wizard_ask_for_system as it would for a system the person switched off. It is stored and shown as Auto."""
 from __future__ import annotations
 
 import re
@@ -22,9 +26,11 @@ ASK_FOR_SYSTEM = "wizard_ask_for_system"
 
 @dataclass(frozen=True)
 class SystemChoice:
-    """`on`: the systems this request may use. `names`: every system the person could choose, id -> name."""
+    """`on`: the systems this request may use. `names`: every system the person could choose, id -> name. `auto`: the
+    person chose Auto, and the systems that are off are the ones the company uses only when asked."""
     on: frozenset[str]
     names: dict[str, str]
+    auto: bool = False
 
     def allows(self, system: str) -> bool:
         return system in self.on
@@ -34,6 +40,16 @@ class SystemChoice:
 
     def name(self, system: str) -> str:
         return self.names.get(system, system.upper())
+
+    def chosen(self) -> list[str] | None:
+        """The ids the person chose, in the systems list's order; None for Auto."""
+        return None if self.auto else [s for s in self.names if s in self.on]
+
+    def why_off(self, system: str) -> str:
+        """Why a system's tools refuse in this request, in words for Gemini."""
+        if self.auto:
+            return f"{self.name(system)} is used only when the person asks for it (the company's source order)"
+        return f"{self.name(system)} is switched off for this request"
 
 
 def system_of(name: str, args: dict[str, Any] | None = None) -> str | None:
@@ -54,7 +70,8 @@ def system_of(name: str, args: dict[str, Any] | None = None) -> str | None:
 
 
 def offered(name: str, choice: SystemChoice | None, catalogs: Iterable[str], portals: Iterable[str]) -> bool:
-    """Whether Gemini is offered this tool under the choice (None, Auto: every tool but the one that asks for a system)."""
+    """Whether Gemini is offered this tool under the choice (None, Auto: every tool but the one that asks for a system;
+    Auto with sources used only when asked: as a choice of every other system)."""
     if choice is None:
         return name != ASK_FOR_SYSTEM
     if name in PORTAL_TOOLS:

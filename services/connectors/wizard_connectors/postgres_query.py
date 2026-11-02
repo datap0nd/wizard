@@ -7,7 +7,12 @@ the server:
   refuses a second statement. The statement is wrapped as a subquery, so it can only be a query, and runs in a READ ONLY
   transaction that is always rolled back, with statement and lock timeouts. The connection is then closed, so nothing a
   query sets or locks outlives the call;
-- at most MAX_ROWS rows come back to Gemini, which aggregates in SQL for anything larger.
+- at most MAX_ROWS rows come back to Gemini, which aggregates in SQL for anything larger;
+- when the company limits the schemas Wizard may query (WIZARD_PG_SCHEMAS; owner, 2 Nov 2026: one schema allowed,
+  another forbidden), the statement is first explained in the same read-only transaction (EXPLAIN (VERBOSE, FORMAT
+  JSON), which plans it without running it) and refused when the plan reads a relation in any other schema: every scan
+  of a table, materialized view or foreign table, in CTEs, subqueries and joins, and the tables under a view alike.
+  pg_catalog and information_schema (metadata) are always allowed.
 When a query names a table or view that does not exist, the error says where to look instead: readable relations with a
 similar name in that database, and the other databases on the server that have one by that name. A dataset note can
 name a view that was renamed or lives elsewhere, and guessing costs Gemini a step each time. These are catalog reads,
@@ -47,6 +52,8 @@ RELATIONS = ("SELECT n.nspname AS schema, c.relname AS name FROM pg_catalog.pg_c
 NAMED = " AND lower(c.relname) = lower(:relname) AND (:schema = '' OR lower(n.nspname) = lower(:schema))"
 DATABASES = ("SELECT datname FROM pg_catalog.pg_database WHERE datallowconn AND NOT datistemplate "
              "AND datname <> current_database() AND pg_catalog.has_database_privilege(datname, 'CONNECT') ORDER BY 1")
+# Metadata schemas a query may always read, whatever WIZARD_PG_SCHEMAS allows.
+METADATA_SCHEMAS = frozenset({"pg_catalog", "information_schema"})
 MAX_RELATIONS = 20_000      # names compared for a missing relation
 MAX_SIMILAR = 5
 MAX_OTHER_DATABASES = 12
@@ -170,7 +177,11 @@ class PostgresQuery:
         started = time.perf_counter()
         try:
             session.rows("START TRANSACTION READ ONLY")
+            if self.settings.schemas:
+                self.check_schemas(session, wrapped)
             columns, rows = session.query(wrapped)
+        except SourceError:
+            raise
         except Exception as error:  # noqa: BLE001 - a database error becomes one readable tool error Gemini can act on
             message = error_text(error)
             if "syntax error" in message or "multiple commands" in message:
@@ -197,6 +208,31 @@ class PostgresQuery:
         return QueryResult(database, out_columns, out_rows, len(rows) > max_rows,
                            int((time.perf_counter() - started) * 1000), digest)
 
+    def allows(self, schema: str) -> bool:
+        """A query may read this schema: no limit is set, it is listed, or it is metadata."""
+        return not self.settings.schemas or schema in self.settings.schemas or schema in METADATA_SCHEMAS
+
+    def check_schemas(self, session: QuerySession, wrapped: str) -> None:
+        """Refuse the statement when its plan reads a relation outside the schemas Wizard may query. Runs in the
+        query's own read-only transaction; EXPLAIN without ANALYZE plans the statement and runs nothing."""
+        _, found = session.query(f"EXPLAIN (VERBOSE, FORMAT JSON) {wrapped}")
+        plan = found[0][0] if found and found[0] else None
+        if isinstance(plan, str | bytes):
+            plan = json.loads(plan)
+        if not isinstance(plan, list | dict):
+            raise SourceError("query_failed", "PostgreSQL returned no plan for this query, so Wizard cannot check which "
+                                              "schemas it reads.")
+        outside = list(dict.fromkeys((schema, name) for schema, name in plan_relations(plan) if not self.allows(schema)))
+        if outside:
+            read = ", ".join(f"{sql_name(schema, name) if name else schema} (schema {schema})" for schema, name in outside[:8])
+            allowed = self.settings.schemas
+            raise SourceError("schema_not_allowed",
+                              f"This query reads {read}, and Wizard may query only the schema"
+                              f"{'s' if len(allowed) > 1 else ''} {', '.join(allowed)} of this database (with pg_catalog "
+                              "and information_schema for metadata). A view counts by the tables it reads. Use tables "
+                              "and views in the allowed schemas, and say so if the answer needs data that is only "
+                              "elsewhere.")
+
     def where_is(self, session: QuerySession, database: str, missing: str) -> str:
         """For "relation ... does not exist": the readable relations with a similar name in this database, and the other
         databases on the server that have a readable one by that name. Catalog reads only, each in a read-only
@@ -205,7 +241,8 @@ class PostgresQuery:
         try:
             session.rows("ROLLBACK")  # the failed query aborted the transaction
             session.rows("START TRANSACTION READ ONLY")
-            names = [(str(r["schema"]), str(r["name"])) for r in session.rows(f"{RELATIONS} ORDER BY 1, 2 LIMIT {MAX_RELATIONS}")]
+            names = [(str(r["schema"]), str(r["name"])) for r in session.rows(f"{RELATIONS} ORDER BY 1, 2 LIMIT {MAX_RELATIONS}")
+                     if self.allows(str(r["schema"]))]  # never point at a schema Wizard may not query
             others = [str(r["datname"]) for r in session.rows(DATABASES)][:MAX_OTHER_DATABASES]
         except Exception:  # noqa: BLE001 - the hint is a courtesy; the query's own error stands
             return ""
@@ -223,7 +260,8 @@ class PostgresQuery:
                 with contextlib.suppress(Exception):  # a database this account cannot read is skipped
                     elsewhere.rows("START TRANSACTION READ ONLY")
                     rows = elsewhere.rows(f"{RELATIONS}{NAMED} ORDER BY 1, 2 LIMIT 3", relname=relname, schema=schema)
-                    found += [f"{sql_name(str(r['schema']), str(r['name']))} in database {other}" for r in rows]
+                    found += [f"{sql_name(str(r['schema']), str(r['name']))} in database {other}" for r in rows
+                              if self.allows(str(r["schema"]))]
             finally:
                 with contextlib.suppress(Exception):
                     elsewhere.rows("ROLLBACK")
@@ -237,6 +275,27 @@ class PostgresQuery:
             hints.append(f"No readable table or view in database {database}{' or the other databases' if others else ''} "
                          "has a similar name; look in information_schema.tables rather than guessing.")
         return ". " + " ".join(hints)
+
+
+def plan_relations(plan: Any) -> list[tuple[str, str]]:
+    """Every (schema, name) an EXPLAIN (VERBOSE, FORMAT JSON) plan reads: each node with a Schema key (a table, a view's
+    table, a materialized view or foreign table it scans, or a function it scans), at any depth (CTEs, subqueries,
+    joins, init plans), in plan order."""
+    found: list[tuple[str, str]] = []
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict):
+            schema = node.get("Schema")
+            if isinstance(schema, str):
+                found.append((schema, str(node.get("Relation Name") or node.get("Function Name") or "")))
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(plan)
+    return found
 
 
 def sql_name(schema: str, name: str) -> str:

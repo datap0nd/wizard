@@ -145,6 +145,23 @@ describe('steering on the card', () => {
     render(card(applyEvent(run, ev('run_finished', {status: 'succeeded', report_id: 'r', answer: 'ok', data_mode: 'LIVE', check_status: 'NOT_CHECKED'})), steer));
     expect(screen.getByTestId('turn-on-system').textContent).toBe('Switch on GSCM and continue');
   });
+
+  it('on Auto, offers a source the company uses only when asked', () => {
+    const steer = actions();
+    const run = applyEvent({...queried(), systems: null}, ev('system_requested', {system: 'nerp', name: 'NERP', reason: 'Spend lives in NERP.'}));
+    render(card(run, steer));
+    expect(screen.getByTestId('system-request').textContent).toContain('which Wizard uses only when you ask for it.');
+    fireEvent.click(screen.getByTestId('turn-on-system'));
+    expect(steer.turnOn).toHaveBeenCalledWith(run, {system: 'nerp', name: 'NERP', reason: 'Spend lives in NERP.'});
+  });
+
+  it('says in the picker which sources Auto leaves out', () => {
+    const held: SystemInfo[] = [...AVAILABLE, {id: 'nerp', name: 'NERP', kind: 'reports', only_when_asked: true}];
+    render(<TooltipProvider><Composer busy={false} draft="" onDraftChange={() => {}} onSubmit={vi.fn()} systems={held} chosen={null}
+      onChoose={() => {}} /></TooltipProvider>);
+    fireEvent.pointerDown(screen.getByTestId('systems-picker'), {button: 0, ctrlKey: false});
+    expect(screen.getByTestId('auto-hint').textContent).toBe('Wizard picks from all but NERP (only when asked)');
+  });
 });
 
 describe('composer while an answer runs', () => {

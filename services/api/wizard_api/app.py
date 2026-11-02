@@ -543,11 +543,11 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
     def inherited(identity: Identity, parent: dict[str, Any]) -> SystemChoice | None:
         """A Check my data or Make recurring run uses the systems of the answer it follows (those still available)."""
         ids = decode_systems(parent.get("systems"))
-        if ids is None:
-            return None
+        if ids is None:  # Auto, less the sources the company uses only when asked
+            return systems.choice(settings, services, identity, None)
         usable = systems.choosable(settings, services, identity)
         kept = [s for s in ids if s in usable]
-        return systems.choice(settings, services, identity, kept) if kept else None
+        return systems.choice(settings, services, identity, kept or None)
 
     @app.get("/api/v1/bootstrap")
     async def bootstrap(request: Request) -> dict[str, Any]:
@@ -1637,8 +1637,12 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
             raise HTTPException(404, "Settings are changed on the PC where Wizard is installed, by the person who uses it.")
         return identity
 
-    def settings_view() -> dict[str, Any]:
-        return {**settings_pane.describe(settings), "model": runtime.model, "runtime": runtime.kind,
+    def settings_view(identity: Identity) -> dict[str, Any]:
+        view = settings_pane.describe(settings)
+        # Source order: the data sources this PC has, in the systems list's order, for the person to arrange.
+        view["source_order"]["sources"] = [{"id": source, "name": name}
+                                           for source, name in systems.sources(settings, services, identity).items()]
+        return {**view, "model": runtime.model, "runtime": runtime.kind,
                 "desktop": settings.desktop, "build": settings_pane.installed_build(), "version": __version__}
 
     def schedule_restart() -> str:
@@ -1658,8 +1662,7 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
 
     @app.get("/api/v1/settings")
     def get_settings(request: Request) -> dict[str, Any]:
-        settings_owner(request)
-        return settings_view()
+        return settings_view(settings_owner(request))
 
     @app.put("/api/v1/settings")
     async def put_settings(request: Request, body: SettingsBody) -> dict[str, Any]:
@@ -1671,7 +1674,7 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
             raise HTTPException(error.status, str(error)) from None
         changed = result["changed"]
         store.audit(identity.id, "settings:update", detail={"keys": changed})
-        return {**settings_view(), "changed": changed, "apply": schedule_restart() if changed else "none"}
+        return {**settings_view(identity), "changed": changed, "apply": schedule_restart() if changed else "none"}
 
     @app.post("/api/v1/settings/test")
     async def test_settings(request: Request, body: SettingsTestBody) -> dict[str, Any]:

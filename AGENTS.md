@@ -46,7 +46,9 @@ around a precomputed result is withdrawn. Its credential, entitlement, DLP and h
 
 ## Do not
 
-- Add an intent classifier, a scripted tool order, a mandatory verifier call or a hidden deterministic ranking
+- Add an intent classifier, a scripted tool order (the company's source order is guidance in the prompt with a
+  sufficiency test, never code that forces a tool sequence:
+  [decision](docs/decisions/2026-11-02-source-order.md)), a mandatory verifier call or a hidden deterministic ranking
   pipeline. Do not add a rule only to satisfy a test.
 - Run executives under the developer's cached CLI session or any shared Gemini login. Never fall back to another
   user's credentials when a user's own sign-in is missing: fail with a clear "link your account" state.

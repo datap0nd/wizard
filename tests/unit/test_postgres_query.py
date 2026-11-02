@@ -2,7 +2,9 @@
 rolled back, results are capped and typed, rights and evidence, Check my data replays, and the local Owner's access."""
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
+import json
 from decimal import Decimal
 from typing import Any
 
@@ -11,11 +13,11 @@ from fastapi.testclient import TestClient
 from tests.helpers import HEADERS, MemoryRecorder
 
 from wizard_api.app import create_app
-from wizard_api.config import load_settings
+from wizard_api.config import ConfigError, load_settings
 from wizard_connectors.entitlements import Identity, SystemRights
 from wizard_connectors.fixture_source import SourceError
-from wizard_connectors.pg import PgError, PgSettings
-from wizard_connectors.postgres_query import PostgresQuery, without_terminator
+from wizard_connectors.pg import PgError, PgSettings, schema_list
+from wizard_connectors.postgres_query import PostgresQuery, plan_relations, without_terminator
 from wizard_connectors.tools import ToolContext, build_registry, build_services
 
 SETTINGS = PgSettings("db.corp", 5432, "meto_db", "reader", "secret", "prefer", "test")
@@ -191,3 +193,119 @@ def test_the_local_owner_can_query_and_sees_live_data(tmp_path):
         client.post("/api/v1/session/login", json={"user_id": "local-owner"}, headers=HEADERS)
         assert "LIVE" in client.get("/api/v1/bootstrap").json()["data_modes"]
         assert client.app.state.manager.services.postgres is not None
+
+
+# The schemas Wizard may query (WIZARD_PG_SCHEMAS; owner, 2 Nov 2026: one schema allowed, another forbidden) -----------
+LIMITED = dataclasses.replace(SETTINGS, schemas=("reporting",))
+
+
+def scan(schema: str, name: str, node: str = "Seq Scan") -> dict[str, Any]:
+    return {"Node Type": node, "Relation Name": name, "Schema": schema, "Alias": name, "Output": ["x"]}
+
+
+class PlanSession(FakeSession):
+    """A session whose EXPLAIN (VERBOSE, FORMAT JSON) returns `plan`, a faked PostgreSQL plan (parsed, or as text)."""
+
+    def __init__(self, plan: Any) -> None:
+        super().__init__()
+        self.plan = plan
+
+    def query(self, sql: str) -> tuple[list[dict[str, Any]], list[list[Any]]]:
+        if sql.startswith("EXPLAIN"):
+            self.statements.append(sql)
+            return [{"name": "QUERY PLAN", "type_oid": 114}], [[self.plan]]
+        return super().query(sql)
+
+
+ALLOWED_PLAN = [{"Plan": {"Node Type": "Hash Join", "Plans": [
+    scan("reporting", "sell_out_weekly"),
+    {"Node Type": "Hash", "Plans": [scan("reporting", "markets", "Index Scan")]},
+    {"Node Type": "Function Scan", "Function Name": "generate_series", "Schema": "pg_catalog", "Alias": "weeks"},
+    scan("pg_catalog", "pg_class"), scan("information_schema", "sql_features")]}}]
+# A CTE in an init plan, a subquery and a join, two levels down, reading the forbidden schema; as text, as pg8000 may
+# hand it over.
+REFUSED_PLAN = json.dumps([{"Plan": {"Node Type": "Nested Loop", "Plans": [
+    {"Node Type": "CTE Scan", "CTE Name": "segments", "Alias": "segments"},
+    {"Node Type": "Subquery Scan", "Alias": "s", "Parent Relationship": "InitPlan", "Subplan Name": "CTE segments",
+     "Plans": [{"Node Type": "Aggregate", "Plans": [scan("restricted", "customers"), scan("reporting", "orders")]}]},
+    scan("restricted", "customers", "Index Only Scan")]}}])
+
+
+def test_a_query_in_the_allowed_schemas_runs_after_its_plan_is_checked():
+    session = PlanSession(ALLOWED_PLAN)
+    result = PostgresQuery(LIMITED, connect=lambda s, d: session).run("SELECT 1 FROM reporting.sell_out_weekly;")
+    start, explained, query, end = session.statements
+    assert start == "START TRANSACTION READ ONLY" and end == "ROLLBACK" and session.closed
+    assert explained == f"EXPLAIN (VERBOSE, FORMAT JSON) {query}", "the same statement, planned in the same transaction"
+    assert query.startswith("SELECT * FROM (\nSELECT 1 FROM reporting.sell_out_weekly\n) AS wizard_query") and result.rows
+    assert ("pg_catalog", "generate_series") in plan_relations(ALLOWED_PLAN), "metadata schemas are always allowed"
+
+
+def test_a_query_that_reads_another_schema_is_refused_before_it_runs():
+    session = PlanSession(REFUSED_PLAN)
+    with pytest.raises(SourceError) as error:
+        PostgresQuery(LIMITED, connect=lambda s, d: session).run(
+            "WITH segments AS (SELECT * FROM restricted.customers) SELECT * FROM segments")
+    assert error.value.code == "schema_not_allowed"
+    message = error.value.message
+    assert message.startswith("This query reads restricted.customers (schema restricted), and Wizard may query only the "
+                              "schema reporting of this database (with pg_catalog and information_schema for metadata).")
+    assert "A view counts by the tables it reads." in message and "reporting.orders" not in message
+    assert [s.split(" ")[0] for s in session.statements] == ["START", "EXPLAIN", "ROLLBACK"], "the query itself never ran"
+    assert session.closed
+    two = dataclasses.replace(SETTINGS, schemas=("reporting", "Sales Data"))
+    with pytest.raises(SourceError, match="only the schemas reporting, Sales Data of this database"):
+        PostgresQuery(two, connect=lambda s, d: PlanSession(REFUSED_PLAN)).run("SELECT 1")
+    assert plan_relations(json.loads(REFUSED_PLAN)) == [("restricted", "customers"), ("reporting", "orders"),
+                                                        ("restricted", "customers")]
+
+
+def test_with_no_schemas_set_nothing_is_explained():
+    session = PlanSession(REFUSED_PLAN)
+    PostgresQuery(SETTINGS, connect=lambda s, d: session).run("SELECT * FROM restricted.customers")
+    assert not any(s.startswith("EXPLAIN") for s in session.statements), "empty: no limit, today's behaviour"
+
+
+def test_a_plan_that_cannot_be_read_or_made_is_not_waved_through():
+    with pytest.raises(SourceError, match="no plan"):
+        PostgresQuery(LIMITED, connect=lambda s, d: PlanSession(None)).run("SELECT 1")
+    broken = FakeSession(error=Exception({"S": "ERROR", "C": "42601", "M": 'syntax error at or near "FORM"'}))
+    with pytest.raises(SourceError) as error:
+        PostgresQuery(LIMITED, connect=lambda s, d: broken).run("SELECT * FORM reporting.orders")
+    assert error.value.code == "query_failed" and broken.statements[1].startswith("EXPLAIN")
+    assert len(broken.statements) == 3 and broken.statements[-1] == "ROLLBACK" and broken.closed
+
+
+def test_a_missing_relation_never_points_at_a_schema_wizard_may_not_query():
+    here = CatalogSession([("restricted", "global_lc_v"), ("reporting", "global_lc_v_weekly")], databases=["dwh"],
+                          error=MISSING)
+    sessions = {"meto_db": here, "dwh": CatalogSession([("restricted", "global_lc_v")])}
+    with pytest.raises(SourceError) as error:
+        PostgresQuery(LIMITED, connect=lambda s, d: sessions[d]).run("SELECT * FROM bi_reporting.global_lc_v")
+    message = error.value.message
+    assert "similar name in database meto_db: reporting.global_lc_v_weekly." in message
+    assert "restricted" not in message and "database dwh" not in message
+
+
+def test_the_schemas_setting_is_read_as_postgresql_names_them(tmp_path):
+    assert schema_list(' Reporting , "Sales Data", reporting,, ') == ("reporting", "Sales Data")
+    assert schema_list("") == ()
+    for wrong in ("sales data", "reporting;drop", '"bad"name"'):
+        with pytest.raises(PgError, match="schema names separated by commas"):
+            schema_list(wrong)
+    env = {"WIZARD_AGENT_RUNTIME": "replay", "WIZARD_PG_HOST": "db.corp", "WIZARD_PG_USER": "reader",
+           "WIZARD_ATTACHMENT_OFFICE": "never", "WIZARD_ATTACHMENT_FOLDERS": "none"}
+    settings = load_settings(env={**env, "WIZARD_PG_SCHEMAS": "Reporting"}, home=tmp_path)
+    assert settings.postgres is not None and settings.postgres.schemas == ("reporting",)
+    assert "schemas reporting only" in settings.postgres.describe(), "run.py --check says so"
+    with pytest.raises(ConfigError, match="PostgreSQL settings: the schemas Wizard may query"):
+        load_settings(env={**env, "WIZARD_PG_SCHEMAS": "a b"}, home=tmp_path)
+
+
+def test_the_tool_refuses_another_schema_and_records_no_evidence():
+    services = build_services()
+    services.postgres = PostgresQuery(LIMITED, connect=lambda s, d: PlanSession(REFUSED_PLAN))
+    ctx = ToolContext(identity=owner(), run_id="r", recorder=MemoryRecorder(), services=services)
+    outcome = build_registry(services).execute("wizard_query_postgresql", {"sql": "SELECT * FROM restricted.customers"}, ctx)
+    assert not outcome.ok and outcome.error_code == "schema_not_allowed"
+    assert "restricted.customers" in str(outcome.error_message) and ctx.recorder.get_evidence("E1") is None

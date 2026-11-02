@@ -23,7 +23,7 @@ import {Sidebar} from './components/Sidebar';
 import {WizardSprite} from './components/WizardSprite';
 import {dropToHost, onHost, toHost, type DroppedFile} from './host';
 import {cn} from './lib/utils';
-import {choosable, conversationChoice, withFiles} from './systems';
+import {autoSystems, choosable, conversationChoice, withFiles} from './systems';
 import {wizardAnimation} from './wizard';
 import type {Attachment, Bootstrap, Cadence, ConversationSummary, EvidenceSummary, LocalFile, RunEvent, RunView, Schedule, SteerReason,
   SystemRequest, TimelineItem} from './types';
@@ -231,12 +231,13 @@ export function App({compact = false}: {compact?: boolean}) {
       catch (e) { setNotice(e instanceof Error ? e.message : 'The note could not be kept.'); return false; }
     },
     turnOn: (run: RunView, request: SystemRequest) => {
-      const next = Array.from(new Set([...(chosen ?? run.systems ?? []), request.system]));
+      // From Auto: every system Auto uses (not the ones kept for when asked), and the one Gemini asked for.
+      const next = Array.from(new Set([...(chosen ?? run.systems ?? autoSystems(available)), request.system]));
       if (run.status === 'running' || run.status === 'queued') { choose(next); return; }
       setChosen(next);
       void ask(`Continue with ${request.name} switched on.`, next);
     },
-  }), [ask, boot?.runtime?.steering, choose, chosen, steerRun]);
+  }), [ask, available, boot?.runtime?.steering, choose, chosen, steerRun]);
 
   const check = useCallback(async (run: RunView) => {
     try {

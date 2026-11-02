@@ -21,7 +21,8 @@ from wizard_connectors.pg import settings_from as pg_settings
 from wizard_connectors.portals import PortalConfigError, PortalSettings
 from wizard_connectors.portals import settings_from as portal_settings
 
-from . import knowledge_sync, provisioning
+from . import knowledge_sync, provisioning, source_order
+from .source_order import Entry as SourceEntry
 
 RUNTIMES = ("gemini-cli", "code-assist", "replay")
 # Saved by the in-app model picker, which was removed: ignored in this PC's settings layer.
@@ -91,6 +92,9 @@ class Settings:
     postgres: PgSettings | None = None
     # The name people see for that database in the app (the systems stage, sources, evidence).
     pg_name: str = "AI Team Database"
+    # The company's order of the data sources (Settings → Source order, WIZARD_SOURCE_ORDER): where Gemini starts, what
+    # each source is for, and which are used only when asked; None = the default order (source_order.DEFAULT).
+    source_order: tuple[SourceEntry, ...] | None = None
     # The news table the Brain page shows (schema.name, optionally in another database); None: found by its name.
     news_table: str | None = None
     news_database: str | None = None
@@ -281,6 +285,10 @@ def load_settings(env: dict[str, str] | None = None, env_file: Path | None = Non
     except PgError as error:
         raise ConfigError(f"PostgreSQL settings: {error}") from None
     settings.pg_name = (get("WIZARD_PG_NAME", "AI Team Database") or "AI Team Database").strip()[:60]
+    try:
+        settings.source_order = source_order.parse(get("WIZARD_SOURCE_ORDER"))
+    except source_order.OrderError as error:
+        raise ConfigError(f"WIZARD_SOURCE_ORDER (Settings → Source order): {error}") from None
     # Checked where the Brain page reads them (brain.py), which says what is wrong: a showcase page never stops Wizard.
     settings.news_table = (get("WIZARD_NEWS_TABLE") or "").strip() or None
     settings.news_database = (get("WIZARD_NEWS_DATABASE") or "").strip() or None

@@ -1429,7 +1429,7 @@
     },
     {
       "name": "wizard_ask_for_system",
-      "description": "Only when the person chose which systems this request may use and the answer needs one they switched off: name that system and why. The person gets a button under your answer to switch it on and continue. Never guess that system's data instead.",
+      "description": "Only when the answer needs a system that is off for this request (the person chose others, or the company uses it only when asked): name that system and why. The person gets a button under your answer to switch it on and continue. Never guess that system's data instead.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {

@@ -115,19 +115,20 @@ export function SteerNotes({run}: {run: RunView}) {
   );
 }
 
-/** Gemini asked for a system the person switched off for this question: one click switches it on and goes on. */
+/** Gemini asked for a system that is off for this question (the person switched it off, or, on Auto, the company uses
+ * it only when asked): one click switches it on and goes on. */
 export function SystemRequests({run}: {run: RunView}) {
   const actions = useContext(SteerContext);
   const [done, setDone] = useState<string[]>([]);
   const waiting = run.systemRequests.filter(r => !done.includes(r.system) && !run.systems?.includes(r.system));
-  if (!waiting.length || !actions || run.systems === null) return null;
+  if (!waiting.length || !actions) return null;
   const running = run.status === 'running' || run.status === 'queued';
   return <>
     {waiting.map(request => (
       <div key={request.system} className="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface/60 px-3 py-2.5 text-[13px]" data-testid="system-request">
         <SystemLogo id={request.system} name={request.name} size={26} />
-        <p className="min-w-0 flex-1"><span className="font-medium">This answer could use {request.name}</span>, which is switched off for this
-          question. <span className="text-ink-2">{request.reason}</span></p>
+        <p className="min-w-0 flex-1"><span className="font-medium">This answer could use {request.name}</span>, {run.systems === null
+          ? 'which Wizard uses only when you ask for it.' : 'which is switched off for this question.'} <span className="text-ink-2">{request.reason}</span></p>
         <Button size="sm" variant="outline" data-testid="turn-on-system" onClick={() => { setDone(d => [...d, request.system]); actions.turnOn(run, request); }}>
           <Layers />{running ? `Switch on ${request.name}` : `Switch on ${request.name} and continue`}
         </Button>

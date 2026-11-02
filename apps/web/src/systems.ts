@@ -21,6 +21,16 @@ export function toggleSystem(chosen: string[] | null, id: string, available: Sys
   return next.length ? ordered(next, available) : null;
 }
 
+/** What Auto uses: every system but the ones the company uses only when asked (Settings → Source order). */
+export function autoSystems(available: SystemInfo[]): string[] {
+  return available.filter(s => !s.only_when_asked).map(s => s.id);
+}
+
+/** The systems Auto leaves out until someone asks for them. */
+export function whenAsked(available: SystemInfo[]): SystemInfo[] {
+  return available.filter(s => s.only_when_asked);
+}
+
 /** Attaching a file switches Attached files on. */
 export function withFiles(chosen: string[] | null, available: SystemInfo[]): string[] | null {
   return chosen === null || chosen.includes('attachment') ? chosen : ordered([...chosen, 'attachment'], available);

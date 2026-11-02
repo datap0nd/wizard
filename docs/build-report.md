@@ -3,7 +3,52 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-02 (latest) — The Brain page links each mapped report to the notes it names
+## 2026-11-02 (latest) — Source order: where Wizard starts, when a source is enough, and the schemas it may query
+
+The owner: "dashboards first (html dashboards). Then AI team DB. Then ASAP/GSCM. Then BDP, etc. I would love to be able
+to reorganize this in settings"; "Also NERP needs to be there"; and "What I want is for us to help gemini understand when
+its enough or its not enough on a good basis". A knowledge note's access rule (one schema allowed, another forbidden)
+is now enforced in the tool. [Decision](decisions/2026-11-02-source-order.md).
+
+**What changed.**
+- **Settings → Source order** (`WIZARD_SOURCE_ORDER`, `services/api/wizard_api/source_order.py`): one company-wide
+  order of the data sources this PC has (Dashboards, the database by its name, each portal, catalog systems such as
+  NERP), carried by the company file and Export settings…. Up and down buttons (a source on a shared level leaves it;
+  one alone passes the whole level next to it), "Same level as the one above", a "use it for" line (200 characters,
+  plain text) and "Only when asked" per source. Default: Dashboards; the database; ASAP and GSCM on one level; NERP;
+  the Big Data Portal; then any other source. Stored as compact one-line JSON
+  (`[{"id":"dashboards"},{"id":"postgresql"},{"id":"asap"},{"id":"gscm","same":true},…]`), validated on save and at
+  start-up. A source it does not name comes last; a named one this PC does not have is kept and left out of prompts.
+- **`<where_to_start>`** in every question's prompt (`prompting.where_to_start_block`): the levels this run may use,
+  with names and "use it for" lines, and the sufficiency test (measure, every breakdown asked, period, markets,
+  granularity; a study needs every breakdown the sources hold; go further only for what is missing or stale and say
+  why; say outright when a source is stale; one level: by coverage; when stopping early, one line on what the others
+  hold). Absent with one source, and in check, recurring, mapping and task runs. `system.md`'s "Prepared dashboards"
+  became "Where to start" (as-of and disagreement guidance kept); the portal map is "the map before its menu".
+- **Only when asked:** on Auto such a source is not offered (`SystemChoice.auto`, stored and shown as Auto), its tools
+  refuse with `system_off`, the prompt's `<systems>` names it, and `wizard_ask_for_system` is offered; the button under
+  the answer switches it on. `systems.available()` marks it `only_when_asked`; the picker says "all but …".
+- **Schemas Wizard may query** (`WIZARD_PG_SCHEMAS`, Settings → Company database): `wizard_query_postgresql` plans the
+  statement first (`EXPLAIN (VERBOSE, FORMAT JSON)` in the same read-only transaction) and refuses
+  (`schema_not_allowed`) one whose plan reads any other schema; `pg_catalog` and `information_schema` always allowed;
+  missing-relation hints stay inside the list. Every earlier protection kept.
+- **Knowledge standard** section 11: each "Where to get it" block says what the source covers (breakdowns,
+  granularity, markets, periods, freshness).
+- Docs: the decision, `AGENTS.md` ("a scripted tool order" clause), the README table, `docs/desktop.md`,
+  `scripts/make_provision.py`. Contracts re-exported (`wizard_ask_for_system`'s description). `dist/` rebuilt.
+
+**Not done.** The schema check reads the plan, so a view counts by the tables it reads and function bodies are not
+inspected (the account's grants stay the backstop). The real-PostgreSQL test runs in CI only. How well Gemini applies
+the sufficiency test is judged on the work PC.
+
+**Tests.** `uv run python scripts/verify_spec.py` passed; `uv run python -m pytest tests`: 712 passed, 22 skipped
+(BLOCKED here: PostgreSQL test server, Gemini CLI, live parity); ruff and mypy clean; `scripts/export_contracts.py --check`
+matches; secret scan clean; `npm --prefix apps/web run typecheck` and `test` (131 passed); `build` and `verify-dist`
+match. New: `tests/unit/test_source_order.py` (25), seven schema tests in `tests/unit/test_postgres_query.py` over faked
+plans, `tests/integration/test_postgres_query_real.py::test_only_the_schemas_wizard_may_query_are_read` (CI's
+PostgreSQL; BLOCKED here), `apps/web/src/sourceOrder.test.ts`, `components/SourceOrder.test.tsx` and two `Steering`
+tests.
+## 2026-11-02 — The Brain page links each mapped report to the notes it names
 
 The owner: "If I check the brain section, I see ASAP and GSCM with hundreds of dots (GSCM is still at 20 but I didnt
 fully map it yet). But I dont see connections with the rest of the knowledge base. Means that they're mapped but not
