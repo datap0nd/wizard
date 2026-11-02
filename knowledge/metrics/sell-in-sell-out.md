@@ -2,7 +2,7 @@
 id: sell-in-sell-out
 title: Sell-in, sell-out (sell-through) and channel stock
 status: DRAFT_UNSIGNED
-owner: TBD - GSCM / planning owner (Step 04)
+owner: TBD - GSCM owner (Step 04)
 tags: [sell-in, sell-out, sell-through, channel, stock, inventory, stuffing, demand, units]
 ---
 - **Sell-in**: units shipped by the company into the channel (distributors, retailers, operators).

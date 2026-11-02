@@ -3,7 +3,8 @@ knowledge standard, and save notes to the company's knowledge-base repository.
 
 Saving is the one write: it commits whole note files under knowledge/ in the knowledge-base repository with this PC's
 write token, the way portal maps are published. Every note is checked first with the content validator (front matter,
-id, type, dates, no credentials, no contact details) and nothing is committed when one fails. Wizard refuses
+id, type, dates, no credentials, no contact details) and nothing is committed when one fails; its warnings (performance
+figures, PC-specific details, the owner's form, missing sections...) come back with the save. Wizard refuses
 wizard_kb_save_notes outside a task run (runs.py), so answering a question never changes the knowledge base."""
 from __future__ import annotations
 

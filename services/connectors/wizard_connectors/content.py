@@ -18,6 +18,7 @@ from pydantic import ValidationError
 
 from .catalog import SourceContract
 from .knowledge import ENTRY, FRONT_MATTER, NOTE_TYPES, front_matter, parse_list, unquote
+from .note_checks import note_warnings
 
 LIVE_ADAPTERS: set[str] = set()  # systems with an approved, parity-tested live adapter (none yet)
 SECRET_PATTERNS = {
@@ -142,7 +143,9 @@ def validate_content(root: Path) -> list[Problem]:
 def validate_knowledge(knowledge: Path, root: Path) -> list[Problem]:
     """Knowledge notes follow templates/content/schema/knowledge-standard.md: flat front matter with the required
     fields, unique kebab-case ids, known types, ISO dates, no credentials or contact details, and notes small enough
-    to be retrieved whole. Size, summary and related-id issues are warnings for the owners."""
+    to be retrieved whole. Size, summary and related-id issues are warnings for the owners, as are the knowledge-base
+    review's findings (note_checks.py): performance figures, PC-specific details, the owner's form, a metric note
+    without `## Where to get it`, a dataset note without `## Example query` or with an empty `related`."""
     problems: list[Problem] = []
     notes: dict[str, tuple[str, dict[str, str], str]] = {}
     for note in sorted(knowledge.rglob("*.md")) if knowledge.is_dir() else []:
@@ -198,6 +201,7 @@ def validate_knowledge(knowledge: Path, root: Path) -> list[Problem]:
         for source in parse_list(meta.get("sources", "")):
             if not SOURCE_ID.match(source):
                 problems.append(Problem("warning", where, f"source '{source}' is not a source id (S-xxxxxxxx or A-<quiz>)"))
+        problems += [Problem("warning", where, message) for message in note_warnings(meta, body, kind)]
     for where, meta, _ in notes.values():
         for related in parse_list(meta.get("related", "")):
             if related not in notes:
