@@ -466,3 +466,15 @@ def test_tasks_belong_to_the_person_at_their_own_pc(tmp_path: Path):
 def test_the_old_task_files_are_cleaned_from_installs():
     setup = (ROOT / "setup.ps1").read_text(encoding="utf-8")
     assert r"workpc\tasks" not in setup and r"commands\wizard\tasks.toml" in setup and "Remove-Item" in setup
+
+
+def test_a_note_file_read_in_a_task_is_summarised_without_a_title():
+    """A task reads a note's file (id, path, text: no title); summarising that step crashed the run (KeyError 'title')."""
+    from wizard_api.runs import tool_summary
+    from wizard_connectors.tools.registry import ToolOutcome
+
+    files = {"notes": [{"id": "market-share", "path": "knowledge/metrics/market-share.md", "text": "---\nid: x\n---\n"}],
+             "missing": None}
+    assert tool_summary("wizard_kb_note_source", ToolOutcome(True, files, 1)) == "market-share"
+    assert tool_summary("wizard_read_knowledge", ToolOutcome(True, {"notes": [{"id": "a", "title": "A note"}]}, 1)) == "A note"
+    assert tool_summary("wizard_lookup_definitions", ToolOutcome(True, {"definitions": [{"id": "b"}]}, 1)) == "b"

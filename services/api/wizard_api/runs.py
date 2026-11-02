@@ -448,11 +448,12 @@ def tool_summary(name: str, outcome: ToolOutcome) -> str:
     if "row_count" in data:
         return f"{data['row_count']:,} row{'' if data['row_count'] == 1 else 's'}" + (" (more available)" if data.get("truncated") else "")
     if "definitions" in data:
-        return ", ".join(d["title"] for d in data["definitions"]) or "no definition found"
+        return ", ".join(str(d.get("title") or d.get("id")) for d in data["definitions"]) or "no definition found"
     if "notes" in data:
         if "areas" in data:
             return f"{len(data['notes'])} note(s) in {len(data['areas'])} area(s)"
-        return ", ".join(n["title"] for n in data["notes"])
+        # Notes read whole carry a title; a note's file (wizard_kb_note_source) carries its id and path only.
+        return ", ".join(str(n.get("title") or n.get("id") or n.get("path")) for n in data["notes"]) or "no note found"
     if "file" in data and "text" in data:
         return f"{data.get('name')}: {data.get('chars', 0):,} characters" + (" (more to read)" if data.get("next_offset") else "")
     if "result" in data:

@@ -3,7 +3,16 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-02 (latest) — A dashboards area in the knowledge base; tasks move, rename and remove notes
+## 2026-11-02 (latest) — Fix: a task that read a note's file stopped with an internal error
+
+On the work PC, "Knowledge review 1 of 7" stopped after 22 tool calls: "Wizard hit an internal error", `KeyError: 'title'`
+in `runs.py` (`tool_summary`). A step's one-line summary of a tool result named every note by its title, but
+`wizard_kb_note_source` returns a note's file (id, path, text) without one, so every task that read a note's file before
+changing it failed at that step. The summary now names a note by its title, else its id, else its path.
+
+**Tests.** `test_a_note_file_read_in_a_task_is_summarised_without_a_title` (`tests/unit/test_tasks.py`).
+
+## 2026-11-02 — A dashboards area in the knowledge base; tasks move, rename and remove notes
 
 The owner: "We need dashboards area for sure." The team's HTML dashboards combine PostgreSQL data with business logic,
 and the knowledge-base review found notes about them filed under `datasets/` (one note per database object) and a note
