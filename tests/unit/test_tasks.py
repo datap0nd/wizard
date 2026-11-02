@@ -86,6 +86,28 @@ def test_tasks_come_from_github_and_fall_back_to_the_bundled_copy(tmp_path: Path
     assert [t.id for t in board.tasks(board.refresh(force=True))[0]] == ["tidy-notes"], "the last good list stays"
 
 
+def test_an_update_brings_its_tasks_while_github_does_not_answer(tmp_path: Path):
+    """The list GitHub gave this morning stays while GitHub does not answer, unless an update installed since brings
+    its own, newer copy; once GitHub answers again, its list is used."""
+    import os
+    import time as clock
+
+    bundled = tmp_path / "bundled"
+    bundled.mkdir()
+    calls: list[str] = []
+    board = TaskBoard(tmp_path / "data", bundled, transport=github({"tidy-notes.md": TASK}, calls))
+    board.refresh(force=True)
+    (bundled / "new-task.md").write_text(TASK.replace("tidy-notes", "new-task"), encoding="utf-8")
+    later = clock.time() + 60
+    os.utime(bundled / "new-task.md", (later, later))
+    assert [t.id for t in board.tasks()[0]] == ["tidy-notes"], "GitHub answered last time: its list"
+    board.transport = github({}, calls, fail=True)
+    cache = board.refresh(force=True)
+    assert board.tasks(cache)[1] == "bundled" and [t.id for t in board.tasks(cache)[0]] == ["new-task"]
+    board.transport = github({"tidy-notes.md": TASK}, calls)
+    assert board.tasks(board.refresh(force=True))[1] == "github", "GitHub's list again once it answers"
+
+
 def test_the_task_request_carries_the_instructions():
     task = parse(TASK)
     assert task

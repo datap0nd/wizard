@@ -3,7 +3,17 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-02 (latest) — A task queue: Run all, Run selected, and tasks that repeat until done
+## 2026-11-02 (latest) — Fix: while GitHub does not answer, an update brings its own task list
+
+On the work PC the Tasks list stayed at the morning's knowledge-review tasks 1 to 7: GitHub stopped answering from that
+network ("connection timed out, a proxy is probably required"; nothing in Wizard's route to GitHub changed today), and
+Wizard keeps the last list GitHub gave until it answers again, even after an update brought a newer copy. Now, while
+the last check failed, the copy that came with the installed version is shown when it changed after GitHub last
+answered (`TaskBoard.tasks`, the cache's new `fetched` time); once GitHub answers, its list is used again.
+
+**Tests.** `test_an_update_brings_its_tasks_while_github_does_not_answer` (`tests/unit/test_tasks.py`); full suite.
+
+## 2026-11-02 — A task queue: Run all, Run selected, and tasks that repeat until done
 
 The owner: "I need something new, a task queuer. It should allow me to run tasks in a sequence. A 'run all tasks'
 button, where I can run and it goes from one to another (only when all of them succeeded)." Then: "allow me to choose

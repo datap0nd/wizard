@@ -209,7 +209,7 @@ class TaskBoard:
                             fresh[name] = {"sha": sha, "text": raw.text}
                         files = fresh
                         cache["etag"] = listing.headers.get("etag")
-                cache.update(files=files, checked=time.time(), source="github", message=None)
+                cache.update(files=files, checked=time.time(), fetched=time.time(), source="github", message=None)
             except httpx.HTTPStatusError as error:
                 status = error.response.status_code
                 cache.update(checked=time.time(), message="the Wizard repository has no tasks folder" if status == 404
@@ -220,10 +220,20 @@ class TaskBoard:
             self._write("cache.json", cache)
             return cache
 
+    def _bundled_since(self, moment: float) -> bool:
+        """Whether the copy that came with the installed version changed after `moment` (an update installed since)."""
+        try:
+            return any(p.stat().st_mtime > moment for p in self.bundled.glob("*.md") if p.name != "README.md")
+        except OSError:
+            return False
+
     def tasks(self, cache: dict[str, Any] | None = None) -> tuple[list[Task], str]:
-        """GitHub's list when it has ever answered (a task removed there is gone), else the bundled one."""
+        """GitHub's list when it has ever answered (a task removed there is gone), else the bundled one. While GitHub does
+        not answer, an update installed after GitHub last answered brings a newer list than the one kept, so its copy is
+        shown (2 Nov 2026: a work PC kept this morning's list after its network stopped reaching GitHub)."""
         cache = self._read("cache.json") if cache is None else cache
-        if cache.get("source") == "github":
+        stale = bool(cache.get("message")) and self._bundled_since(float(cache.get("fetched") or 0))
+        if cache.get("source") == "github" and not stale:
             found = [parse(str(f.get("text") or "")) for f in (cache.get("files") or {}).values() if isinstance(f, dict)]
             return _sorted([t for t in found if t]), "github"
         texts = [p.read_text(encoding="utf-8") for p in sorted(self.bundled.glob("*.md")) if p.name != "README.md"] \
