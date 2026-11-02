@@ -1,8 +1,9 @@
 ---
 id: kb-review-3-where-to-get-it
-title: Knowledge review 3 of 7: check and correct every metric note's "Where to get it"
-summary: Wizard follows a metric note's "Where to get it" to the table or portal report and its filters. A review found filter values that do not exist, no plan-version filter (a query adds up every version), drafts named instead of mapped reports, and notes with none. This checks every block against the database (no data rows read) and the portal maps, and corrects it. Replaces the earlier portal-reports task.
+title: Knowledge review 3: check and correct every metric note's "Where to get it"
+summary: Wizard follows a metric note's "Where to get it" to the table or portal report and its filters. A review found filter values that do not exist, no plan-version filter (a query adds up every version), drafts named instead of mapped reports, and notes with none. This checks every block against the database (no data rows read), the portal maps and the dashboards, says what each source covers so Wizard can tell when one is enough, and corrects it.
 added: 2026-11-02
+repeat: until_done
 ---
 Every metric note (`type: metric`) ends with `## Where to get it` (knowledge standard, section 11): one block per
 database object and one per mapped portal report that holds the measure, with the exact filters that select the right
@@ -39,15 +40,23 @@ metric note and correct it.
    Add a block for every mapped report that holds the measure: search each portal's map with the measure's name and
    aliases (portal_map with find), and read the reports that name this note as their definition. Use the block format
    of section 11: portal and report id, name and menu path, what it answers (its use_for), filters with their values.
-6. A metric note without the section gets one, built the same way. When no dataset note or mapped report holds the
-   measure, write `UNKNOWN: no dataset note or mapped portal report holds <measure> yet (ask: <role>)`.
-7. Order the blocks by the variant of the question each answers (weekly or monthly, units or value, actual or plan,
+6. Add a block for every HTML dashboard that shows the measure: the notes in `dashboards/` (review 0 writes them;
+   wizard_browse_knowledge(area=dashboards)), checked against the dashboard itself (wizard_read_dashboard) when the
+   note is unclear. Say what the dashboard adds (the team's business logic, the figure the team reports) and whether
+   its figure can be reproduced in SQL from its `## Business logic`.
+7. Every block says what its source covers (section 11): the breakdowns it offers (market, product, channel,
+   customer segment...), granularity, markets, periods and freshness, from the dataset note's columns, the map's
+   filters and data, or the dashboard note's `## What it shows`. Wizard uses it to judge whether a source is enough
+   for a question or only for part of it ("by age only; the portal report also has gender and income").
+8. A metric note without the section gets one, built the same way. When no dataset note, mapped report or dashboard
+   holds the measure, write `UNKNOWN: no source holds <measure> yet (ask: <role>)`.
+9. Order the blocks by the variant of the question each answers (weekly or monthly, units or value, actual or plan,
    company figures or an estimate), not by kind of source. After a value you checked in the database, write
    "(checked in the database on <date>)"; it has no source id.
-8. Add the dataset note ids to the metric note's `related`. Change nothing else except `updated` (today). A SIGNED note
-   is not changed: put the corrected section in your summary for its owner.
-9. Save each note once it is checked, one or two per save: wizard_kb_save_notes, message "Where to get it checked
-   against the database and the portal maps".
+10. Add the dataset and dashboard note ids to the metric note's `related`. Change nothing else except `updated`
+    (today). A SIGNED note is not changed: put the corrected section in your summary for its owner.
+11. Save each note once it is checked, one or two per save: wizard_kb_save_notes, message "Where to get it checked
+    against the database, the portal maps and the dashboards".
 
 When the tool budget runs low, save what you have and stop: the next run continues with the notes not yet checked
 (their `updated` is older).

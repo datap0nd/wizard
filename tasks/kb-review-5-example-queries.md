@@ -1,8 +1,9 @@
 ---
 id: kb-review-5-example-queries
-title: Knowledge review 5 of 7: add an example query to every dataset note
+title: Knowledge review 5: add an example query to every dataset note
 summary: Gemini writes its SQL from the dataset notes, and most of them have no example query, which the knowledge standard requires. This writes one or two short queries per note with the exact column names and filters, proves each parses against the database (no rows read), and adds any missing filter to the note's pitfalls. It takes two or three runs.
 added: 2026-11-02
+repeat: until_done
 ---
 Gemini queries the database with SQL it writes from the dataset notes, so section 10 of the knowledge standard requires
 `## Example query` in every dataset note: one or two short SELECTs for the questions the object answers most often,

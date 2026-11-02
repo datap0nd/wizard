@@ -3,7 +3,20 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-02 (latest) — Source order: where Wizard starts, when a source is enough, and the schemas it may query
+## 2026-11-02 (latest) — Knowledge review tasks 0 to 8: dashboards first, coverage, linked reports
+
+The review tasks follow what shipped today. New: `kb-review-0-dashboards` (run first) reads every HTML dashboard and
+writes its note in `dashboards/` to section 13 (what it shows, its business logic, coverage), moving and renaming the
+older dashboard notes out of `datasets/`; `kb-review-8-route-reports` (run last) links every mapped portal report to the
+metric and dashboard notes it holds with `portal_map_route`, so the Brain page draws the links. Changed: review 2
+describes each source and points to Settings → Source order instead of keeping an order or access rules in a note;
+review 3 adds dashboard blocks and says what each source covers, for the "enough" test; review 7 reads definitions from
+dashboard notes too; reviews 1 and 4 expect review 0 to have moved the dashboard notes. Titles lose "of 7"; every review
+task declares `repeat: until_done`, which the task queue uses to run it again until nothing is left.
+
+**Tests.** Every task parses (`test_every_task_in_the_repository_is_well_formed`); `tests/unit/test_tasks.py` passed.
+
+## 2026-11-02 — Source order: where Wizard starts, when a source is enough, and the schemas it may query
 
 The owner: "dashboards first (html dashboards). Then AI team DB. Then ASAP/GSCM. Then BDP, etc. I would love to be able
 to reorganize this in settings"; "Also NERP needs to be there"; and "What I want is for us to help gemini understand when

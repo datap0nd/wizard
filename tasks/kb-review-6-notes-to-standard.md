@@ -1,8 +1,9 @@
 ---
 id: kb-review-6-notes-to-standard
-title: Knowledge review 6 of 7: bring old notes up to the standard and remove PC-specific details
+title: Knowledge review 6: bring old notes up to the standard and remove PC-specific details
 summary: The first notes were written before the knowledge standard - bold paragraphs instead of sections, no lead, no aliases, no questions - so search cannot return one part of them. Some notes carry one PC's details (server addresses, drive letters, share and folder paths, local scripts), mix owner formats or run past 600 words. This restructures and cleans them without adding or losing a fact.
 added: 2026-11-02
+repeat: until_done
 ---
 Search returns a note's lead and its matching `##` sections, so a note written as bold paragraphs comes back whole or
 not at all. A review found the first notes (top-level notes, platform notes and the first metric notes) still in that

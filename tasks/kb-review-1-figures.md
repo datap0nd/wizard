@@ -1,8 +1,9 @@
 ---
 id: kb-review-1-figures
-title: Knowledge review 1 of 7: take performance figures out of the notes
+title: Knowledge review 1: take performance figures out of the notes
 summary: Some notes quote business figures copied from dashboards and decks (rates, unit counts, shares, multipliers), against rule 7 of the knowledge standard. Wizard repeats them as facts long after they go stale. This rewrites those passages to say what the source shows, without the numbers. Run it again until it finds none.
 added: 2026-11-02
+repeat: until_done
 ---
 Rule 7 of the knowledge standard (section 4) says notes hold no performance figures: sales, units, revenue, spend,
 share, attach and conversion rates, growth, margins, prices, multipliers, targets and forecasts come from the data
@@ -36,5 +37,5 @@ quotes it as a fact. A review found notes that break this rule, above all notes 
 When the tool budget runs low, save what you have and stop: the next run continues with the notes left.
 
 End with: the notes changed; the numbers you kept and why (note id and the number's role); the notes in `datasets/`
-that describe a dashboard or a report rather than a database object (they belong in another area, which needs a person
-or a tool that can move a note); the SIGNED notes with the changes you propose; and the notes still to check, if any.
+that still describe a dashboard rather than a database object (review 0 moves them to `dashboards/`); the SIGNED
+notes with the changes you propose; and the notes still to check, if any.
