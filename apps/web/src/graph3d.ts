@@ -12,13 +12,21 @@ export const INK = {primary: '#f0efec', secondary: '#c3c2b7', muted: '#8a8f98'};
  *  size, largest first. A ninth group and beyond share a neutral grey; every group is named in the legend. */
 export const SLOTS = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9', '#e66767'];
 export const OTHER = '#7d8590';
+/** A mapped report's link to a note it names: one light neutral ink, straight and dashed, never a community's colour,
+ *  so it reads apart from the notes' own curved links (the page has one theme, dark). */
+export const REPORT_LINK = '#c8ccd4';
+export const REPORT_DASH: readonly number[] = [5, 4];  // long dashes: thousands of them cost little more than solid lines
+/** A mapped report that names no note yet is drawn at this share of its usual opacity. */
+export const UNLINKED_REPORT = 0.4;
 const COMMON_TAG = 60;    // a tag on more notes than this is not drawn: it says little about how they relate
 const MAX_TAGS = 1500;
+const REPORT_NOTES = 8;   // notes a report links to: as many `definitions` as a portal map holds per report (brain.py)
 
 export type NodeKind = 'note' | 'tag' | 'term' | 'system' | 'report' | 'news' | 'category';
-export type EdgeKind = 'related' | 'mention' | 'shared' | 'tagged' | 'term' | 'documents' | 'maps' | 'news';
+/** `defines`: a mapped portal report to a note that defines its terms (its map's `definitions`). */
+export type EdgeKind = 'related' | 'mention' | 'shared' | 'tagged' | 'term' | 'documents' | 'maps' | 'defines' | 'news';
 /** What the legend switches on and off. Notes are always shown. */
-export type LayerId = 'related' | 'mention' | 'shared' | 'tags' | 'terms' | 'systems' | 'reports' | 'news';
+export type LayerId = 'related' | 'mention' | 'shared' | 'tags' | 'terms' | 'systems' | 'reports' | 'definitions' | 'news';
 
 export interface GNode {
   i: number; key: string; kind: NodeKind; label: string;
@@ -26,6 +34,9 @@ export interface GNode {
   community: number;    // index into graph.communities
   size: number; charge: number;
   note?: BrainNote; system?: BrainSystem; report?: BrainPortalReport; count?: number; area?: string;
+  /** A portal report: how many notes of the knowledge base it names (0 draws it fainter; unknown on a page published
+   *  before reports carried their notes). */
+  linked?: number;
 }
 export interface GEdge { a: number; b: number; kind: EdgeKind; weight: number }
 /** `alone`: the points without a link, gathered in one group (not a community the links formed). */
@@ -47,6 +58,8 @@ export const EDGE_STYLE: Record<EdgeKind, {layer: LayerId; length: number; stren
   term: {layer: 'terms', length: 26, strength: 1, weight: 1},
   documents: {layer: 'systems', length: 40, strength: 0.5, weight: 1},
   maps: {layer: 'reports', length: 22, strength: 1, weight: 1},
+  // As strong as the link to its portal, so a report that names a note settles between the two, near the note.
+  defines: {layer: 'definitions', length: 30, strength: 1, weight: 1},
   news: {layer: 'news', length: 26, strength: 1, weight: 1},
 };
 const NODE_LAYER: Partial<Record<NodeKind, LayerId>> = {tag: 'tags', term: 'terms', system: 'systems', report: 'reports', news: 'news', category: 'news'};
@@ -58,9 +71,10 @@ export const LAYERS: {id: LayerId; label: string; edge?: EdgeKind; nodes?: NodeK
   {id: 'terms', label: 'Glossary terms', nodes: 'term'},
   {id: 'systems', label: 'Systems documented', nodes: 'system'},
   {id: 'reports', label: 'Portal reports mapped', nodes: 'report'},
+  {id: 'definitions', label: 'Reports to their notes', edge: 'defines'},
   {id: 'news', label: 'Market news', nodes: 'category'},
 ];
-export const DEFAULT_LAYERS: ReadonlySet<LayerId> = new Set<LayerId>(['related', 'mention', 'tags', 'terms', 'systems', 'reports', 'news']);
+export const DEFAULT_LAYERS: ReadonlySet<LayerId> = new Set<LayerId>(['related', 'mention', 'tags', 'terms', 'systems', 'reports', 'definitions', 'news']);
 
 export function nodeShown(node: GNode, layers: ReadonlySet<LayerId>): boolean {
   const layer = NODE_LAYER[node.kind];
@@ -71,8 +85,8 @@ export function edgeShown(graph: Graph, edge: GEdge, layers: ReadonlySet<LayerId
 }
 
 /** The graph: the notes and their links, the tags two or more notes share, the glossary terms, the systems the notes
- *  document, the reports Gemini mapped in each portal and the news (when it was read), with the communities its links
- *  form. */
+ *  document, the reports Gemini mapped in each portal with a link to each note they name, and the news (when it was
+ *  read), with the communities its links form. */
 export function buildGraph(map: BrainMap, news: BrainNews | null): Graph {
   const nodes: GNode[] = [];
   const edges: GEdge[] = [];
@@ -114,7 +128,16 @@ export function buildGraph(map: BrainMap, news: BrainNews | null): Graph {
     for (const note of documented) join(node, note, 'documents');
     for (const report of mapped) {
       if (byKey.has(`report:${system.id}:${report.id}`)) continue;
-      join(node, add({key: `report:${system.id}:${report.id}`, kind: 'report', label: report.name, group: 'systems', size: 2, charge: 0.5, report}), 'maps');
+      const point = add({key: `report:${system.id}:${report.id}`, kind: 'report', label: report.name, group: 'systems', size: 2, charge: 0.5, report});
+      join(node, point, 'maps');
+      // The notes that define its terms (its map's `definitions`): a link of their own, at most REPORT_NOTES a report.
+      // A page published before reports carried them says nothing either way: `linked` stays unknown.
+      if (!report.definitions) continue;
+      point.linked = 0;
+      for (const id of [...new Set(report.definitions)].slice(0, REPORT_NOTES)) {
+        const target = byKey.get(`note:${id}`);
+        if (target) { join(point, target, 'defines'); point.linked++; }
+      }
     }
   }
   if (newsOk) {
@@ -509,10 +532,13 @@ export function focusNodes(graph: Graph, focus: Focus | {kind: 'community'; id: 
   return lit;
 }
 
-/** The point under the pointer: the nearest drawn point within reach of its edge, the front one on a tie. */
-export function nearest(points: {i: number; x: number; y: number; r: number; depth: number}[], x: number, y: number, reach = 5): number | null {
+/** The point under the pointer: the nearest drawn point within reach of its edge, the front one on a tie. Only the
+ *  first `count` points are looked at (the page reuses one list of points from frame to frame). */
+export function nearest(points: {i: number; x: number; y: number; r: number; depth: number}[], x: number, y: number, reach = 5,
+  count = points.length): number | null {
   let best: number | null = null, score = Infinity;
-  for (const p of points) {
+  for (let k = 0; k < Math.min(count, points.length); k++) {
+    const p = points[k];
     const gap = Math.hypot(p.x - x, p.y - y) - p.r;
     if (gap > reach) continue;
     const s = Math.max(gap, 0) * 1000 + p.depth;
@@ -564,7 +590,7 @@ export function modularity(links: [number, number][], group: (i: number) => stri
 
 export function networkStats(graph: Graph): NetworkStats {
   const byKind = {note: 0, tag: 0, term: 0, system: 0, report: 0, news: 0, category: 0} as Record<NodeKind, number>;
-  const byEdge = {related: 0, mention: 0, shared: 0, tagged: 0, term: 0, documents: 0, maps: 0, news: 0} as Record<EdgeKind, number>;
+  const byEdge = {related: 0, mention: 0, shared: 0, tagged: 0, term: 0, documents: 0, maps: 0, defines: 0, news: 0} as Record<EdgeKind, number>;
   for (const node of graph.nodes) byKind[node.kind]++;
   for (const edge of graph.edges) byEdge[edge.kind]++;
   const n = graph.nodes.length;

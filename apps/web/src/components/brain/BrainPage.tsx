@@ -1,10 +1,11 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {ArrowLeft, ArrowRight, BadgeCheck, ExternalLink, Maximize2, MessageSquareText, Minus, Pause, Play, Plus, RotateCcw, Search, Upload, X} from 'lucide-react';
 import {api} from '@/api';
-import {demoArrival, itemKey, NEWS, plural, ringSystems, tourSteps, type BrainLive, type BrainMap, type BrainSnapshot, type Focus, type NewsItem} from '@/brain';
+import {demoArrival, itemKey, mappedLine, NEWS, plural, ringSystems, tourSteps, type BrainLive, type BrainMap, type BrainPortalReport, type BrainSnapshot,
+  type BrainSystem, type Focus, type NewsItem} from '@/brain';
 import mark from '@/assets/wizard-mark.svg';
 import {formatDate} from '@/format';
-import {buildGraph, DEFAULT_LAYERS, focusNodes, LAYERS, networkStats, OTHER, search, type EdgeKind, type GNode, type Graph,
+import {buildGraph, DEFAULT_LAYERS, focusNodes, LAYERS, networkStats, OTHER, REPORT_DASH, REPORT_LINK, search, type EdgeKind, type GNode, type Graph,
   type LayerId, type NetworkStats} from '@/graph3d';
 import {cn} from '@/lib/utils';
 import type {Bootstrap} from '@/types';
@@ -21,8 +22,8 @@ const STRIP = 52;              // the statistics along the bottom
 const KIND_NAMES: Record<GNode['kind'], string> = {note: 'Note', tag: 'Tag', term: 'Glossary term', system: 'System', report: 'Portal report',
   news: 'News table', category: 'News category'};
 const EDGE_NAMES: Record<EdgeKind, string> = {related: 'related', mention: 'mentions', shared: 'shared tags', tagged: 'tagged', term: 'term',
-  documents: 'documents', maps: 'mapped', news: 'news'};
-const EDGE_ORDER: EdgeKind[] = ['related', 'mention', 'documents', 'maps', 'shared', 'term', 'news', 'tagged'];
+  documents: 'documents', maps: 'mapped', defines: 'definitions', news: 'news'};
+const EDGE_ORDER: EdgeKind[] = ['related', 'mention', 'defines', 'documents', 'maps', 'shared', 'term', 'news', 'tagged'];
 const UNGROUPED = '#6e7681';   // tags, systems and the news when colouring by area
 
 type ColourBy = 'community' | 'area';
@@ -42,7 +43,7 @@ function fixed(value: number | null, digits: number): string {
 function StatsStrip({stats}: {stats: NetworkStats}) {
   const rows: [string, string, string][] = [
     ['Nodes', stats.nodes.toLocaleString(), `${stats.byKind.note} notes, ${stats.byKind.term} glossary terms, ${stats.byKind.tag} tags, ${stats.byKind.system} systems, ${stats.byKind.report} portal reports, ${stats.byKind.category} news categories`],
-    ['Edges', stats.edges.toLocaleString(), `${stats.byEdge.related} related, ${stats.byEdge.mention} mentions, ${stats.byEdge.shared} shared tags, ${stats.byEdge.tagged} tagged, ${stats.byEdge.term} terms, ${stats.byEdge.documents} documenting a system, ${stats.byEdge.maps} reports mapped in a portal`],
+    ['Edges', stats.edges.toLocaleString(), `${stats.byEdge.related} related, ${stats.byEdge.mention} mentions, ${stats.byEdge.shared} shared tags, ${stats.byEdge.tagged} tagged, ${stats.byEdge.term} terms, ${stats.byEdge.documents} documenting a system, ${stats.byEdge.maps} reports mapped in a portal, ${stats.byEdge.defines} from a report to a note it names`],
     ['Communities', stats.communities.toLocaleString(), 'groups the links form (Louvain), each named by its most linked note'],
     ['Modularity Q', fixed(stats.modularity, 3), `how far links stay inside their community (by area: ${fixed(stats.areaModularity, 3)})`],
     ['⟨k⟩', fixed(stats.meanDegree, 2), 'mean degree: links per point'],
@@ -78,6 +79,50 @@ function StatsStrip({stats}: {stats: NetworkStats}) {
   );
 }
 
+/** A mapped report on its card: what its map says it is used for, and the notes that define its terms (its map's
+ *  `definitions`), or that it names none yet. */
+function ReportRouting({graph, report}: {graph: Graph; report: BrainPortalReport}) {
+  const notes = (report.definitions ?? []).map(id => graph.byKey.get(`note:${id}`)?.label).filter((title): title is string => !!title);
+  return (
+    <>
+      {report.use_for && report.use_for.length > 0 && (
+        <p className="mt-1.5 text-[12px] leading-snug text-slate-200" data-testid="brain-report-use"><span className="text-slate-500">Used for </span>
+          {report.use_for.join(' · ')}</p>
+      )}
+      {report.definitions && (
+        <p className={cn('mt-1.5 flex items-start gap-1.5 text-[12px] leading-snug', notes.length ? 'text-slate-200' : 'text-slate-500')} data-testid="brain-report-notes">
+          <LinkSwatch className="mt-[7px]" />
+          <span>{notes.length ? <><span className="text-slate-500">Defined in </span>{notes.join(', ')}</> : 'Not linked to a note yet'}</span></p>
+      )}
+    </>
+  );
+}
+
+/** The report-to-note link as the graph draws it: a short dashed line in its own ink. */
+function LinkSwatch({className}: {className?: string}) {
+  return (
+    <svg width="16" height="2" viewBox="0 0 16 2" aria-hidden className={cn('shrink-0', className)}>
+      <line x1="0" y1="1" x2="16" y2="1" stroke={REPORT_LINK} strokeWidth="1.5" strokeDasharray={REPORT_DASH.join(' ')} />
+    </svg>
+  );
+}
+
+/** A portal's map in the Sources panel: "120 mapped, 87 linked to notes", with the linked share as a thin bar. */
+function MappedSource({system}: {system: BrainSystem}) {
+  const mapped = system.mapped!;
+  const share = mapped.linked !== undefined && mapped.mapped ? mapped.linked / mapped.mapped : null;
+  return (
+    <div className="mt-0.5" data-testid="brain-mapped">
+      <p className="text-[11px] text-slate-400">{mappedLine(mapped)}</p>
+      {share !== null && (
+        <div className="mt-1 h-[3px] w-full overflow-hidden rounded-full bg-white/10" aria-hidden title={`${Math.round(share * 100)}% of the mapped reports name a note`}>
+          <div className="h-full rounded-full" style={{width: `${share * 100}%`, background: REPORT_LINK}} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** One point of the graph: what it is, its community, its links by kind and the points it joins (each one opens). */
 function NodeCard({graph, node, color, pinned, onClose, onOpen}: {graph: Graph; node: GNode; color: string; pinned: boolean; onClose: () => void;
   onOpen: (node: GNode) => void}) {
@@ -107,6 +152,7 @@ function NodeCard({graph, node, color, pinned, onClose, onOpen}: {graph: Graph; 
       {note?.summary && <p className="mt-2 text-[12.5px] leading-snug text-slate-200">{note.summary}</p>}
       {node.report && <p className="mt-2 text-[12px] leading-snug text-slate-300">{node.report.path.length ? node.report.path.join(' › ') : node.report.id}
         {node.report.status === 'partial' ? ' · partly mapped' : ' · mapped'}</p>}
+      {node.report && <ReportRouting graph={graph} report={node.report} />}
       {note && (
         <p className={cn('mt-2 inline-flex items-center gap-1 text-[11.5px]', note.stage === 'DRAFT' ? 'text-slate-400' : 'text-emerald-300')}>
           {note.stage !== 'DRAFT' && <BadgeCheck className="size-3.5" />}{STAGE_NAMES[note.stage]}{note.updated ? ` · updated ${formatDate(note.updated)}` : ''}
@@ -275,7 +321,8 @@ export function BrainPage({snapshot}: {snapshot?: BrainSnapshot} = {}) {
   const toggle = (id: LayerId) => setLayers(prev => { const out = new Set(prev); if (out.has(id)) out.delete(id); else out.add(id); return out; });
   const show = (key: string, on: boolean) => setHidden(prev => { const out = new Set(prev); if (on) out.delete(key); else out.add(key); return out; });
   const counts = stats ? {related: stats.byEdge.related, mention: stats.byEdge.mention, shared: stats.byEdge.shared, tags: stats.byKind.tag,
-    terms: stats.byKind.term, systems: stats.byKind.system, reports: stats.byKind.report, news: stats.byKind.category} as Record<LayerId, number> : null;
+    terms: stats.byKind.term, systems: stats.byKind.system, reports: stats.byKind.report, definitions: stats.byEdge.defines,
+    news: stats.byKind.category} as Record<LayerId, number> : null;
   const groups = !graph ? [] : colourBy === 'community'
     ? graph.communities.map(c => ({key: `c:${c.id}`, name: c.name, count: c.size, color: c.color, pin: {kind: 'community', id: c.id} as Pin,
       testid: 'brain-community', data: {'data-community': String(c.id)}}))
@@ -379,25 +426,31 @@ export function BrainPage({snapshot}: {snapshot?: BrainSnapshot} = {}) {
                         <input type="checkbox" checked={layers.has(layer.id)} onChange={() => toggle(layer.id)} className="size-3.5 cursor-pointer accent-[#3987e5]"
                           data-testid="brain-layer" data-layer={layer.id} />
                         <span className="min-w-0 flex-1 truncate text-slate-200">{layer.label}</span>
+                        {layer.id === 'definitions' && <LinkSwatch />}
                         <span className="font-mono text-[11px] tabular-nums text-slate-400">{(counts?.[layer.id] ?? 0).toLocaleString()}</span>
                       </label>
                     </li>
                   ))}
                 </ul>
-                <p className="mt-1.5 text-[10.5px] leading-snug text-slate-500">Size: a point's links. An edge takes the colour of the hub it leaves.</p>
+                <p className="mt-1.5 text-[10.5px] leading-snug text-slate-500">Size: a point's links. An edge takes the colour of the hub it leaves.
+                  {(counts?.reports ?? 0) > 0 && ' A dashed line joins a mapped report to a note that defines its terms; a faint report names none yet.'}</p>
               </section>
               <section className="brain-panel" aria-label="Sources">
                 <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">Sources</p>
                 <ul className="space-y-0.5">
                   {ringSystems(map).filter(s => s.id !== 'knowledge').map(system => {
                     const detail = system.id === 'postgresql' && database ? `${plural(database.relations ?? 0, 'table')} & views`
-                      : system.mapped?.mapped ? `${plural(system.mapped.mapped, 'report')} mapped`
+                      : system.mapped?.mapped ? ''
                       : system.reports ? `${plural(system.reports, 'report')} catalogued` : system.kind === 'portal' ? 'read live'
+                      : system.kind === 'dashboards' ? (system.documented_by.length ? plural(system.documented_by.length, 'note') : 'read from files')
                       : system.kind === 'schedules' ? 'recurring briefs' : '';
                     return (
-                      <li key={system.id} className="flex items-baseline gap-2 px-1 text-[12px]" data-testid="brain-system" data-system={system.id}>
-                        <span className="min-w-0 flex-1 truncate text-slate-200">{system.name}</span>
-                        <span className="shrink-0 text-[11px] text-slate-400">{detail}</span>
+                      <li key={system.id} className="px-1 text-[12px]" data-testid="brain-system" data-system={system.id}>
+                        <div className="flex items-baseline gap-2">
+                          <span className="min-w-0 flex-1 truncate text-slate-200">{system.name}</span>
+                          {detail && <span className="shrink-0 text-[11px] text-slate-400">{detail}</span>}
+                        </div>
+                        {system.mapped?.mapped ? <MappedSource system={system} /> : null}
                       </li>
                     );
                   })}

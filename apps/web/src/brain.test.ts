@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {ago, cumulative, demoArrival, itemKey, tourSteps, type BrainLive, type BrainMap, type BrainNews} from './brain';
+import {ago, areaLine, cumulative, demoArrival, itemKey, mappedLine, tourSteps, type BrainLive, type BrainMap, type BrainNews} from './brain';
 
 const map: BrainMap = {
   content: 'company', knowledge_synced_at: null, pg_name: 'AI Team Database',
@@ -41,6 +41,20 @@ describe('the tour', () => {
     expect(steps[1].examples).toEqual(['ASAP guide', 'GSCM guide']);
     const withoutNews = tourSteps(map, {...live, news: {status: 'not_found'}});
     expect(withoutNews.map(s => s.id)).not.toContain('news');
+  });
+
+  it('says how many of a portal\'s mapped reports are linked to notes', () => {
+    const mapped = {...map, systems: [...map.systems, {id: 'asap', name: 'ASAP', kind: 'portal' as const, reports: null, documented_by: [],
+      mapped: {mapped: 1210, found: 1300, updated: null, linked: 87, unlinked: 1123}}]};
+    expect(tourSteps(mapped, null).find(s => s.id === 'systems')!.body).toContain('ASAP (1,210 reports mapped, 87 linked to notes)');
+    expect(mappedLine({mapped: 1210, found: 1300, updated: null, linked: 87, unlinked: 1123})).toBe('1,210 mapped, 87 linked to notes');
+    expect(mappedLine({mapped: 20, found: 20, updated: null, linked: 0, unlinked: 20})).toBe('20 mapped, 0 linked to notes');
+    expect(mappedLine({mapped: 120, found: 130, updated: null})).toBe('120 reports mapped');  // a page published before the links
+  });
+
+  it('says what the dashboards area holds', () => {
+    expect(areaLine(map, {id: 'dashboards', name: 'Dashboards', description: '', notes: 4}))
+      .toBe('4 notes on the team\'s dashboards: what each shows and how its figures are calculated.');
   });
 
   it('shows at most six topics, the biggest, in their usual order', () => {

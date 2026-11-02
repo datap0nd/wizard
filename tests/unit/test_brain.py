@@ -106,7 +106,7 @@ def test_the_map_counts_notes_links_terms_and_what_each_system_is_documented_by(
     assert by_id["platform-gscm"]["tags"] == ["gscm", "sell-in", "stock"] and by_id["sales-terms"]["words"] == 9
     assert found["counts"] == {"notes": 4, "areas": 4, "links": len(links), "related": 1, "mentions": 1, "glossary_terms": 2,
                                "datasets": 1, "metrics": 1, "signed": 1, "expert_checked": 1, "reports": 12,
-                               "mapped_reports": 0, "systems": 3}
+                               "mapped_reports": 0, "linked_reports": 0, "report_links": 0, "systems": 3}
     assert found["portal_reports"] == [] and found["systems"][0]["mapped"] is None
 
 
@@ -119,9 +119,11 @@ def test_the_reports_gemini_mapped_in_a_portal_are_counted_and_drawn():
                 {"id": "f1", "name": "Failed", "status": "failed"}]
     systems = [{"id": "asap", "name": "ASAP", "kind": "portal"}]
     found = brain.knowledge_map(kb, systems, {"asap": 3}, "company", {"asap": {"reports": reports, "updated": "2026-10-30T09:00:00"}})
-    assert found["systems"][0]["mapped"] == {"mapped": 121, "found": 123, "updated": "2026-10-30T09:00:00"}
+    assert found["systems"][0]["mapped"] == {"mapped": 121, "linked": 0, "unlinked": 121, "found": 123,
+                                             "updated": "2026-10-30T09:00:00"}
     assert found["systems"][0]["reports"] == 3 and found["counts"]["mapped_reports"] == 121
-    assert found["portal_reports"][0] == {"system": "asap", "id": "r0", "name": "Report 0", "path": ["Sales", "Weekly"], "status": "mapped"}
+    assert found["portal_reports"][0] == {"system": "asap", "id": "r0", "name": "Report 0", "path": ["Sales", "Weekly"], "status": "mapped",
+                                          "definitions": [], "use_for": []}
     assert {r["id"] for r in found["portal_reports"]} >= {"r119", "p1"} and "t1" not in {r["id"] for r in found["portal_reports"]}
 
 
@@ -138,6 +140,80 @@ def test_the_brain_api_reads_the_portal_map_on_this_pc(tmp_path: Path):
         found = client.get("/api/v1/brain").json()
         assert {s["id"]: s.get("mapped") for s in found["systems"]}["gscm"]["mapped"] == 1
         assert [r["name"] for r in found["portal_reports"]] == ["Inventory by week"]
+
+
+def test_a_mapped_report_carries_the_notes_it_names_and_each_portal_counts_its_linked_reports():
+    """Owner, 2 Nov 2026: "I see ASAP and GSCM with hundreds of dots ... But I dont see connections with the rest of the
+    knowledge base. Means that they're mapped but not interconnected no?" The links are in the maps (each report's
+    `definitions`, written by portal_map_route): the page gets them, for the notes this knowledge base has."""
+    kb = KnowledgeBase([note("market-share", "metrics", ("share",), type="metric"),
+                        note("sell-out", "metrics", ("sell-out",), type="metric"),
+                        *(note(f"term-{k}", "glossary", ("terms",)) for k in range(10))])
+    asap = [
+        {"id": "ms1", "name": "Share by vendor", "status": "mapped", "definitions": ["market-share", "no-such-note", "market-share"],
+         "use_for": ["shipment market share by vendor", "  ", 7, "MS by price tier", "x" * 300, "a", "b", "c"]},
+        {"id": "so1", "name": "Sell-out by week", "status": "partial", "definitions": ["sell-out"]},
+        {"id": "gone", "name": "Names a note since removed", "status": "mapped", "definitions": ["old-note"]},
+        {"id": "bare", "name": "Not routed yet", "status": "mapped"},
+        {"id": "odd", "name": "Definitions not a list", "status": "mapped", "definitions": "market-share"},
+        {"id": "wide", "name": "Names ten notes", "status": "mapped", "definitions": [f"term-{k}" for k in range(10)]},
+        {"id": "todo", "name": "Found only", "status": "todo", "definitions": ["market-share"]},
+    ]
+    gscm = [{"id": f"g{k}", "name": f"GSCM report {k}", "status": "mapped"} for k in range(20)]
+    systems = [{"id": "asap", "name": "ASAP", "kind": "portal"}, {"id": "gscm", "name": "GSCM", "kind": "portal"}]
+    found = brain.knowledge_map(kb, systems, {}, "company", {"asap": {"reports": asap}, "gscm": {"reports": gscm}})
+    drawn = {r["id"]: r for r in found["portal_reports"]}
+    assert drawn["ms1"]["definitions"] == ["market-share"], "an id no loaded note has is dropped, a repeat kept once"
+    assert drawn["ms1"]["use_for"] == ["shipment market share by vendor", "MS by price tier", "x" * 120, "a", "b"]
+    assert drawn["so1"]["definitions"] == ["sell-out"] and drawn["so1"]["use_for"] == []
+    assert drawn["gone"]["definitions"] == [] and drawn["bare"]["definitions"] == [] and drawn["odd"]["definitions"] == []
+    assert drawn["wide"]["definitions"] == [f"term-{k}" for k in range(8)], "at most a map's own eight a report"
+    assert "todo" not in drawn
+    by_system = {s["id"]: s["mapped"] for s in found["systems"]}
+    assert by_system["asap"] == {"mapped": 6, "linked": 3, "unlinked": 3, "found": 7, "updated": None}
+    assert by_system["gscm"] == {"mapped": 20, "linked": 0, "unlinked": 20, "found": 20, "updated": None}
+    assert found["counts"]["mapped_reports"] == 26 and found["counts"]["linked_reports"] == 3
+    assert found["counts"]["report_links"] == 1 + 1 + 8
+
+
+def test_the_brain_api_sends_a_mapped_reports_notes(tmp_path: Path):
+    import json
+    settings = make_settings(tmp_path, WIZARD_PORTAL_GSCM_URL="https://gscm.corp.example.com/", WIZARD_LOCAL_USER_EMAIL="o@corp.test")
+    settings.install_mode = True
+    maps = settings.data_dir / "portal-maps"
+    maps.mkdir(parents=True)
+    (maps / "gscm.json").write_text(json.dumps({"format": 1, "system": "gscm", "reports": [
+        {"id": "share", "name": "Share by vendor", "path": ["Market"], "status": "mapped",
+         "definitions": ["market-share", "not-a-note"], "use_for": ["vendor share"]},
+        {"id": "inv", "name": "Inventory by week", "path": ["Inventory"], "status": "mapped"}]}), encoding="utf-8")
+    with TestClient(create_app(settings)) as client:
+        login(client, "local-owner")
+        found = client.get("/api/v1/brain").json()
+        reports = {r["id"]: r for r in found["portal_reports"]}
+        assert reports["share"]["definitions"] == ["market-share"] and reports["share"]["use_for"] == ["vendor share"]
+        assert reports["inv"]["definitions"] == []
+        gscm = {s["id"]: s.get("mapped") for s in found["systems"]}["gscm"]
+        assert (gscm["mapped"], gscm["linked"], gscm["unlinked"]) == (2, 1, 1)
+
+
+def test_the_dashboards_system_is_documented_by_the_notes_in_the_dashboards_area():
+    """The Dashboards system (2 Nov 2026) joins the notes of the dashboards area, one per dashboard (knowledge standard,
+    section 13), as a portal joins its platform notes."""
+    kb = KnowledgeBase([
+        note("weekly-sales-dashboard", "dashboards", ("sales",), type="entity"),
+        note("stock-cover-dashboard", "dashboards", ("stock",), type="entity"),
+        note("bi-sell-out", "datasets", ("sell-out",), type="dataset"),
+        note("sell-out", "metrics", ("sell-out",), type="metric"),
+        note("platform-asap", "platforms", ("asap",), type="platform"),
+    ])
+    systems = [{"id": "dashboards", "name": "Dashboards", "kind": "dashboards"}, {"id": "asap", "name": "ASAP", "kind": "portal"},
+               {"id": "postgresql", "name": "AI Team Database", "kind": "database"}]
+    found = brain.knowledge_map(kb, systems, {}, "company")
+    documented = {s["id"]: sorted(s["documented_by"]) for s in found["systems"]}
+    assert documented == {"dashboards": ["stock-cover-dashboard", "weekly-sales-dashboard"], "asap": ["platform-asap"],
+                          "postgresql": ["bi-sell-out"]}
+    assert [a["id"] for a in found["areas"]] == ["platforms", "datasets", "dashboards", "metrics"], "the standard's order"
+    assert found["areas"][2]["name"] == "Dashboards"
 
 
 def test_a_note_mentions_the_notes_it_names_by_id_title_or_alias():
