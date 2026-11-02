@@ -252,7 +252,7 @@ try {
     $node = Get-Command node.exe -ErrorAction SilentlyContinue
     if ($node) { Set-EnvDefault 'WIZARD_NODE' $node.Source '' }
     if ($env:GOOGLE_CLOUD_PROJECT) { Set-EnvDefault 'GOOGLE_CLOUD_PROJECT' $env:GOOGLE_CLOUD_PROJECT 'Enterprise Gemini project (from your environment)' }
-    Add-EnvPlaceholder 'WIZARD_HTML_REPORTS_DIR' 'C:\Reports\html' 'Folder with the HTML reports: remove the # and set your path'
+    Add-EnvPlaceholder 'WIZARD_HTML_REPORTS_DIR' '\\fileserver\team\Dashboards' 'The team''s HTML dashboards folder (or set it in Settings, Dashboards): remove the # and set your path'
 
     # Folders you own (never overwritten) and Gemini CLI task files (refreshed every update).
     foreach ($folder in @('outbox', 'data')) { New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir $folder) | Out-Null }

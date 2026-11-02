@@ -19,6 +19,30 @@ function inWizardBar() {
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); delete (window as unknown as {chrome?: unknown}).chrome; });
 
+describe('Dashboards', () => {
+  const FOLDER = 'WIZARD_HTML_REPORTS_DIR';
+  const DASHBOARDS: SettingsView = {...VIEW,
+    sections: [{id: 'dashboards', title: 'Dashboards', about: "The team's HTML dashboards."}],
+    fields: [{key: FOLDER, label: 'Folder', section: 'dashboards', help: '', placeholder: '\\\\fileserver\\team\\Dashboards', choices: [],
+      secret: false, source: 'default', value: null, set: false, company_value: null, editable: true}]};
+
+  it('finds the dashboards in the folder typed and shows the network path a mapped drive is saved as', async () => {
+    vi.spyOn(api, 'settings').mockResolvedValue(DASHBOARDS);
+    vi.spyOn(api, 'updates').mockResolvedValue(FAILED);
+    const test = vi.spyOn(api, 'testSettings').mockResolvedValue({ok: true, count: 5, value: '\\\\fileserver\\team\\Dashboards',
+      message: 'Found 5 dashboards in \\\\fileserver\\team\\Dashboards (Y: on this PC). Save to keep it.'});
+    render(<SettingsDialog open onClose={vi.fn()} onSaved={vi.fn()} />);
+    const input = await screen.findByTestId(`setting-${FOLDER}`) as HTMLInputElement;
+    fireEvent.change(input, {target: {value: '"Y:\\Dashboards"'}});
+    const button = screen.getByTestId('test-dashboards');
+    expect(button.textContent).toBe('Find dashboards');
+    fireEvent.click(button);
+    expect(await screen.findByText(/Found 5 dashboards/)).toBeTruthy();
+    expect(test).toHaveBeenCalledWith('dashboards', {[FOLDER]: '"Y:\\Dashboards"'});
+    expect(input.value).toBe('\\\\fileserver\\team\\Dashboards');
+  });
+});
+
 describe('Version and updates', () => {
   it('in the desktop app, offers WizardBar\'s own update check when the service could not read the release', async () => {
     const postMessage = inWizardBar();

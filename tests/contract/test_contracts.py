@@ -12,6 +12,7 @@ from tests.helpers import CEO_QUESTION, ask, login
 
 from wizard_api.runs import ActiveRun
 from wizard_api.security import run_token
+from wizard_connectors.dashboards import Dashboards
 from wizard_connectors.entitlements import IdentityDirectory
 from wizard_connectors.portal_browser import PortalBrowsers
 from wizard_connectors.portals import settings_from
@@ -26,11 +27,13 @@ def load(name: str):
 
 
 def test_tool_catalog_matches_published_contract():
-    # The published catalog includes the portal tools a PC with company portals configured serves.
+    # The published catalog includes the portal tools a PC with company portals configured serves, and the dashboards
+    # tools a PC with a dashboards folder serves.
     services = build_services()
     portals = settings_from({"WIZARD_PORTAL_ASAP_URL": "https://asap.example.com/", "WIZARD_PORTAL_GSCM_URL": "https://gscm.example.com/"})
     assert portals is not None
     services.portals = PortalBrowsers(portals, lambda _: ROOT)
+    services.dashboards = Dashboards(ROOT / "example-dashboards", None)
     published = load("tool-catalog.json")
     assert published["tools"] == build_registry(services).describe(), "run scripts/export_contracts.py and review the diff"
 

@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from wizard_checks.calc import CalcError, evaluate
 from wizard_checks.checker import Claim, Selector, check
 
-from .. import attachment_tables, brief, metronome
+from .. import attachment_tables, brief, dashboards, metronome
 from ..fixture_source import Filter, Sort, SourceError
 from ..knowledge import Note
 from ..postgres_query import one_statement
@@ -384,6 +384,20 @@ def list_sources(ctx: ToolContext, _: NoArgs) -> dict[str, Any]:
                         "connector_status": "READ_ONLY_SQL", "data_mode": "LIVE", "your_market_access": "all markets",
                         "how_to_navigate": "wizard_browse_knowledge(area='datasets') → wizard_read_knowledge → "
                                            "wizard_query_postgresql"})
+    folder = ctx.services.dashboards
+    if folder is not None and ctx.identity.can_use_system(dashboards.SYSTEM) and _on(ctx, dashboards.SYSTEM):
+        problem = folder.problem()
+        found = folder.known_count()
+        # The prepared dashboards first in the list (owner, 2 Nov 2026: "the first thing in the priority list").
+        systems.insert(0, {
+            "system": dashboards.SYSTEM, "name": f"{folder.name} (the team's HTML dashboards)",
+            "description": "Standalone HTML dashboards the team prepared from the company database with its business "
+                           "logic (definitions, filters, adjustments), read as they are: tables, chart data and text, as "
+                           "of the date each states.",
+            "connector_status": "BLOCKED" if problem else "PREPARED_FILE", "data_mode": "LIVE",
+            **({"problem": dashboards.unreachable(folder.root, problem)} if problem else
+               {"dashboards": found} if found is not None else {}),
+            "how_to_navigate": "wizard_dashboards(find=...) → wizard_read_dashboard(dashboard=...)"})
     for portal in ctx.services.portals.settings.portals if ctx.services.portals else ():
         if ctx.identity.can_use_system(portal.id) and _on(ctx, portal.id):
             systems.append({"system": portal.id, "name": f"{portal.name} (live, in the person's own browser)",
@@ -811,6 +825,10 @@ def check_my_data(ctx: ToolContext, args: CheckArgs) -> dict[str, Any]:
             return "UNAVAILABLE", f"{ctx.choice.name(system)} is switched off for this request"
         if original.get("tool") == "portal_run":
             return "UNAVAILABLE", "a portal read is not repeated here; run the portal steps again to read it fresh"
+        if system == dashboards.SYSTEM:
+            if ctx.services.dashboards is None or not ctx.identity.can_use_system(dashboards.SYSTEM):
+                return "UNAVAILABLE", "the dashboards are not available to you on this PC"
+            return dashboards.replay(ctx.services.dashboards, original["request"], original["digest"])
         if original.get("system") == "postgresql":
             if ctx.services.postgres is None or not _postgres_allowed(ctx):
                 return "UNAVAILABLE", "PostgreSQL is not available to you on this server"
@@ -844,8 +862,9 @@ def check_my_data(ctx: ToolContext, args: CheckArgs) -> dict[str, Any]:
 
 
 CORE_TOOLS = [
-    ToolSpec("wizard_list_sources", "List the source systems you can use, their data families (spend, sell-out, share, "
-             "switching...), connector status and data mode (SYNTHETIC, LIVE, DATED_APPROVED_SNAPSHOT or LIVE_VERIFIED).",
+    ToolSpec("wizard_list_sources", "List the source systems you can use (report catalogs, the database, the portals, the "
+             "team's dashboards), their data families (spend, sell-out, share, switching...), connector status and data "
+             "mode (SYNTHETIC, LIVE, DATED_APPROVED_SNAPSHOT or LIVE_VERIFIED).",
              NoArgs, list_sources, "wizard", "source"),
     ToolSpec("wizard_search_catalog", "Search every report you can access across all systems at once. Use when you do "
              "not know which system holds the data.", CatalogSearchArgs, search_catalog, "wizard", "source"),

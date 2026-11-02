@@ -32,13 +32,17 @@ def test_install_folder_settings_resolve_relative_paths(tmp_path):
         load_settings(env={"WIZARD_LOCAL_USER_EMAIL": "not-an-email"}, home=tmp_path)
 
 
-def test_html_reports_folder_is_optional_and_must_exist(tmp_path):
+def test_dashboards_folder_is_optional_and_one_this_pc_cannot_reach_does_not_stop_start_up(tmp_path):
+    # Owner, 2 Nov 2026: the dashboards share may not be mapped, or reachable, on another PC. Wizard starts; the tools and
+    # run.py --check say so (tests/unit/test_dashboards.py).
     assert load_settings(env={}, home=tmp_path).html_reports_dir is None
     (tmp_path / "reports").mkdir()
-    settings = load_settings(env={"WIZARD_HTML_REPORTS_DIR": "reports"}, home=tmp_path)
-    assert settings.html_reports_dir == (tmp_path / "reports").resolve()
-    with pytest.raises(ConfigError, match="WIZARD_HTML_REPORTS_DIR"):
-        load_settings(env={"WIZARD_HTML_REPORTS_DIR": str(tmp_path / "missing")}, home=tmp_path)
+    settings = load_settings(env={"WIZARD_HTML_REPORTS_DIR": '"reports"'}, home=tmp_path)
+    assert settings.html_reports_dir == (tmp_path / "reports").resolve(), "quotes from Copy as path are fine"
+    assert settings.dashboards_name == "Dashboards"
+    missing = load_settings(env={"WIZARD_HTML_REPORTS_DIR": str(tmp_path / "missing"), "WIZARD_DASHBOARDS_NAME": "Team BI"},
+                            home=tmp_path)
+    assert missing.html_reports_dir == tmp_path / "missing" and missing.dashboards_name == "Team BI"
 
 
 def test_local_owner_identity_signs_in_with_the_real_email(tmp_path):

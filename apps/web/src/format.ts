@@ -49,7 +49,7 @@ export const DATA_MODE_TEXT: Record<string, {label: string; hint: string}> = {
   SYNTHETIC: {label: 'Synthetic data', hint: 'Invented test data. Not corporate figures.'},
   DATED_APPROVED_SNAPSHOT: {label: 'Approved snapshot', hint: 'An approved, dated copy of source data.'},
   LIVE_VERIFIED: {label: 'Live · verified retrieval', hint: 'Retrieved live; retrieval parity-checked against the source. Interpretation is reviewed separately.'},
-  LIVE: {label: 'Live', hint: 'Read live from the company PostgreSQL database with a query Gemini wrote. Open the sources to see the query.'},
+  LIVE: {label: 'Live', hint: 'Read live from the company PostgreSQL database with a query Gemini wrote, from a portal in your Wizard browser, or from a team dashboard as it is (its figures as of the date it states). Open the sources to see which.'},
   USER_PROVIDED: {label: 'Your file', hint: 'Figures from a file attached to the question. Not checked against a source system.'},
 };
 

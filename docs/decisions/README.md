@@ -25,6 +25,7 @@ Evidence**. A decision that changes repository rules also updates [AGENTS.md](..
 - [2026-11-01 Access to the Big Data Portal's datasets: the form's own fields, drop-downs, and prepared requests](2026-11-01-bdp-dataset-access.md)
 - [2026-11-01 Wizard sends the access requests the person approves, the way their own one went](2026-11-01-bdp-access-sending.md)
 - [2026-11-01 Tasks that read a folder: digest the company's presentations, and write its presentation guide](2026-11-01-folder-tasks.md)
+- [2026-11-02 Dashboards: the team's HTML dashboards are a system Wizard reads first](2026-11-02-html-dashboards.md)
 - [2026-10-30 The person steers an answer while it runs, and chooses the systems a question may use](2026-10-30-steering-and-systems.md)
 - [2026-10-30 Export settings: the same Wizard on another PC](2026-10-30-settings-export.md)
 - [2026-10-30 Brain and Cases on the company GitHub's Pages; Gemini names each chat](2026-10-30-pages-site.md)

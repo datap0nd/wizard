@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from wizard_connectors.dashboards import DEFAULT_NAME as DASHBOARDS_NAME
+from wizard_connectors.dashboards import folder_path as dashboards_folder
 from wizard_connectors.metronome import MetronomeConfigError, MetronomeSettings
 from wizard_connectors.metronome import settings_from as metronome_settings
 from wizard_connectors.paths import FIXTURES, ROOT
@@ -74,8 +76,11 @@ class Settings:
     transcripts_dir: Path = FIXTURES / "transcripts"
     web_dist: Path = ROOT / "apps" / "web" / "dist"
     content_dir: Path | None = None
-    # Folder of standalone HTML reports (local files for now). Configured only; no tool reads it yet.
+    # The team's HTML dashboards (Settings → Dashboards; owner, 2 Nov 2026): a folder, usually on a network share, read by
+    # the dashboards tools. A mapped drive letter is kept as the network path it maps to; a folder this PC cannot reach
+    # never stops Wizard (the tools say so). The name people see for that system, like pg_name.
     html_reports_dir: Path | None = None
+    dashboards_name: str = DASHBOARDS_NAME
     # Files people attach to questions: "From this PC" lists these folders (local installs; empty behind an SSO proxy,
     # where the server's folders are not the user's), uploads are capped, and each conversion has a time limit.
     attachment_folders: list[Path] = field(default_factory=list)
@@ -240,11 +245,10 @@ def load_settings(env: dict[str, str] | None = None, env_file: Path | None = Non
             raise ConfigError("WIZARD_CONTENT_DIR cannot be combined with the replay runtime: replay plays recorded "
                               "transcripts over the synthetic catalog. Use gemini-cli or code-assist.")
     html_reports = get("WIZARD_HTML_REPORTS_DIR")
-    if html_reports:
-        settings.html_reports_dir = local(html_reports)
-        if not settings.html_reports_dir.is_dir():
-            raise ConfigError(f"WIZARD_HTML_REPORTS_DIR {settings.html_reports_dir} is not a folder. Point it at the folder "
-                              "that holds the HTML reports, or remove the line.")
+    if html_reports and html_reports.strip().strip('"').strip("'").strip():
+        # Worked out without touching the disk: a share that does not answer must not hold up or stop start-up.
+        settings.html_reports_dir = dashboards_folder(html_reports, base)
+    settings.dashboards_name = (get("WIZARD_DASHBOARDS_NAME", DASHBOARDS_NAME) or DASHBOARDS_NAME).strip()[:60]
     settings.local_user_email = get("WIZARD_LOCAL_USER_EMAIL")
     if settings.local_user_email and "@" not in settings.local_user_email:
         raise ConfigError("WIZARD_LOCAL_USER_EMAIL must be your work email address")

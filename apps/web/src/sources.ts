@@ -1,7 +1,8 @@
 import type {DataMode, Evidence, EvidenceSummary} from './types';
 
-/** The real sources behind an answer: a database table or view, a report in one of a system's modules, or a file the
- *  user attached. Gemini may query one table fourteen times; that is one source with fourteen pieces of evidence. */
+/** The real sources behind an answer: a database table or view, a report in one of a system's modules, one of the team's
+ *  dashboards, or a file the user attached. Gemini may query one table fourteen times; that is one source with fourteen
+ *  pieces of evidence. */
 
 // A parenthesis after one of these words opens a subquery or a list, not a function call such as EXTRACT(... FROM ...).
 const NOT_CALLS = new Set(['as', 'in', 'exists', 'from', 'join', 'lateral', 'on', 'where', 'select', 'and', 'or', 'not',
@@ -70,7 +71,7 @@ export function sqlRelations(sql: string): string[] {
   return found;
 }
 
-export type SourceKind = 'table' | 'report' | 'file' | 'query' | 'catalog';
+export type SourceKind = 'table' | 'report' | 'dashboard' | 'file' | 'query' | 'catalog';
 
 export interface Source {
   key: string;
@@ -114,6 +115,9 @@ export function sourceGroups(evidence: (Evidence | EvidenceSummary)[]): Source[]
     if (item.system === 'attachment') {
       // One file, whichever sheet was read: query_attachment names it "file › sheet".
       add(`file\n${item.report_id}`, 'file', system, item.report_name.split(' › ')[0], [], item);
+    } else if (item.system === 'dashboards') {
+      // One dashboard, whichever of its tables, charts or text was read: each is named "title › part".
+      add(`dashboard\n${item.report_id}`, 'dashboard', system, item.report_name.split(' › ')[0], item.folder_path ?? [], item);
     } else if (sql) {
       const tables = sqlRelations(sql);
       for (const table of tables.filter(t => !CATALOG.test(t))) add(`table\n${system}\n${table}`, 'table', system, table, [], item);
@@ -133,7 +137,7 @@ export function sourceCount(sources: Source[]): number {
 }
 
 const USES: Record<SourceKind, [string, string]> = {table: ['query', 'queries'], report: ['run', 'runs'], file: ['read', 'reads'],
-  query: ['query', 'queries'], catalog: ['lookup', 'lookups']};
+  dashboard: ['read', 'reads'], query: ['query', 'queries'], catalog: ['lookup', 'lookups']};
 
 /** "14 queries", "1 run": how often Wizard read a source. */
 export function usesText(source: Source): string {

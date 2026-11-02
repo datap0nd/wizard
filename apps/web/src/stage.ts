@@ -8,6 +8,7 @@ export function moduleOf(name: string | undefined, args?: Record<string, unknown
   const tool = name ?? '';
   if (/^portal_(run|guide|save_script|request_access)$/.test(tool) && typeof args?.system === 'string' && args.system) return args.system;
   if (tool === 'wizard_query_postgresql') return 'postgresql';
+  if (tool === 'wizard_dashboards' || tool === 'wizard_read_dashboard') return 'dashboards';
   if (tool === 'wizard_schedule_brief') return 'metronome';
   if (/^wizard_(lookup_definitions|browse_knowledge|read_knowledge)$/.test(tool)) return 'knowledge';
   if (/^wizard_(read|query|edit)_attachment$/.test(tool)) return 'attachment';
@@ -31,6 +32,8 @@ export function detailOf(item: TimelineItem): {text: string; code: boolean} | nu
     ? args.filters.filter((f): f is {field: unknown; values?: unknown[]} => !!f && typeof f === 'object')
       .map(f => `${String(f.field)}=${(f.values ?? []).map(String).join('/')}`) : [];
   if (typeof args.report_id === 'string') return {text: [args.report_id, ...filters].join(' · '), code: false};
+  if (typeof args.dashboard === 'string') return {text: [args.dashboard, args.part].filter(Boolean).map(String).join(' · '), code: false};
+  if (typeof args.find === 'string' && args.find) return {text: `“${squash(args.find, 120)}”`, code: false};
   if (typeof args.expression === 'string') return {text: squash(args.expression, 160), code: true};
   if (typeof args.area === 'string') return {text: `area ${args.area}`, code: false};
   if (typeof args.title === 'string') return {text: squash(args.title, 120), code: false};
@@ -75,7 +78,7 @@ function stats(id: string, calls: TimelineItem[]): ModuleStats {
 }
 
 const NAMES: Record<string, string> = {postgresql: 'AI Team Database', knowledge: 'Knowledge base', attachment: 'Attached files',
-  metronome: 'Metronome'};
+  metronome: 'Metronome', dashboards: 'Dashboards'};
 
 /** Everything the stage shows, derived only from what the run actually did. */
 export function stageModel(run: RunView, systems: SystemInfo[]): StageModel {
@@ -92,9 +95,11 @@ export function stageModel(run: RunView, systems: SystemInfo[]): StageModel {
       const named = id === 'metronome' ? undefined : calls.find(c => c.evidence?.system_name)?.evidence?.system_name;
       const portal = calls.some(c => c.name?.startsWith('portal_'));
       return {id, name: named ?? NAMES[id] ?? id.toUpperCase(), kind: id === 'postgresql' ? 'database' : id === 'knowledge'
-        ? 'knowledge' : id === 'attachment' ? 'files' : id === 'metronome' ? 'schedules' : portal ? 'portal' : 'reports'} as SystemInfo;
+        ? 'knowledge' : id === 'attachment' ? 'files' : id === 'metronome' ? 'schedules' : id === 'dashboards' ? 'dashboards'
+        : portal ? 'portal' : 'reports'} as SystemInfo;
     });
-  const order = (s: SystemInfo) => ({database: 0, portal: 1, reports: 1, knowledge: 2, files: 3, schedules: 4})[s.kind] ?? 5;
+  // The team's dashboards first (owner, 2 Nov 2026: "the first thing in the priority list").
+  const order = (s: SystemInfo) => ({dashboards: -1, database: 0, portal: 1, reports: 1, knowledge: 2, files: 3, schedules: 4})[s.kind] ?? 5;
   const modules = [...listed, ...extra].sort((a, b) => order(a) - order(b))
     .map(s => ({...s, stats: stats(s.id, byModule.get(s.id) ?? [])}));
   const active = [...tools].reverse().find(t => t.state === 'running') ?? null;

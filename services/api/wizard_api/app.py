@@ -29,6 +29,7 @@ from wizard_agent.runtime import AgentFailure, AgentRuntime
 from wizard_agent.secret_box import SecretBox
 from wizard_connectors import access_requests, metronome
 from wizard_connectors.content import errors, validate_content
+from wizard_connectors.dashboards import Dashboards
 from wizard_connectors.entitlements import Identity, IdentityDirectory, SystemRights
 from wizard_connectors.paths import ROOT
 from wizard_connectors.portal_browser import PortalBrowser, PortalBrowsers, PortalError
@@ -184,7 +185,7 @@ class SettingsBody(Body):
 
 
 class SettingsTestBody(Body):
-    section: Literal["postgres", "knowledge", "metronome"]
+    section: Literal["postgres", "knowledge", "metronome", "dashboards"]
     values: dict[str, str | None] = Field(default_factory=dict, max_length=40)
 
 
@@ -322,6 +323,8 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         services.kb_writer, services.kb_prefix = map_writer(settings, "these notes"), settings.kb_path
     task_board = TaskBoard(settings.data_dir, ROOT / "tasks", settings.proxy)
     services.task_files = TaskFiles(settings.data_dir, Documents(settings))  # what a task that asks for a folder reads
+    if settings.html_reports_dir:  # the Dashboards system; a folder this PC cannot reach is said by its tools, not here
+        services.dashboards = Dashboards(settings.html_reports_dir, settings.data_dir / "dashboards", settings.dashboards_name)
     portal_ids = [p.id for p in settings.portals.portals] if settings.portals else []
     registry = build_registry(services)
     identities = IdentityDirectory.load(settings.identities_file)
@@ -336,7 +339,7 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         owner = Identity(id=OWNER_ID, email=email.lower(), name=settings.local_user_name or "You", role="Owner (local test)",
                          entitlements={system: SystemRights(reports=["*"], markets=["*"]) for system in
                                        [*(s.id for s in services.catalog.systems), *(["postgresql"] if services.postgres else []),
-                                        *portal_ids]})
+                                        *portal_ids, *(["dashboards"] if services.dashboards else [])]})
         others = [] if settings.desktop else [i for i in identities.all() if not owner.email or i.email != owner.email]
         identities = IdentityDirectory([owner, *others])
     interrupted = store.mark_interrupted()
@@ -536,7 +539,8 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         readiness = await runtime.readiness(settings.user_home(identity.id), identity.email)
         modes = sorted({s.connector.data_mode for s in services.catalog.systems if identity.can_use_system(s.id)
                         and s.connector.status in ("SYNTHETIC_FIXTURE", "ROWS_VERIFIED")}
-                       | ({"LIVE"} if services.postgres and identity.can_use_system("postgresql") else set()))
+                       | ({"LIVE"} if services.postgres and identity.can_use_system("postgresql") else set())
+                       | ({"LIVE"} if services.dashboards and identity.can_use_system("dashboards") else set()))
         return {**base, "diagnostics": settings.diagnostics, "desktop": settings.desktop,
                 "settings_editable": identity.id == OWNER_ID and settings_pane.editable(settings),
                 "identity": {"id": identity.id, "name": identity.name, "email": identity.email, "role": identity.role},
@@ -1657,6 +1661,8 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
             if body.section == "metronome":
                 return await asyncio.to_thread(settings_pane.test_metronome, settings, dict(body.values),
                                                metronome_transport)
+            if body.section == "dashboards":
+                return await asyncio.to_thread(settings_pane.test_dashboards, settings, dict(body.values))
             return await asyncio.to_thread(settings_pane.test_knowledge, settings, dict(body.values))
         except settings_pane.PaneError as error:
             return {"ok": False, "message": str(error)}

@@ -64,6 +64,9 @@ Setup does, in order:
    - `WIZARD_AGENT_RUNTIME=gemini-cli`, `WIZARD_GEMINI_MODEL=gemini-3.8-flash`, `WIZARD_DATA_DIR=data`.
    - `WIZARD_LOCAL_USER_EMAIL` from `whoami /upn`.
    - The Gemini CLI and Node paths it found.
+   - A commented `# WIZARD_HTML_REPORTS_DIR=` line for the team's HTML dashboards folder. Set it there or in **Settings →
+     Dashboards** (**Find dashboards** counts them); a mapped drive is saved as its network path. A folder this PC cannot
+     reach does not stop Wizard: `run.py --check` warns, and Wizard says it cannot read the dashboards.
 5. Creates `content\` (documentation template), `documents\quiz-questions\`, `documents\quiz-answers\`, `outbox\` and
    `data\`, and refreshes `templates\` (the quiz page), `docs.ps1`, `GEMINI.md`, `.geminiignore` and the Wizard-owned parts of `content\` (`schema\`, `.gemini\commands\`). Your notes,
    catalogs, registers and inbox are never touched.

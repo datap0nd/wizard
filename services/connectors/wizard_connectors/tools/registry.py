@@ -20,6 +20,7 @@ from typing import Any, Literal, Protocol
 from pydantic import BaseModel, ValidationError
 
 from ..catalog import Catalog
+from ..dashboards import Dashboards
 from ..entitlements import Identity
 from ..fixture_source import FixtureSource, SourceError
 from ..knowledge import KnowledgeBase
@@ -74,6 +75,8 @@ class Services:
     kb_prefix: str = ""  # the knowledge base's folder in that repository (WIZARD_KB_PATH)
     # The folder or file a task run reads (task_files.py), with the converter the API gives it; None = no tasks here.
     task_files: TaskFiles | None = None
+    # The team's HTML dashboards folder (dashboards.py), a system of its own; None = no folder set on this PC.
+    dashboards: Dashboards | None = None
     now: Callable[[], datetime] = field(default=lambda: datetime.now(UTC))
 
 

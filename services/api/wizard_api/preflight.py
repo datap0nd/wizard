@@ -147,6 +147,27 @@ def _check_postgres(settings: Settings) -> None:
         _line("WARN", f"PostgreSQL: {error}")
 
 
+def _check_dashboards(settings: Settings) -> None:
+    """The team's dashboards folder: a WARN when this PC cannot reach it, never a failure (Wizard runs without it)."""
+    from wizard_connectors.dashboards import DashboardError, Dashboards, unreachable
+    if settings.html_reports_dir is None:
+        _line("INFO", "Dashboards not configured (Settings → Dashboards, or WIZARD_HTML_REPORTS_DIR)")
+        return
+    folder = Dashboards(settings.html_reports_dir, None, settings.dashboards_name)
+    problem = folder.problem(fresh=True)
+    if problem:
+        _line("WARN", unreachable(folder.root, problem).split(" Until")[0] + " Wizard starts without them and says so "
+                      "when a question needs them.")
+        return
+    try:
+        count = len(folder.listing(fresh=True))
+    except DashboardError as error:
+        _line("WARN", error.message)
+        return
+    _line("PASS" if count else "WARN", f"{settings.dashboards_name}: {count} HTML dashboard{'' if count == 1 else 's'} in "
+                                       f"{folder.root}" + ("" if count else " (check that this is the dashboards folder)"))
+
+
 def run_checks(settings: Settings) -> int:
     """0 = ready; 1 = the application works but Gemini CLI is not usable yet; 2 = the application cannot start."""
     ok = True
@@ -169,11 +190,7 @@ def run_checks(settings: Settings) -> int:
               f"knowledge base {settings.kb_repo}@{settings.kb_ref} on {urlsplit(GITHUB_API).netloc}: {commit}"
               + (f" ({kb['last_error']})" if kb.get("last_error") else "")
               + ("" if settings.kb_token else " - no WIZARD_KB_TOKEN"))
-    if settings.html_reports_dir:
-        count = sum(1 for p in settings.html_reports_dir.rglob("*") if p.suffix.lower() in (".html", ".htm") and p.is_file())
-        _line("INFO", f"HTML reports {settings.html_reports_dir} ({count} HTML file{'' if count == 1 else 's'})")
-    else:
-        _line("INFO", "HTML reports not configured (WIZARD_HTML_REPORTS_DIR)")
+    _check_dashboards(settings)
     try:
         settings.data_dir.mkdir(parents=True, exist_ok=True)
         probe = settings.data_dir / ".write-test"

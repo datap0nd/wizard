@@ -36,8 +36,9 @@ Rules:
 - This repository is public: a task holds instructions only, never company content (names of reports, people,
   figures). Gemini finds those with its tools on the person's PC.
 - A task runs with Wizard's tools: the knowledge tools, `wizard_kb_note_source`, `wizard_kb_standard`, `wizard_kb_save_notes`, the portal
-  map and portal tools, the database and catalog tools, and the task-file tools when it asks for a path. A task that
-  needs a tool Wizard does not have needs an update first.
+  map and portal tools, the database and catalog tools, the dashboards tools (`wizard_dashboards`,
+  `wizard_read_dashboard`) when the PC has a dashboards folder, and the task-file tools when it asks for a path. A task
+  that needs a tool Wizard does not have needs an update first.
 - Say what must not change, and what to do with a SIGNED note (usually: leave it and propose the change in the
   summary).
 - Delete a task's file when it is no longer needed; Wizard drops it from the list.

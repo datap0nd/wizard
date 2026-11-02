@@ -43,7 +43,8 @@
       "properties": {
         "id": {"type": "string", "pattern": "^E[0-9]+$"},
         "data_mode": {"enum": ["SYNTHETIC", "DATED_APPROVED_SNAPSHOT", "LIVE", "LIVE_VERIFIED", "USER_PROVIDED"]},
-        "connector_status": {"enum": ["SYNTHETIC_FIXTURE", "NAVIGATION_ONLY", "ROWS_VERIFIED", "BLOCKED", "USER_PROVIDED", "READ_ONLY_SQL"]},
+        "connector_status": {"enum": ["SYNTHETIC_FIXTURE", "NAVIGATION_ONLY", "ROWS_VERIFIED", "BLOCKED", "USER_PROVIDED", "READ_ONLY_SQL",
+                                     "BROWSER_SESSION", "PREPARED_FILE"]},
         "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "rows": {"type": "array", "maxItems": 500}
       }

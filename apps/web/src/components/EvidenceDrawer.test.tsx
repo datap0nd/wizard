@@ -49,6 +49,27 @@ describe('evidence drawer', () => {
     expect(screen.getByTestId('evidence-sql').textContent).toBe(sql);
   });
 
+  it('shows a dashboard as one source with its as-of date, and a part read from it as the dashboard shows it', () => {
+    const table: Evidence = {...evidence, id: 'E2', system: 'dashboards', system_name: 'Dashboards', report_id: 'd1a2b3c4d5e',
+      report_name: 'Weekly sell-out › Units by market', folder_path: ['Sales'], as_of: '2026-10-31', tool: 'wizard_read_dashboard',
+      connector_status: 'PREPARED_FILE', access_note: 'The team\'s dashboard Sales/weekly.html, read as it is.',
+      request: {filters: [], group_by: null, measures: null, limit: 3, dashboard: 'd1a2b3c4d5e', path: 'Sales/weekly.html', part: 'T1', offset: 0},
+      columns: [{key: 'market', label: 'Market', type: 'string'}, {key: 'units', label: 'Units', type: 'number'}],
+      rows: [['North', 1234], ['South', -56]], locator: {system: 'dashboards', report_id: 'd1a2b3c4d5e', open_url: null}};
+    const text: Evidence = {...table, id: 'E1', report_name: 'Weekly sell-out', request: {...table.request, part: 'text'}, columns: [],
+      rows: [], total_rows: 0, excerpt: '# Weekly sell-out\nData as of 31 Oct 2026'};
+    render(<TooltipProvider><EvidenceDrawer conversationId={null} open focus="E2" items={[text, table]} preloaded={[text, table]} onClose={() => {}} /></TooltipProvider>);
+    expect(screen.getAllByTestId('source-name').map(n => n.textContent)).toEqual(['Weekly sell-out']);
+    expect(screen.getByText(/Dashboards › Sales · dashboard · data as of/)).toBeTruthy();
+    expect(screen.getByTestId('source-uses').textContent).toBe('2 reads');
+    expect(screen.getByTestId('evidence-dashboard').textContent).toBe('Sales/weekly.html · T1');
+    expect(screen.getByText('North')).toBeTruthy();
+    expect(screen.getByText("A team dashboard, read as it is: its figures are the dashboard's own")).toBeTruthy();
+    fireEvent.click(screen.getAllByTestId('source-item')[0]);
+    expect(screen.getByTestId('evidence-excerpt').textContent).toContain('Data as of 31 Oct 2026');
+    expect(screen.queryByText(/returned no rows/)).toBeNull();
+  });
+
   it('opens on the source and the query a citation points at', () => {
     const other: EvidenceSummary = {...evidence, id: 'E2', report_id: 'sql-2', sql: 'SELECT * FROM ref.markets'};
     const cited: EvidenceSummary = {...evidence, id: 'E3', report_id: 'sql-3', sql};

@@ -32,6 +32,20 @@ describe('the systems stage', () => {
     expect(moduleOf('wizard_calculate')).toBe('wizard');
     expect(moduleOf('wizard_search_catalog')).toBe('wizard');
     expect(moduleOf('wizard_schedule_brief')).toBe('metronome');
+    expect(moduleOf('wizard_dashboards')).toBe('dashboards');
+    expect(moduleOf('wizard_read_dashboard')).toBe('dashboards');
+  });
+
+  it('puts the team\'s dashboards first, and names a dashboard read by its id and part', () => {
+    const systems: SystemInfo[] = [...SYSTEMS, {id: 'dashboards', name: 'Dashboards', kind: 'dashboards'}];
+    const model = stageModel(run([tool('1', 'wizard_read_dashboard', 'ok', {args: {dashboard: 'd1a2b3c4d5e', part: 'T1'},
+      evidence: evidence('E1', 'dashboards', 3)})]), systems);
+    expect(model.modules[0].id).toBe('dashboards');
+    expect(model.modules[0].stats.rows).toBe(3);
+    expect(detailOf(tool('2', 'wizard_read_dashboard', 'ok', {args: {dashboard: 'd1a2b3c4d5e', part: 'T1'}}))?.text).toBe('d1a2b3c4d5e · T1');
+    expect(detailOf(tool('3', 'wizard_dashboards', 'ok', {args: {find: 'weekly sell-out'}}))?.text).toBe('“weekly sell-out”');
+    const unlisted = stageModel(run([tool('1', 'wizard_dashboards', 'ok')]), SYSTEMS);
+    expect(unlisted.modules.find(m => m.id === 'dashboards')).toMatchObject({name: 'Dashboards', kind: 'dashboards'});
   });
 
   it('shows what each call looked for, from its own arguments', () => {

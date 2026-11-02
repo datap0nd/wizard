@@ -1,6 +1,6 @@
 import type {BrainLive, BrainMap} from './brain';
 import type {CasePreview, CasePublished, SiteStatus} from './cases';
-import type {AccessForm, Answer, Attachment, Bootstrap, Cadence, ConversationSummary, Evidence, GeminiAccount, GeminiQuota, LocalFile, Memory, OpenStep, PortalCheck, PortalMapView, PortalStatus, RecurringList, Report, RunRecord, SavedFile, Schedule, SettingsSaved, SettingsView, SourceCatalog, SourceSummary, Steer, SteerReason, TasksView, UpdateInfo} from './types';
+import type {AccessForm, Answer, Attachment, Bootstrap, Cadence, ConversationSummary, Evidence, GeminiAccount, GeminiQuota, LocalFile, Memory, OpenStep, PortalCheck, PortalMapView, PortalStatus, RecurringList, Report, RunRecord, SavedFile, Schedule, SettingsSaved, SettingsTest, SettingsTestResult, SettingsView, SourceCatalog, SourceSummary, Steer, SteerReason, TasksView, UpdateInfo} from './types';
 
 /** What a note to Wizard did: reached the running answer (steer), or became the next question (follow_up). */
 export interface SteerResult {
@@ -114,8 +114,8 @@ export const api = {
   unlink: () => request<GeminiAccount>('/api/v1/account/gemini', {method: 'DELETE'}),
   settings: () => request<SettingsView>('/api/v1/settings'),
   saveSettings: (values: Record<string, string | null>) => request<SettingsSaved>('/api/v1/settings', {method: 'PUT', body: {values}}),
-  testSettings: (section: 'postgres' | 'knowledge' | 'metronome', values: Record<string, string | null>) =>
-    request<{ok: boolean; message: string}>('/api/v1/settings/test', {body: {section, values}}),
+  testSettings: (section: SettingsTest, values: Record<string, string | null>) =>
+    request<SettingsTestResult>('/api/v1/settings/test', {body: {section, values}}),
   updates: (refresh = false) => request<UpdateInfo>(`/api/v1/updates${refresh ? '?refresh=true' : ''}`),
   portals: () => request<PortalStatus>('/api/v1/portals'),
   portalSignIn: () => request<PortalStatus>('/api/v1/portals/sign-in', {body: {}}),

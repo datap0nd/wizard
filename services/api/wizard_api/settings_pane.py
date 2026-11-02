@@ -1,6 +1,6 @@
 """The settings pane: the company settings a person may change on their own PC (Gemini model and project, the knowledge
-base, the read-only database, Metronome, the portals, the proxy), where each value comes from, saving, and connection
-tests.
+base, the read-only database, the dashboards folder, Metronome, the portals, the proxy), where each value comes from,
+saving, and connection tests.
 
 Values are saved to this PC's store (provisioning.update_local; secrets through the SecretBox). A key that the PC's .env
 also sets is removed from .env on save, so the new value applies and no password stays there in plain text. A key set
@@ -18,8 +18,10 @@ from typing import Any
 import httpx
 
 from wizard_agent import outbound
+from wizard_connectors import dashboards
 from wizard_connectors.metronome import MetronomeConfigError
 from wizard_connectors.metronome import settings_from as metronome_settings
+from wizard_connectors.paths import ROOT
 from wizard_connectors.pg import PgError, PgSettings
 from wizard_connectors.pg import settings_from as pg_settings
 
@@ -48,6 +50,9 @@ SECTIONS = [
     ("site", "Pages site", "Brain and Cases, two pages of their own on the company GitHub's Pages, published from this PC "
                            "with the knowledge base's write token."),
     ("postgres", "Company database", "A read-only PostgreSQL account for Gemini's SQL questions."),
+    ("dashboards", "Dashboards", "The team's HTML dashboards: the database's data with the team's business logic, which "
+                                 "Gemini reads first when one covers the question. A mapped drive is saved as the network "
+                                 "path it stands for, so every PC finds the same folder."),
     ("metronome", "Metronome", "Recurring extractions: Metronome emails a table on a schedule, as Flows owned by its "
                                "Wizard user."),
     ("portals", "Portals", "ASAP, GSCM and the Big Data Portal (its information catalog and Superset), read by Gemini in "
@@ -83,6 +88,12 @@ FIELDS = [
     Field("WIZARD_PG_PASSWORD", "Password", "postgres"),
     Field("WIZARD_PG_SSLMODE", "SSL", "postgres", "", "prefer",
           ("disable", "prefer", "require", "verify-ca", "verify-full")),
+    Field("WIZARD_HTML_REPORTS_DIR", "Folder", "dashboards", "Paste the folder's path (quotes from Copy as path are fine). "
+          "A mapped drive such as Y:\\Dashboards is saved as its network path (\\\\server\\share\\Dashboards). If this "
+          "PC cannot reach it, ask for access to the share: Wizard still starts, and says so when it needs them.",
+          "\\\\fileserver\\team\\Dashboards"),
+    Field("WIZARD_DASHBOARDS_NAME", "Name people see", "dashboards", "Shown in the systems list and in answers' sources.",
+          "Dashboards"),
     Field("WIZARD_METRONOME_URL", "Address", "metronome", "Metronome on the office network.", "http://10.0.0.5:8000"),
     Field("WIZARD_METRONOME_CLIENT_KEY", "Wizard's key", "metronome",
           "Signed in to Metronome as the Wizard user; scripts/metronome_link.py makes one on the Metronome host PC."),
@@ -104,6 +115,7 @@ FIELDS = [
           "portal maps): http://host:port, or direct. Empty: the route Windows and Edge take to it.", ""),
 ]
 BY_KEY = {f.key: f for f in FIELDS}
+DASHBOARDS = "WIZARD_HTML_REPORTS_DIR"
 
 
 class PaneError(ValueError):
@@ -186,6 +198,8 @@ def save(settings: Settings, changes: dict[str, Any]) -> dict[str, Any]:
     if locked:
         raise PaneError(f"{', '.join(locked)} is set by an environment variable on this PC; change it there", 409)
     updates = {k: v for k, v in cleaned.items() if not (BY_KEY[k].secret and v is None)}
+    if updates.get(DASHBOARDS):  # quotes removed, a mapped drive as its network path (owner, 2 Nov 2026)
+        updates[DASHBOARDS] = dashboards.stored_value(str(updates[DASHBOARDS]))
     if not updates:
         return {"changed": []}
     local_folder = provisioning.folder(settings.data_dir, "local")
@@ -301,13 +315,39 @@ def test_metronome(settings: Settings, proposed: dict[str, Any],
     return MetronomeClient(target, transport).check()
 
 
+def test_dashboards(settings: Settings, proposed: dict[str, Any]) -> dict[str, Any]:
+    """Find the dashboards in the folder the person typed: the path Wizard would save (a mapped drive as its network
+    path), whether this PC reaches it, and how many dashboards it holds."""
+    values = _candidate(settings, proposed)
+    typed = values.get(DASHBOARDS) or ""
+    if not dashboards.clean(typed):
+        return {"ok": False, "message": "Paste the path of the folder that holds the team's HTML dashboards."}
+    stored = dashboards.stored_value(typed)
+    folder = dashboards.Dashboards(dashboards.folder_path(stored, settings.home or ROOT), None)
+    mapped = (f" ({dashboards.clean(typed)[:2].upper()} on this PC; Wizard saves the network path so every PC finds the "
+              "same folder)") if stored != dashboards.clean(typed) else ""
+    problem = folder.problem(fresh=True)
+    if problem:
+        return {"ok": False, "value": stored, "message": dashboards.unreachable(folder.root, problem).split(" Until")[0]}
+    try:
+        found = folder.listing(fresh=True)
+    except dashboards.DashboardError as error:
+        return {"ok": False, "value": stored, "message": error.message}
+    if not found:
+        return {"ok": False, "value": stored, "count": 0,
+                "message": f"Wizard reaches {folder.root}{mapped}, but it holds no HTML files (.html, .htm), subfolders "
+                           "included. Check that this is the dashboards folder."}
+    return {"ok": True, "value": stored, "count": len(found),
+            "message": f"Found {len(found):,} dashboard{'' if len(found) == 1 else 's'} in {folder.root}{mapped}. Save to "
+                       "keep it."}
+
+
 RELEASE = "https://github.com/datap0nd/wizard/releases/download/desktop-continuous/"
 # The mirror branch CI force-pushes with every release (desktop.yml), read from api.github.com as setup.ps1 reads.
 MIRROR_MANIFEST = "https://api.github.com/repos/datap0nd/wizard/contents/wizard-desktop.json?ref=desktop-download"
 
 
 def installed_build() -> dict[str, Any]:
-    from wizard_connectors.paths import ROOT
     try:
         record = json.loads((ROOT / "BUILD.json").read_text(encoding="utf-8"))
         return record if isinstance(record, dict) else {}
