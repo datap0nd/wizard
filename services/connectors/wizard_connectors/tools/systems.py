@@ -15,6 +15,7 @@ PORTAL_TOOLS = frozenset({"portal_run", "portal_guide", "portal_save_script", "p
                           "portal_map_save", "portal_map_route"})
 KNOWLEDGE_TOOLS = frozenset({"wizard_lookup_definitions", "wizard_browse_knowledge", "wizard_read_knowledge"})
 ATTACHMENT_TOOLS = frozenset({"wizard_read_attachment", "wizard_query_attachment", "wizard_edit_attachment"})
+DASHBOARD_TOOLS = frozenset({"wizard_dashboards", "wizard_read_dashboard"})  # the Dashboards system (dashboards.py)
 CATALOG_TOOL = re.compile(r"^([a-z0-9]+)_(search_reports|get_report_schema|run_report)$")
 ASK_FOR_SYSTEM = "wizard_ask_for_system"
 
@@ -46,6 +47,8 @@ def system_of(name: str, args: dict[str, Any] | None = None) -> str | None:
         return "knowledge"
     if name in ATTACHMENT_TOOLS:
         return "attachment"
+    if name in DASHBOARD_TOOLS:
+        return "dashboards"
     match = CATALOG_TOOL.match(name)
     return match.group(1) if match else None
 

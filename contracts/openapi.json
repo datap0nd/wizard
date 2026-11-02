@@ -3540,7 +3540,8 @@
             "enum": [
               "postgres",
               "knowledge",
-              "metronome"
+              "metronome",
+              "dashboards"
             ],
             "title": "Section"
           },

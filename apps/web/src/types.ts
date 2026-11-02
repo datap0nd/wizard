@@ -93,6 +93,17 @@ export interface SettingsView {
   version: string;
 }
 
+/** The settings sections with a test: a connection, or (Dashboards) finding the dashboards in the folder typed. */
+export type SettingsTest = 'postgres' | 'knowledge' | 'metronome' | 'dashboards';
+
+export interface SettingsTestResult {
+  ok: boolean;
+  message: string;
+  /** Dashboards: the path Wizard would save (a mapped drive as its network path) and how many dashboards it holds. */
+  value?: string;
+  count?: number;
+}
+
 export interface SettingsSaved extends SettingsView {
   changed: string[];
   /** How the change applies: now / after_run (the service restarts itself), manual (restart Wizard yourself), none. */
@@ -170,7 +181,9 @@ export interface Evidence extends EvidenceSummary {
   request: {filters?: {field: string; values: string[]}[]; group_by?: string[] | null; measures?: string[] | null; limit?: number;
             sql?: string; database?: string; max_rows?: number;
             /** A portal read: the steps Gemini ran in the person's browser, and the page it ended on. */
-            steps?: PortalStep[]; page?: string | null; page_title?: string | null; script_name?: string | null};
+            steps?: PortalStep[]; page?: string | null; page_title?: string | null; script_name?: string | null;
+            /** A dashboard read: its path in the dashboards folder, the part read (text, T1, D2 or a heading) and from where. */
+            dashboard?: string; path?: string; part?: string; offset?: number};
   columns: Column[];
   rows: (string | number | null)[][];
   retrieved_at: string;
@@ -327,7 +340,7 @@ export interface TimelineItem {
 export interface SystemInfo {
   id: string;
   name: string;
-  kind: 'reports' | 'portal' | 'database' | 'knowledge' | 'files' | 'schedules';
+  kind: 'dashboards' | 'reports' | 'portal' | 'database' | 'knowledge' | 'files' | 'schedules';
   data_mode?: DataMode;
   notes?: number;
 }

@@ -1,5 +1,5 @@
 import {useEffect, useMemo, useState} from 'react';
-import {BookKey, ChevronDown, Database, ExternalLink, FileChartColumn, Lock, Paperclip, Table2} from 'lucide-react';
+import {BookKey, ChevronDown, Database, ExternalLink, FileChartColumn, LayoutDashboard, Lock, Paperclip, Table2} from 'lucide-react';
 import {api, ApiError} from '@/api';
 import {formatDate, formatValue} from '@/format';
 import {cn} from '@/lib/utils';
@@ -28,6 +28,7 @@ function EvidenceDetail({conversationId, summary, preloaded}: {conversationId: s
   const [evidence, setEvidence] = useState<Evidence | null>(preloaded ?? null);
   const [error, setError] = useState<string | null>(null);
   const attached = summary.system === 'attachment';
+  const dashboard = summary.system === 'dashboards';  // one of the team's HTML dashboards, read as it is
   const sql = evidence?.request.sql;
   const steps = evidence?.request.steps;
   useEffect(() => {
@@ -49,9 +50,12 @@ function EvidenceDetail({conversationId, summary, preloaded}: {conversationId: s
           {sql ? <><dt className="text-ink-3">Database</dt><dd>{evidence.request.database}</dd></>
             : steps ? <><dt className="text-ink-3">Read in</dt><dd>Your Wizard browser · {evidence.request.page_title || evidence.request.page || 'the portal'}
               {evidence.request.script_name ? ` · saved script ${evidence.request.script_name}` : ''}</dd></>
+            : dashboard ? <><dt className="text-ink-3">Read</dt><dd data-testid="evidence-dashboard">{evidence.request.path}
+              {evidence.request.part && evidence.request.part !== 'text' ? ` · ${evidence.request.part}` : ''}
+              {evidence.request.offset ? ` · from ${evidence.request.offset.toLocaleString()}` : ''}</dd></>
             : <><dt className="text-ink-3">Request</dt><dd>{evidence.request.filters?.length ? evidence.request.filters.map(f => `${f.field} = ${f.values.join(', ')}`).join(' · ') : 'no filters'}
               {evidence.request.group_by ? ` · grouped by ${evidence.request.group_by.join(', ')}` : ''}</dd></>}
-          <dt className="text-ink-3">Rows</dt><dd>{evidence.rows.length.toLocaleString()} shown of {evidence.total_rows.toLocaleString()}{evidence.truncated ? ' (truncated)' : ''} · digest {evidence.digest.slice(0, 12)}</dd></>}
+          {(!dashboard || evidence.rows.length > 0) && <><dt className="text-ink-3">Rows</dt><dd>{evidence.rows.length.toLocaleString()} shown of {evidence.total_rows.toLocaleString()}{evidence.truncated ? ' (truncated)' : ''} · digest {evidence.digest.slice(0, 12)}</dd></>}</>}
       </dl>
       {sql && <pre className="mt-3 max-h-60 overflow-auto whitespace-pre rounded-lg border border-line bg-surface px-3 py-2 font-mono text-[12px] leading-5 text-ink-2 scroll-thin" data-testid="evidence-sql">{sql}</pre>}
       {steps && <pre className="mt-3 max-h-60 overflow-auto whitespace-pre rounded-lg border border-line bg-surface px-3 py-2 font-mono text-[12px] leading-5 text-ink-2 scroll-thin" data-testid="evidence-steps">{steps.map(stepText).join('\n')}</pre>}
@@ -72,10 +76,11 @@ function EvidenceDetail({conversationId, summary, preloaded}: {conversationId: s
       {evidence?.excerpt && (
         <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap rounded-lg border border-line bg-surface px-3 py-2 text-[12px] leading-5 text-ink-2 scroll-thin" data-testid="evidence-excerpt">{evidence.excerpt}</pre>
       )}
-      {evidence && !attached && evidence.rows.length === 0 && <p className="mt-3 rounded-lg border border-dashed border-line px-3 py-4 text-center text-xs text-ink-3">The source returned no rows for this request. Missing rows mean no data, not zero.</p>}
+      {evidence && !attached && !dashboard && evidence.rows.length === 0 && <p className="mt-3 rounded-lg border border-dashed border-line px-3 py-4 text-center text-xs text-ink-3">The source returned no rows for this request. Missing rows mean no data, not zero.</p>}
       <div className="mt-3 flex items-center gap-2 text-xs text-ink-3">
         {evidence?.locator.open_url ? <a href={evidence.locator.open_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-accent"><ExternalLink className="size-3.5" />Open in {summary.system.toUpperCase()}</a>
-          : <StatusPill tone="muted">{attached ? 'A file attached to the question' : sql ? 'A live query Gemini wrote' : steps ? 'Steps Gemini wrote, read live' : 'No source link: synthetic fixture'}</StatusPill>}
+          : <StatusPill tone="muted">{attached ? 'A file attached to the question' : sql ? 'A live query Gemini wrote' : steps ? 'Steps Gemini wrote, read live'
+            : dashboard ? "A team dashboard, read as it is: its figures are the dashboard's own" : 'No source link: synthetic fixture'}</StatusPill>}
       </div>
     </section>
   );
@@ -84,6 +89,7 @@ function EvidenceDetail({conversationId, summary, preloaded}: {conversationId: s
 const KIND: Record<SourceKind, {icon: typeof Table2; what: string}> = {
   table: {icon: Table2, what: 'table'},
   report: {icon: FileChartColumn, what: 'report'},
+  dashboard: {icon: LayoutDashboard, what: 'dashboard'},
   file: {icon: Paperclip, what: 'attached file'},
   query: {icon: Database, what: 'query'},
   catalog: {icon: BookKey, what: 'column lookups, not figures'},

@@ -3,7 +3,56 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-02 (latest) — Tasks are the only writer of the knowledge base; the documentation kit is retired
+## 2026-11-02 (latest) — Dashboards: the team's HTML dashboards, a system Wizard reads first
+
+The owner: "I believe these dashboards should definitely be the first thing in the priority list as they are dashboards
+prepared combining logic and data that wizard will struggle to get right off the bat"; "Y:\ is indeed a risk as it's
+mapped as that in my pc but might not be the same in another PC"; and "we now have ASAP, GSCM, AI Team Database: will we
+have a Dashboards?" [Decision](decisions/2026-11-02-html-dashboards.md).
+
+**What changed.**
+- **Dashboards is a system** (`dashboards`; the name people see is `WIZARD_DASHBOARDS_NAME`, default "Dashboards"),
+  listed first when a folder is set: the systems picker and stage (its own logo), `wizard_list_sources`, Settings and an
+  answer's sources (one entry per dashboard, by title, with its as-of date). Switched off, its tools refuse
+  (`system_off`) and Gemini can ask for it (`wizard_ask_for_system`).
+- **The folder on every PC.** `WIZARD_HTML_REPORTS_DIR` ("Dashboards" in Settings and the docs) is kept as the network
+  path a mapped drive stands for (`WNetGetConnectionW` via ctypes; a no-op off Windows), when saved in Settings, when a
+  provisioning file is made or exported, and at load. It left `provisioning.LOCAL_ONLY`: a company file may carry it.
+  Settings → Dashboards: paste a path, **Find dashboards** shows the path Wizard saves and how many it finds.
+- **A folder this PC cannot reach no longer stops Wizard** (it was a `ConfigError`): the path is worked out without
+  touching the disk; the tools, `wizard_list_sources` (`BLOCKED`, with the reason) and `run.py --check` (WARN) say this
+  PC cannot reach the dashboards folder and to ask for access to the share.
+- **Two read-only tools** (`dashboards.py`, `tools/dashboard_tools.py`), in every run kind when a folder is set:
+  `wizard_dashboards` (id, title, the date the page states else the file's, modified time, size, subfolder; find words)
+  and `wizard_read_dashboard` (title, as-of, headings and visible text, tables as rows with figures as numbers, and the
+  data in its scripts that parses as JSON: Plotly, ECharts, Chart.js, Highcharts and Vega charts with series names and
+  chart and axis titles, variables set to data, also as loose JavaScript objects, JSON script blocks, `data-*`
+  attributes, Plotly's binary arrays), in parts (`text`, `T2`, `D1`, a heading) and pages (`offset`, up to 500 rows),
+  naming what it did not read (data loaded from an address, script data that is not JSON, pictures). `html.parser` and
+  the JSON reader only: nothing runs, nothing is fetched. Only files inside the folder (no `..`, drives, links or
+  junctions out), 50 MB and 100 s a page, the parse kept by path, size and modified time under `data\dashboards\`.
+- **Evidence:** each part read, data mode `LIVE`, a new connector status `PREPARED_FILE` (the dashboard's own figures),
+  as of the date the page states, else the file's modified time, and which. Check my data recomputes from it and reads
+  the same part again. `PREPARED_FILE` and the missing `BROWSER_SESSION` are in `contracts/report.schema.json`.
+- **Prompt:** a "Prepared dashboards" section: read a dashboard first when one covers the question, use the database or
+  the portals for detail it does not show, give its as-of date, and show both figures when a query disagrees. Guidance
+  only; no code orders the tools.
+- **Web app:** the Dashboards section's **Find dashboards** (the draft takes the network path), the system's logo and
+  first place on the stage, one source per dashboard in Show sources and the report, and a dashboard's part in the
+  evidence drawer ("A team dashboard, read as it is"). The committed `dist/` is rebuilt.
+- Docs: the decision, `AGENTS.md` (PREPARED_FILE beside LIVE), the README table, `docs/desktop.md`,
+  `docs/workpc-setup.md`, `tasks/README.md`, `setup.ps1`'s `.env` placeholder, `scripts/make_provision.py`. Contracts
+  re-exported (the two tools, `wizard_list_sources`' description, the settings test section).
+
+**Not done.** WizardBar (C#) is unchanged: Export settings… is built by the service. `WNetGetConnectionW` is mocked in
+tests and first runs on a work PC. A page that builds its figures only in code, or fetches them, is named as not read:
+reading it would need a browser.
+
+**Tests.** `uv run python scripts/verify_spec.py` passed; `uv run python -m pytest tests`: 680 passed, 24 skipped
+(BLOCKED here: PostgreSQL test server, Gemini CLI, PowerShell, live parity); ruff and mypy clean;
+`scripts/export_contracts.py --check` matches; `npm --prefix apps/web run typecheck` and `test` (118 passed);
+`verify-dist` matches. New: `tests/unit/test_dashboards.py` (39 tests over invented HTML dashboards).
+## 2026-11-02 — Tasks are the only writer of the knowledge base; the documentation kit is retired
 
 `kb-publish` would have reverted every note a task changed and deleted every note a task wrote. The owner chose the
 repository as the master copy of the notes ("your recommendation"), then: "Remove traces of those 50 tasks no? We're

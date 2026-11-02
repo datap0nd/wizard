@@ -16,10 +16,12 @@ around a precomputed result is withdrawn. Its credential, entitlement, DLP and h
 - Capture evidence for every source read (request, rows within approved retention, as-of, digest, data mode) so a
   numeric claim can be reviewed. Show what Gemini actually did; never invent steps or expose private chain of thought.
 - Keep data mode (SYNTHETIC / USER_PROVIDED / LIVE / DATED_APPROVED_SNAPSHOT / LIVE_VERIFIED), connector status
-  (SYNTHETIC_FIXTURE / NAVIGATION_ONLY / ROWS_VERIFIED / READ_ONLY_SQL / BROWSER_SESSION / BLOCKED) and check status (CHECKED /
+  (SYNTHETIC_FIXTURE / NAVIGATION_ONLY / ROWS_VERIFIED / READ_ONLY_SQL / BROWSER_SESSION / PREPARED_FILE / BLOCKED) and check status (CHECKED /
   NOT_CHECKED / DISCREPANCY) as separate fields. USER_PROVIDED marks a file a user attached: never present it as a
   verified source. LIVE marks rows Gemini read from the company PostgreSQL server with its own query, or from a
-  company portal with its own browser steps (BROWSER_SESSION); the query or the steps are part of the evidence. Never
+  company portal with its own browser steps (BROWSER_SESSION); the query or the steps are part of the evidence. A team
+  dashboard read from the Dashboards folder is LIVE too, as PREPARED_FILE: its figures are the dashboard's own, as of the
+  date it states, else the file's modified time ([decision](docs/decisions/2026-11-02-html-dashboards.md)). Never
   label it verified.
 - Run each Gemini request under the requesting user's own enterprise identity, with isolated per-user state
   (`GEMINI_CLI_HOME` + `GEMINI_FORCE_FILE_STORAGE=true`, or the per-user Code Assist token).

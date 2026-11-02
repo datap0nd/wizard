@@ -8,13 +8,16 @@ import {Button} from './ui/button';
 import {Dialog, DialogContent} from './ui/dialog';
 import {PortalSignIn} from './PortalSignIn';
 import {TasksPanel} from './TasksPanel';
-import type {SettingField, SettingsView, UpdateInfo} from '@/types';
+import type {SettingField, SettingsTest, SettingsTestResult, SettingsView, UpdateInfo} from '@/types';
 
 const SOURCES: Record<string, string> = {
   environment: 'Set by an environment variable (locked)', env_file: 'From the .env file', this_pc: 'Set on this PC',
   company: 'From the company settings file', default: 'Default',
 };
-const TESTS: Record<string, 'postgres' | 'knowledge' | 'metronome'> = {knowledge: 'knowledge', postgres: 'postgres', metronome: 'metronome'};
+const TESTS: Record<string, SettingsTest> = {knowledge: 'knowledge', postgres: 'postgres', metronome: 'metronome', dashboards: 'dashboards'};
+/** What a section's test button says: a connection test, or finding the dashboards in the folder typed. */
+const TEST_LABEL: Record<string, string> = {dashboards: 'Find dashboards'};
+const DASHBOARDS_FOLDER = 'WIZARD_HTML_REPORTS_DIR';
 
 /** One settings section, collapsed until the person opens it (owner, 31 Oct 2026: "make every section collapsed by default"). */
 function Section({id, title, about, onToggle, children}: {id: string; title: string; about?: string;
@@ -32,7 +35,7 @@ function Section({id, title, about, onToggle, children}: {id: string; title: str
 }
 
 type Draft = Record<string, string | null>;
-type Result = {ok: boolean; message: string} | null;
+type Result = SettingsTestResult | null;
 
 /** Wait for the local service to stop and come back (it restarts itself about a second after the save). */
 async function waitForRestart(): Promise<void> {
@@ -92,10 +95,18 @@ export function SettingsDialog({open, onClose, onSaved}: {open: boolean; onClose
     } finally { setSaving(false); }
   }
 
-  async function runTest(section: 'postgres' | 'knowledge' | 'metronome') {
+  async function runTest(section: SettingsTest) {
     setTests(t => ({...t, [section]: 'running'}));
     const values = Object.fromEntries(Object.entries(draft).filter(([k]) => view?.fields.find(f => f.key === k)?.section === section));
-    try { const result = await api.testSettings(section, values); setTests(t => ({...t, [section]: result})); }
+    try {
+      const result = await api.testSettings(section, values);
+      setTests(t => ({...t, [section]: result}));
+      // The folder as Wizard saves it: a mapped drive becomes its network path, so the person sees what Save keeps.
+      const shown = view?.fields.find(f => f.key === DASHBOARDS_FOLDER);
+      if (section === 'dashboards' && result.value && shown && result.value !== (draft[DASHBOARDS_FOLDER] ?? shown.value)) {
+        edit(DASHBOARDS_FOLDER, result.value);
+      }
+    }
     catch (e) { setTests(t => ({...t, [section]: {ok: false, message: e instanceof Error ? e.message : 'The test failed.'}})); }
   }
 
@@ -142,11 +153,11 @@ export function SettingsDialog({open, onClose, onSaved}: {open: boolean; onClose
             <Section key={section.id} id={section.id} title={section.title} about={section.about}>
               {TESTS[section.id] && (
                 <Button size="xs" variant="outline" onClick={() => void runTest(TESTS[section.id])} disabled={tests[section.id] === 'running'} data-testid={`test-${section.id}`}>
-                  {tests[section.id] === 'running' ? <Loader2 className="animate-spin" /> : <PlugZap />}Test connection
+                  {tests[section.id] === 'running' ? <Loader2 className="animate-spin" /> : <PlugZap />}{TEST_LABEL[section.id] ?? 'Test connection'}
                 </Button>
               )}
               {tests[section.id] && tests[section.id] !== 'running' && (() => {
-                const result = tests[section.id] as {ok: boolean; message: string};
+                const result = tests[section.id] as SettingsTestResult;
                 return <p className={cn('flex items-start gap-1.5 rounded-lg px-3 py-2 text-xs', result.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-danger-soft text-danger')} role="status">
                   {result.ok ? <CheckCircle2 className="mt-px size-3.5 shrink-0" /> : <XCircle className="mt-px size-3.5 shrink-0" />}{result.message}</p>;
               })()}

@@ -1,5 +1,5 @@
 import type {ComponentType, CSSProperties} from 'react';
-import {BookOpen, ChartColumn, Coins, Database, Paperclip, Truck, Waves} from 'lucide-react';
+import {BookOpen, ChartColumn, Coins, Database, LayoutDashboard, Paperclip, Truck, Waves} from 'lucide-react';
 import hat from '@/assets/wizard-mark.svg';
 import {cn} from '@/lib/utils';
 
@@ -32,6 +32,7 @@ function OrchestraGlyph({style, strokeWidth = 2}: {style?: CSSProperties; stroke
 const BRANDS: Record<string, Brand> = {
   wizard: {color: '#1428a0', deep: '#0b1869', icon: null, mark: 'W', image: hat},
   postgresql: {color: '#7c3aed', deep: '#4c1d95', icon: Database, mark: 'AI'},
+  dashboards: {color: '#0f766e', deep: '#134e4a', icon: LayoutDashboard, mark: 'DS'},
   knowledge: {color: '#059669', deep: '#065f46', icon: BookOpen, mark: 'KB'},
   asap: {color: '#2563eb', deep: '#1e40af', icon: ChartColumn, mark: 'AS'},
   gscm: {color: '#ea580c', deep: '#9a3412', icon: Truck, mark: 'GS'},

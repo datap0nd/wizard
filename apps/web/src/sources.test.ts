@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {distinctLines, sourceCount, sourceGroups, sqlRelations} from './sources';
+import {distinctLines, sourceCount, sourceGroups, sqlRelations, usesText} from './sources';
 import type {EvidenceSummary} from './types';
 
 const base: EvidenceSummary = {id: 'E1', system: 'postgresql', system_name: 'PostgreSQL', report_id: 'sql-1', report_name: 'SQL query on meto_db',
@@ -59,6 +59,19 @@ describe('sourceGroups', () => {
       ['catalog', 'Table and column definitions', ['E1', 'E3']],
     ]);
     expect(sourceCount(sources)).toBe(3);
+  });
+
+  it('makes the tables, charts and text read from one dashboard one source, named by its title, with its as-of date', () => {
+    const part = (id: string, name: string, asOf: string): EvidenceSummary => ({...base, id, system: 'dashboards', system_name: 'Dashboards',
+      report_id: 'd1a2b3c4d5e', report_name: name, folder_path: ['Sales'], sql: null, as_of: asOf});
+    const sources = sourceGroups([part('E1', 'Weekly sell-out', '2026-10-31'), part('E2', 'Weekly sell-out › Units by market', '2026-10-31'),
+      part('E3', 'Weekly sell-out › Units by week', '2026-10-31'), query('E4', 'SELECT * FROM bi_reporting.psi')]);
+    expect(sources.map(s => [s.kind, s.system, s.path, s.name, s.ids])).toEqual([
+      ['dashboard', 'Dashboards', ['Sales'], 'Weekly sell-out', ['E1', 'E2', 'E3']],
+      ['table', 'PostgreSQL', [], 'bi_reporting.psi', ['E4']],
+    ]);
+    expect(sources[0].asOf).toBe('2026-10-31');
+    expect(usesText(sources[0])).toBe('3 reads');
   });
 
   it('reads the SQL from full evidence too', () => {

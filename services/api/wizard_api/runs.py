@@ -149,7 +149,8 @@ def step_about(events: list[dict[str, Any]], call_id: str) -> dict[str, Any] | N
     finished: dict[str, Any] = next((e["payload"] for e in events
                                      if e["type"] == "tool_finished" and e["payload"].get("call_id") == call_id), {})
     args = started.get("arguments") or {}
-    detail = next((args[k] for k in ("sql", "report_id", "query", "title", "script") if isinstance(args.get(k), str) and args[k]), None)
+    detail = next((args[k] for k in ("sql", "report_id", "query", "title", "script", "dashboard", "find")
+                   if isinstance(args.get(k), str) and args[k]), None)
     return {"call_id": call_id, "name": started.get("name"), "label": started.get("label"),
             "detail": squeeze(detail, 1000) if detail else None, "evidence_id": (finished.get("evidence") or {}).get("id")}
 
@@ -355,6 +356,15 @@ def tool_label(name: str, args: dict[str, Any], services: Services) -> str:
         what = (str(reports[0].get("name") or reports[0].get("id")) if len(reports) == 1 else
                 f"{len(reports)} reports" if reports else "how it works")
         return f"Added to Wizard's map of {portal_name(services, args.get('system'))}: {what}"
+    if name in ("wizard_dashboards", "wizard_read_dashboard"):
+        folder = services.dashboards
+        system = folder.name if folder else "Dashboards"
+        if name == "wizard_dashboards":
+            return f"Listed the {system}" + (f" for “{args['find']}”" if args.get("find") else "")
+        key = str(args.get("dashboard") or "")
+        title = (folder.title_of(key) if folder else None) or key
+        part = f" · {args['part']}" if args.get("part") else ""
+        return f"Read {system} · {title}{part}"
     if name == "wizard_kb_save_notes":
         count = len([n for n in args.get("notes") or [] if isinstance(n, dict)])
         moves = len([m for m in args.get("moves") or [] if isinstance(m, dict)])
@@ -416,6 +426,18 @@ def tool_summary(name: str, outcome: ToolOutcome) -> str:
             f" · {len(data['refused'])} request(s) refused" if data.get("refused") else "")
     if name == "portal_guide":
         return f"{data.get('name')} guide · {len(data.get('saved_scripts', []))} saved script(s)"
+    if name == "wizard_dashboards":
+        shown = len(data.get("dashboards", []))
+        return f"{data.get('matching', shown):,} dashboard(s)" + (f" of {data['total']:,}" if data.get("matching") != data.get("total") else "")
+    if name == "wizard_read_dashboard":
+        as_of = f" · as of {str(data.get('as_of'))[:10]}" + (" (file date)" if data.get("as_of_from") == "file modified time" else "")
+        if "tables_and_data" in data:
+            parts = data["tables_and_data"]
+            return (f"{data.get('title')}: {len(parts)} table(s) and chart data set(s), "
+                    f"{(data.get('text') or {}).get('chars', 0):,} characters of text{as_of}")
+        if "rows" in data:
+            return f"{data.get('part')} {data.get('name')}: {len(data['rows']):,} of {data.get('total_rows', 0):,} rows{as_of}"
+        return f"{data.get('title')} · {data.get('part')}: {data.get('chars', 0):,} characters{as_of}"
     if name == "wizard_edit_attachment":
         return f"{data['file']} {data['name']} ready to download · {len(data['changes'])} change(s)"
     if name == "portal_save_script":

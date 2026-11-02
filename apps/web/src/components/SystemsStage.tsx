@@ -143,7 +143,7 @@ function statLine(m: SystemInfo & {stats: ModuleStats}, off = false): string {
   if (off) return 'switched off';
   if (!s.calls.length) return m.kind === 'knowledge' && m.notes ? `${plural(m.notes, 'note')} ready` : 'ready';
   const parts = [plural(s.calls.length, m.kind === 'database' ? 'query' : m.kind === 'knowledge' ? 'lookup'
-    : m.kind === 'schedules' ? 'schedule' : 'call')
+    : m.kind === 'schedules' ? 'schedule' : m.kind === 'dashboards' ? 'read' : 'call')
     .replace('querys', 'queries')];
   if (s.rows) parts.push(plural(s.rows, 'row'));
   if (s.notes) parts.push(plural(s.notes, 'note'));

@@ -1,4 +1,4 @@
-"""Make the provisioning file (wizard.provision) the owner hands out with WizardSetup.exe.
+r"""Make the provisioning file (wizard.provision) the owner hands out with WizardSetup.exe.
 
   uv run python scripts/make_provision.py company.env --name "ACME pilot" --out wizard.provision
 
@@ -13,6 +13,8 @@ PostgreSQL password and Metronome's Wizard key), for example:
   WIZARD_GOOGLE_DOMAINS=company.com           only company Google accounts may link for Gemini
   WIZARD_METRONOME_URL=http://10.0.0.5:8000   Metronome, for recurring extractions emailed as Flows of its Wizard user
   WIZARD_METRONOME_CLIENT_KEY=wizard-...      printed by scripts/metronome_link.py on the Metronome host PC
+  WIZARD_HTML_REPORTS_DIR=\\fileserver\team\Dashboards   the team's HTML dashboards (a mapped drive such as Y:\ is
+                                              written as the network path it maps to on this PC)
 
 Put the output next to WizardSetup.exe: setup imports it, and Wizard deletes the plaintext copy after importing. Anyone
 with the file has these credentials, so share it only inside the company."""

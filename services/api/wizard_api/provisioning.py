@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from wizard_agent.secret_box import SecretBox
+from wizard_connectors.dashboards import stored_value as dashboards_folder
 
 FORMAT = 1
 FILENAME = "wizard.provision"
@@ -30,7 +31,7 @@ SECRET_SUFFIXES = ("_PASSWORD", "_TOKEN", "_SECRET", "_KEY")
 LOCAL_ONLY = frozenset({
     "WIZARD_DATA_DIR", "WIZARD_HOST", "WIZARD_PORT", "WIZARD_LOCAL_USER_EMAIL", "WIZARD_LOCAL_USER_NAME", "WIZARD_AUTH_MODE",
     "WIZARD_IDENTITIES_FILE", "WIZARD_IDENTITY_HEADER", "WIZARD_TRUSTED_PROXIES", "WIZARD_PUBLIC_ORIGIN", "WIZARD_CONTENT_DIR",
-    "WIZARD_WEB_DIST", "WIZARD_TRANSCRIPTS_DIR", "WIZARD_ATTACHMENT_FOLDERS", "WIZARD_HTML_REPORTS_DIR", "WIZARD_GEMINI_CLI_JS",
+    "WIZARD_WEB_DIST", "WIZARD_TRANSCRIPTS_DIR", "WIZARD_ATTACHMENT_FOLDERS", "WIZARD_GEMINI_CLI_JS",
     "WIZARD_NODE", "WIZARD_GEMINI_FAKE_RESPONSES", "WIZARD_CONTROL_TOKEN", "WIZARD_INSTALL_ROOT",
     "WIZARD_BROWSER_EXECUTABLE",  # a test browser binary: never chosen by a file someone hands out
     # The retired kb-publish set-up (decision 2026-11-02): an old .env may still hold these; never in a company file.
@@ -40,6 +41,9 @@ LOCAL_ONLY = frozenset({
 # PC change the company's notes repository (owner, 30 Oct 2026), so only the person who enters it holds it.
 PC_CHOSEN = frozenset({"WIZARD_KB_WRITE_TOKEN"})
 MAX_BYTES = 64 * 1024
+# The team's dashboards folder: a file made on one PC carries the network path its mapped drive stands for, never the
+# letter (owner, 2 Nov 2026: "Y:\ ... might not be the same in another PC").
+DASHBOARDS_KEY = "WIZARD_HTML_REPORTS_DIR"
 
 
 class ProvisionError(ValueError):
@@ -92,7 +96,9 @@ def parse(text: str) -> Provision:
 
 
 def render(values: dict[str, str], name: str) -> str:
-    """A provisioning file with these settings, checked as Wizard checks one when it imports it."""
+    """A provisioning file with these settings, checked as Wizard checks one when it imports it. A mapped drive in the
+    dashboards folder is written as the network path it maps to on this PC."""
+    values = {k: (dashboards_folder(v) if k == DASHBOARDS_KEY and v else v) for k, v in values.items()}
     text = json.dumps({"wizard_provision": FORMAT, "name": name[:80], "created": datetime.now(UTC).date().isoformat(),
                        "settings": {k: v for k, v in sorted(values.items()) if v}}, indent=2)
     parse(text)

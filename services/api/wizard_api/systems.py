@@ -18,10 +18,15 @@ def can_schedule(settings: Settings, services: Services, identity: Identity) -> 
 
 
 def available(settings: Settings, services: Services, identity: Identity) -> list[dict[str, Any]]:
-    """Report platforms, portals, the database, the knowledge base, attached files and Metronome: only what this person
-    may use."""
-    found: list[dict[str, Any]] = [{"id": s.id, "name": s.name, "kind": "reports", "data_mode": s.connector.data_mode}
-                                   for s in services.catalog.systems if identity.can_use_system(s.id)]
+    """The team's dashboards, report platforms, portals, the database, the knowledge base, attached files and Metronome:
+    only what this person may use. The dashboards come first (owner, 2 Nov 2026: "the first thing in the priority list");
+    a dashboards folder this PC cannot reach is listed all the same, as a database that does not answer is, and its tools
+    say so."""
+    found: list[dict[str, Any]] = []
+    if services.dashboards and identity.can_use_system("dashboards"):
+        found.append({"id": "dashboards", "name": services.dashboards.name, "kind": "dashboards", "data_mode": "LIVE"})
+    found += [{"id": s.id, "name": s.name, "kind": "reports", "data_mode": s.connector.data_mode}
+              for s in services.catalog.systems if identity.can_use_system(s.id)]
     for portal in settings.portals.portals if settings.portals else ():
         if not identity.can_use_system(portal.id):
             continue
