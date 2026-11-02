@@ -1,3 +1,5 @@
+import type {OrderEntry, OrderSource} from './sourceOrder';
+
 export type DataMode = 'SYNTHETIC' | 'DATED_APPROVED_SNAPSHOT' | 'LIVE' | 'LIVE_VERIFIED' | 'USER_PROVIDED';
 export type CheckStatus = 'CHECKED' | 'NOT_CHECKED' | 'DISCREPANCY';
 export type RunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
@@ -91,6 +93,8 @@ export interface SettingsView {
   desktop: boolean;
   build: {version?: string; commit?: string; built_at?: string};
   version: string;
+  /** Settings → Source order: the order when none is saved, the longest "use it for" line, and this PC's data sources. */
+  source_order?: {default: OrderEntry[]; max_use: number; sources?: OrderSource[]};
 }
 
 /** The settings sections with a test: a connection, or (Dashboards) finding the dashboards in the folder typed. */
@@ -343,6 +347,8 @@ export interface SystemInfo {
   kind: 'dashboards' | 'reports' | 'portal' | 'database' | 'knowledge' | 'files' | 'schedules';
   data_mode?: DataMode;
   notes?: number;
+  /** The company uses it only when asked (Settings → Source order): Auto leaves it out. */
+  only_when_asked?: boolean;
 }
 
 export interface PortalStep { action: string; url?: string; selector?: string; role?: string; name?: string; text?: string; frame?: string;

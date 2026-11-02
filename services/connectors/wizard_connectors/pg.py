@@ -2,15 +2,21 @@
 
 Settings: WIZARD_PG_HOST / _PORT / _DATABASE / _USER / _PASSWORD / _SSLMODE (Wizard's .env), else the standard
 PGHOST / PGPORT / PGDATABASE / PGUSER / PGPASSWORD / PGSSLMODE of a read-only account (data_governance's scanner).
-The password is never printed or written. Every session is read-only, with a statement timeout and a short lock
+WIZARD_PG_SCHEMAS lists the schemas Gemini's queries may read (postgres_query.py refuses any other); empty, every schema
+the account can read. The password is never printed or written. Every session is read-only, with a statement timeout and a short lock
 timeout. pg8000 is pure Python, so Application Control has no driver DLL to block (psycopg2's was blocked)."""
 from __future__ import annotations
 
 import contextlib
+import re
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 SSL_MODES = ("disable", "prefer", "require", "verify-ca", "verify-full")
+# A schema as written in WIZARD_PG_SCHEMAS: a plain name (folded to lower case, as PostgreSQL folds it) or a
+# double-quoted one (kept as written).
+PLAIN_SCHEMA = re.compile(r"[A-Za-z_][A-Za-z0-9_$]{0,62}")
+QUOTED_SCHEMA = re.compile(r'"([^"]{1,63})"')
 
 
 class PgError(Exception):
@@ -30,9 +36,12 @@ class PgSettings:
     password: str
     sslmode: str
     source: str  # ".env (WIZARD_PG_*)" or "environment (PG*)"
+    # The schemas Gemini's queries may read (WIZARD_PG_SCHEMAS); empty: no limit beyond the account's own grants.
+    schemas: tuple[str, ...] = ()
 
     def describe(self) -> str:
-        return f"{self.user}@{self.host}:{self.port}/{self.database} (sslmode {self.sslmode}, from {self.source})"
+        limit = f", schemas {', '.join(self.schemas)} only" if self.schemas else ""
+        return f"{self.user}@{self.host}:{self.port}/{self.database} (sslmode {self.sslmode}{limit}, from {self.source})"
 
 
 def settings_from(values: dict[str, str], environ: dict[str, str]) -> PgSettings | None:
@@ -56,7 +65,29 @@ def settings_from(values: dict[str, str], environ: dict[str, str]) -> PgSettings
     sslmode = get("SSLMODE", "prefer").lower()
     if sslmode not in SSL_MODES:
         raise PgError("the PostgreSQL sslmode must be disable, prefer, require, verify-ca or verify-full")
-    return PgSettings(host, port, get("DATABASE", "postgres"), user, get("PASSWORD"), sslmode, source)
+    schemas = schema_list(values.get("WIZARD_PG_SCHEMAS") or environ.get("WIZARD_PG_SCHEMAS") or "")
+    return PgSettings(host, port, get("DATABASE", "postgres"), user, get("PASSWORD"), sslmode, source, schemas)
+
+
+def schema_list(text: str) -> tuple[str, ...]:
+    """WIZARD_PG_SCHEMAS as the names PostgreSQL stores: comma-separated, a plain name in lower case (as PostgreSQL folds
+    it), a double-quoted one as written. Raises PgError for anything else."""
+    found: list[str] = []
+    for raw in text.split(","):
+        item = raw.strip()
+        if not item:
+            continue
+        quoted = QUOTED_SCHEMA.fullmatch(item)
+        if quoted:
+            name = quoted.group(1)
+        elif PLAIN_SCHEMA.fullmatch(item):
+            name = item.lower()
+        else:
+            raise PgError(f"the schemas Wizard may query must be schema names separated by commas; {item!r} is not one "
+                          '(write a name with capitals or symbols in double quotes, e.g. "Sales Data")')
+        if name not in found:
+            found.append(name)
+    return tuple(found)
 
 
 def error_text(error: BaseException) -> str:

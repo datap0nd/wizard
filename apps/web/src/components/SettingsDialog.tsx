@@ -7,6 +7,7 @@ import {cn} from '@/lib/utils';
 import {Button} from './ui/button';
 import {Dialog, DialogContent} from './ui/dialog';
 import {PortalSignIn} from './PortalSignIn';
+import {SourceOrder} from './SourceOrder';
 import {TasksPanel} from './TasksPanel';
 import type {SettingField, SettingsTest, SettingsTestResult, SettingsView, UpdateInfo} from '@/types';
 
@@ -18,6 +19,7 @@ const TESTS: Record<string, SettingsTest> = {knowledge: 'knowledge', postgres: '
 /** What a section's test button says: a connection test, or finding the dashboards in the folder typed. */
 const TEST_LABEL: Record<string, string> = {dashboards: 'Find dashboards'};
 const DASHBOARDS_FOLDER = 'WIZARD_HTML_REPORTS_DIR';
+const SOURCE_ORDER = 'WIZARD_SOURCE_ORDER';
 
 /** One settings section, collapsed until the person opens it (owner, 31 Oct 2026: "make every section collapsed by default"). */
 function Section({id, title, about, onToggle, children}: {id: string; title: string; about?: string;
@@ -162,8 +164,8 @@ export function SettingsDialog({open, onClose, onSaved}: {open: boolean; onClose
                   {result.ok ? <CheckCircle2 className="mt-px size-3.5 shrink-0" /> : <XCircle className="mt-px size-3.5 shrink-0" />}{result.message}</p>;
               })()}
               <div className="space-y-3">
-                {view.fields.filter(f => f.section === section.id).map(f => (
-                  <label key={f.key} className="block">
+                {view.fields.filter(f => f.section === section.id).map(f => {
+                  const header = (
                     <span className="mb-1 flex items-center gap-2 text-[13px] font-medium">{f.label}
                       <span className="text-[11px] font-normal text-ink-3">{f.key in draft ? 'Changed' : SOURCES[f.source]}</span>
                       {f.editable && f.source === 'this_pc' && !(f.key in draft) && (
@@ -171,10 +173,20 @@ export function SettingsDialog({open, onClose, onSaved}: {open: boolean; onClose
                           onClick={e => { e.preventDefault(); edit(f.key, ''); }}><RotateCcw className="size-3" />{f.company_value ? 'Use company value' : 'Clear'}</button>
                       )}
                     </span>
-                    {input(f)}
-                    {f.help && <span className="mt-1 block text-[11.5px] text-ink-3">{f.help}</span>}
-                  </label>
-                ))}
+                  );
+                  const help = f.help && <span className="mt-1 block text-[11.5px] text-ink-3">{f.help}</span>;
+                  if (f.key === SOURCE_ORDER && view.source_order) {  // a list to arrange, not a line to type
+                    return (
+                      <div key={f.key} data-testid={`setting-${f.key}`}>
+                        {header}{help}
+                        <div className="mt-2"><SourceOrder value={value(f)} defaults={view.source_order.default}
+                          sources={view.source_order.sources ?? []} maxUse={view.source_order.max_use}
+                          disabled={!f.editable || saving} onChange={next => edit(f.key, next)} /></div>
+                      </div>
+                    );
+                  }
+                  return <label key={f.key} className="block">{header}{input(f)}{help}</label>;
+                })}
               </div>
               {section.id === 'portals' && <PortalSignIn />}
             </Section>

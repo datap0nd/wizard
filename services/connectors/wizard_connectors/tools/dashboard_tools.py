@@ -1,6 +1,7 @@
 """Dashboards tools (owner, 2 Nov 2026): the team's HTML dashboards are a system of their own, like the database and the
 portals. They combine the database's data with the business logic (definitions, filters, adjustments) a fresh query may
-miss, so Gemini is told to read one first when it covers the question (prompts/system.md); nothing here forces an order.
+miss, so the company's source order puts them first by default (Settings → Source order, the prompt's
+<where_to_start>; decision 2026-11-02-source-order); nothing here forces an order.
 
 Read-only, inside the dashboards folder only (dashboards.py). Each read is evidence: data mode LIVE (a company source
 read now, as the dashboard shows it, like a portal's report page), connector status PREPARED_FILE (the figures are the

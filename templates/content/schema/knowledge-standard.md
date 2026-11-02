@@ -231,6 +231,11 @@ database object, a mapped portal report and a dashboard are equal sources: list 
   its breakdowns and periods). Say when the dashboard is the better source: it applies business logic the data alone
   does not hold (an official definition, an exclusion, an adjustment), or it is the figure the team reports. Say
   whether Wizard can reproduce its figure in SQL from the dashboard note's `## Business logic`, or must not.
+- Every block also says, in one or two sentences, what that source covers for the measure: its breakdowns (market,
+  channel, product, customer age or segment), its granularity (daily, weekly, monthly), the markets and periods it
+  holds, and how fresh it is (refreshed daily, monthly after close, last loaded in a given month). Wizard starts with
+  the first source in the company's source order (Settings → Source order) and goes further only when that one lacks a
+  breakdown, the granularity, a market or period, or is too old for the question; these sentences are how it tells.
 - Column names exactly as the database spells them, double-quoted when they have capitals, spaces or symbols
   (`"Order Week"`, `"Unit/Value"`).
 - One example query per database block: a SELECT with those filters, grouped by period and market. Check every column

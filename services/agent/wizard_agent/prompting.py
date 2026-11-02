@@ -185,6 +185,47 @@ def systems_block(on: list[str], off: list[str]) -> str:
     ])
 
 
+def when_asked_block(held: list[str]) -> str:
+    """Auto, less the sources the company uses only when asked (Settings → Source order): their tools are not offered."""
+    return "\n".join([
+        "<systems>",
+        f"Auto: every system this person can use is on, except the ones the company uses only when asked: {', '.join(held)}.",
+        "Their tools are not offered. If the answer needs one of them, say which and why, and call wizard_ask_for_system "
+        "so the person can switch it on with one click. Never fill in its data.",
+        "</systems>",
+    ])
+
+
+# The sufficiency test (owner, 2 Nov 2026: "help gemini understand when its enough or its not enough on a good basis").
+# Guidance with the company's order, never a scripted tool sequence (decision 2026-11-02-source-order).
+WHERE_TO_START_RULE = [
+    "- Start with the first source in this order that holds what is asked. It is enough when it covers the measure, every "
+    "breakdown asked for, the period, the markets and the granularity.",
+    "- A study or analysis needs every breakdown the sources hold for the measure, not only the first source's.",
+    "- Go further down only for what it lacks, or when its as-of is too old for the question, and say in the answer why "
+    "you went further (\"the dashboard is monthly\", \"ASAP has the segmentation\"). Before you use a later source because "
+    "an earlier one is stale, say so outright.",
+    "- Sources on one level: choose by coverage.",
+    "- When you stop early, say in one line what the other sources also hold.",
+    "- What each source covers (breakdowns, granularity, markets, periods, how fresh) is in the knowledge notes: a "
+    "metric's \"Where to get it\", the dashboard notes, a mapped report's use_for. Within a portal, its map comes before "
+    "its menu.",
+]
+
+
+def where_to_start_block(levels: list[list[tuple[str, str]]]) -> str:
+    """The company's source order for this question (Settings → Source order): each level with its sources' names and
+    what each is for, then how to tell when a source is enough. Only the sources this question may use."""
+    lines = ["<where_to_start>",
+             "The company's order of the data sources this request may use, first to last (sources on one line are on "
+             "one level):"]
+    for number, level in enumerate(levels, 1):
+        lines.append(f"{number}. " + "; ".join(f"{name} (use it for: {use})" if use else name for name, use in level))
+    lines += WHERE_TO_START_RULE
+    lines.append("</where_to_start>")
+    return "\n".join(lines)
+
+
 def remembered_block(notes: list[str]) -> str:
     """Notes the person asked Wizard to remember (Remember this under a note or a question): their own instructions."""
     return "\n".join(["<remembered_by_this_person>",
@@ -215,8 +256,10 @@ def systems_changed_text(on: list[str], off: list[str], switched_on: list[str], 
                if switched_off else ""]
     lines = ["<note_from_the_person>",
              f"The person changed the systems for this request: {'; '.join(c for c in changes if c)}.",
-             f"On now: {', '.join(on)}." if on else "Every system is on now (Auto).",
-             *([f"Switched off: {', '.join(off)}. Their tools refuse."] if off else []),
+             f"On now: {', '.join(on)}." if on else "Every system is on now (Auto)." if not off else
+             f"Auto now: every system is on, except the ones the company uses only when asked: {', '.join(off)}. Their "
+             f"tools refuse; call wizard_ask_for_system if the answer needs one.",
+             *([f"Switched off: {', '.join(off)}. Their tools refuse."] if off and on else []),
              "</note_from_the_person>"]
     return "\n".join(lines)
 
@@ -259,13 +302,20 @@ def clean_title(text: str) -> str | None:
 
 def compose(question: str, history: list[Turn], kind: str, today: date, files: list[dict[str, Any]] | None = None,
             explore: dict[str, Any] | None = None, systems: tuple[list[str], list[str]] | None = None,
-            remembered: list[str] | None = None, task: dict[str, Any] | None = None) -> str:
-    """systems: (names on, names off) when the person chose the systems for this request; None is Auto."""
+            remembered: list[str] | None = None, task: dict[str, Any] | None = None,
+            order: list[list[tuple[str, str]]] | None = None, when_asked: list[str] | None = None) -> str:
+    """systems: (names on, names off) when the person chose the systems for this request; None is Auto. order: the
+    company's source order for this request's sources, as levels of (name, use it for); None adds no block. when_asked:
+    in Auto, the names of the sources the company uses only when asked."""
     parts = [calendar_block(today)]
     if remembered:
         parts.append(remembered_block(remembered))
     if systems is not None:
         parts.append(systems_block(*systems))
+    elif when_asked:
+        parts.append(when_asked_block(when_asked))
+    if order:
+        parts.append(where_to_start_block(order))
     if files:
         parts.append(attachments_block(files))
     if history:

@@ -3,6 +3,7 @@ analysis works (CTEs, window functions, joins), and nothing a query tries can wr
 session, even under an account that is allowed to write."""
 from __future__ import annotations
 
+import dataclasses
 import os
 import secrets
 
@@ -121,3 +122,44 @@ def test_a_missing_view_names_similar_ones_and_the_database_that_has_it(tool):
         assert query.run("SELECT count(*) AS n FROM bi_reporting.global_lc_v", database="wizard_sql_other").rows == [[0]]
     finally:
         admin.run("DROP DATABASE wizard_sql_other WITH (FORCE)")
+
+
+def test_only_the_schemas_wizard_may_query_are_read(tool):
+    """WIZARD_PG_SCHEMAS (owner, 2 Nov 2026: one schema allowed, another forbidden), enforced in the tool from the plan
+    PostgreSQL makes, under an account whose grants would allow both."""
+    query, admin = tool
+    for statement in [
+        "DROP SCHEMA IF EXISTS sql_restricted CASCADE",
+        "CREATE SCHEMA sql_restricted",
+        "CREATE TABLE sql_restricted.customers (market text, age_band text, units integer)",
+        "INSERT INTO sql_restricted.customers VALUES ('EG', '25-34', 3), ('SA', '35-44', 4)",
+        "CREATE VIEW sql_reporting.customers_v AS SELECT market, units FROM sql_restricted.customers",
+        "CREATE VIEW sql_restricted.sales_v AS SELECT * FROM sql_reporting.sales",
+        "GRANT USAGE ON SCHEMA sql_restricted TO wizard_sql_writer",
+        "GRANT SELECT ON ALL TABLES IN SCHEMA sql_restricted TO wizard_sql_writer",
+        "GRANT SELECT ON sql_reporting.customers_v TO wizard_sql_writer",
+    ]:
+        admin.run(statement)
+    try:
+        assert query.run("SELECT count(*) AS n FROM sql_restricted.customers").rows == [[2]], "no list: no limit"
+        limited = PostgresQuery(dataclasses.replace(query.settings, schemas=("sql_reporting",)))
+        assert limited.run("SELECT sum(units) AS total FROM sql_reporting.sales").rows == [[1120]]
+        assert limited.run("WITH w AS (SELECT market, sum(units) AS u FROM sql_reporting.sell_in_mv GROUP BY 1) "
+                           "SELECT count(*) AS n FROM w JOIN sql_reporting.markets USING (market)").rows == [[3]]
+        assert limited.run("SELECT count(*) AS n FROM pg_catalog.pg_namespace WHERE nspname = 'sql_restricted'").rows == [[1]]
+        assert limited.run("SELECT count(*) AS n FROM information_schema.tables "
+                           "WHERE table_schema = 'sql_restricted'").rows[0][0] >= 1, "metadata is always allowed"
+        for sql in ["SELECT * FROM sql_restricted.customers",
+                    "WITH c AS MATERIALIZED (SELECT * FROM sql_restricted.customers) SELECT count(*) AS n FROM c",
+                    "SELECT market FROM sql_reporting.sales WHERE market IN (SELECT market FROM sql_restricted.customers)",
+                    "SELECT * FROM sql_reporting.markets m JOIN sql_restricted.customers c USING (market)",
+                    "SELECT * FROM (SELECT market FROM sql_restricted.customers) AS inner_rows",
+                    "SELECT * FROM sql_reporting.customers_v"]:  # a view in the allowed schema over the forbidden one
+            with pytest.raises(SourceError) as error:
+                limited.run(sql)
+            assert error.value.code == "schema_not_allowed", sql
+            assert "sql_restricted.customers (schema sql_restricted)" in error.value.message, sql
+        # A view counts by the tables it reads: one in the forbidden schema over the allowed tables reads only those.
+        assert limited.run("SELECT count(*) AS n FROM sql_restricted.sales_v").rows == [[len(SALES)]]
+    finally:
+        admin.run("DROP SCHEMA sql_restricted CASCADE")

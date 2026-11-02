@@ -1,6 +1,6 @@
 """The settings pane: the company settings a person may change on their own PC (Gemini model and project, the knowledge
-base, the read-only database, the dashboards folder, Metronome, the portals, the proxy), where each value comes from,
-saving, and connection tests.
+base, the read-only database, the dashboards folder, Metronome, the portals, the source order, the proxy), where each
+value comes from, saving, and connection tests.
 
 Values are saved to this PC's store (provisioning.update_local; secrets through the SecretBox). A key that the PC's .env
 also sets is removed from .env on save, so the new value applies and no password stays there in plain text. A key set
@@ -25,7 +25,7 @@ from wizard_connectors.paths import ROOT
 from wizard_connectors.pg import PgError, PgSettings
 from wizard_connectors.pg import settings_from as pg_settings
 
-from . import knowledge_sync, provisioning
+from . import knowledge_sync, provisioning, source_order
 from .config import PICKER_KEYS, ConfigError, Settings, load_settings, read_env_file
 from .metronome_client import MetronomeClient
 
@@ -58,6 +58,10 @@ SECTIONS = [
     ("portals", "Portals", "ASAP, GSCM and the Big Data Portal (its information catalog and Superset), read by Gemini in "
                            "Wizard's own browser on this PC, signed in as you. Sign in once in the window Wizard opens; "
                            "it then works in the background."),
+    ("sources", "Source order", "Where Wizard starts: the data sources in the company's order, what each is for, and "
+                                "which it uses only when asked. Gemini starts with the first source that holds what is "
+                                "asked and goes further only for what it lacks. One order for the whole company: Export "
+                                "settings… carries it."),
     ("network", "Network", "Only if Wizard cannot reach Google or GitHub on its own."),
 ]
 FIELDS = [
@@ -89,6 +93,10 @@ FIELDS = [
     Field("WIZARD_PG_PASSWORD", "Password", "postgres"),
     Field("WIZARD_PG_SSLMODE", "SSL", "postgres", "", "prefer",
           ("disable", "prefer", "require", "verify-ca", "verify-full")),
+    Field("WIZARD_PG_SCHEMAS", "Schemas Wizard may query", "postgres",
+          "Separated by commas. Gemini's queries may read only these schemas (and pg_catalog and information_schema for "
+          "metadata); a query that reads any other, also through a view, is refused. Empty: every schema the account can "
+          "read.", "reporting"),
     Field("WIZARD_HTML_REPORTS_DIR", "Folder", "dashboards", "Paste the folder's path (quotes from Copy as path are fine). "
           "A mapped drive such as Y:\\Dashboards is saved as its network path (\\\\server\\share\\Dashboards). If this "
           "PC cannot reach it, ask for access to the share: Wizard still starts, and says so when it needs them.",
@@ -110,6 +118,9 @@ FIELDS = [
           "chrome", ("chrome", "msedge")),
     Field("WIZARD_PORTAL_HOSTS", "Other hosts the portals need", "portals",
           "Only when sign-in or a portal uses a host outside the company domain, e.g. login.microsoftonline.com.", ""),
+    Field(source_order.KEY, "Order", "sources", "Move a source up or down, put it on the same level as the one above, "
+          "say in a line what it is for, or keep it for when someone asks. A source not listed (a portal set up later) "
+          "comes last."),
     Field("WIZARD_PROXY", "Proxy", "network", "For Google (Gemini) and the app's updates: http://host:port, or direct. "
           "Empty: the proxy in your Gemini CLI settings, else the Windows proxy settings.", ""),
     Field("WIZARD_GITHUB_PROXY", "Company GitHub proxy", "network", "For the company GitHub (the knowledge base and the "
@@ -117,6 +128,9 @@ FIELDS = [
 ]
 BY_KEY = {f.key: f for f in FIELDS}
 DASHBOARDS = "WIZARD_HTML_REPORTS_DIR"
+MAX_CHARS = 2000
+# Values longer than one ordinary line: the source order holds a "use it for" line per source.
+LONG = {source_order.KEY: source_order.MAX_CHARS}
 
 
 class PaneError(ValueError):
@@ -158,7 +172,8 @@ def describe(settings: Settings) -> dict[str, Any]:
     return {"sections": [{"id": i, "title": t, "about": a} for i, t, a in SECTIONS], "fields": fields,
             "company_file": {"name": company_file.get("name"), "imported_at": company_file.get("imported_at")}
             if company_file.get("imported") else None,
-            "restart": "automatic" if settings.desktop else "manual"}
+            "restart": "automatic" if settings.desktop else "manual",
+            "source_order": {"default": source_order.view(None), "max_use": source_order.MAX_USE}}
 
 
 def _clean(changes: dict[str, Any]) -> dict[str, str | None]:
@@ -169,11 +184,16 @@ def _clean(changes: dict[str, Any]) -> dict[str, str | None]:
         if value is not None and not isinstance(value, str | int):
             raise PaneError(f"{key} must be text")
         text = None if value is None else str(value).strip()
-        if text and ("\n" in text or "\r" in text or len(text) > 2000):
+        if text and ("\n" in text or "\r" in text or len(text) > LONG.get(key, MAX_CHARS)):
             raise PaneError(f"{key} must be one line")
         field = BY_KEY[key]
         if text and field.choices and text not in field.choices:
             raise PaneError(f"{field.label} must be one of {', '.join(field.choices)}")
+        if text and key == source_order.KEY:
+            try:  # stored as Wizard writes it: compact, validated
+                text = source_order.render(source_order.parse(text) or ())
+            except source_order.OrderError as error:
+                raise PaneError(f"Source order: {error}") from None
         cleaned[key] = text
     return cleaned
 

@@ -26,6 +26,7 @@ from wizard_connectors.tools.kb_tools import TASK_ONLY
 from wizard_connectors.tools.systems import ASK_FOR_SYSTEM, SystemChoice, offered, system_of
 from wizard_connectors.tools.task_tools import TASK_FILE_NAMES
 
+from . import source_order
 from .attachments import AttachmentError, Attachments
 from .attachments import public as public_attachment
 from .awake import KeepAwake
@@ -33,6 +34,7 @@ from .config import Settings
 from .security import run_token
 from .settings_pane import installed_build
 from .store import Store, new_id, now
+from .systems import sources as data_sources
 
 log = logging.getLogger("wizard.runs")
 # The headline data mode of an answer is its weakest source: a user's file ranks above synthetic data, below approved ones.
@@ -133,8 +135,10 @@ class Busy(Exception):
 
 
 def encode_systems(choice: SystemChoice | None) -> str | None:
-    """A run's systems as stored: the ids the person chose, or NULL for Auto."""
-    return None if choice is None else json.dumps([s for s in choice.names if s in choice.on])
+    """A run's systems as stored: the ids the person chose, or NULL for Auto (also Auto less the sources used only when
+    asked: those come back from the setting)."""
+    chosen = None if choice is None else choice.chosen()
+    return None if chosen is None else json.dumps(chosen)
 
 
 def decode_systems(stored: str | None) -> list[str] | None:
@@ -600,7 +604,8 @@ class RunManager:
         if not run or run.identity.id != user_id:
             return False
         before = run.choice
-        if before is None and choice is None:
+        if (before is None or before.auto) and (choice is None or choice.auto) and \
+                (before.on if before else None) == (choice.on if choice else None):
             return True
         names = (choice or before).names  # type: ignore[union-attr]
         was = before.on if before else frozenset(names)
@@ -611,10 +616,10 @@ class RunManager:
         self.store.update_run(run.id, systems=encode_systems(choice))
         on = [names[s] for s in names if s in now_on]
         off = [names[s] for s in names if s not in now_on]
-        self._publish(run, "systems_changed", {"systems": None if choice is None else [s for s in names if s in now_on],
-                                               "on": on if choice else [], "off": off})
+        chosen = None if choice is None else choice.chosen()
+        self._publish(run, "systems_changed", {"systems": chosen, "on": on if chosen is not None else [], "off": off})
         run.steers.append({"id": f"x{len(run.steers) + 1}", "kind": "systems", "state": "waiting", "message": systems_changed_text(
-            on if choice else [], off, [names[s] for s in names if s in now_on - was],
+            on if chosen is not None else [], off, [names[s] for s in names if s in now_on - was],
             [names[s] for s in names if s in was - now_on])})
         return True
 
@@ -783,8 +788,9 @@ class RunManager:
         if run.choice is not None and system and not run.choice.allows(system):
             on = ", ".join(run.choice.name(s) for s in run.choice.names if s in run.choice.on)
             return ToolOutcome(False, {}, 0, "system_off",
-                               f"{run.choice.name(system)} is switched off for this request: the person chose {on}. Use "
-                               f"those, or call {ASK_FOR_SYSTEM} if the answer needs {run.choice.name(system)}.")
+                               f"{run.choice.why_off(system)}: " + ("use the other systems" if run.choice.auto else
+                                                                    f"the person chose {on}. Use those") +
+                               f", or call {ASK_FOR_SYSTEM} if the answer needs {run.choice.name(system)}.")
         signature = call_signature(name, args)
         run.calls_seen[signature] = seen = run.calls_seen.get(signature, 0) + 1
         if seen > REPEAT_LIMIT and not (run.kind == "task" and name in TASK_REREADS):
@@ -1018,14 +1024,20 @@ class RunManager:
                 today = datetime.now().astimezone().date()  # the server's local date: on Gulf time UTC is still yesterday until 04:00
                 history = self.history(run)
                 choice = run.choice
-                systems = None if choice is None else ([choice.name(s) for s in choice.names if s in choice.on],
-                                                       [choice.name(s) for s in choice.off()])
+                systems = None if choice is None or choice.auto else ([choice.name(s) for s in choice.names if s in choice.on],
+                                                                      [choice.name(s) for s in choice.off()])
+                # The company's source order, limited to the sources this question may use (Settings → Source order).
+                order = source_order.for_prompt(self.settings.source_order, data_sources(self.settings, self.services,
+                                                                                         run.identity),
+                                                None if choice is None else choice.on) if run.kind == "ask" else None
                 request = AgentRequest(
                     run_id=run.id, user_id=run.identity.id, user_email=run.identity.email, user_home=home,
                     prompt=compose(run.question, history, run.kind, today,
                                    [{**a, "tables": table_index(Path(a["folder"]))}
                                     for a in self.store.conversation_attachments(run.conversation_id)], explore=run.explore,
-                                   task=run.work, systems=systems, remembered=[] if run.kind in LANES
+                                   task=run.work, systems=systems, order=order,
+                                   when_asked=[choice.name(s) for s in choice.off()] if choice and choice.auto else None,
+                                   remembered=[] if run.kind in LANES
                                    else [m["text"] for m in self.store.memories(run.identity.id)]),
                     question=run.question, kind=run.kind,  # type: ignore[arg-type]
                     history=history, internal_url=self.settings.internal_url,
@@ -1133,7 +1145,7 @@ class RunManager:
             "runtime": {"kind": self.runtime.kind, "label": self.runtime.label(), "model": run.session.get("model")
                         or self.runtime.model, "session_id": run.session.get("session_id")},
             "check": {"status": check_status, "summary": check_summary},
-            "systems": None if run.choice is None else [s for s in run.choice.names if s in run.choice.on],
+            "systems": None if run.choice is None else run.choice.chosen(),
             "steers": [public_steer(s) for s in run.steers if s["kind"] == "note"], "rejected_evidence": run.rejected,
             "warnings": run.warnings, "stats": run.stats,
             "timeline": [{"type": e["type"], "payload": e["payload"]} for e in timeline],

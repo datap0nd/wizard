@@ -1,6 +1,6 @@
 import {Check, ChevronDown, Layers} from 'lucide-react';
 import {cn} from '@/lib/utils';
-import {choiceLabel, toggleSystem} from '@/systems';
+import {choiceLabel, toggleSystem, whenAsked} from '@/systems';
 import {DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator,
   DropdownMenuTrigger, Hint} from './ui/menu';
 import {SystemLogo} from './SystemLogo';
@@ -13,6 +13,7 @@ export function SystemsPicker({systems, chosen, onChange, disabled, running}: {
 }) {
   if (!systems.length) return null;
   const label = choiceLabel(chosen, systems);
+  const held = whenAsked(systems);
   return (
     <DropdownMenu>
       <Hint text={running ? 'Systems this answer may use: a change applies to it now' : 'Systems Wizard may use for this question'}>
@@ -29,7 +30,8 @@ export function SystemsPicker({systems, chosen, onChange, disabled, running}: {
         <DropdownMenuLabel>Systems Wizard may use</DropdownMenuLabel>
         <DropdownMenuItem onSelect={() => onChange(null)} data-testid="system-auto">
           <span className="grid size-[18px] place-items-center">{chosen === null && <Check className="size-4 text-accent" />}</span>
-          <span className="flex-1"><span className="block">Auto</span><span className="block text-[11.5px] text-ink-3">Wizard picks from all of them</span></span>
+          <span className="flex-1"><span className="block">Auto</span><span className="block text-[11.5px] text-ink-3" data-testid="auto-hint">
+            {held.length ? `Wizard picks from all but ${held.map(s => s.name).join(', ')} (only when asked)` : 'Wizard picks from all of them'}</span></span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuLabel>Only these</DropdownMenuLabel>
