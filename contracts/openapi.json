@@ -2189,6 +2189,299 @@
         }
       }
     },
+    "/api/v1/tasks/queue": {
+      "post": {
+        "summary": "Fill Task Queue",
+        "description": "Run all (no ids) or Run selected: the queue becomes those tasks, oldest added first; Start runs them.",
+        "operationId": "fill_task_queue_api_v1_tasks_queue_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QueueFillBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Fill Task Queue Api V1 Tasks Queue Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Clear Task Queue",
+        "operationId": "clear_task_queue_api_v1_tasks_queue_delete",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Clear Task Queue Api V1 Tasks Queue Delete"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/queue/start": {
+      "post": {
+        "summary": "Start Task Queue",
+        "description": "Start the queue, or Continue it from the task where it stopped.",
+        "operationId": "start_task_queue_api_v1_tasks_queue_start_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Start Task Queue Api V1 Tasks Queue Start Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/queue/stop": {
+      "post": {
+        "summary": "Stop Task Queue",
+        "description": "Stop the queue and the task it is running.",
+        "operationId": "stop_task_queue_api_v1_tasks_queue_stop_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Stop Task Queue Api V1 Tasks Queue Stop Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/queue/items/{key}/move": {
+      "post": {
+        "summary": "Move Queued Task",
+        "operationId": "move_queued_task_api_v1_tasks_queue_items__key__move_post",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QueueMoveBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Move Queued Task Api V1 Tasks Queue Items  Key  Move Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/queue/items/{key}": {
+      "delete": {
+        "summary": "Remove Queued Task",
+        "operationId": "remove_queued_task_api_v1_tasks_queue_items__key__delete",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Remove Queued Task Api V1 Tasks Queue Items  Key  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/selection": {
+      "put": {
+        "summary": "Select Tasks",
+        "description": "The tasks ticked for Run selected, kept for this person until the queue starts.",
+        "operationId": "select_tasks_api_v1_tasks_selection_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskSelectionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Select Tasks Api V1 Tasks Selection Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{task_id}/queue": {
+      "post": {
+        "summary": "Queue Task",
+        "description": "Add one task at the end of the queue (with the path it asks for), also while the queue runs.",
+        "operationId": "queue_task_api_v1_tasks__task_id__queue_post",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/QueueAddBody"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Queue Task Api V1 Tasks  Task Id  Queue Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/portals/{system}/map/stop": {
       "post": {
         "summary": "Stop Mapping",
@@ -3434,6 +3727,78 @@
         ],
         "title": "MemoryBody"
       },
+      "QueueAddBody": {
+        "properties": {
+          "path": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "QueueAddBody"
+      },
+      "QueueFillBody": {
+        "properties": {
+          "ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "type": "array",
+                "maxItems": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ids"
+          },
+          "paths": {
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 1000
+            },
+            "propertyNames": {
+              "maxLength": 100
+            },
+            "type": "object",
+            "maxProperties": 200,
+            "title": "Paths"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "QueueFillBody"
+      },
+      "QueueMoveBody": {
+        "properties": {
+          "by": {
+            "type": "integer",
+            "enum": [
+              -1,
+              1
+            ],
+            "title": "By"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "by"
+        ],
+        "title": "QueueMoveBody"
+      },
       "RecurringBody": {
         "properties": {
           "cadence": {
@@ -3656,6 +4021,22 @@
         "additionalProperties": false,
         "type": "object",
         "title": "TaskRunBody"
+      },
+      "TaskSelectionBody": {
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TaskSelectionBody"
       },
       "TitleBody": {
         "properties": {

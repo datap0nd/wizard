@@ -11,7 +11,7 @@ from collections import deque
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from urllib.parse import quote, unquote, urlsplit
 
 import httpx
@@ -34,7 +34,7 @@ from wizard_connectors.entitlements import Identity, IdentityDirectory, SystemRi
 from wizard_connectors.paths import ROOT
 from wizard_connectors.portal_browser import PortalBrowser, PortalBrowsers, PortalError
 from wizard_connectors.portal_map import PortalMaps, Published
-from wizard_connectors.task_files import TaskFiles, TaskFolderError, check_path
+from wizard_connectors.task_files import TaskFiles
 from wizard_connectors.tools import build_registry, build_services, retire_portal_catalogs
 from wizard_connectors.tools.systems import SystemChoice
 
@@ -48,6 +48,7 @@ from .security import REQUEST_HEADER, SECURITY_HEADERS, SESSION_COOKIE, session_
 from .site import Site, SiteError, brain_snapshot, build_case, case_id
 from .site import turns as case_turns
 from .store import Store
+from .task_queue import QueueError, TaskQueues, checked_path
 from .tasks import Documents, TaskBoard
 
 OWNER_ID = "local-owner"
@@ -128,6 +129,25 @@ class RunBody(Body):
 class TaskRunBody(Body):
     path: str | None = Field(default=None, max_length=1000)  # the folder or file a task asks for, as the person typed it
     fresh: bool = False  # start a task that goes through every file over: forget which files are done
+
+
+class QueueFillBody(Body):
+    ids: list[Annotated[str, Field(max_length=100)]] | None = Field(default=None, max_length=200)  # None: Run all
+    # The path box of each task that asks for a path, as the person typed it.
+    paths: dict[Annotated[str, Field(max_length=100)], Annotated[str, Field(max_length=1000)]] = Field(
+        default_factory=dict, max_length=200)
+
+
+class QueueAddBody(Body):
+    path: str | None = Field(default=None, max_length=1000)
+
+
+class QueueMoveBody(Body):
+    by: Literal[-1, 1]
+
+
+class TaskSelectionBody(Body):
+    ids: list[Annotated[str, Field(max_length=100)]] = Field(default_factory=list, max_length=200)
 
 
 class SteerBody(Body):
@@ -367,6 +387,7 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
     runtime = runtime or build_runtime(settings, secret_box, registry.scopes())
     manager = RunManager(settings, store, registry, services, runtime)
     manager.task_board = task_board
+    task_queues = TaskQueues(task_board, manager, store, services.task_files)  # a queue the last process left running is interrupted
     kb = kb_source(settings)
     activity = {"last": time.monotonic()}
 
@@ -376,7 +397,7 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
     def restart_if_idle(quiet_s: float) -> bool:
         """Desktop app only: exit so WizardBar restarts the service on the newer knowledge base, when nobody is using it."""
         request_restart = getattr(app.state, "request_restart", None)
-        if (request_restart is None or manager.active or time.monotonic() - activity["last"] < quiet_s
+        if (request_restart is None or manager.busy() or time.monotonic() - activity["last"] < quiet_s
                 or not knowledge_status().get("restart_pending")):
             return False
         log.info("restarting to load the new knowledge-base version")
@@ -420,7 +441,7 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
     app = FastAPI(title="Wizard", version=__version__, lifespan=lifespan, docs_url=None, redoc_url=None,
                   openapi_url="/api/v1/openapi.json")
     app.state.settings, app.state.store, app.state.manager, app.state.registry = settings, store, manager, registry
-    app.state.task_board = task_board
+    app.state.task_board, app.state.task_queues = task_board, task_queues
     app.state.restart_if_idle = restart_if_idle
 
     def identity_of(request: Request) -> Identity | None:
@@ -1417,11 +1438,12 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
                            "at": (row.get("finished_at") or last.get("started_at")) if row else None,
                            "message": message, "input": task.input, "input_label": task.input_label or None,
                            "every_file": task.every_file, "path": path if task.input else None,
-                           "round": last.get("round") if task.every_file and row else None,
+                           "round": last.get("round") if (task.every_file or task.repeat) and row else None,
+                           "max_runs": task.max_runs if task.repeat else None,
                            "progress": task_progress(task.id, path) if task.every_file else None})
         cached = cache or {}
         return {"tasks": listed, "source": source, "checked": cached.get("checked"), "message": cached.get("message"),
-                "can_save": services.kb_writer is not None}
+                "can_save": services.kb_writer is not None, "queue": task_queues.view(identity.id)}
 
     @app.get("/api/v1/tasks")
     async def list_tasks(request: Request, refresh: bool = False) -> dict[str, Any]:
@@ -1435,17 +1457,16 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         task = task_board.task(task_id)
         if task is None:
             raise HTTPException(404, "No such task.")
+        if task_queues.queue(identity.id)["state"] == "running":
+            raise HTTPException(429, "Your task queue is running. Add this task to the queue, or stop the queue first.")
         body = body or TaskRunBody()
         path: Path | None = None
         if task.input:  # the folder or file it asks for, on this PC; Gemini reads only inside it (task_files.py)
             assert services.task_files is not None
             try:
-                chosen = await asyncio.to_thread(check_path, body.path or "", task.input)
-                files, _ = await asyncio.to_thread(services.task_files.listing, chosen, True)
-            except TaskFolderError as error:
-                raise HTTPException(400, error.message) from None
-            if not files:
-                raise HTTPException(400, "Wizard found no PowerPoint, Word, Excel, email or text files there.")
+                chosen = await asyncio.to_thread(checked_path, task, body.path or "", services.task_files)
+            except QueueError as error:
+                raise HTTPException(error.status, error.message) from None
             path = chosen
             if task.every_file:
                 if body.fresh:
@@ -1460,6 +1481,55 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         store.audit(identity.id, "tasks:run", run_id=row["id"], detail={"task": task.id, "path_chosen": bool(path),
                                                                         "fresh": body.fresh})
         return task_view(identity)
+
+    # The task queue (task_queue.py): tasks one after another, the next when the one before succeeded. The endpoints are
+    # async so the queue changes, and the PC's keep-awake request, stay on the event loop's thread with the runs.
+    async def queue_call(request: Request, change: Any) -> dict[str, Any]:
+        identity = task_owner(request)
+        try:
+            outcome = change(identity)
+            if asyncio.iscoroutine(outcome):
+                await outcome
+        except QueueError as error:
+            raise HTTPException(error.status, error.message) from None
+        return task_view(identity)
+
+    @app.post("/api/v1/tasks/queue")
+    async def fill_task_queue(request: Request, body: QueueFillBody) -> dict[str, Any]:
+        """Run all (no ids) or Run selected: the queue becomes those tasks, oldest added first; Start runs them."""
+        return await queue_call(request, lambda who: task_queues.fill(who.id, body.ids, dict(body.paths)))
+
+    @app.delete("/api/v1/tasks/queue")
+    async def clear_task_queue(request: Request) -> dict[str, Any]:
+        return await queue_call(request, lambda who: task_queues.clear(who.id))
+
+    @app.post("/api/v1/tasks/queue/start")
+    async def start_task_queue(request: Request) -> dict[str, Any]:
+        """Start the queue, or Continue it from the task where it stopped."""
+        return await queue_call(request, lambda who: task_queues.start(who))
+
+    @app.post("/api/v1/tasks/queue/stop")
+    async def stop_task_queue(request: Request) -> dict[str, Any]:
+        """Stop the queue and the task it is running."""
+        return await queue_call(request, lambda who: task_queues.stop(who))
+
+    @app.post("/api/v1/tasks/queue/items/{key}/move")
+    async def move_queued_task(request: Request, key: str, body: QueueMoveBody) -> dict[str, Any]:
+        return await queue_call(request, lambda who: task_queues.move(who.id, key, body.by))
+
+    @app.delete("/api/v1/tasks/queue/items/{key}")
+    async def remove_queued_task(request: Request, key: str) -> dict[str, Any]:
+        return await queue_call(request, lambda who: task_queues.remove(who.id, key))
+
+    @app.put("/api/v1/tasks/selection")
+    async def select_tasks(request: Request, body: TaskSelectionBody) -> dict[str, Any]:
+        """The tasks ticked for Run selected, kept for this person until the queue starts."""
+        return await queue_call(request, lambda who: task_queues.select(who.id, body.ids))
+
+    @app.post("/api/v1/tasks/{task_id}/queue")
+    async def queue_task(request: Request, task_id: str, body: QueueAddBody | None = None) -> dict[str, Any]:
+        """Add one task at the end of the queue (with the path it asks for), also while the queue runs."""
+        return await queue_call(request, lambda who: task_queues.add(who.id, task_id, (body or QueueAddBody()).path))
 
     @app.post("/api/v1/portals/{system}/map")
     async def start_mapping(request: Request, system: str) -> dict[str, Any]:
@@ -1652,13 +1722,13 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
 
         async def when_idle() -> None:
             await asyncio.sleep(1.0)  # let the response reach the page first
-            while manager.active:
+            while manager.busy():  # a run, or a task queue between two tasks
                 await asyncio.sleep(3)
             log.info("restarting to apply new settings")
             request_restart()
 
         app.state.pending_restart = asyncio.get_running_loop().create_task(when_idle())
-        return "after_run" if manager.active else "now"
+        return "after_run" if manager.busy() else "now"
 
     @app.get("/api/v1/settings")
     def get_settings(request: Request) -> dict[str, Any]:

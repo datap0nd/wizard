@@ -13,7 +13,11 @@ The list is public instructions only: a task never carries company content, whic
 A task may ask for a folder or a file on this PC (owner, 1 Nov 2026: "a task that asks me for a folder, and I point it to
 that folder, and it digests the whole thing"): front matter `input: folder` (or `file`, or `folder or file`) with an
 `input_label` shown above the path box, and `every_file: true` when it goes through every file, which runs it in rounds
-until each file is done (runs.py). Gemini reads the path only with the task-file tools (task_files.py)."""
+until each file is done (runs.py). Gemini reads the path only with the task-file tools (task_files.py).
+
+A task may run again until it is done (owner, 2 Nov 2026, the task queue): front matter `repeat: until_done`, with
+`max_runs` (default 5, at most 10). Each run ends its summary with `Left: <number>`; Wizard runs it again while that is
+above 0 and the run changed something (runs.py). Tasks queued to run one after another: task_queue.py."""
 from __future__ import annotations
 
 import json
@@ -38,6 +42,8 @@ from .config import Settings
 
 LISTING = "https://api.github.com/repos/datap0nd/wizard/contents/tasks?ref=main"
 TASK_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,80}$")
+MAX_RUNS = 5  # a task that repeats until done runs at most this many times, unless it says otherwise ...
+MAX_RUNS_CAP = 10  # ... and never more than this
 REFRESH_SECONDS = 300  # GitHub allows 60 unauthenticated requests an hour; an unchanged folder answers 304 for free
 
 
@@ -51,12 +57,22 @@ class Task:
     input: str | None = None  # folder | file | either: what the person chooses before it runs
     input_label: str = ""
     every_file: bool = False  # goes through every file of the folder, in rounds
+    repeat: bool = False  # runs again while its last run says work is left and changed something
+    max_runs: int = 1
 
     def work(self, path: Path | None = None) -> dict[str, Any]:
-        """What a run of it carries (runs.py, prompting.py, the task-file tools)."""
+        """What a run of it carries (runs.py, prompting.py, the task-file tools). max_runs: the task repeats until done
+        (a task that goes through every file already runs until each file is done, in rounds)."""
+        every_file = self.every_file and bool(path)
         return {"id": self.id, "title": self.title, "body": self.body, "input": self.input,
                 "path": str(path) if path else None, "chosen": ("folder" if path.is_dir() else "file") if path else None,
-                "every_file": self.every_file and bool(path)}
+                "every_file": every_file, "max_runs": self.max_runs if self.repeat and not every_file else None}
+
+
+def runs_allowed(text: str) -> int:
+    """max_runs as written (a comment after it is ignored): MAX_RUNS when absent or not a number, at most MAX_RUNS_CAP."""
+    found = re.match(r"\s*(\d{1,4})\b", text)
+    return max(1, min(MAX_RUNS_CAP, int(found.group(1)))) if found else MAX_RUNS
 
 
 def parse(text: str) -> Task | None:
@@ -70,9 +86,11 @@ def parse(text: str) -> Task | None:
     wanted = input_kind(unquote(meta.get("input", "")))
     label = unquote(meta.get("input_label", "")) or {"folder": "The folder", "file": "The file",
                                                       "either": "The folder or file"}.get(wanted or "", "")
+    every_file = bool(wanted) and unquote(meta.get("every_file", "")).casefold() in ("true", "yes")
+    repeat = unquote(meta.get("repeat", "").split("#")[0]).casefold() == "until_done" and not every_file
     return Task(task_id, unquote(meta.get("title", "")) or task_id, unquote(meta.get("summary", "")),
-                unquote(meta.get("added", "")), body.strip(), wanted, label,
-                bool(wanted) and unquote(meta.get("every_file", "")).casefold() in ("true", "yes"))
+                unquote(meta.get("added", "")), body.strip(), wanted, label, every_file, repeat,
+                runs_allowed(unquote(meta.get("max_runs", ""))) if repeat else 1)
 
 
 TOOL_S = 150  # a task-file tool call answers within this (the Gemini CLI route gives a tool call 180 seconds)
@@ -124,6 +142,11 @@ class Documents:
 
 def _sorted(tasks: list[Task]) -> list[Task]:
     return sorted(tasks, key=lambda t: (t.added, t.id), reverse=True)  # newest first
+
+
+def run_order(tasks: list[Task]) -> list[Task]:
+    """The order a queue runs them in: oldest added first, then by id, so numbered tasks (kb-review-1 ... 7) run in turn."""
+    return sorted(tasks, key=lambda t: (t.added, t.id))
 
 
 class TaskBoard:
@@ -212,14 +235,14 @@ class TaskBoard:
 
     # Runs ----------------------------------------------------------------------------------------------------------------
     def started(self, task_id: str, run_id: str, conversation_id: str, path: str | None = None, round_number: int = 1) -> None:
-        """A run of the task began (each round of one that goes through every file is a run); the path is kept to fill
-        in the path box next time."""
+        """A run of the task began (each round of one that goes through every file is a run, and each run of one that
+        repeats until done); the path is kept to fill in the path box next time."""
         with self._lock:
             state = self._read("state.json")
             entry: dict[str, Any] = {"run_id": run_id, "conversation_id": conversation_id,
-                                     "started_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+                                     "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "round": round_number}
             if path:
-                entry.update(path=path, round=round_number)
+                entry["path"] = path
             state[task_id] = entry
             self._write("state.json", state)
 

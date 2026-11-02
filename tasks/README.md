@@ -31,6 +31,29 @@ fonts, layouts, logo and labels, read by PowerPoint) and `wizard_task_files_done
 `every_file` runs in rounds of about 100 tool calls; each round continues with the files left, and **Continue** picks up
 after a stop or a restart.
 
+A task that works through a list in several runs (notes to check, figures to take out) can run again until it is done
+(owner decision, [docs/decisions/2026-11-02-task-queue.md](../docs/decisions/2026-11-02-task-queue.md)):
+
+```
+repeat: until_done
+max_runs: 5              # optional: at most this many runs (default 5, never more than 10)
+```
+
+Wizard then asks Gemini to end each run's summary with one last line, `Left: <number>`: how many items the task still
+has to do (`Left: 0` when nothing is left). After a run succeeds, Wizard starts a fresh run in the same conversation
+while that number is above 0, the run saved at least one note or map change, and `max_runs` is not reached; Settings
+shows "Run 2 of up to 5". A summary without a `Left:` line counts as done. Write such a task so that a run continues
+from what earlier runs changed (they are in the knowledge base) and says what it counted as left. `repeat` does not
+apply to an `every_file` task, which already runs until every file is done.
+
+**The queue.** Settings → Tasks runs tasks one after another: **Run all** (every task), **Run selected** (the ticked
+ones) or **Add to queue** on one task fills the queue in run order, oldest `added` first, then id. Tasks meant to run
+in turn get the same `added` and numbered ids (`kb-review-1-…`, `kb-review-2-…`). The person can reorder the queue,
+then presses **Start**: each task starts when the one before ended succeeded (its last round, or its last run when it
+repeats). A failure or a stop stops the queue there; **Continue** runs that task again and goes on. A task
+that asks for a path is queued only with the path typed in its box. Do not write a task that relies on another
+running at the same time: one task runs at a time.
+
 A task can also move, rename and remove notes, in the same save and the same single commit (owner decision,
 [docs/decisions/2026-11-02-dashboards-area.md](../docs/decisions/2026-11-02-dashboards-area.md)):
 

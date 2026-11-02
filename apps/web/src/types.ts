@@ -421,8 +421,44 @@ export interface TaskItem {
   /** The path chosen last time on this PC. */
   path?: string | null;
   round?: number | null;
+  /** It runs again until done (front matter repeat: until_done), at most this many times. */
+  max_runs?: number | null;
   /** Files done in that folder (a task that goes through every file). */
   progress?: {total: number; done: number; left: number} | null;
+}
+
+/** A task in the person's queue. waiting: still to run; interrupted: Wizard restarted while it ran. */
+export interface QueueItem {
+  key: string;
+  id: string;
+  title: string;
+  path: string | null;
+  state: 'waiting' | 'running' | 'done' | 'failed' | 'stopped' | 'interrupted';
+  conversation_id: string | null;
+  run_id: string | null;
+  /** Why it failed or stopped, how it ended, or, while it runs, its round or run (Run 2 of up to 5). */
+  message: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+}
+
+/** Tasks run one after another, the next only when the one before succeeded (Settings → Tasks). */
+export interface TaskQueue {
+  /** ready: filled, not started; failed / stopped / interrupted: Continue runs the task where it stopped. */
+  state: 'empty' | 'ready' | 'running' | 'done' | 'failed' | 'stopped' | 'interrupted';
+  items: QueueItem[];
+  message: string | null;
+  total: number;
+  done: number;
+  /** The task running, or where the queue stopped, and its place (1 is the first). */
+  current: string | null;
+  position: number | null;
+  /** Tasks ticked for Run selected, kept until the queue starts. */
+  selected: string[];
+  /** Tasks Run all or Run selected left out (a path task without a path), and why. */
+  left_out: {id: string; title: string; reason: string}[];
+  started_at: string | null;
+  finished_at: string | null;
 }
 
 export interface TasksView {
@@ -433,6 +469,7 @@ export interface TasksView {
   message: string | null;
   /** This PC has the knowledge base's write token, so a task can save what it produces. */
   can_save: boolean;
+  queue?: TaskQueue | null;
 }
 
 /** A form field and its answer. section: the box it sits in (DPA / DSA); kind: typed text, or an option chosen in a

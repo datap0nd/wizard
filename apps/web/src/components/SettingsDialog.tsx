@@ -87,7 +87,7 @@ export function SettingsDialog({open, onClose, onSaved}: {open: boolean; onClose
         await waitForRestart();
         setNotice('Saved and applied.');
       } else if (saved.apply === 'after_run') {
-        setNotice('Saved. Wizard restarts to apply the change when the running question finishes.');
+        setNotice('Saved. Wizard restarts to apply the change when the running question or task queue finishes.');
       } else if (saved.apply === 'manual') {
         setNotice('Saved. Restart Wizard to apply it: close its window and run start.ps1 again.');
       } else setNotice('Saved. It applies to your next question.');

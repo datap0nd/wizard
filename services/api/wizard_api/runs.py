@@ -12,12 +12,13 @@ import logging
 import re
 import time
 import traceback
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from wizard_agent.prompting import STOPPED, compose, squeeze, steer_text, step_words, systems_changed_text
+from wizard_agent.prompting import STOPPED, compose, left_to_do, squeeze, steer_text, step_words, systems_changed_text
 from wizard_agent.runtime import AgentFailure, AgentRequest, AgentRuntime, Turn, redact
 from wizard_connectors.attachment_tables import index as table_index
 from wizard_connectors.entitlements import Identity
@@ -66,6 +67,9 @@ TASK_STALLS = 2
 TASK_WRITES = ("wizard_kb_save_notes", "wizard_kb_note_source", "wizard_task_files_done")  # still allowed to save a round's work
 # In a task these read what the task itself changes (the files left, a note it saved), so the same call can answer anew.
 TASK_REREADS = frozenset({"wizard_task_files", "wizard_kb_note_source", "wizard_browse_knowledge"})
+# Why a run could not run at all: a task's rounds stop at once instead of trying the next round.
+CANNOT_RUN = ("gemini_signin_required", "runtime_unavailable", "model_quota", "model_permission_denied",
+              "gemini_project_unresolved")
 # A new chat's name from Gemini (owner, 30 Oct 2026): asked beside the first answer; the answer waits at most this long
 # for it before it is shown finished, so the chat list it refreshes already has the name.
 TITLE_WAIT_S = 5.0
@@ -209,8 +213,9 @@ class Exploration:
 
 @dataclass
 class TaskRounds:
-    """A task going through every file of a folder for one person: its rounds run one after another in one conversation."""
-    work: dict[str, Any]  # Task.work(path): id, title, body, input, path, every_file
+    """A task going through every file of a folder, or one that repeats until done (work["max_runs"]), for one person:
+    its rounds (runs) follow one another in one conversation."""
+    work: dict[str, Any]  # Task.work(path): id, title, body, input, path, every_file, max_runs
     conversation_id: str
     round: int = 0
     run_id: str | None = None
@@ -218,6 +223,11 @@ class TaskRounds:
     message: str = ""
     stalls: int = 0
     done_before: int = 0
+    left: int | None = None  # what the last run of a repeating task said is left (its Left line)
+
+    @property
+    def unit(self) -> str:
+        return "round" if self.work.get("every_file") else "run"
 
 
 @dataclass
@@ -259,6 +269,7 @@ class ActiveRun:
     explore: dict[str, Any] | None = None  # a mapping round: {system, name, round}
     work: dict[str, Any] | None = None  # a task from Settings → Tasks: Task.work(), plus round and counts in rounds
     maps_changed: set[str] = field(default_factory=set)  # portals whose map this run added to (published after it)
+    kb_saves: int = 0  # knowledge-base saves that committed in this run (a task that repeats needs progress to go on)
     needs_sign_in: bool = False  # a portal asked for a sign-in during this run
     task: asyncio.Task[None] | None = None
     title_task: asyncio.Task[None] | None = None  # Gemini naming a new chat, beside the answer
@@ -519,6 +530,11 @@ class RunManager:
         self.explorations: dict[str, Exploration] = {}  # by person
         self.task_rounds: dict[str, TaskRounds] = {}  # by person
         self.task_board: Any = None  # tasks.TaskBoard, set by the app: records each round's run
+        # Told when a task ended, after its last round or run: (person, task id, conversation, outcome, message), outcome
+        # done | failed | stopped. The task queue (task_queue.py) starts the next task from it.
+        self.on_task_end: Callable[[Identity, str, str, str, str], Awaitable[None]] | None = None
+        self.task_queue: Any = None  # task_queue.TaskQueues, set by the app: a running queue keeps Wizard busy
+        self.closing = False  # the service is shutting down: runs cancelled now were interrupted, not stopped by anyone
 
     @property
     def semaphore(self) -> asyncio.Semaphore:
@@ -658,7 +674,14 @@ class RunManager:
         if run and queue in run.subscribers:
             run.subscribers.remove(queue)
 
+    def busy(self) -> bool:
+        """Something is running or about to start its next run by itself: a run, a task's rounds, or a task queue. The
+        desktop app restarts its service only when this is False (app.py)."""
+        return (bool(self.active) or any(r.state == "running" for r in self.task_rounds.values())
+                or bool(self.task_queue is not None and self.task_queue.running()))
+
     async def shutdown(self) -> None:
+        self.closing = True
         for run in list(self.active.values()):
             self.cancel(run.identity.id, run.id)
         tasks = [r.task for r in self.active.values() if r.task]
@@ -744,6 +767,8 @@ class RunManager:
             await self.emit(run, "schedule_proposed", {"schedule": public_schedule(schedule)})
         if outcome.ok and name in MAP_WRITES:
             run.maps_changed.add(str(outcome.data.get("system")))
+        if outcome.ok and name == "wizard_kb_save_notes":
+            run.kb_saves += 1
         if not outcome.ok and outcome.error_code == "sign_in_required":
             run.needs_sign_in = True
         if outcome.ok and name == "portal_request_access":
@@ -826,9 +851,10 @@ class RunManager:
                 answer = STOPPED
             else:
                 continue
-            # A mapping round continues from the portal map, and a task's round from the files marked done, not from
-            # the earlier rounds' steps.
-            rounds = run.kind == "explore" or (run.kind == "task" and bool((run.work or {}).get("every_file")))
+            # A mapping round continues from the portal map, a task's round from the files marked done and a task's
+            # next run from the knowledge base it changed, not from the earlier rounds' steps.
+            rounds = run.kind == "explore" or (run.kind == "task" and bool((run.work or {}).get("every_file")
+                                                                           or (run.work or {}).get("max_runs")))
             work = [] if rounds else work_log(self.store.events(previous["id"]))
             turns.append(Turn(run_title(previous["kind"], previous["question"]), answer, work))
         return turns
@@ -841,15 +867,24 @@ class RunManager:
         if run.kind == "explore":
             await self._next_round(run)
         if run.kind == "task":
+            ended: tuple[str, str, str] | None
             try:
-                self._next_task_round(run)
+                ended = self._next_task_round(run)
             except Exception:  # noqa: BLE001 - a task's rounds must end in a state the person sees, never stay "running"
                 log.exception("task round after run %s", run.id)
+                ended = (str((run.work or {}).get("id")), "failed", "Wizard could not go on after this run.")
                 rounds = self.task_rounds.get(run.identity.id)
                 if rounds is not None and rounds.state == "running":
-                    rounds.state, rounds.message = "failed", "Wizard could not start the next round: press Continue."
+                    rounds.state, rounds.message = "failed", (f"Wizard could not start the next {rounds.unit}: press "
+                                                              f"{'Continue' if rounds.unit == 'round' else 'Run again'}.")
+                    ended = (rounds.work["id"], rounds.state, rounds.message)
                     if self.task_board is not None:
                         self.task_board.ended(rounds.work["id"], rounds.run_id or run.id, rounds.state, rounds.message)
+            if ended is not None and self.on_task_end is not None:
+                try:
+                    await self.on_task_end(run.identity, ended[0], run.conversation_id, ended[1], ended[2])
+                except Exception:  # noqa: BLE001 - the queue says what went wrong itself; the run is over either way
+                    log.exception("task end after run %s", run.id)
 
     # Portal maps -------------------------------------------------------------------------------------------------------
     async def _publish_map(self, system: str) -> None:
@@ -938,8 +973,9 @@ class RunManager:
 
     # Tasks ---------------------------------------------------------------------------------------------------------------
     def start_task(self, identity: Identity, conversation_id: str, work: dict[str, Any]) -> dict[str, Any]:
-        """Run a task: once, or, when it goes through every file of a folder, in rounds until each file is done."""
-        if not work.get("every_file"):
+        """Run a task: once; when it goes through every file of a folder, in rounds until each file is done; when it
+        repeats until done (max_runs), again while its last run says work is left and changed something."""
+        if not work.get("every_file") and not work.get("max_runs"):
             row = self.start(identity, conversation_id, f"Task: {work['title']}", kind="task", work=work)
             if self.task_board is not None:
                 self.task_board.started(work["id"], row["id"], conversation_id, work.get("path"))
@@ -951,7 +987,7 @@ class RunManager:
         self.task_rounds[identity.id] = rounds
         try:
             return self._task_round(identity, rounds)
-        except Busy:
+        except Exception:  # Busy, or the folder could not be counted: no rounds left "running" to keep Wizard busy
             del self.task_rounds[identity.id]
             raise
 
@@ -959,7 +995,30 @@ class RunManager:
         files = self.services.task_files
         return files.counts(str(work["id"]), Path(str(work["path"]))) if files else {"total": 0, "done": 0, "left": 0}
 
+    def stop_task(self, user_id: str, conversation_id: str) -> bool:
+        """Stop a task's run in that conversation, and its next rounds or runs. False: nothing of it was running."""
+        stopped = False
+        rounds = self.task_rounds.get(user_id)
+        if rounds is not None and rounds.conversation_id == conversation_id and rounds.state == "running":
+            rounds.state, rounds.message = "stopped", f"Stopped by you during {rounds.unit} {rounds.round}."
+            stopped = True
+        for run in list(self.active.values()):
+            if run.identity.id == user_id and run.kind == "task" and run.conversation_id == conversation_id:
+                stopped = self.cancel(user_id, run.id) or stopped
+        return stopped
+
     def _task_round(self, identity: Identity, rounds: TaskRounds) -> dict[str, Any]:
+        if not rounds.work.get("every_file"):  # a task that repeats until done: its next run
+            rounds.round += 1
+            title = f"Task: {rounds.work['title']}" + (f" (run {rounds.round})" if rounds.round > 1 else "")
+            row = self.start(identity, rounds.conversation_id, title, kind="task", work={**rounds.work, "round": rounds.round})
+            rounds.run_id = row["id"]
+            rounds.message = f"Run {rounds.round} of up to {rounds.work['max_runs']}" + (
+                f": {rounds.left} left after run {rounds.round - 1}." if rounds.left is not None else ".")
+            if self.task_board is not None:
+                self.task_board.started(rounds.work["id"], row["id"], rounds.conversation_id, rounds.work.get("path"),
+                                        rounds.round)
+            return row
         counts = self._task_counts(rounds.work)
         rounds.done_before = counts["done"]
         rounds.round += 1
@@ -972,11 +1031,61 @@ class RunManager:
             self.task_board.started(rounds.work["id"], row["id"], rounds.conversation_id, rounds.work.get("path"), rounds.round)
         return row
 
-    def _next_task_round(self, run: ActiveRun) -> None:
+    def _next_task_round(self, run: ActiveRun) -> tuple[str, str, str] | None:
+        """After a task's run: start its next round or run, or say how the task ended, as (task id, outcome, message),
+        outcome done | failed | stopped. None: its next round or run started."""
         rounds = self.task_rounds.get(run.identity.id)
-        if rounds is None or rounds.run_id != run.id or rounds.state != "running":
-            return
         finished = self.store.run(run.identity.id, run.id) or {}
+        status, code = finished.get("status"), finished.get("error_code")
+        if rounds is None or rounds.run_id != run.id:  # a task that runs once
+            task_id = str((run.work or {}).get("id"))
+            if status == "succeeded":
+                return task_id, "done", ""
+            if status == "cancelled":
+                return task_id, "stopped", "Wizard restarted while it ran." if self.closing else "Its run was stopped."
+            return task_id, "failed", str(finished.get("error_message") or code or "Its run failed.")
+        if rounds.state == "running" and not rounds.work.get("every_file"):
+            self._next_task_run(run, rounds, finished)
+        elif rounds.state == "running":
+            self._next_file_round(run, rounds, finished)
+        if rounds.state == "running":
+            try:
+                self._task_round(run.identity, rounds)
+                return None
+            except Busy as busy:
+                rounds.state, rounds.message = "failed", str(busy)
+        log.info("task %s for %s: %s", rounds.work["id"], run.identity.id, rounds.message)
+        if self.task_board is not None:
+            self.task_board.ended(rounds.work["id"], run.id, rounds.state, rounds.message)
+        return rounds.work["id"], rounds.state, rounds.message
+
+    def _next_task_run(self, run: ActiveRun, rounds: TaskRounds, finished: dict[str, Any]) -> None:
+        """A task that repeats until done: run it again while its summary's Left line is above 0, the run saved a note
+        or a map change, and max_runs is not reached. A summary without a Left line counts as done."""
+        status, number, limit = finished.get("status"), rounds.round, int(rounds.work["max_runs"])
+        runs = f"{number} run{'s' if number != 1 else ''}"
+        if status == "cancelled":
+            rounds.state = "stopped"
+            rounds.message = f"Wizard restarted during run {number}." if self.closing else f"Stopped during run {number}."
+            return
+        if status != "succeeded":
+            reason = finished.get("error_message") or finished.get("error_code") or "no reason given"
+            rounds.state, rounds.message = "failed", f"Run {number} failed: {reason}"
+            return
+        rounds.left = left = left_to_do(str(finished.get("answer") or ""))
+        progressed = run.kb_saves > 0 or bool(run.maps_changed)
+        if left is None:
+            rounds.state, rounds.message = "done", f"Done in {runs} (the last run did not say what is left)."
+        elif left == 0:
+            rounds.state, rounds.message = "done", f"Done in {runs}: nothing left."
+        elif not progressed:
+            rounds.state = "done"
+            rounds.message = f"Run {number} changed nothing with {left} left, so Wizard did not run it again."
+        elif number >= limit:
+            rounds.state, rounds.message = "done", f"Ran {number} times, its limit, with {left} left: run it again to go on."
+
+    def _next_file_round(self, run: ActiveRun, rounds: TaskRounds, finished: dict[str, Any]) -> None:
+        """A task that goes through every file: the next round while files are left and rounds mark files done."""
         status, code = finished.get("status"), finished.get("error_code")
         try:
             counts = self._task_counts(rounds.work)
@@ -986,9 +1095,10 @@ class RunManager:
         progressed = counts["done"] > rounds.done_before
         rounds.stalls = 0 if progressed else rounds.stalls + 1
         if status == "cancelled":
-            rounds.state, rounds.message = "stopped", f"Stopped during round {rounds.round}: {counts['done']} of {counts['total']} files done."
-        elif code in ("gemini_signin_required", "runtime_unavailable", "model_quota", "model_permission_denied",
-                      "gemini_project_unresolved", "path_gone"):
+            rounds.state = "stopped"
+            rounds.message = (f"{'Wizard restarted' if self.closing else 'Stopped'} during round {rounds.round}: "
+                              f"{counts['done']} of {counts['total']} files done.")
+        elif code in (*CANNOT_RUN, "path_gone"):
             rounds.state = "failed"
             rounds.message = f"Round {rounds.round} could not run: {finished.get('error_message') or code}"
         elif counts["left"] == 0:
@@ -1000,15 +1110,6 @@ class RunManager:
         elif rounds.round >= TASK_ROUNDS:
             rounds.state = "done"
             rounds.message = f"Paused after {TASK_ROUNDS} rounds with {counts['left']} file(s) left: press Continue to go on."
-        if rounds.state == "running":
-            try:
-                self._task_round(run.identity, rounds)
-                return
-            except Busy as busy:
-                rounds.state, rounds.message = "failed", str(busy)
-        log.info("task %s for %s: %s", rounds.work["id"], run.identity.id, rounds.message)
-        if self.task_board is not None:
-            self.task_board.ended(rounds.work["id"], run.id, rounds.state, rounds.message)
 
     async def _answer(self, run: ActiveRun) -> None:
         try:
