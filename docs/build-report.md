@@ -3,7 +3,60 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-02 (latest) — Dashboards: the team's HTML dashboards, a system Wizard reads first
+## 2026-11-02 (latest) — A task queue: Run all, Run selected, and tasks that repeat until done
+
+The owner: "I need something new, a task queuer. It should allow me to run tasks in a sequence. A 'run all tasks'
+button, where I can run and it goes from one to another (only when all of them succeeded)." Then: "allow me to choose
+which ones I can run on a batch sequence, if I can tick like 5 of them and click run selected tasks ... so I can go to
+lunch and leave them running." One task at a time per person stays. [Decision](decisions/2026-11-02-task-queue.md).
+
+**What changed.**
+- **The queue** (`services/api/wizard_api/task_queue.py`), per person in `data\tasks\queues.json`. Settings → Tasks:
+  **Run all**, **Run selected** (a tick box on each task, kept until the queue starts) and **Add to queue** on a task
+  fill it in run order, oldest `added` first, then id (`tasks.run_order`; the numbered reviews run 1 → 7). The panel
+  lists the tasks with up, down and remove; **Start** runs them, each as **Run** would, the next only when the one
+  before ended succeeded (a folder task after its last round). A failure, a **Stop**, or a run cancelled in its
+  conversation stops the queue there and says which task and why; **Continue** runs that task again and goes on;
+  **Clear** empties it. The panel shows "Running n of m", the task's round or run and **Watch it**, and afterwards each
+  task's result (Succeeded, Failed, Stopped, Waiting, Interrupted) with its time and conversation link.
+- **Path tasks** are queued only with the path typed in their box, checked as a single Run checks it; Run all and Run
+  selected leave out those with none (or a path that does not pass) and say which and why.
+- **Repeat until done.** Front matter `repeat: until_done` (optional `max_runs`, default 5, at most 10; `tasks.py`).
+  The task frame (`prompting.TASK_REPEAT`, the task frame only) asks Gemini to end its summary with `Left: <number>`;
+  after a run succeeds Wizard starts a fresh run in the same conversation while Left > 0, the run saved a note or a map
+  change (`ActiveRun.kb_saves`, `maps_changed`) and `max_runs` is not reached. A missing Left line counts as done. A
+  single Run repeats the same way; Settings shows "Run 2 of up to 5". `repeat` does not apply to an `every_file` task.
+- **Runs** (`runs.py`): a task's end, after its last round or run, is handed to the queue (`RunManager.on_task_end`);
+  `RunManager.busy()` (a run, a task's rounds, or a running queue) replaces `manager.active` where the desktop app
+  decides whether to restart its service, for a new knowledge base and for saved settings; `stop_task` stops a task's
+  run and its next rounds; at shutdown a cancelled run counts as interrupted, not stopped. A failed start of a folder
+  task no longer leaves its rounds "running".
+- **Unattended:** the queue holds the PC's keep-awake request (`awake.py`) from Start to its end, so it does not let go
+  between two tasks. A queue the service left running (a crash, an update, a restart) is "Interrupted at “…”" with
+  Continue when it starts again. A single Run is refused while the queue runs.
+- **API:** `POST /api/v1/tasks/queue` (Run all, or Run selected with `ids`; `paths`), `DELETE /api/v1/tasks/queue`,
+  `POST /api/v1/tasks/queue/start` (Start and Continue), `POST /api/v1/tasks/queue/stop`,
+  `POST /api/v1/tasks/queue/items/{key}/move`, `DELETE /api/v1/tasks/queue/items/{key}`, `PUT /api/v1/tasks/selection`,
+  `POST /api/v1/tasks/{task_id}/queue`; `GET /api/v1/tasks` carries `queue`, and each task its `max_runs`. Contracts
+  re-exported (`contracts/openapi.json`).
+- **Web app:** `TasksPanel` (tick boxes, Run all, Run selected, Add to queue, the queue panel), `types.ts`, `api.ts`.
+  The committed `dist/` is rebuilt.
+- Docs: the decision, `docs/decisions/README.md`, `tasks/README.md` (the queue, `repeat`), the README table,
+  `docs/desktop.md` (a Tasks row in Settings, sleep, applying settings, knowledge-base restarts).
+
+**Not done.** No task file sets `repeat: until_done` yet: the task files are being edited separately. The queue first
+runs unattended on the work PC. Settings saved while a queue runs apply when it ends; the Settings dialog still says
+"when the running question finishes".
+
+**Tests.** `uv run python scripts/verify_spec.py` passed; `uv run python -m pytest tests`: 699 passed, 21 skipped
+(BLOCKED here: PostgreSQL test server, Gemini CLI, PowerShell, live parity); ruff and mypy clean;
+`scripts/export_contracts.py --check` matches; `npm --prefix apps/web run typecheck` and `test` (125 passed);
+`verify-dist` matches; browser E2E 26 passed with `WIZARD_E2E_CHANNEL=chrome` (this container has no Edge, so
+`verify_all.sh`'s default `msedge` run fails to launch here). New: `tests/unit/test_task_queue.py` (21 tests with a
+scripted Gemini) and 7 `TasksPanel` tests; the panel was also looked at in Chrome with a scripted Gemini (ready,
+running, failed; 1280 and 420 px wide).
+
+## 2026-11-02 — Dashboards: the team's HTML dashboards, a system Wizard reads first
 
 The owner: "I believe these dashboards should definitely be the first thing in the priority list as they are dashboards
 prepared combining logic and data that wizard will struggle to get right off the bat"; "Y:\ is indeed a risk as it's

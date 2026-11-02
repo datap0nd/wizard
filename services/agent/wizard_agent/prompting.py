@@ -87,6 +87,18 @@ List its files with wizard_task_files, read one as text with wizard_task_read_fi
 TASK_ROUNDS = """This task goes through every file, in rounds. This is round {round}: {done} of {total} files are done, {left} left. A round has a budget of about {budget} tool calls, so work file by file: read it, compare what it says with what the knowledge base already holds, save what is new, then mark the file done with wizard_task_files_done (also when it holds nothing to keep, with a note why). Save and mark as you go, a few files at a time, so nothing is lost when the round ends. When the tools say the budget or time is nearly used up, save what you have, mark the files you finished, and end with a short summary of this round; Wizard starts the next round with the files left. Notes saved in earlier rounds are in the knowledge base now: read a note's file with wizard_kb_note_source and add to it rather than writing a second note on the same topic."""
 TASK_ROUND_BUDGET = 100
 
+# ... or runs again until it is done (owner, 2 Nov 2026: tasks the person runs in a queue; front matter repeat: until_done).
+# Wizard reads the Left line of the summary (left_to_do) and starts a fresh run while it is above 0, the run changed
+# something and max_runs is not reached (runs.py).
+TASK_REPEAT = """This task runs until it is done: when this run ends, Wizard starts a fresh run in this conversation, with your summaries so far, as long as work is left and this run changed something, up to {max_runs} runs. This is run {run} of up to {max_runs}. Work through as much as you can; earlier runs' changes are in the knowledge base now, so continue from there rather than redoing them. End your summary with one last line, exactly: Left: <number>, the number of items this task still has to do after this run (0 when nothing is left)."""
+LEFT_LINE = re.compile(r"^[\s>*_`#-]*left[*_`]*\s*:[*_`\s]*(\d[\d,]*)", re.IGNORECASE | re.MULTILINE)
+
+
+def left_to_do(answer: str) -> int | None:
+    """The number on the last `Left: <number>` line of a task run's summary; None when there is none."""
+    found = LEFT_LINE.findall(answer or "")
+    return int(found[-1].replace(",", "")) if found else None
+
 
 def task_request(title: str, body: str, task: dict[str, Any] | None = None) -> str:
     request = TASK_REQUEST.format(title=title, body=body)
@@ -97,6 +109,8 @@ def task_request(title: str, body: str, task: dict[str, Any] | None = None) -> s
         request += "\n\n" + TASK_ROUNDS.format(round=task.get("round") or 1, done=task.get("done") or 0,
                                                 total=task.get("total") or 0, left=task.get("left") or 0,
                                                 budget=TASK_ROUND_BUDGET)
+    elif task.get("max_runs"):
+        request += "\n\n" + TASK_REPEAT.format(run=task.get("round") or 1, max_runs=task["max_runs"])
     return request
 
 

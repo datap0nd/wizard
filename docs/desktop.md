@@ -186,14 +186,15 @@ of Wizard on this PC:
 | Portals | ASAP and GSCM addresses, the Big Data Portal's two (information catalog and Superset), browser (Chrome or Edge), other hosts the portals need; the **Access request form**: your usual answers on every Big Data Portal access request (field and answer) and an optional request page | **Sign in to the portals** opens Wizard's own browser visibly, one tab per portal (two for the Big Data Portal): sign in, then close it (or **Done**). The sign-in lasts as long as the portals' own sessions, across restarts too: Wizard keeps its browser's session cookies (DPAPI), never a password. **Check sign-in** opens each in the background and says whether it is signed in, or which page asked for a sign-in. **Open the request page** opens the catalog's request page with your answers filled in; you check it and submit it |
 | Network | Proxy (for Google and the app's updates; empty: Gemini CLI's proxy, else Windows'), Company GitHub proxy (for the knowledge base and the portal maps; empty: the route Windows and Edge take, read in-process with WinHTTP, PAC included) | — |
 | Version and updates | The installed version | **Check for updates** / **Update to 1.0.N** |
+| Tasks | The tasks the Wizard team wrote, with a tick box each and a path box for a task that asks for a folder or file | **Run** one; **Run all**, **Run selected** (the ticked ones) or **Add to queue** fill the queue, oldest first, and **Start** runs them one after another, each only when the one before succeeded: a failure or a stop stops it there with **Continue** ([decision](decisions/2026-11-02-task-queue.md)) |
 
 - **Where a value comes from** is shown next to each field: the company file, this PC (set here), the `.env` file,
   or an environment variable (locked here). What you set here wins over the company file; "Use company value" clears
   it again. Saving a key that `.env` also had moves it out of `.env`, so no password stays there in plain text.
   Precedence: company file < this PC < `.env` < environment.
 - **Secrets** (token, password) are write-only: the page only shows "Saved (hidden)" and **Change**.
-- **Applying:** changes restart the service by itself (after the running question, if any); the page waits and
-  reconnects.
+- **Applying:** changes restart the service by itself (after the running question or task queue, if any); the page
+  waits and reconnects.
 - **The model** is Gemini 3.8 Flash for everyone (`gemini-3.8-flash`), with Gemini 3.1 Pro preview
   (`gemini-3.1-pro-preview`) as the **fallback model**, as in Gemini CLI. There is no model picker in the app: the owner
   removed it on 20 October 2026, and a model chosen with it before no longer applies. Only the company file, `.env` or
@@ -237,7 +238,8 @@ of Wizard on this PC:
   sleep the page signs in again as you by itself and repeats what it was doing, as it does when Wizard starts. No
   reload is needed (the panel has no reload button).
 - **Sleep:** while a question runs, Wizard keeps the PC from going to sleep when idle (as a download does), so a long
-  answer is not stopped half-way. The screen still turns off; closing the lid or choosing Sleep still sleeps.
+  answer is not stopped half-way, and a task queue keeps it awake from Start to its end. The screen still turns off;
+  closing the lid or choosing Sleep still sleeps.
 - **Update:** Check for updates reads the public release manifest where Metronome's `setup.ps1` reads on the work PCs
   (owner, 30 October 2026, after GitHub downloads were tightened on the work network): `api.github.com` for the
   manifest on the `desktop-download` mirror branch first (as `setup.ps1` asks it for its branch), then the release
@@ -290,7 +292,7 @@ imported: anyone with it can use the passwords. Conversations stay on the first 
   above), checks its size, SHA-256 and version against the manifest, installs it silently and starts again. It never
   downgrades.
 - **Knowledge:** a task saves notes to the repository (Settings → Tasks), or someone changes one on GitHub. PCs pick the change up within 30 minutes and switch to it after
-  10 minutes without use, or at once with **Sync the knowledge base now**.
+  10 minutes without use and with no task queue running, or at once with **Sync the knowledge base now**.
 - **Settings or credentials:** make a new `wizard.provision` and have people import it (or run setup again next to
   it). It replaces the previous company file; what someone set in their own Settings still wins.
 

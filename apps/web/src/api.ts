@@ -142,6 +142,17 @@ export const api = {
   tasks: (refresh = false) => request<TasksView>(`/api/v1/tasks${refresh ? '?refresh=true' : ''}`),
   runTask: (id: string, choice: {path?: string; fresh?: boolean} = {}) =>
     request<TasksView>(`/api/v1/tasks/${encodeURIComponent(id)}/run`, {body: choice}),
+  /** Run all (ids null) or Run selected: the queue becomes those tasks, oldest first; Start runs them. */
+  fillQueue: (ids: string[] | null, paths: Record<string, string>) => request<TasksView>('/api/v1/tasks/queue', {body: {ids, paths}}),
+  queueTask: (id: string, path?: string) =>
+    request<TasksView>(`/api/v1/tasks/${encodeURIComponent(id)}/queue`, {body: path === undefined ? {} : {path}}),
+  startQueue: () => request<TasksView>('/api/v1/tasks/queue/start', {body: {}}),
+  stopQueue: () => request<TasksView>('/api/v1/tasks/queue/stop', {body: {}}),
+  clearQueue: () => request<TasksView>('/api/v1/tasks/queue', {method: 'DELETE'}),
+  moveQueued: (key: string, by: -1 | 1) =>
+    request<TasksView>(`/api/v1/tasks/queue/items/${encodeURIComponent(key)}/move`, {body: {by}}),
+  removeQueued: (key: string) => request<TasksView>(`/api/v1/tasks/queue/items/${encodeURIComponent(key)}`, {method: 'DELETE'}),
+  selectTasks: (ids: string[]) => request<TasksView>('/api/v1/tasks/selection', {method: 'PUT', body: {ids}}),
   health: () => request<{status: string; version: string}>('/api/v1/health'),
 };
 
