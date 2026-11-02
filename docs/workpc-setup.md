@@ -8,7 +8,7 @@ git, no pip and no Node build. The PC only ever **pulls** `main` from GitHub; no
  ────────────────────          ───────────────────────────          ─────────────────────────────────────────────
  fix + push main      ───────▶ main  +  release portable-…  ──────▶ .\update_app.ps1   (stop, install, start)
                                                                      .\start.ps1        (open Wizard, give it a go)
- reads feedback       ◀─────── (you paste the file)         ◀────── Settings → Tasks → the knowledge base
+ reads feedback       ◀─────── (you paste what you saw)     ◀────── Settings → Tasks → the knowledge base
 ```
 
 ## Prerequisites (once)
@@ -16,8 +16,8 @@ git, no pip and no Node build. The PC only ever **pulls** `main` from GitHub; no
 | Need | Why | Check |
 |---|---|---|
 | Optional: `DG_GITHUB_TOKEN` (the token the B2B / data-governance installers already use) | The repository is public, so setup works without it, but anonymous GitHub API calls are limited to 60 per hour per IP address, which an office network shares. Setup uses 2 or 3 per run (archives come from the public download links, not the API). | setup names a rate-limit refusal (HTTP 403) |
-| Node.js and Gemini CLI, signed in with your enterprise Google account | Wizard's analyst runs through Gemini CLI; you can also use Gemini CLI with the documentation kit | `node --version`, `gemini --version` |
-| Outbound HTTPS to `api.github.com`, `github.com` release downloads, `accounts.google.com`, `oauth2.googleapis.com`, `codeassist.google.com`, `cloudcode-pa.googleapis.com`, `github.sec.samsung.net` | install, Google sign-in, Gemini, the knowledge base | task 00 tests each one |
+| Node.js and Gemini CLI, signed in with your enterprise Google account | Wizard's analyst runs through Gemini CLI | `node --version`, `gemini --version` |
+| Outbound HTTPS to `api.github.com`, `github.com` release downloads, `accounts.google.com`, `oauth2.googleapis.com`, `codeassist.google.com`, `cloudcode-pa.googleapis.com`, `github.sec.samsung.net` | install, Google sign-in, Gemini, the knowledge base | setup, the Google sign-in and Settings → Test connection name a host they cannot reach |
 
 `GOOGLE_CLOUD_PROJECT`: if your Gemini CLI needs it (enterprise Code Assist), set it in your user environment before
 the first setup and setup copies it into `.env`, or add it to `.env` yourself.
@@ -64,9 +64,9 @@ Setup does, in order:
    - `WIZARD_AGENT_RUNTIME=gemini-cli`, `WIZARD_GEMINI_MODEL=gemini-3.8-flash`, `WIZARD_DATA_DIR=data`.
    - `WIZARD_LOCAL_USER_EMAIL` from `whoami /upn`.
    - The Gemini CLI and Node paths it found.
-5. Creates `content\` (documentation template), `documents\quiz-questions\`, `documents\quiz-answers\`, `outbox\` and
-   `data\`, and refreshes `templates\` (the quiz page), `docs.ps1`, `GEMINI.md`, `.geminiignore` and the Wizard-owned parts of `content\` (`schema\`, `.gemini\commands\`). Your notes,
-   catalogs, registers and inbox are never touched.
+5. Creates `data\` and refreshes `.geminiignore`, which keeps a Gemini CLI session started in the folder away from
+   sign-ins and secrets. It removes what earlier versions installed for the documentation kit (`docs.ps1`, `GEMINI.md`,
+   `templates\`, `tasks\`); folders you filled yourself (`content\`, `documents\`, `outbox\`) are never touched.
 6. **Checks the new release** with `run.py --check`:
 
    | Check | What it confirms |
@@ -109,16 +109,16 @@ network it shows the ones that came with the installed version). **Run** starts 
 Knowledge base). A task that asks for a folder or file shows a path box: in File Explorer, right-click the folder and
 choose **Copy as path**, paste it, and press **Run**. One that goes through every file (for example "Digest a folder of
 presentations") runs in rounds until each file is done; if it stops, **Continue** picks up where it left off. Keep
-PowerPoint installed and signed in: protected decks open only through it. The numbered Gemini CLI tasks of earlier versions are gone: setup removes `tasks\` and the
-`/wizard:tasks` command. The documentation kit (`.\docs.ps1`) is still there for converting files and exporting mail.
+PowerPoint installed and signed in: protected decks open only through it. Tasks are the only way notes reach the
+knowledge base ([decision](decisions/2026-11-02-tasks-only-writer.md)).
 
 ## The loop
 
 1. You run `.\start.ps1`, try Wizard and run the tasks in Settings → Tasks.
-2. You run task 90, read `outbox\FEEDBACK-FOR-CLAUDE.md`, and paste it (plus anything else you noticed) to Claude.
+2. You tell Claude what you noticed, pasting what Wizard showed (an answer's **Error details**, a task's summary).
 3. Claude fixes the issues and pushes `main`.
 4. You run `.\update_app.ps1`. It stops Wizard, installs the new `main`, checks it and starts it again in a new window.
-   `.env`, `data\`, `content\` and `outbox\` are kept.
+   `.env`, `data\` and your own folders are kept.
 5. Repeat.
 
 To roll back by hand, copy `previous.json` over `current.json` and run `.\start.ps1`.
@@ -129,11 +129,10 @@ To roll back by hand, copy `previous.json` over `current.json` and run `.\start.
 |---|---|---|
 | `setup.ps1`, `start.ps1`, `update_app.ps1` | Wizard | replaced |
 | `releases\`, `runtime\`, `dependencies\`, `.downloads\`, `current.json`, `previous.json` | Wizard | managed |
-| `tasks\`, `GEMINI.md`, `.geminiignore`, `.gemini\commands\wizard\` | Wizard | replaced |
+| `.geminiignore` | Wizard | replaced |
 | `.env` | you | yes (only missing keys are added) |
 | `data\` | Wizard (database, each user's Gemini sign-in) | yes; never share it |
-| `content\` | you | yes |
-| `outbox\` | you | yes |
+| Folders you made (earlier versions created `content\`, `documents\` and `outbox\`) | you | yes, never touched |
 
 ## Troubleshooting
 
@@ -141,7 +140,7 @@ To roll back by hand, copy `previous.json` over `current.json` and run `.\start.
 |---|---|
 | `Cannot read main of datap0nd/wizard (HTTP 403)` without a token | GitHub's anonymous hourly limit for your office IP was reached: add `DG_GITHUB_TOKEN` (environment or `.env`) or try again later. |
 | `Cannot read main … (HTTP 401)` with a token | The token expired: replace it, or remove it (the repository is public). |
-| `The portable runtime release … is unavailable` | Proxy or token; task 00 shows which host is blocked. |
+| `The portable runtime release … is unavailable` | Proxy or token: the error in brackets is what setup got. |
 | `WARN Gemini CLI …` during setup | Read the line: Node or Gemini CLI path not found, or the CLI version changed what it sends. Paste it to Claude. |
 | `The new release failed its check` | The named `.env` setting is invalid; fix it and run `.\setup.ps1` again. The previous release is still active. |
 | Port 8770 is taken | Set `WIZARD_PORT=8771` in `.env`. |

@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import contextlib
 import datetime as dt
-import hashlib
 import os
 import re
 import sys
@@ -41,7 +40,6 @@ PICTURES = {7, 10, 11, 13, 16, 26, 28, 29, 30}
 SLIDE_IMAGE_WIDTH = 1600
 EXCEL_READ_ROWS = 1000
 EXCEL_READ_COLUMNS = 60
-OL_MAIL = 43
 DEFAULT_NAMES = re.compile(r"(?i)^(picture|image|graphic|grafik|imagem|imagen|immagine|content placeholder)\s*\d*$")
 
 _loaded: tuple[Any, Any, Any] | None = None
@@ -539,114 +537,6 @@ def read_msg(session: OfficeSession, path: Path, attachments: Path) -> Converted
     finally:
         with contextlib.suppress(Exception):
             item.Close(1)  # olDiscard
-
-
-def _slug(text: str, limit: int = 50) -> str:
-    return re.sub(r"[^A-Za-z0-9]+", "-", text).strip("-")[:limit] or "untitled"
-
-
-def _folders(folder: Any, path: str, depth: int) -> Iterator[tuple[str, Any]]:
-    for child in _items(_get(folder, "Folders")):
-        child_path = f"{path}/{_get(child, 'Name', '?')}"
-        if int(_get(child, "DefaultItemType", 0) or 0) == 0:  # olMailItem
-            yield child_path, child
-        if depth > 1:
-            yield from _folders(child, child_path, depth - 1)
-
-
-def mail_folders(session: OfficeSession, depth: int = 3) -> list[tuple[str, int]]:
-    """Every mail folder of every mailbox and its item count, as 'Mailbox/Inbox/Projects'."""
-    namespace = session.app("outlook").GetNamespace("MAPI")
-    found = []
-    for store in _items(_get(namespace, "Stores")):
-        root = _get(store, "GetRootFolder")
-        for path, folder in _folders(root, str(_get(root, "Name", "Mailbox")), depth):
-            found.append((path, int(_get(_get(folder, "Items"), "Count", 0) or 0)))
-    return found
-
-
-def resolve_folder(session: OfficeSession, path: str) -> Any:
-    """'Inbox', 'Sent Items', 'Inbox/Projects' (default mailbox, any display language) or 'Mailbox name/Folder/...'."""
-    namespace = session.app("outlook").GetNamespace("MAPI")
-    parts = [p for p in re.split(r"[\\/]", path) if p]
-    if not parts:
-        raise ConversionError("give a folder, e.g. Inbox or Inbox/Projects")
-    special = {"inbox": 6, "sent": 5, "sent items": 5}
-    if parts[0].lower() in special:
-        folder, rest = namespace.GetDefaultFolder(special[parts[0].lower()]), parts[1:]
-    else:
-        default_root = namespace.GetDefaultFolder(6).Parent
-        roots = [default_root, *[_get(s, "GetRootFolder") for s in _items(_get(namespace, "Stores"))]]
-        match = next((r for r in roots if str(_get(r, "Name", "")).lower() == parts[0].lower()), None)
-        folder, rest = (match, parts[1:]) if match is not None else (default_root, parts)
-    for name in rest:
-        child = next((c for c in _items(_get(folder, "Folders")) if str(_get(c, "Name", "")).lower() == name.lower()), None)
-        if child is None:
-            raise ConversionError(f"no Outlook folder '{name}' under '{_get(folder, 'Name', '?')}' (list them with "
-                                  "outlook-folders)")
-        folder = child
-    return folder
-
-
-@dataclass
-class MailExport:
-    exported: int = 0
-    already: int = 0
-    private: int = 0
-    unmatched: int = 0
-    other_items: int = 0
-    attachments: int = 0
-    folders: list[str] = field(default_factory=list)
-
-
-def export_mail(session: OfficeSession, folder_paths: list[str], out: Path, since: dt.datetime, until: dt.datetime,
-                words: list[str], limit: int, include_private: bool = False, subfolders: bool = False) -> MailExport:
-    """Copy mail items to Markdown files (header with display names, then the body) and their attachments to a sibling
-    '<name>.attachments' folder. Read-only on the mailbox; an item already exported is skipped."""
-    result = MailExport()
-    lowered = [w.lower() for w in words if w.strip()]
-    for path in folder_paths:
-        root = resolve_folder(session, path)
-        targets = [(path, root)] + (list(_folders(root, path, 6)) if subfolders else [])
-        for label, folder in targets:
-            result.folders.append(label)
-            items = folder.Items
-            with contextlib.suppress(Exception):
-                items.Sort("[ReceivedTime]", True)
-            for item in _items(items):
-                if result.exported >= limit:
-                    return result
-                if int(_get(item, "Class", 0) or 0) != OL_MAIL:
-                    result.other_items += 1
-                    continue
-                received = _get(item, "ReceivedTime")
-                when = received.replace(tzinfo=None) if isinstance(received, dt.datetime) else None
-                if when is None or when > until:
-                    continue
-                if when < since:
-                    break  # sorted newest first
-                if int(_get(item, "Sensitivity", 0) or 0) >= 2 and not include_private:  # olPrivate, olConfidential
-                    result.private += 1
-                    continue
-                subject = str(_get(item, "Subject", "") or "")
-                if lowered:
-                    haystack = f"{subject}\n{_get(item, 'Body', '') or ''}".lower()
-                    if not any(w in haystack for w in lowered):
-                        result.unmatched += 1
-                        continue
-                entry = hashlib.sha1(str(_get(item, "EntryID", subject)).encode(), usedforsecurity=False).hexdigest()[:6]
-                name = f"{when:%Y-%m-%d_%H%M}_{_slug(subject)}_{entry}"
-                folder_dir = out / _slug(label.replace("/", "_"), 80)
-                target = folder_dir / f"{name}.md"
-                if target.exists():
-                    result.already += 1
-                    continue
-                names, saved = _save_attachments(item, folder_dir / f"{name}.attachments")
-                result.attachments += len(saved)
-                folder_dir.mkdir(parents=True, exist_ok=True)
-                target.write_text(f"Folder: {label}\n" + message_text(item, names) + "\n", encoding="utf-8")
-                result.exported += 1
-    return result
 
 
 BODY_TAG = re.compile(r"<body[^>]*>", re.IGNORECASE)

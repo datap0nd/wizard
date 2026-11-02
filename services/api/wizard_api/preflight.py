@@ -193,7 +193,7 @@ def run_checks(settings: Settings) -> int:
     if office_ok:
         _line("PASS", f"Office documents: {office_detail} (PowerPoint, Excel, Word and Outlook through Office)")
     else:
-        _line("WARN", f"Office documents: {office_detail}. Attachments and the documentation kit then read only plain "
+        _line("WARN", f"Office documents: {office_detail}. Attached files and task files then read only plain "
                       ".docx/.pptx/.xlsx: no NASCA-protected, legacy or .msg files, no slide images")
     try:
         from .app import create_app

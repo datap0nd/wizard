@@ -197,7 +197,7 @@ def validate_knowledge(knowledge: Path, root: Path) -> list[Problem]:
             problems.append(Problem("warning", where, "no summary: the knowledge index shows a one-line summary"))
         for source in parse_list(meta.get("sources", "")):
             if not SOURCE_ID.match(source):
-                problems.append(Problem("warning", where, f"source '{source}' is not a source id (S-xxxxxxxx or A-<quiz>)"))
+                problems.append(Problem("warning", where, f"source '{source}' is not a source id (S-xxxxxxxx, or A-... for an expert's answer)"))
     for where, meta, _ in notes.values():
         for related in parse_list(meta.get("related", "")):
             if related not in notes:

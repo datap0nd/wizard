@@ -25,14 +25,15 @@ REPO = "acme/kb"
 class FakeHub:
     """Branches, commits, trees and blobs, answered the way GitHub's REST API does for the calls Wizard makes."""
 
-    def __init__(self, pages_url: str | None = None):
+    def __init__(self, pages_url: str | None = None, empty: bool = False):
         self.blobs: dict[str, bytes] = {}
         self.commits: dict[str, dict[str, Any]] = {}
         self.trees: dict[str, dict[str, str]] = {}
         self.refs: dict[str, str] = {}
         self.writes: list[str] = []
         self.pages_url = pages_url
-        self.refs["main"] = self._commit({"README.md": self._blob(b"# notes\n")}, [])
+        if not empty:
+            self.refs["main"] = self._commit({"README.md": self._blob(b"# notes\n")}, [])
 
     def _blob(self, data: bytes) -> str:
         sha = hashlib.sha1(b"blob %d\0" % len(data) + data, usedforsecurity=False).hexdigest()
@@ -61,6 +62,12 @@ class FakeHub:
             self.writes.append(f"{request.method} {path}")
         if request.method == "GET" and path == "":
             return httpx.Response(200, json={"private": True, "visibility": "private", "permissions": {"push": True}})
+        if not self.refs and path.startswith("/git/"):  # GitHub's Git data API needs a first commit
+            return httpx.Response(409, json={"message": "Git Repository is empty."})
+        if request.method == "PUT" and path == "/contents/README.md":  # an empty repository's first commit
+            assert not self.refs and "branch" not in body
+            self.refs["main"] = self._commit({"README.md": self._blob(base64.b64decode(body["content"]))}, [], body["message"])
+            return httpx.Response(201, json={})
         if request.method == "GET" and path == "/pages":
             return httpx.Response(200, json={"html_url": self.pages_url}) if self.pages_url else httpx.Response(404, json={})
         if request.method == "GET" and path.startswith("/git/ref/heads/"):
@@ -117,6 +124,16 @@ def test_a_new_site_branch_starts_alone_and_the_notes_branch_is_never_touched():
     assert commit and hub.refs["main"] == main
     assert hub.commits[commit]["parents"] == []  # an orphan: no history shared with the notes
     assert hub.files("gh-pages") == {"a.txt": b"one"}
+
+
+def test_the_site_can_be_the_first_thing_published_to_an_empty_repository():
+    """No notes yet (tasks are the only writer, owner 2 Nov 2026): the repository gets its README on the default branch
+    first, then the site's own branch."""
+    hub = FakeHub(empty=True)
+    commit = kb.update_branch(REPO, TOKEN, "gh-pages", lambda existing, read: {"index.html": b"<html>"}, message="site",
+                              client=client_for(hub))
+    assert commit and hub.files("gh-pages") == {"index.html": b"<html>"} and hub.commits[commit]["parents"] == []
+    assert hub.files("main") == {"README.md": kb.README.encode()}
 
 
 def test_a_later_commit_reads_the_branch_removes_and_skips_what_is_unchanged():

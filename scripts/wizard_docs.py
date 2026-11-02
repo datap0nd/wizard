@@ -1,10 +1,7 @@
-"""Wizard documentation kit: convert documents and Outlook mail to text, track progress, check and read expert quizzes.
+"""The document commands Wizard runs in a process of its own: convert a file to text, read how presentations look,
+edit a copy of a workbook, save a copy, open an Outlook draft (wizard_documents/cli.py).
 
-  python scripts/wizard_docs.py --help
-
-On a work-PC install, run it with the install's portable Python (the Gemini CLI tasks show the exact command):
-  $c = Get-Content current.json -Raw | ConvertFrom-Json
-  & $c.python (Join-Path $c.release 'scripts\\wizard_docs.py') status content"""
+  python scripts/wizard_docs.py --help"""
 from __future__ import annotations
 
 import sys

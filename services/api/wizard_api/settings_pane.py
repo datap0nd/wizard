@@ -63,7 +63,8 @@ FIELDS = [
     Field("WIZARD_KB_TOKEN", "Read-only token", "knowledge", "Fine-grained token: that repository only, Contents read.",
           "github_pat_…"),
     Field("WIZARD_KB_WRITE_TOKEN", "Write token (PAT)", "knowledge",
-          "Lets Wizard save what it learns, such as the portal maps, to this repository. Fine-grained token: resource "
+          "Lets Wizard save what it learns to this repository: the notes tasks write and the portal maps; Test "
+          "connection gives an empty repository its first commit. Fine-grained token: resource "
           "owner the organisation, that repository only, Contents read and write (GitHub preselects \"Read-only\": choose "
           "\"Read and write\"; organisations may refuse classic tokens). Kept on this PC only.", "github_pat_…"),
     Field("WIZARD_KB_REF", "Branch", "knowledge", "", "main"),
@@ -280,12 +281,27 @@ def test_knowledge(settings: Settings, proposed: dict[str, Any],
     proxy = values.get("WIZARD_GITHUB_PROXY") or settings.github_proxy  # the company GitHub's own route
     result = knowledge_sync.check(source, proxy=proxy, transport=transport)
     writer = values.get("WIZARD_KB_WRITE_TOKEN")
-    if not writer or not result.ok:
-        return {"ok": result.ok, "message": result.message}
     from wizard_documents import kb
-    client = httpx.Client(transport=transport, timeout=30) if transport is not None else None
-    ok, message = kb.check_write(repo, writer, proxy=proxy, client=client)
-    return {"ok": ok, "message": f"{result.message} {message}"}
+
+    def client() -> httpx.Client | None:
+        return httpx.Client(transport=transport, timeout=30) if transport is not None else None
+
+    started = ""
+    if writer and result.outcome == "empty":
+        # A new, empty repository: its first commit (the README) comes from the write token, the way every note
+        # reaches it (decision 2026-11-02), so the users' read-only token reads it and every PC syncs.
+        try:
+            kb.start(repo, writer, proxy=proxy, client=client())
+        except kb.PublishError as error:
+            return {"ok": False, "message": f"{result.message} Write token: {error}"}
+        except httpx.HTTPError as error:
+            return {"ok": False, "message": f"{result.message} Write token: {outbound.explain(error, kb.API, proxy, windows=True)}"}
+        started = f"{repo} was empty: Wizard gave it its first commit (README.md) with the write token. "
+        result = knowledge_sync.check(source, proxy=proxy, transport=transport)
+    if not writer or not result.ok:
+        return {"ok": result.ok, "message": started + result.message}
+    ok, message = kb.check_write(repo, writer, proxy=proxy, client=client())
+    return {"ok": ok, "message": f"{started}{result.message} {message}"}
 
 
 def test_metronome(settings: Settings, proposed: dict[str, Any],

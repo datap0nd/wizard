@@ -1,5 +1,5 @@
 """Work-PC installation pieces: install-relative settings, the local owner identity, run.py --check, the wheel vendoring
-step, the Gemini CLI task kit, and the PowerShell scripts' syntax."""
+step, what setup installs in the folder (no documentation kit), and the PowerShell scripts' syntax."""
 from __future__ import annotations
 
 import hashlib
@@ -99,19 +99,22 @@ def test_portable_locks_are_consistent():
     assert {"fastapi", "uvicorn", "pydantic", "pydantic-core", "httpx", "starlette", "playwright", "greenlet", "pyee"} <= names
 
 
-def test_the_install_folder_kit_is_complete():
-    # The numbered Gemini CLI tasks are retired (tasks run from Settings → Tasks, test_tasks.py); the kit stays.
+def test_the_install_folder_has_no_documentation_kit():
+    """Owner, 2 Nov 2026: "remove the rest of the kit too, I don't use it". Tasks in Settings → Tasks are the only
+    writer of the knowledge base (test_tasks.py); setup removes what earlier versions installed and keeps your folders."""
     ignore = (ROOT / "workpc" / ".geminiignore").read_text(encoding="utf-8").split()
-    assert {"data/", ".env", "releases/"} <= set(ignore), "Gemini sessions must not read sign-ins or secrets"
-    assert (ROOT / "workpc" / "templates" / "quiz-template.html").is_file()
-    assert (ROOT / "templates" / "content" / "schema" / "knowledge-standard.md").is_file()
-    assert "/wizard:tasks" not in (ROOT / "workpc" / "GEMINI.md").read_text(encoding="utf-8")
+    assert {"data/", ".env", "releases/", "private/"} <= set(ignore), "Gemini sessions must not read sign-ins or secrets"
+    assert sorted(p.name for p in (ROOT / "workpc").iterdir()) == [".geminiignore"]
+    assert not (ROOT / "docs.ps1").exists() and (ROOT / "templates" / "content" / "schema" / "knowledge-standard.md").is_file()
+    assert not any((ROOT / "templates" / "content" / kit).exists() for kit in ("GEMINI.md", ".gemini", "inbox", "register"))
     setup = (ROOT / "setup.ps1").read_text(encoding="utf-8")
-    assert "'docs.ps1'" in setup and r"workpc\templates" in setup and r"documents\quiz-questions" in setup
+    assert "foreach ($old in @('tasks', 'templates', 'docs.ps1', 'GEMINI.md'," in setup and "Remove-Item" in setup
+    assert r"templates\content" not in setup and "quiz" not in setup and "workpc\\GEMINI.md" not in setup
+    assert "'docs.ps1')" not in setup, "setup no longer copies the kit's launcher"
 
 
 @pytest.mark.skipif(not (shutil.which("pwsh") or shutil.which("powershell")), reason="BLOCKED: no PowerShell available")
-@pytest.mark.parametrize("script", ["setup.ps1", "start.ps1", "update_app.ps1", "docs.ps1", "scripts/dev.ps1"])
+@pytest.mark.parametrize("script", ["setup.ps1", "start.ps1", "update_app.ps1", "scripts/dev.ps1"])
 def test_powershell_scripts_parse(script):
     shell = shutil.which("pwsh") or shutil.which("powershell")
     command = ("$errors = $null; [System.Management.Automation.Language.Parser]::ParseFile("

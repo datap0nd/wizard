@@ -14,7 +14,7 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # A throwaway PostgreSQL for the materialized-view export test (tests/integration/test_postgres_real.py).
+    # A throwaway PostgreSQL for the live query and Brain news tests (tests/integration/test_*postgres*_real.py).
     services:
       postgres:
         image: postgres:16

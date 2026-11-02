@@ -47,7 +47,7 @@ class Source:
 
 @dataclass(frozen=True)
 class Result:
-    outcome: str  # updated | current | invalid | failed | not_configured
+    outcome: str  # updated | current | invalid | failed | not_configured | empty (check: a repository without a commit)
     message: str
     commit: str | None = None
 
@@ -135,8 +135,9 @@ def _explain(response: httpx.Response, source: Source) -> str:
             detail = ""
         return "GitHub refused the knowledge-base token (HTTP 403): " + refused(detail, dict(response.headers), source.repo)
     if code == 409:
-        return (f"The token works, but {source.repo} is empty: nothing has been published to it yet. Publish the notes "
-                "from the work PC first (task 50: .\\docs.ps1 kb-publish).")
+        return (f"The token works, but {source.repo} is empty: nothing has been saved to it yet. On the owner's PC, Test "
+                "connection in Settings → Knowledge base with the write token gives it its first commit; tasks "
+                "(Settings → Tasks) then save the notes.")
     return f"GitHub answered HTTP {code} for the knowledge base."
 
 
@@ -200,7 +201,7 @@ def check(source: Source, *, proxy: str | None = None, timeout: float = 30.0,
     except httpx.HTTPError as error:
         return Result("failed", outbound.explain(error, url, proxy, windows=True))
     if response.status_code != 200:
-        return Result("failed", _explain(response, source))
+        return Result("empty" if response.status_code == 409 else "failed", _explain(response, source))
     commit = response.text.strip()
     if not COMMIT.match(commit):
         return Result("failed", "GitHub did not return a commit id for the knowledge base.")

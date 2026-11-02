@@ -16,7 +16,7 @@ owner signs), and notes over the 600-word guideline. Fix the format and the hygi
    - Format: no lead; bold paragraphs or a single block instead of `##` sections; no `## Questions this note
      answers`; no `## Open questions`; no `aliases`; no `updated`; fewer than 8 tags; no summary.
    - PC-specific details: server addresses (IP addresses, host names with ports), drive letters, network share paths,
-     paths into a PC's folders (user folders, the documentation kit's inbox and manifest), and the names of local
+     paths into a PC's folders (user folders, an `inbox` folder and its `manifest.csv`), and the names of local
      scripts and batch files.
    - Owner: more than one owner, or not in the standard's form.
    - Length: over about 600 words (a dataset note may be longer because of its column table; a glossary note is

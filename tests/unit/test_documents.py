@@ -1,8 +1,7 @@
-"""Document converter: standard-library readers, sheet profiles, the bulk inbox (manifest, source ids, duplicates, email
-attachments, masking, in-place folders), and the Office (COM) readers against fake Office objects."""
+"""Document converter: standard-library readers, sheet profiles, the convert command Wizard runs (masking, email
+attachments), and the Office (COM) readers against fake Office objects."""
 from __future__ import annotations
 
-import csv
 import json
 import subprocess
 import sys
@@ -14,8 +13,7 @@ from tests.office_files import docx, eml, pptx, xlsx
 
 from wizard_documents import office
 from wizard_documents.common import ConversionError, column_letter
-from wizard_documents.convert import Converter, convert
-from wizard_documents.inbox import Inbox
+from wizard_documents.convert import convert
 from wizard_documents.sheets import Sheet, header_row, render
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -76,62 +74,6 @@ def test_sheet_header_detection_and_columns():
     assert "(empty)" in text
 
 
-def make_inbox(tmp_path: Path) -> Path:
-    inbox = tmp_path / "content" / "inbox"
-    (inbox / "files").mkdir(parents=True)
-    deck = pptx(inbox / "files" / "deck.pptx")
-    (inbox / "files" / "copy.pptx").write_bytes(deck.read_bytes())
-    xlsx(inbox / "files" / "book.xlsx")
-    (inbox / "email").mkdir()
-    eml(inbox / "email" / "readiness.eml", deck)
-    (inbox / "files" / "notes.txt").write_text("Contact ana.silva@example.com about launches.", encoding="utf-8")
-    return tmp_path / "content"
-
-
-def manifest(content: Path) -> dict[str, dict[str, str]]:
-    with (content / "inbox" / "_text" / "manifest.csv").open(encoding="utf-8", newline="") as handle:
-        return {row["path"]: row for row in csv.DictReader(handle)}
-
-
-def test_inbox_manifest_ids_duplicates_attachments_and_masking(tmp_path):
-    content = make_inbox(tmp_path)
-    with Converter("never") as converter:
-        counts = Inbox(content, converter).run()
-    rows = manifest(content)
-    assert counts == {"ok": 4, "duplicate": 2}
-    email = rows["email/readiness.eml"]
-    attachment = next(r for p, r in rows.items() if p.startswith("_attachments/"))
-    assert attachment["parent"] == email["source_id"] and attachment["path"] == f"_attachments/{email['source_id']}/deck.pptx"
-    deck_ids = {rows["files/deck.pptx"]["source_id"], rows["files/copy.pptx"]["source_id"], attachment["source_id"]}
-    assert len(deck_ids) == 1, "the same file is one source wherever it sits"
-    assert sorted(r["status"] for r in rows.values() if r["source_id"] in deck_ids) == ["duplicate", "duplicate", "ok"]
-    email_text = (content / email["text_path"]).read_text(encoding="utf-8")
-    assert email_text.startswith(f"---\nsource_id: {email['source_id']}") and "From: Ana Silva" in email_text
-    assert "<phone>" in email_text and "9876" not in email_text and "@example.com" not in email_text
-    assert "<email>" in (content / rows["files/notes.txt"]["text_path"]).read_text(encoding="utf-8")
-    with Converter("never") as converter:  # a second run reuses everything
-        assert Inbox(content, converter).run() == counts
-    assert manifest(content) == rows
-
-
-def test_inbox_reads_listed_folders_in_place_and_records_failures(tmp_path):
-    content = make_inbox(tmp_path)
-    elsewhere = tmp_path / "Shared drive"
-    elsewhere.mkdir()
-    docx(elsewhere / "process.docx")
-    (elsewhere / "protected.pptx").write_bytes(b"\x01NASCA")
-    (content / "inbox" / "_sources.txt").write_text(f"# read in place\n{elsewhere}\n", encoding="utf-8")
-    with Converter("never") as converter:
-        Inbox(content, converter).run()
-    rows = manifest(content)
-    external = {p: r for p, r in rows.items() if p.startswith("_external/")}
-    assert {Path(p).name for p in external} == {"process.docx", "protected.pptx"}
-    process = next(r for p, r in external.items() if p.endswith("process.docx"))
-    assert process["status"] == "ok" and str(elsewhere) in (content / process["text_path"]).read_text(encoding="utf-8")
-    failed = next(r for p, r in external.items() if p.endswith("protected.pptx"))
-    assert failed["status"] == "failed" and "protected" in failed["note"]
-
-
 def test_cli_convert_prints_json(tmp_path):
     out = tmp_path / "out"
     result = subprocess.run([sys.executable, str(ROOT / "scripts" / "wizard_docs.py"), "convert", str(docx(tmp_path / "d.docx")),
@@ -139,6 +81,18 @@ def test_cli_convert_prints_json(tmp_path):
     data = json.loads(result.stdout.strip().splitlines()[-1])
     assert result.returncode == 0 and data["status"] == "ok" and data["method"] == "ooxml"
     assert (out / "text.md").read_text(encoding="utf-8").startswith("# Fiscal calendar")
+
+
+def test_cli_convert_masks_contacts_and_keeps_email_attachments(tmp_path):
+    """What an attached email or a task's file becomes: display names kept, addresses and phone numbers masked."""
+    out = tmp_path / "mail"
+    message = eml(tmp_path / "readiness.eml", pptx(tmp_path / "deck.pptx"))
+    result = subprocess.run([sys.executable, str(ROOT / "scripts" / "wizard_docs.py"), "convert", str(message),
+                             "--out", str(out), "--json", "--office", "never"], capture_output=True, text=True, timeout=60)
+    data = json.loads(result.stdout.strip().splitlines()[-1])
+    assert result.returncode == 0 and data["status"] == "ok" and data["attachments"] == ["deck.pptx"]
+    text = (out / "text.md").read_text(encoding="utf-8")
+    assert "From: Ana Silva" in text and "<phone>" in text and "9876" not in text and "@example.com" not in text
 
 
 # --- Office (COM) readers against fake Office objects ---------------------------------------------------------------

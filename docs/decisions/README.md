@@ -28,3 +28,4 @@ Evidence**. A decision that changes repository rules also updates [AGENTS.md](..
 - [2026-10-30 The person steers an answer while it runs, and chooses the systems a question may use](2026-10-30-steering-and-systems.md)
 - [2026-10-30 Export settings: the same Wizard on another PC](2026-10-30-settings-export.md)
 - [2026-10-30 Brain and Cases on the company GitHub's Pages; Gemini names each chat](2026-10-30-pages-site.md)
+- [2026-11-02 Tasks are the only writer of the knowledge base; the documentation kit is retired](2026-11-02-tasks-only-writer.md)

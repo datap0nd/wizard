@@ -3,7 +3,46 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-02 (latest) — Seven tasks to fix the knowledge base after its review
+## 2026-11-02 (latest) — Tasks are the only writer of the knowledge base; the documentation kit is retired
+
+`kb-publish` would have reverted every note a task changed and deleted every note a task wrote. The owner chose the
+repository as the master copy of the notes ("your recommendation"), then: "Remove traces of those 50 tasks no? We're
+going with these dynamic tasks you start from here", and "remove the rest of the kit too, I don't use it".
+[Decision](decisions/2026-11-02-tasks-only-writer.md).
+
+**What changed.**
+- Retired: `docs.ps1` and every command behind it (kb-publish, kb-check, validate, provision, extract, status, next,
+  topics, coverage, check, outlook-folders, outlook-export, postgres-check, postgres-catalog, bdp-check, quiz-check,
+  quiz-answers); `wizard_documents` `kit.py`, `inbox.py`, `postgres.py`, `bdp.py`, the mail export in `office.py`,
+  `publish()` and `check_read()` in `kb.py`; `workpc/GEMINI.md` and the quiz page; the content template's authoring
+  set-up (only `templates/content/schema/knowledge-standard.md` stays). Setup removes `docs.ps1`, `GEMINI.md`,
+  `templates\` and `tasks\` from an install and leaves `content\`, `documents\` and `outbox\` alone.
+- `scripts/wizard_docs.py` keeps only what Wizard runs: `convert` (attached files, task files), `design`
+  (`wizard_task_design`), `edit` and `save-copy` (`wizard_edit_attachment`), `outlook-draft` (the Email button).
+- An empty knowledge-base repository works without a publishing step: Settings → Knowledge base → Test connection with
+  the write token gives it its first commit (a README, through the contents API), and so does Wizard's first write
+  (`kb.write_files`, `kb.update_branch`). The users' read-only token is checked by the same Test connection, so
+  `kb-check` has no successor. The sync's message for an empty repository says how to start it.
+- Knowledge standard sections 2, 3, 4, 7, 8, 9 and 10 no longer point to the kit: source ids from
+  `wizard_task_read_file` (`A-...` ids stay valid), sign-off in the repository, the validator on every save, dataset
+  structure from the database through `wizard_query_postgresql`. Section 11 still mentions the catalog export (left
+  for the change that edits that section).
+- Docs: README, AGENTS.md, desktop guide (one-time setup around Settings → Knowledge base, the repository's layout,
+  the provisioning file without `docs.ps1`), work-PC guide, documentation guide, issue board, platforms, `.env.example`,
+  the `kb-review-6` task's wording.
+
+**Tests.** `uv run python scripts/verify_spec.py` passed. `uv run python -m pytest tests`: 609 passed, 21 skipped
+(PostgreSQL, Gemini CLI, PowerShell and live parity BLOCKED locally). `ruff`, `mypy` (74 files), `export_contracts.py
+--check`, `scan_secrets.py` and `uv lock --check` clean. New: `test_kb_repository.py` (was `test_kb_publish.py`; the
+first save into an empty repository through Wizard's writer, then a portal map; Test connection starts an empty
+repository once and refuses a public, archived or read-only one; Test connection with both tokens on an empty
+repository), `test_site.py` (the Pages site first into an empty repository), `test_workpc.py` (no kit, setup removes
+the old files), `test_documents.py` (the convert command masks contacts and keeps an email's attachments). Removed with
+their code: `test_kit.py`, `test_bdp_check.py`, `test_postgres_docs.py`, `integration/test_postgres_real.py`, the
+publish and kb-check tests. Not verified: the real GitHub Enterprise Server's answers for an empty repository (the fake
+answers 409 "Git Repository is empty" the way GitHub documents it).
+
+## 2026-11-02 — Seven tasks to fix the knowledge base after its review
 
 The owner had the knowledge base reviewed against Wizard's knowledge standard and code, and asked for tasks to address
 the findings. No code changes: seven tasks in `tasks/`, which reach Settings → Tasks without an update.

@@ -79,7 +79,7 @@ def area_name(area: str) -> str:
 
 
 def stage(note: Note) -> str:
-    """How far a note has come: SIGNED by its owner, EXPERT_CHECKED (an expert answered a quiz on it) or DRAFT."""
+    """How far a note has come: SIGNED by its owner, EXPERT_CHECKED (an expert confirmed it: `reviewed`) or DRAFT."""
     return "SIGNED" if note.status == "SIGNED" else "EXPERT_CHECKED" if note.reviewed else "DRAFT"
 
 

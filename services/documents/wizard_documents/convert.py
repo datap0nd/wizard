@@ -1,5 +1,5 @@
 """Turn one document into Markdown text (plus slide images and saved email attachments): the single entry point used
-by the documentation kit (bulk, on the work PC) and by Wizard's chat attachments.
+by Wizard's chat attachments and by the files a task reads.
 
 Office files go through the installed Office applications when pywin32 can drive them (richer output: slide images,
 chart values, formulas, pivot tables, and the only way to open NASCA-protected files). Without Office, plain Office Open

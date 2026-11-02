@@ -195,7 +195,7 @@ class Attachments:
 
     # Conversion ----------------------------------------------------------------------------------------------------------
     def _docs(self, *arguments: str) -> dict[str, Any]:
-        """Run one documentation-kit command (convert, edit) in its own process, time-limited, one at a time, and return
+        """Run one document command (convert, edit, save-copy) in its own process, time-limited, one at a time, and return
         its JSON result line."""
         command = [sys.executable, str(ROOT / "scripts" / "wizard_docs.py"), *arguments]
         with OFFICE:

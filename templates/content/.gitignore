@@ -1,7 +1,0 @@
-# Raw source documents stay on the work PC; only distilled metadata is committed.
-inbox/*
-!inbox/.gitkeep
-*.docx
-*.xlsx
-*.pdf
-.env

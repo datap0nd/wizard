@@ -33,9 +33,10 @@ No admin rights are needed. Setup adds a Start-menu entry and, by default, a "st
 
 ## One-time setup (owner)
 
-The work PC does this with you: Wizard's Settings → Knowledge base, and `.\docs.ps1 kb-publish` in `C:\Wizard`.
-It checks the notes, has you create the repository and two tokens in the browser, publishes, checks the users'
-token and makes the provisioning file. You type the tokens into files yourself; Gemini never sees them. What it does:
+Wizard's **Settings → Knowledge base** does it with you: you create the repository and two tokens in the browser, enter
+them there and press **Test connection**, then make the provisioning file. You type the tokens yourself; Gemini never
+sees them. The notes come from tasks (**Settings → Tasks**), not from a folder on a PC
+([decision](decisions/2026-11-02-tasks-only-writer.md)).
 
 ### 1. The knowledge-base repository
 
@@ -43,26 +44,34 @@ A **private** repository in the company's GitHub organisation (for example `acme
 Users never get a GitHub account or a link to it.
 
 The repository is on the company's GitHub Enterprise Server, `https://github.sec.samsung.net`. Wizard calls its API
-(`https://github.sec.samsung.net/api/v3`) for the sync, Test connection, `kb-publish` and `kb-check`. The server is
+(`https://github.sec.samsung.net/api/v3`) for the sync, Test connection and its writes. The server is
 built in (`wizard_connectors/github.py`): no setting, provisioning file or `.env` value changes it, and Wizard never
 calls `api.github.com` for company content. Only the app's own updates come from the public release on github.com.
 
-`.\docs.ps1 kb-publish` fills it from the work PC (no git needed: one commit through GitHub's API). It publishes only
-what Wizard reads, `content\knowledge\**\*.md` and `content\contracts\sources\*.json`, plus a README the first time:
-the inbox, digests, registers, quiz answers and stakeholder lists stay on the work PC, because every file in the
-repository reaches every PC. Before writing it runs Wizard's validation, refuses a public repository, uploads only
-changed files and deletes notes deleted locally. `--dry-run` shows the list first. Every sync on users' PCs runs the
-same validation again: a commit with errors is not applied, and PCs keep the previous version.
+The repository is the master copy of the notes. Wizard writes to it only with the write token entered in Settings on
+a PC, one commit at a time through GitHub's API (no git), and never to a public repository: **Test connection** gives an
+empty repository its first commit (a README), a task saves whole notes (`wizard_kb_save_notes`, each checked with
+Wizard's validation, one commit per save), and **Map** in Settings → Portals keeps its portal maps there. A note can
+also be changed on GitHub directly. Every sync on users' PCs runs the validation again: a commit with errors is not
+applied, and PCs keep the previous version.
+
+| Path | What | Written by |
+|---|---|---|
+| `knowledge/<area>/<note>.md` | company notes, to [the knowledge standard](../templates/content/schema/knowledge-standard.md) | tasks; people on GitHub |
+| `contracts/sources/<platform>.json` | report catalogs | no task yet: they stay as they are |
+| `portal-maps/` | what Wizard mapped in each portal | **Map** in Settings → Portals |
+| `README.md` | what the repository is | Wizard's first commit |
+
+Never raw documents, exports or personal data: every file in the repository reaches every PC.
 
 ### 2. Two fine-grained tokens
 
 GitHub → Settings → Developer settings → **Fine-grained personal access tokens**, both with Resource owner = the
 organisation and Repository access = **only** the knowledge-base repository:
-- **Publishing**, kept on the work PC: Contents **Read and write**. In `C:\Wizard\.env` as
-  `WIZARD_KB_PUBLISH_REPO=owner/name` and `WIZARD_KB_PUBLISH_TOKEN=...` (names only `docs.ps1` reads, so the work
-  PC's own Wizard is unaffected).
-- **Read-only**, for every user: Contents **Read-only**, nothing else. In `C:\Wizard\.env` as
-  `WIZARD_KB_READ_TOKEN=...` for `.\docs.ps1 kb-check`, and in the provisioning file as `WIZARD_KB_TOKEN`.
+- **Write**, for the PC that runs tasks: Contents **Read and write**. Only in Settings → Knowledge base → write token
+  on that PC; never in a provisioning file. **Test connection** asks GitHub whether the token itself can write.
+- **Read-only**, for every user: Contents **Read-only**, nothing else. In Settings → Knowledge base on your PC, and in
+  the provisioning file as `WIZARD_KB_TOKEN`. **Test connection** reads the repository with it, as every PC's sync does.
 
 Expiration: as long as the organisation allows; note the dates. When the read-only token expires, Wizard keeps its last
 copy and shows the GitHub error (About Wizard, Settings → Test connection) until PCs get a new one. If the organisation
@@ -92,12 +101,14 @@ WIZARD_METRONOME_CLIENT_KEY=wizard-...
 ```
 
 ```powershell
-.\docs.ps1 provision private\company.env --name "ACME Wizard" --out private\wizard.provision
+$c = Get-Content current.json -Raw | ConvertFrom-Json   # in C:\Wizard
+& $c.python (Join-Path $c.release 'scripts\make_provision.py') private\company.env --name "ACME Wizard" --out private\wizard.provision
 ```
 
-(From a development checkout: `uv run python scripts/make_provision.py company.env --name ... --out ...`.) Any
+(From a development checkout: `uv run python scripts/make_provision.py company.env --name ... --out ...`. On a PC whose
+Wizard already works, tray → **Export settings…** writes one from its settings: see Moving to another PC.) Any
 `WIZARD_*` setting can go in, except the ones each PC decides (data folder, port, identity, content folder) and the
-publishing set-up. Names ending in `_PASSWORD`, `_TOKEN`, `_SECRET` or `_KEY` are stored with Windows DPAPI on the PC.
+write token. Names ending in `_PASSWORD`, `_TOKEN`, `_SECRET` or `_KEY` are stored with Windows DPAPI on the PC.
 
 The PostgreSQL account must be **read-only by its grants** (SELECT on the views Wizard may use, nothing else). Everyone
 who has the file can use it, also outside Wizard.
@@ -168,7 +179,7 @@ of Wizard on this PC:
 | Section | Settings | Test |
 |---|---|---|
 | Gemini | Google Cloud project, company Google domains | — |
-| Knowledge base | Repository, read-only token, write token (PAT, optional), branch, folder, check interval | **Test connection**: can the token read the repository, and can the write token itself write to it (asked of GitHub without writing; the account's role alone is not enough)? The write token is fine-grained: resource owner the organisation, that repository only, Contents read and write. With the write token, Wizard publishes its portal maps to `portal-maps/` ([decision](decisions/2026-10-30-portal-maps.md)); a company file never carries it |
+| Knowledge base | Repository, read-only token, write token (PAT, optional), branch, folder, check interval | **Test connection**: can the token read the repository, and can the write token itself write to it (asked of GitHub without writing; the account's role alone is not enough)? The write token is fine-grained: resource owner the organisation, that repository only, Contents read and write. With the write token, tasks save their notes, Wizard publishes its portal maps to `portal-maps/` ([decision](decisions/2026-10-30-portal-maps.md)), and Test connection gives an empty repository its first commit (a README); a company file never carries it |
 | Pages site | Repository (empty: the knowledge base's), branch (`gh-pages`, never the notes' branch), site address (the one GitHub shows under Settings → Pages) | — (the first **Publish** says what is missing). Brain and Cases are two pages of their own on the company GitHub's Pages, published from this PC with the write token above: **Publish** on the Brain page, **Share as case** in a chat ([decision](decisions/2026-10-30-pages-site.md)) |
 | Company database | Name people see (default "AI Team Database"), server, port, database, read-only user, password, SSL | **Test connection**: connects read-only and reports the user |
 | Portals | ASAP and GSCM addresses, the Big Data Portal's two (information catalog and Superset), browser (Chrome or Edge), other hosts the portals need; the **Access request form**: your usual answers on every Big Data Portal access request (field and answer) and an optional request page | **Sign in to the portals** opens Wizard's own browser visibly, one tab per portal (two for the Big Data Portal): sign in, then close it (or **Done**). The sign-in lasts as long as the portals' own sessions, across restarts too: Wizard keeps its browser's session cookies (DPAPI), never a password. **Check sign-in** opens each in the background and says whether it is signed in, or which page asked for a sign-in. **Open the request page** opens the catalog's request page with your answers filled in; you check it and submit it |
@@ -276,7 +287,7 @@ imported: anyone with it can use the passwords. Conversations stay on the first 
   `setup.ps1` downloads (the `desktop-download` mirror first, up to 20 attempts, without PowerShell; see **Update**
   above), checks its size, SHA-256 and version against the manifest, installs it silently and starts again. It never
   downgrades.
-- **Knowledge:** `.\docs.ps1 kb-publish` from the work PC (task 50, step 10). PCs pick the change up within 30 minutes and switch to it after
+- **Knowledge:** a task saves notes to the repository (Settings → Tasks), or someone changes one on GitHub. PCs pick the change up within 30 minutes and switch to it after
   10 minutes without use, or at once with **Sync the knowledge base now**.
 - **Settings or credentials:** make a new `wizard.provision` and have people import it (or run setup again next to
   it). It replaces the previous company file; what someone set in their own Settings still wins.
@@ -313,7 +324,7 @@ imported: anyone with it can use the passwords. Conversations stay on the first 
 |---|---|
 | The tab says "Wizard stopped" | The panel shows the reason. `logs\wizard.log` names a settings problem (exit code 2); Restart Wizard tries again |
 | "Starting Wizard…" for minutes | `logs\service-output.log`. Another program may use port 8771: set `WIZARD_PORT` in `%LOCALAPPDATA%\Wizard\.env` |
-| Knowledge base not updating | About Wizard shows the last sync problem: 401 = token expired, 404 = token lacks access, 403 = GitHub's own reason, quoted (an organisation that refuses classic tokens, a missing permission, approval, SSO or the rate limit) |
+| Knowledge base not updating | About Wizard shows the last sync problem: 401 = token expired, 404 = token lacks access, 403 = GitHub's own reason, quoted (an organisation that refuses classic tokens, a missing permission, approval, SSO or the rate limit), empty = nothing saved yet (Test connection with the write token starts it) |
 | A portal map is not published | Settings → Portals says which request was refused and why. A refusal without GitHub's `X-GitHub-Request-Id` came from the proxy or a security gateway, not GitHub: the token is not the cause, and the message names the route. Wizard reaches the company GitHub the way Windows and Edge do (not through Gemini CLI's proxy); **Settings → Network → Company GitHub proxy** changes that. Edge signs in to a web gateway as you and Wizard cannot: if Edge gets through on the same route, IT allows uploads for this PC. Otherwise the message names the token (a classic token with its scopes, or a fine-grained one) and the repository's visibility: an **internal** repository is readable by every account in the company, so a token that reads it may still have no access to it. The write token is a fine-grained token: resource owner **the organisation** (not your own account; it cannot be changed afterwards), repository access including the knowledge-base repository, Contents **Read and write** (GitHub preselects Read-only). Organisations may refuse classic tokens. **Test connection** checks that the token itself can write, without writing |
 | Brain or Cases is published but the address shows nothing | Pages is not on yet: a repository admin opens the repository on the company GitHub → Settings → Pages → Deploy from a branch → `gh-pages` → / (root) → Save. GitHub shows the site's address there; copy it into Settings → Pages site → Site address, so Wizard links the pages (`…/brain/` and `…/cases/`). GitHub can take a minute to serve a new publish. Who can open the pages is the company GitHub's Pages setting |
 | No tab, but the tray icon is there | The tab hides during full-screen apps and slide shows, or was turned off in the menu |

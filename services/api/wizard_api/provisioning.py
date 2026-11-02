@@ -33,7 +33,8 @@ LOCAL_ONLY = frozenset({
     "WIZARD_WEB_DIST", "WIZARD_TRANSCRIPTS_DIR", "WIZARD_ATTACHMENT_FOLDERS", "WIZARD_HTML_REPORTS_DIR", "WIZARD_GEMINI_CLI_JS",
     "WIZARD_NODE", "WIZARD_GEMINI_FAKE_RESPONSES", "WIZARD_CONTROL_TOKEN", "WIZARD_INSTALL_ROOT",
     "WIZARD_BROWSER_EXECUTABLE",  # a test browser binary: never chosen by a file someone hands out
-    "WIZARD_KB_PUBLISH_REPO", "WIZARD_KB_PUBLISH_TOKEN", "WIZARD_KB_READ_TOKEN",  # the owner's publishing set-up
+    # The retired kb-publish set-up (decision 2026-11-02): an old .env may still hold these; never in a company file.
+    "WIZARD_KB_PUBLISH_REPO", "WIZARD_KB_PUBLISH_TOKEN", "WIZARD_KB_READ_TOKEN",
 })
 # Chosen on each PC in the settings pane, never handed out in a company file: the knowledge base's write token lets a
 # PC change the company's notes repository (owner, 30 Oct 2026), so only the person who enters it holds it.
