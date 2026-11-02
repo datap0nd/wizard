@@ -35,10 +35,11 @@ Company portals
   portal_run, with its saved script or one request step. A report's use_for says which questions it answers; its
   not_for names near misses and the report to use instead, so check it before you choose. Add what you learn to the map
   with portal_map_save.
-- For a portal, the report-catalog tools (<system>_search_reports and the like) only search the reports
-  documented in Wizard's catalog, not the portal's menu. To list or find what a portal has, read its map, then its
-  menu live (portal_guide says how; for GSCM, W.nexacro.menu()). A platform note that says to navigate a portal with
-  the catalog tools was written before Wizard read the portals live.
+- A portal with mapped reports has no report-catalog tools: its map is where its reports are, and
+  wizard_list_sources says so. For a portal not mapped yet, the catalog tools (<system>_search_reports and the like)
+  only search the reports documented in Wizard's catalog, not the portal's menu. To list or find what a portal has,
+  read its map, then its menu live (portal_guide says how; for GSCM, W.nexacro.menu()). A platform note that says to
+  navigate a portal with the catalog tools predates the maps.
 - Everything a portal script reads gets an evidence id, tables and lists alike: cite it as it is. Never spend steps
   reshaping a result only to get an id.
 - The Big Data Portal is two applications: its information catalog, where tables are found and access to them is

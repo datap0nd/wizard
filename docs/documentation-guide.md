@@ -6,7 +6,7 @@
 |---|---|---|---|
 | Company documentation (organisation, products, markets, processes, glossary, FAQ, decisions) | Markdown with front matter, one topic per note | `knowledge/<area>/<note>.md` | `wizard_lookup_definitions` (search), `wizard_browse_knowledge` (index), `wizard_read_knowledge` (by id) |
 | Platform guide (one per platform) | Markdown with front matter, ≤600 words | `knowledge/platforms/<platform>.md` | `wizard_list_sources` names it; the knowledge tools return it |
-| Report catalog (one per platform, one entry per report) | JSON validated by `contracts/source-contract.schema.json` | `contracts/sources/<platform>.json` | `<platform>_search_reports`, `<platform>_get_report_schema`, `wizard_search_catalog` |
+| Report catalog (one per platform, one entry per report; none for a portal Wizard has mapped, [decision](decisions/2026-11-02-retire-portal-catalogs.md)) | JSON validated by `contracts/source-contract.schema.json` | `contracts/sources/<platform>.json` | `<platform>_search_reports`, `<platform>_get_report_schema`, `wizard_search_catalog` |
 | Business definitions (cross-platform): what a measure means and where the data holds it (dataset, filters, example query) | Markdown with front matter | `knowledge/metrics/<topic>.md`, `knowledge/calendar.md`, … | the knowledge tools |
 | Inventory register, topic map, quiz and review logs (people only) | CSV / Markdown | `register/` | not read by Gemini |
 
@@ -82,7 +82,10 @@ standard section 10). Documents explain meaning; where they contradict the expor
 
 **Platform material** uses two Gemini CLI commands shipped in the content template:
 `/wizard:platform-guide <platform> inbox/<platform>/` and `/wizard:report-catalog <platform> inbox/<platform>/`. For
-ASAP, run `scripts/import_asap_catalog.py` first: it reads ASAP's own metadata and its draft becomes the input.
+ASAP, run `scripts/import_asap_catalog.py` first: it reads ASAP's own metadata and its draft becomes the input. Write no
+catalog for a portal Wizard has mapped (ASAP, GSCM, the Big Data Portal with mapped reports in `portal-maps/`): Wizard
+reads it through its map, retires its catalog at start-up, and the command stops for it
+([decision](decisions/2026-11-02-retire-portal-catalogs.md)).
 
 ## Files attached to questions
 

@@ -3,7 +3,34 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-02 (latest) — Seven tasks to fix the knowledge base after its review
+## 2026-11-02 (latest) — A portal Wizard has mapped is read through its map; its report catalog is retired
+
+The knowledge-base review found the company's portal catalogs thin and out of step with the portal maps (14 of 15
+entries with UNCERTAIN caveats; one portal's report ids not matching its map). Asked to decide what to do with them,
+the owner: "your recommendation". [Decision](decisions/2026-11-02-retire-portal-catalogs.md).
+
+**What changed.**
+- At start-up, a report catalog is retired when its system is a portal set up on this PC and that portal's map (this
+  PC's, else the knowledge base's) has a mapped or partial report (`tools.retire_portal_catalogs`, called by
+  `create_app` before the registry). The catalog leaves `services.catalog`: no `<system>_*` tools or MCP server, none of
+  its reports in `wizard_search_catalog` (which now names `portal_map` for the portals it did not search), no entry in
+  the Sources tab. `wizard_list_sources` lists the portal once, with `reports_mapped`, "Read through its map" and
+  `portal_map(...) → portal_run(...)`. A map that gains its first mapped report mid-session counts at the next start.
+- Kept: catalogs of systems that are not portals, of portals with no mapped report yet (still with the `live_portal`
+  note), and the synthetic catalogs (`SYNTHETIC_FIXTURE`), so the demo, fixtures, goldens, transcripts and evals are
+  unchanged.
+- The content validator says once per file that a mapped portal's catalog is retired (from the published map in
+  `portal-maps/`) instead of one "UNCERTAIN choices waiting for owner review" warning per entry.
+- The system prompt's report-catalog bullet under "Company portals"; `/wizard:report-catalog` stops for a mapped portal;
+  the content template, documentation guide, source onboarding, platforms page and README say to write no catalog for a
+  mapped portal.
+
+**Tests.** `uv run python scripts/verify_spec.py` passed unchanged. `uv run python scripts/export_contracts.py`: 0
+contract files changed (`--check`: published contracts match the code). New `tests/unit/test_retired_catalogs.py` (5
+tests). `uv run python -m pytest tests`: 666 collected, 642 passed, 24 skipped (PostgreSQL, browser and live layers
+not configured locally), 0 failed; the affected files rerun after the last edits (97 passed). ruff and mypy clean.
+
+## 2026-11-02 — Seven tasks to fix the knowledge base after its review
 
 The owner had the knowledge base reviewed against Wizard's knowledge standard and code, and asked for tasks to address
 the findings. No code changes: seven tasks in `tasks/`, which reach Settings → Tasks without an update.

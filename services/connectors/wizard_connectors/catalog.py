@@ -162,6 +162,10 @@ class Catalog:
                 log.warning("report catalog %s skipped: %s", path.name, str(error).splitlines()[0][:300])
         return cls(contracts)
 
+    def without(self, system_ids: frozenset[str]) -> Catalog:
+        """The same catalog without these systems' contracts (a portal's retired catalog, tools/__init__.py)."""
+        return Catalog([c for system_id, c in self.contracts.items() if system_id not in system_ids])
+
     @property
     def systems(self) -> list[SystemInfo]:
         return [c.system for c in self.contracts.values()]

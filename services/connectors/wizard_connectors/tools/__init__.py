@@ -18,7 +18,7 @@ from .source_tools import make_source_tools
 from .task_tools import TASK_FILE_TOOLS
 
 __all__ = ["Recorder", "Services", "ToolContext", "ToolError", "ToolOutcome", "ToolRegistry", "ToolSpec",
-           "build_registry", "build_services", "flatten_schema"]
+           "build_registry", "build_services", "flatten_schema", "retire_portal_catalogs"]
 
 
 def build_services(contracts: Path = SOURCE_CONTRACTS, fixtures: Path = SYNTHETIC, knowledge: Path = KNOWLEDGE,
@@ -30,6 +30,28 @@ def build_services(contracts: Path = SOURCE_CONTRACTS, fixtures: Path = SYNTHETI
     source = FixtureSource(catalog, fixtures)
     return Services(catalog=catalog, sources={s.id: source for s in catalog.systems}, knowledge=KnowledgeBase.load(knowledge, skip=frozenset(p for p in skip if p.startswith("knowledge/"))),
                     postgres=PostgresQuery(postgres) if postgres else None, postgres_name=postgres_name)
+
+
+def retire_portal_catalogs(services: Services) -> frozenset[str]:
+    """Owner decision (2 November 2026, docs/decisions/2026-11-02-retire-portal-catalogs.md): a company portal's report
+    catalog is retired once Wizard has a map of that portal with mapped (or partly mapped) reports, this PC's map or
+    the one published to the knowledge base. The map is then the one place Wizard finds that portal's reports: the
+    catalog leaves `services.catalog`, so it has no <system>_* tools, no results in wizard_search_catalog and no entry
+    in the Sources tab, and wizard_list_sources says the portal is read through its map.
+
+    Called once at start-up, before the registry is built (the tools and their MCP servers are fixed then too): a map
+    that gains its first mapped report while Wizard runs retires the catalog at the next start. Catalogs of systems
+    that are not portals on this PC, or portals with no mapped report yet, stay. The repository's synthetic catalogs
+    (SYNTHETIC_FIXTURE) are never retired, so the demo, goldens and evals do not change."""
+    portals, maps = services.portals, services.portal_maps
+    if portals is None or maps is None:
+        return frozenset()
+    retired = frozenset(s.id for s in services.catalog.systems if s.connector.status != "SYNTHETIC_FIXTURE"
+                        and portals.settings.portal(s.id) is not None and maps.mapped(s.id))
+    if retired:
+        services.catalog = services.catalog.without(retired)
+        services.retired_catalogs = services.retired_catalogs | retired
+    return retired
 
 
 def build_registry(services: Services) -> ToolRegistry:

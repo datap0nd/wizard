@@ -34,7 +34,7 @@ from wizard_connectors.paths import ROOT
 from wizard_connectors.portal_browser import PortalBrowser, PortalBrowsers, PortalError
 from wizard_connectors.portal_map import PortalMaps, Published
 from wizard_connectors.task_files import TaskFiles, TaskFolderError, check_path
-from wizard_connectors.tools import build_registry, build_services
+from wizard_connectors.tools import build_registry, build_services, retire_portal_catalogs
 from wizard_connectors.tools.systems import SystemChoice
 
 from . import __version__, brain, knowledge_sync, provisioning, settings_pane, systems
@@ -318,6 +318,10 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         services.portal_maps = PortalMaps(settings.data_dir / "portal-maps",
                                           settings.content_dir / "portal-maps" if settings.content_dir else None, writer,
                                           {p.id: p.name for p in settings.portals.portals}, repo_prefix=settings.kb_path)
+        # A portal whose map has mapped reports is read through its map: its report catalog is retired (2 Nov 2026).
+        retired = retire_portal_catalogs(services)
+        if retired:
+            log.info("report catalogs retired, read through their portal maps: %s", ", ".join(sorted(retired)))
     if settings.kb_repo and settings.kb_write_token:  # what a task produces is committed there (kb_tools.py)
         services.kb_writer, services.kb_prefix = map_writer(settings, "these notes"), settings.kb_path
     task_board = TaskBoard(settings.data_dir, ROOT / "tasks", settings.proxy)

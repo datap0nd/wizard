@@ -5,6 +5,11 @@ Expected form: <platform id> followed by the folder or files holding report meta
 importer draft, an exported report list, report definitions, field lists, screenshots or documentation pages.
 Read every file given before writing anything.
 
+First, if <platform> is a company portal (asap, gscm, bdp) and portal-maps/<platform>.json lists reports with status
+"mapped" or "partial", stop and write nothing: Wizard reads that portal through its map and does not offer its report
+catalog (owner decision, 2 November 2026). Say so, and suggest mapping the missing reports in Wizard instead
+(Settings → Portals → Map).
+
 Wizard's analyst (Gemini) finds reports through `<platform>_search_reports`, reads one entry through
 `<platform>_get_report_schema`, and must be able to choose the right report and query it correctly from that entry
 alone. The entries must validate against this schema:
