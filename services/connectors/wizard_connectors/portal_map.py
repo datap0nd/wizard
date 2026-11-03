@@ -440,7 +440,9 @@ def render(data: dict[str, Any]) -> str:
             lines.append(f"- Data {item.get('dataset')}: {', '.join(item.get('columns') or [])}")
         for item in report.get("views") or []:
             lines.append(f"- Option {item.get('name')}: {item.get('options') or ''}".rstrip()
-                         + (f" (adds {', '.join(item['columns'])})" if item.get("columns") else ""))
+                         + (f" (adds {', '.join(item['columns'])})" if item.get("columns") else "")
+                         + (f"; reached by {item['path']}" if item.get("path") else "")
+                         + (f"; needs {item['requires']}" if item.get("requires") else ""))
         for item in report.get("requests") or []:
             lines.append(f"- Request {item.get('name')}: {item.get('method') or 'POST'} {item.get('url')}"
                          + (" (verified)" if item.get("verified") else ""))

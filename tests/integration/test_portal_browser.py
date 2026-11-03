@@ -219,6 +219,40 @@ setTimeout(() => {
 </script></head><body><p>GSCM</p></body></html>"""
 
 
+# A report whose Configuration button sits in the report toolbar (MdiFrame), not in the report form, and opens a pop-up
+# that Nexacro keeps outside mainframe: six categories, a group inside Sales, and a list of choices with check marks
+# (the work PC's DB4009: Configuration > Sales > Sales > ORG Sales).
+CONFIG_PAGE = """<!doctype html><html><head><title>GSCM</title><script>
+const ds = (name, cols, rows) => ({name, getRowCount() { return rows.length; }, getColumn(r, c) { return rows[r][cols.indexOf(c)]; },
+  getColCount() { return cols.length; }, getColID(i) { return cols[i]; }});
+const btn = (id, text) => ({id, name: id, _type_name: 'Button', text});
+const toolbar = {components: [btn('btn_exceldown', 'Excel'), btn('btn_config', 'Configuration')]};
+const report = {components: [btn('btn_search', 'Search')]};
+const ds_dim = ds('ds_dim', ['CHK', 'DIM_CD', 'DIM_NM', 'GROUP_NM'],
+  [['1', 'REGION', 'Region', 'Sales'], ['0', 'SUBSIDIARY', 'Subsidiary', 'Sales'], ['0', 'ORGSALES', 'ORG Sales', 'Sales']]);
+const grid = {id: 'grd_dim', name: 'grd_dim', _type_name: 'Grid', binddataset: 'ds_dim'};
+const popForm = {components: [...['Sales', 'Product', 'Time', 'Measure', 'Unit', 'Display'].map((t, i) => btn('btn_cat' + i, t)),
+  btn('btn_group_sales', 'Sales'), grid, btn('btn_apply', 'Apply')], ds_dim};
+grid.parent = popForm;
+const popup = {name: 'popConfig', id: 'popConfig', form: popForm};
+let open = [];
+window.nexacro = {getApplication: () => APP, getPopupFrames: () => open};
+const APP = {mainframe: {VFrameSet: {MdiFrame: {form: {div_frameButton: {form: toolbar}}}, WorkFrame0: {form: report}}}};
+function openConfig() {
+  open = [popup];
+  for (const [id, text] of [['popConfig.form.btn_cat0', 'Sales'], ['popConfig.form.btn_group_sales', 'Sales'], ['popConfig.form.btn_apply', 'Apply']]) {
+    const el = document.createElement('div'); el.id = id; el.style.cssText = 'width:80px;height:20px';
+    const caption = document.createElement('span'); caption.id = id + ':text'; caption.textContent = text; el.appendChild(caption);
+    document.body.appendChild(el);
+  }
+}
+</script></head><body>
+<div id="mainframe.VFrameSet.MdiFrame.form.div_frameButton.form.btn_config" style="width:120px;height:24px" onclick="openConfig()"><span id="mainframe.VFrameSet.MdiFrame.form.div_frameButton.form.btn_config:text">Configuration</span></div>
+<div id="mainframe.VFrameSet.TopFrame.form.div_main.form.btn_setting" style="width:24px;height:24px"></div>
+<div id="mainframe.VFrameSet.WorkFrame0.form.btn_search" style="width:80px;height:24px"><span id="mainframe.VFrameSet.WorkFrame0.form.btn_search:text">Search</span></div>
+</body></html>"""
+
+
 class Portal(SimpleHTTPRequestHandler):
     hits: list[str] = []
 
@@ -235,7 +269,7 @@ class Portal(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802 - http.server's name
         self.hits.append(f"GET {self.path}")
-        pages = {"/": GSCM_PAGE, "/asap": ASAP_PAGE, "/nexacro-boot": BOOT_PAGE, "/login": "<title>Sign in</title><input type=password>",
+        pages = {"/": GSCM_PAGE, "/asap": ASAP_PAGE, "/nexacro-boot": BOOT_PAGE, "/nexacro-config": CONFIG_PAGE, "/login": "<title>Sign in</title><input type=password>",
                  "/sso": "<title>Company</title><p>Single Sign On</p><input type=email>",
                  "/help": "<title>Help</title><p>Trouble with single sign-on? Call the desk.</p><input type=text>",
                  "/report": "<title>Report</title><table><tr><th>A</th></tr><tr><td>1</td></tr></table>",
@@ -922,6 +956,34 @@ def test_a_running_gscm_client_is_kept_and_a_report_opens_with_its_form_as_this(
         {"action": "evaluate", "script": "return {forms: W.nexacro.activeForms()};"}]})
     assert reloaded.ok and "kept" not in reloaded.data["outputs"][0]
     assert reloaded.data["outputs"][1]["value"]["forms"] == [], "reload: true starts the client again"
+    restored = call(setup, "portal_run", {"system": "gscm", "steps": [{"action": "goto", "url": "/", "reload": True}]})
+    assert restored.ok
+
+
+def test_a_reports_configuration_is_found_on_screen_and_read_in_one_step(setup):
+    """The owner's task run of 3 Nov 2026 read the daily sell-out report's search panel, never found its Configuration
+    button (in the report toolbar, which W.nexacro.inputs() does not search), and concluded the report had no account
+    breakdown. The person's own path: Configuration > Sales > Sales > ORG Sales."""
+    outcome = call(setup, "portal_run", {"system": "gscm", "steps": [
+        {"action": "goto", "url": "/nexacro-config", "reload": True},
+        {"action": "evaluate", "script": "return W.nexacro.find(/config/i);"},
+        {"action": "click", "selector": '[id="mainframe.VFrameSet.MdiFrame.form.div_frameButton.form.btn_config"]'},
+        {"action": "evaluate", "script": "return W.nexacro.options();"},
+        {"action": "evaluate", "script": "return {grid: !!W.nexacro.resolve('popConfig.form.grd_dim'), sales: W.nexacro.find('Sales').map(m => m.where)};"}]})
+    assert outcome.ok, outcome.error_message
+    assert "stopped" not in outcome.data, outcome.data.get("stopped")
+    table = outcome.data["outputs"][1]  # a list of matches comes back as a table, cited as evidence
+    found = [dict(zip(table["columns"], row, strict=True)) for row in table["rows"]]
+    dialog, resolved = (o["value"] for o in outcome.data["outputs"] if "value" in o)
+    assert [(f["text"], f["where"]) for f in found] == [("Configuration", "report toolbar")], "not the top bar's Setting gear"
+    assert found[0]["selector"] == '[id="mainframe.VFrameSet.MdiFrame.form.div_frameButton.form.btn_config"]'
+    assert dialog["where"] == "pop-up popConfig" and dialog["popups_open"] == 1
+    assert [c["text"] for c in dialog["controls"]][:6] == ["Sales", "Product", "Time", "Measure", "Unit", "Display"]
+    choices = dialog["lists"][0]
+    assert choices["dataset"] == "ds_dim" and choices["check_columns"] == ["CHK"]
+    assert [choices["rows"][i][2] for i in choices["ticked_rows"]] == ["Region"], "what is on by default"
+    assert ["0", "ORGSALES", "ORG Sales", "Sales"] in choices["rows"]
+    assert resolved == {"grid": True, "sales": ["pop-up or other", "pop-up or other"]}
     restored = call(setup, "portal_run", {"system": "gscm", "steps": [{"action": "goto", "url": "/", "reload": True}]})
     assert restored.ok
 

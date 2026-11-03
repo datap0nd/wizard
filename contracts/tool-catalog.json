@@ -2653,6 +2653,14 @@
                         "description": "How to reach it: the control's component path, and the dialog it opens (0-400 characters)",
                         "type": "string"
                       },
+                      "path": {
+                        "description": "The clicks from the open report to this choice, with the labels exactly as the screen shows them, e.g. 'Configuration > Sales > Sales > ORG Sales, then Apply' (0-600 characters)",
+                        "type": "string"
+                      },
+                      "requires": {
+                        "description": "What must be set before the choice works, and what the portal says otherwise, e.g. 'subsidiaries chosen one by one in the search area (all of them is fine; a region such as Middle East is refused: \"cannot select so much granularity\")' (0-2000 characters)",
+                        "type": "string"
+                      },
                       "options": {
                         "description": "Every choice it offers (each selectable column, grouping, measure...), the default ones marked, e.g. 'OrgSales (account), Country, Model (default off); Region (default on)' (0-8000 characters)",
                         "type": "string"

@@ -258,19 +258,30 @@ const W = (() => {
       const pick = (col, key) => {
         if (!col) return null;
         try { if (col[key] != null) return col[key]; } catch (e) { /* no such key */ }
+        try { if (Array.isArray(col)) { const named = col.find(x => x && (x.name === key || x.id === key)); if (named) return named; } } catch (e) { /* none */ }
         try { if (typeof col.get_item === 'function') { const v = col.get_item(key); if (v != null) return v; } } catch (e) { /* none */ }
         return null;
       };
-      let c = W.nexacro.app();
-      for (const part of String(path || '').split(':', 1)[0].split('.')) {
-        if (!part || part === '__proto__' || part === 'prototype' || part === 'constructor') continue;
-        let next = null;
-        try { if (c && c[part] != null) next = c[part]; } catch (e) { /* not a property */ }
-        if (!next && c) for (const k of ['components', 'frames', 'all']) { try { next = pick(c[k], part); } catch (e) { /* none */ } if (next) break; }
-        if (!next) return null;
-        c = next;
+      const parts = String(path || '').split(':', 1)[0].split('.')
+        .filter(part => part && part !== '__proto__' && part !== 'prototype' && part !== 'constructor');
+      const walk = (start, steps) => {
+        let c = start;
+        for (const part of steps) {
+          let next = null;
+          try { if (c && c[part] != null) next = c[part]; } catch (e) { /* not a property */ }
+          if (!next && c) for (const k of ['components', 'frames', 'tabpages', 'all']) { try { next = pick(c[k], part); } catch (e) { /* none */ } if (next) break; }
+          if (!next) return null;
+          c = next;
+        }
+        return c;
+      };
+      const found = walk(W.nexacro.app(), parts);
+      if (found || !parts.length) return found;
+      // A pop-up (a Configuration dialog) is not under the application: its path starts with the pop-up's own name.
+      for (const frame of W.nexacro.popupFrames()) {
+        if (String(frame.name || frame.id || '') === parts[0]) { const inside = walk(frame, parts.slice(1)); if (inside) return inside; }
       }
-      return c;
+      return null;
     },
     busy: () => {
       const o = document.getElementById('mainframe.waitwindow');
@@ -434,6 +445,100 @@ const W = (() => {
         if (all && typeof all.length === 'number') for (let i = 0; i < all.length && i < 2000; i++) { try { const item = all[i]; consider(item && (item.name || item.id), item); } catch (e) { /* skip */ } }
       } catch (e) { /* no collection */ }
       return out.sort((a, b) => b.rows - a.rows);
+    },
+    // The pop-up windows open now (a report's Configuration dialog, a filter picker): Nexacro keeps them apart from
+    // mainframe, so a walk from the application never meets them.
+    popupFrames: () => {
+      const out = [];
+      try {
+        const frames = typeof nexacro.getPopupFrames === 'function' ? nexacro.getPopupFrames() : null;
+        const count = frames ? (typeof frames.length === 'number' ? frames.length : (frames.get_length ? frames.get_length() : 0)) : 0;
+        for (let i = 0; i < count; i++) {
+          const frame = frames[i] || (typeof frames.get_item === 'function' ? frames.get_item(i) : null);
+          if (frame) out.push(frame);
+        }
+      } catch (e) { /* none open */ }
+      return out;
+    },
+    // Every visible control whose caption, name or id matches `pattern` (text or RegExp), anywhere on screen: the report
+    // and its toolbar (MdiFrame: a report's Configuration button may sit there, not in the report form), the top bar and
+    // pop-ups. Read from the page's own ids (component paths; a caption is the element with the ":text" suffix), so
+    // each match has a selector a click step can use.
+    find: (pattern, {limit = 40} = {}) => {
+      const re = pattern instanceof RegExp ? pattern : new RegExp(String(pattern).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      const found = new Map();
+      for (const el of document.querySelectorAll('[id]')) {
+        const id = String(el.id);
+        const path = id.split(':', 1)[0];
+        const label = document.getElementById(path + ':text') || document.getElementById(path + ':icontext');
+        const caption = label ? (label.innerText || label.textContent || '').trim() : '';
+        const name = path.split('.').pop() || '';
+        if (!(caption && re.test(caption)) && !re.test(name)) continue;
+        const owner = document.getElementById(path) || el;
+        if (!W.visible(owner) || found.has(path)) continue;
+        let type = '', enable = null;
+        try { const c = W.nexacro.resolve(path); if (c) { type = String(c._type_name || ''); enable = c.enable === false ? false : true; } } catch (e) { /* not resolvable */ }
+        found.set(path, {path, name, text: caption || null, type: type || null, ...(enable === false ? {enable} : {}),
+                         where: /\.MdiFrame\./i.test(path) ? 'report toolbar' : /\.TopFrame\./i.test(path) ? 'top bar'
+                           : /work_?frame/i.test(path) ? 'report' : 'pop-up or other', selector: `[id="${path}"]`});
+        if (found.size >= limit) break;
+      }
+      return [...found.values()];
+    },
+    // Everything a configuration dialog offers, in one read: its controls (category and option buttons, tabs, radios,
+    // checkboxes, with their state) and every list it shows (a Grid, ListBox or tree bound to a Dataset: its rows,
+    // which columns are check marks, which rows are ticked). target: a path or component; default the newest pop-up,
+    // else the active report. Read it after each category you open: a dialog often shows one category's list at a time.
+    options: (target = null, {rows: maxRows = 300} = {}) => {
+      const popups = W.nexacro.popupFrames();
+      let root = typeof target === 'string' ? W.nexacro.resolve(target) : target;
+      let where = typeof target === 'string' ? target : target ? 'given component' : '';
+      if (!root && popups.length) { root = popups[popups.length - 1]; where = `pop-up ${root.name || root.id || popups.length - 1}`; }
+      if (!root) { where = W.nexacro.activeForms()[0] || ''; root = where ? W.nexacro.resolve(where) : null; }
+      if (!root) throw new Error('no pop-up or report form is open');
+      const get = (c, k) => { try { const g = c['get_' + k]; return typeof g === 'function' ? g.call(c) : c[k]; } catch (e) { return undefined; } };
+      const controls = [], lists = [], seen = new Set(), sets = new Set();
+      const flag = v => v === null || v === undefined || v === '' || [0, 1, true, false, '0', '1', 'Y', 'N', 'y', 'n', 'true', 'false'].includes(v);
+      const ticked = v => [1, true, '1', 'Y', 'y', 'true'].includes(v);
+      const visit = (c, path, d) => {
+        if (!c || typeof c !== 'object' || d > 16 || seen.has(c) || controls.length >= 400) return;
+        seen.add(c);
+        const type = String(c._type_name || '');
+        if (/Button|Tab|Radio|CheckBox|Static|Menu/i.test(type) && !/Frame|Form$/i.test(type)) {
+          const text = get(c, 'text');
+          if (text != null && String(text).trim()) {
+            const item = {path, type, text: String(text).slice(0, 120)};
+            const value = get(c, 'value');
+            if (value != null && value !== '') item.value = W.plain(value);
+            if (get(c, 'visible') === false) item.visible = false;
+            if (get(c, 'enable') === false) item.enable = false;
+            controls.push(item);
+          }
+        }
+        let ds = null;
+        try { ds = typeof c.getInnerDataset === 'function' ? c.getInnerDataset() : null; } catch (e) { /* none */ }
+        try { if (!ds && (typeof c.getBindDataset === 'function' || c.binddataset)) ds = W.nexacro.boundDataset(c); } catch (e) { /* none */ }
+        if (ds && typeof ds.getRowCount === 'function' && !sets.has(ds)) {
+          sets.add(ds);
+          const table = W.nexacro.read(ds, {limit: maxRows});
+          const checks = table.columns.filter((_, i) => table.rows.length && table.rows.every(r => flag(r[i]))
+                                                     && table.rows.some(r => r[i] !== null && r[i] !== ''));
+          const at = checks.map(name => table.columns.indexOf(name));
+          lists.push({path, type, dataset: table.dataset, columns: table.columns, rows: table.rows, total_rows: table.total_rows,
+                      check_columns: checks,
+                      ticked_rows: at.length ? table.rows.map((r, i) => (at.some(j => ticked(r[j])) ? i : -1)).filter(i => i >= 0) : []});
+        }
+        for (const k of ['components', 'frames', 'tabpages']) {
+          let children; try { children = c[k]; } catch (e) { continue; }
+          if (!children || typeof children.length !== 'number') continue;
+          for (let i = 0; i < children.length && i < 400; i++) {
+            try { const child = children[i]; visit(child, `${path}.${child.name || child.id || i}`, d + 1); } catch (e) { /* skip */ }
+          }
+        }
+        try { if (c.form) visit(c.form, `${path}.form`, d + 1); } catch (e) { /* none */ }
+      };
+      visit(root, String(root.name || root.id || where || 'root'), 0);
+      return {where, popups_open: popups.length, controls, lists};
     },
     // Where the client keeps its own functions: the application, the top, left and toolbar forms, the report forms.
     places: () => {

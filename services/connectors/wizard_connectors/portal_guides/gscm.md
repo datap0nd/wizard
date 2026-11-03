@@ -9,7 +9,8 @@ screen.
 - `nexacro.getApplication()` is the root. A component's DOM `id` is its full path from `mainframe`, for example
   `mainframe.VFrameSet.MdiFrame.form.div_frameButton.form.btn_exceldown`. A `:text` / `:icontext` suffix is the
   rendered caption of the component before the colon. `W.nexacro.resolve(path)` turns a path into the component.
-- `mainframe.VFrameSet`: `TopFrame` (top bar, the Setting gear `...TopFrame.form.div_main.form.btn_setting`),
+- `mainframe.VFrameSet`: `TopFrame` (top bar, the application's Setting gear `...TopFrame.form.div_main.form.btn_setting`:
+  settings and Favorite, not a report's Configuration),
   `MdiFrame` (the report toolbar, Excel `...MdiFrame.form.div_frameButton.form.btn_exceldown`), and one
   `WorkFrame<N>` per open report window (`...WorkFrame0.form...`). The number differs per window and per build: never
   hard-code it. `W.nexacro.activeForms()` lists the visible report forms; `W.nexacro.title(form)` reads the report
@@ -107,12 +108,28 @@ screen.
 - After any page load, start with `await W.nexacro.ready()` before calling the client: a check that only finds
   `mainframe` is not enough.
 
-## Columns behind a grid's gear
+## A report's Configuration (the columns and breakdowns beyond its default view)
 
-- A report grid can show more columns than its default view (OrgSales, the account, on DB4009 Daily Sell-out). Its gear
-  opens a column dialog; tick the columns and press **Apply**, which Wizard allows in GSCM. Then search again and check
-  the request (`W.requests('.do')`) and the datasets: record whether a column adds a request parameter or only shows a
-  column the dataset already had. Never press Save in that dialog.
+- A report shows more than its default view through its own **Configuration** button. This is not the top bar's
+  Setting gear (`btn_setting`, the application's settings and Favorite). The button may sit in the report form or in the
+  report toolbar (`MdiFrame`), which `W.nexacro.inputs()` does not search: find it anywhere on screen with
+  `W.nexacro.find(/config/i)`, which returns each match's `selector` for a `click` step and says where it is.
+- The dialog is a tree of choices: categories, then groups inside each, then the choices themselves. Proven on DB4009
+  Daily Sell-out (the person's own clicks): **Configuration → Sales** (one of six categories) **→ Sales** (a group inside
+  it) **→ ORG Sales** (the account: operator, retailer, customer), tick it, **Apply**, then search. The grid then shows a
+  sub-total per account and one row per country under it.
+- Read the dialog with `W.nexacro.options()` after it opens and again after each category or group you click: it lists
+  the dialog's buttons, tabs and checkboxes with their state, and every list in it (its rows, which columns are check
+  marks, which rows are ticked). Open every category and every group, and record every choice with what it is (an
+  account, a country, a model, a channel...): a choice you have not opened is unknown, never absent.
+- A choice can need a narrower search first. ORG Sales with no area chosen, or with a region (Middle East), is refused
+  as too much granularity: choose the subsidiaries one by one in the search conditions (all of them is fine), then
+  Apply. When Apply or Search answers with such a message (a popup or alert: read its text), narrow the filter it names
+  and try again; record what it needed in the view's `requires`.
+- **Apply** is allowed in GSCM; never Save or "Apply and save" in that dialog. After Apply and a search, compare the
+  request (`W.requests('.do')`) with the one before: record whether the choice adds a request parameter (then a
+  `request` step reads the account breakdown directly) or only columns of the reply. If the choice stays ticked when the
+  report is opened again, it is saved for the person: untick it afterwards.
 
 ## Never
 

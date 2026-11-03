@@ -3,7 +3,23 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-03 (latest) — NERP: its views on their own server, views only, and a task that maps them
+## 2026-11-03 (latest) — GSCM: a report's Configuration is found on screen and read in one step
+
+The first run of the task `gscm-report-options` on the work PC read the daily sell-out report's search panel, never found
+its Configuration button, concluded the report had no account breakdown, and wrote that into the map and the GSCM
+platform note. The owner's own path: Configuration → Sales (one of six categories) → Sales → ORG Sales, Apply, after
+choosing the subsidiaries one by one (a region is refused as too much granularity).
+- `W.nexacro.find(pattern)`: every visible control whose caption, name or id matches, anywhere on screen (the report
+  toolbar, which `inputs()` does not search, the top bar, pop-ups), with a selector to click and where it is.
+- `W.nexacro.options()`: a configuration dialog in one read: its buttons, tabs and checkboxes with their state, and every
+  list (rows, check-mark columns, ticked rows). `W.nexacro.popupFrames()`; `resolve` reaches pop-ups and finds a
+  component by name in a plain list.
+- A map view keeps `path` (the clicks with the screen's labels) and `requires` (what must be set first).
+- The GSCM guide's section on a report's Configuration, the system prompt's DB4009 line and the mapping rounds'
+  instructions give the proven path and say a choice not found is unknown, never absent. The task now first corrects
+  the earlier run's claim in the map and the notes.
+
+## 2026-11-03 — NERP: its views on their own server, views only, and a task that maps them
 
 The owner: "add a little NERP section. NERP is just a few sql views or tables. I should be able to restrict it to a
 certain DB, with a certain URL, certain Schema. It only will have access to views", and "we need proper mapping. It's a

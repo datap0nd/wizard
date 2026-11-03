@@ -176,6 +176,8 @@ class MapRequest(Args):
 class MapView(Args):
     name: str = Field(max_length=160, description="The option as the screen names it: the grid's gear / Configuration (column chooser), a view or grouping switch, a measure or unit toggle, a layout tab.")
     component: str | None = Field(default=None, max_length=400, description="How to reach it: the control's component path, and the dialog it opens.")
+    path: str | None = Field(default=None, max_length=600, description="The clicks from the open report to this choice, with the labels exactly as the screen shows them, e.g. 'Configuration > Sales > Sales > ORG Sales, then Apply'.")
+    requires: str | None = Field(default=None, max_length=2000, description="What must be set before the choice works, and what the portal says otherwise, e.g. 'subsidiaries chosen one by one in the search area (all of them is fine; a region such as Middle East is refused: \"cannot select so much granularity\")'.")
     options: str | None = Field(default=None, max_length=8000, description="Every choice it offers (each selectable column, grouping, measure...), the default ones marked, e.g. 'OrgSales (account), Country, Model (default off); Region (default on)'.")
     columns: list[str] = Field(default_factory=list, max_length=200, description="The column ids the non-default choices add to the dataset, e.g. orgsales.")
     effect: str | None = Field(default=None, max_length=3000, description="What choosing it changes, as proved: a new request parameter (name and values), another dataset or route, or only columns the dataset already had; and whether the choice stays saved for the person.")
