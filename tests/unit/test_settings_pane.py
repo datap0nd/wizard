@@ -286,8 +286,10 @@ def test_every_pane_field_is_a_setting_wizard_reads(key):
     config = (pathlib.Path(__file__).resolve().parents[2] / "services" / "api" / "wizard_api" / "config.py").read_text(encoding="utf-8")
     pg = (pathlib.Path(__file__).resolve().parents[2] / "services" / "connectors" / "wizard_connectors" / "pg.py").read_text(encoding="utf-8")
     portals = (pathlib.Path(__file__).resolve().parents[2] / "services" / "connectors" / "wizard_connectors" / "portals.py").read_text(encoding="utf-8")
+    nerp = (pathlib.Path(__file__).resolve().parents[2] / "services" / "connectors" / "wizard_connectors" / "nerp.py").read_text(encoding="utf-8")
     assert f'"{key}"' in config or (key.startswith("WIZARD_PG_") and "WIZARD_PG_" in pg) or \
-        (key.startswith(("WIZARD_PORTAL_", "WIZARD_BROWSER")) and f'"{key}"' in portals)
+        (key.startswith(("WIZARD_PORTAL_", "WIZARD_BROWSER")) and f'"{key}"' in portals) or \
+        (key.startswith("WIZARD_NERP_") and (f'"{key}"' in nerp or f'get("{key.removeprefix("WIZARD_NERP_")}"' in nerp))
 
 
 def test_export_writes_this_pcs_settings_as_a_provisioning_file_for_another_pc(tmp_path):

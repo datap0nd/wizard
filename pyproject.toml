@@ -23,6 +23,7 @@ dependencies = [
   # Edits a copy of an attached workbook when Excel is not available (Excel itself edits it on the work PC). Pure
   # Python; the same version Metronome's Flows use.
   "openpyxl==3.1.5",
+  "sqlglot==30.29.0",
 ]
 
 [dependency-groups]

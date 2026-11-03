@@ -50,6 +50,9 @@ SECTIONS = [
     ("site", "Pages site", "Brain and Cases, two pages of their own on the company GitHub's Pages, published from this PC "
                            "with the knowledge base's write token."),
     ("postgres", "Company database", "A read-only PostgreSQL account for Gemini's SQL questions."),
+    ("nerp", "NERP", "NERP's views on their own PostgreSQL server: one database, one schema, views only, read with a "
+                     "read-only account. Gemini queries only those views; the task \"Map NERP's views\" documents each "
+                     "one so questions go straight to the right columns."),
     ("dashboards", "Dashboards", "The team's HTML dashboards: the database's data with the team's business logic, which "
                                  "Gemini reads first when one covers the question. A mapped drive is saved as the network "
                                  "path it stands for, so every PC finds the same folder."),
@@ -97,6 +100,16 @@ FIELDS = [
           "Separated by commas. Gemini's queries may read only these schemas (and pg_catalog and information_schema for "
           "metadata); a query that reads any other, also through a view, is refused. Empty: every schema the account can "
           "read.", "reporting"),
+    Field("WIZARD_NERP_NAME", "Name people see", "nerp", "Shown in the app and in answers' sources.", "NERP"),
+    Field("WIZARD_NERP_HOST", "Server", "nerp", "Its host name, host:port, or a postgresql:// address (a database in it "
+          "fills Database; never a password).", "nerp-db.company.example"),
+    Field("WIZARD_NERP_PORT", "Port", "nerp", "", "5432"),
+    Field("WIZARD_NERP_DATABASE", "Database", "nerp", "The only database Wizard reads on that server.", "nerp"),
+    Field("WIZARD_NERP_SCHEMA", "Schema", "nerp", "The only schema: Gemini's queries may name only its views (and "
+          "materialized views); a table, another schema or the catalog is refused.", "reporting"),
+    Field("WIZARD_NERP_USER", "User (read-only)", "nerp", "An account that can read those views only.", "wizard_nerp_ro"),
+    Field("WIZARD_NERP_PASSWORD", "Password", "nerp"),
+    Field("WIZARD_NERP_SSLMODE", "SSL", "nerp", "", "prefer", ("disable", "prefer", "require", "verify-ca", "verify-full")),
     Field("WIZARD_HTML_REPORTS_DIR", "Folder", "dashboards", "Paste the folder's path (quotes from Copy as path are fine). "
           "A mapped drive such as Y:\\Dashboards is saved as its network path (\\\\server\\share\\Dashboards). If this "
           "PC cannot reach it, ask for access to the share: Wizard still starts, and says so when it needs them.",
@@ -302,6 +315,46 @@ def test_postgres(settings: Settings, proposed: dict[str, Any]) -> dict[str, Any
         return {"ok": False, "message": f"Could not connect: {error}"}
     return {"ok": True, "message": f"Connected as {row['who']} to {target.database} on {target.host}; this session is "
                                    f"read-only: {row['ro']}. {str(row['v']).split(',')[0]}."}
+
+
+def test_nerp(settings: Settings, proposed: dict[str, Any]) -> dict[str, Any]:
+    """Connect with the NERP settings typed, read-only, and say what Wizard would see: the views of the schema, and
+    whether the account can also read tables there (it should read views only)."""
+    from wizard_connectors.nerp import VIEWS
+    from wizard_connectors.nerp import settings_from as nerp_settings
+    from wizard_connectors.pg import Pg8000Session
+    values = _candidate(settings, proposed)
+    try:
+        target = nerp_settings({k: v for k, v in values.items() if k.startswith("WIZARD_NERP_")})
+    except PgError as error:
+        return {"ok": False, "message": str(error)[:1].upper() + str(error)[1:] + "."}
+    if target is None:
+        return {"ok": False, "message": "Fill in at least the server, the database, the schema and the user."}
+    try:
+        session = Pg8000Session(target.pg, application_name="wizard-settings-test")
+        try:
+            session.rows("START TRANSACTION READ ONLY")
+            who = session.rows("SELECT current_user AS who")[0]["who"]
+            views = session.rows(VIEWS, schema=target.schema)
+            tables = session.rows(
+                "SELECT count(*) AS n FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+                "WHERE n.nspname = :schema AND c.relkind IN ('r', 'p', 'f') "
+                "AND pg_catalog.has_table_privilege(c.oid, 'SELECT')", schema=target.schema)[0]["n"]
+            session.rows("ROLLBACK")
+        finally:
+            session.close()
+    except PgError as error:
+        return {"ok": False, "message": f"Could not connect: {error}"}
+    except Exception as error:  # noqa: BLE001 - a database error, in words
+        return {"ok": False, "message": f"Connected, but could not read the schema {target.schema}: {error}"}
+    if not views:
+        return {"ok": False, "message": f"Connected as {who} to {target.pg.database}, but this account can read no view "
+                                        f"in schema {target.schema}: check the schema's name and the account's grants."}
+    names = ", ".join(str(v["name"]) for v in views[:6]) + (f" and {len(views) - 6} more" if len(views) > 6 else "")
+    extra = (f" This account can also read {tables} table(s) in that schema; Wizard still queries only the views, but "
+             "ask for an account limited to them." if tables else "")
+    return {"ok": True, "message": f"Connected as {who} to {target.pg.database} on {target.pg.host}: {len(views)} "
+                                   f"view(s) in {target.schema} ({names}).{extra}"}
 
 
 def test_knowledge(settings: Settings, proposed: dict[str, Any],

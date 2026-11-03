@@ -1,5 +1,6 @@
 """Default tool catalog: one read-only tool set per approved system, the cross-source Wizard tools, the portal tools
-when company portals are configured, and the dashboards tools when a dashboards folder is set."""
+when company portals are configured, the dashboards tools when a dashboards folder is set, and NERP's view tools when
+NERP is connected."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -7,19 +8,22 @@ from pathlib import Path
 from ..catalog import Catalog
 from ..fixture_source import FixtureSource
 from ..knowledge import KnowledgeBase
+from ..nerp import SYSTEM as NERP
+from ..nerp import NerpQuery, NerpSettings
 from ..paths import KNOWLEDGE, SOURCE_CONTRACTS, SYNTHETIC
 from ..pg import PgSettings
 from ..postgres_query import PostgresQuery
 from .core_tools import CORE_TOOLS
 from .dashboard_tools import DASHBOARD_TOOLS
 from .kb_tools import KB_TOOLS
+from .nerp_tools import NERP_TOOLS
 from .portal_tools import PORTAL_TOOLS
 from .registry import Recorder, Services, ToolContext, ToolError, ToolOutcome, ToolRegistry, ToolSpec, flatten_schema
 from .source_tools import make_source_tools
 from .task_tools import TASK_FILE_TOOLS
 
 __all__ = ["Recorder", "Services", "ToolContext", "ToolError", "ToolOutcome", "ToolRegistry", "ToolSpec",
-           "build_registry", "build_services", "flatten_schema", "retire_portal_catalogs"]
+           "build_registry", "build_services", "connect_nerp", "flatten_schema", "retire_portal_catalogs"]
 
 
 def build_services(contracts: Path = SOURCE_CONTRACTS, fixtures: Path = SYNTHETIC, knowledge: Path = KNOWLEDGE,
@@ -55,6 +59,16 @@ def retire_portal_catalogs(services: Services) -> frozenset[str]:
     return retired
 
 
+def connect_nerp(services: Services, settings: NerpSettings) -> None:
+    """NERP read live from its views (owner, 3 Nov 2026; decision 2026-11-03-nerp-views.md) takes over NERP's report
+    catalog, synthetic or from the knowledge base: one NERP, read with the nerp_* view tools. Called before the registry
+    is built."""
+    services.nerp = NerpQuery(settings)
+    if NERP in services.catalog.contracts:
+        services.catalog = services.catalog.without(frozenset({NERP}))
+        services.sources.pop(NERP, None)
+
+
 def build_registry(services: Services) -> ToolRegistry:
     specs: list[ToolSpec] = []
     for system in services.catalog.systems:
@@ -66,4 +80,6 @@ def build_registry(services: Services) -> ToolRegistry:
         specs.extend(PORTAL_TOOLS)
     if services.dashboards is not None:
         specs.extend(DASHBOARD_TOOLS)
+    if services.nerp is not None:
+        specs.extend(NERP_TOOLS)
     return ToolRegistry(specs)

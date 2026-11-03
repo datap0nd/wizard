@@ -15,7 +15,7 @@ const SOURCES: Record<string, string> = {
   environment: 'Set by an environment variable (locked)', env_file: 'From the .env file', this_pc: 'Set on this PC',
   company: 'From the company settings file', default: 'Default',
 };
-const TESTS: Record<string, SettingsTest> = {knowledge: 'knowledge', postgres: 'postgres', metronome: 'metronome', dashboards: 'dashboards'};
+const TESTS: Record<string, SettingsTest> = {knowledge: 'knowledge', postgres: 'postgres', metronome: 'metronome', dashboards: 'dashboards', nerp: 'nerp'};
 /** What a section's test button says: a connection test, or finding the dashboards in the folder typed. */
 const TEST_LABEL: Record<string, string> = {dashboards: 'Find dashboards'};
 const DASHBOARDS_FOLDER = 'WIZARD_HTML_REPORTS_DIR';
