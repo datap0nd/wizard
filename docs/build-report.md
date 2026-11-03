@@ -3,7 +3,16 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-03 (latest) — Knowledge review tasks 0 to 8 removed
+## 2026-11-03 (latest) — Cases: a long prompt or answer scrolls inside its box
+
+The owner asked that a case's prompt and answer boxes scroll once they pass a reasonable length instead of stretching
+the page. In `CaseFlow.tsx` a prompt's text stops at 16rem and an answer's body at 36rem (or 70% of the window, the
+smaller); past that each scrolls on its own, with a thin scrollbar, and can be focused to scroll with the keyboard. The
+answer's header, sources and steps stay outside the scrolling part. Short prompts and answers look as before. Checked in
+Chromium on a synthetic case (prompt 256 px shown of 1454, answer 576 of 3116; short ones unchanged); new CaseFlow test;
+web typecheck, 145 web tests, full `pytest tests` and `verify-dist` passed.
+
+## 2026-11-03 — Knowledge review tasks 0 to 8 removed
 
 The owner asked to remove the knowledge-base review tasks 0 to 8: `tasks/kb-review-0-dashboards.md` to
 `tasks/kb-review-8-route-reports.md` are gone, so Settings → Tasks no longer lists them (a queue that still names one

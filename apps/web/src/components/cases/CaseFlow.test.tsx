@@ -1,4 +1,4 @@
-import {render, screen} from '@testing-library/react';
+import {render, screen, within} from '@testing-library/react';
 import {describe, expect, it} from 'vitest';
 import type {CaseTurn} from '@/cases';
 import {TooltipProvider} from '../ui/menu';
@@ -21,5 +21,15 @@ describe('a case', () => {
     expect(screen.getAllByTestId('case-drop').map(d => d.dataset.side)).toEqual(['right', 'left']);
     expect(screen.getAllByTestId('case-sources')[0].textContent).toContain('NERP · Marketing spend');
     expect(screen.getAllByText(/What Wizard did \(1 step\)/)).toHaveLength(3);
+  });
+
+  it('keeps a long prompt and a long answer in boxes that scroll, reachable by keyboard', () => {
+    const {container} = render(<TooltipProvider><CaseFlow turns={[turn(1, 'A long question. '.repeat(200), 'A long answer. '.repeat(800))]} /></TooltipProvider>);
+    const view = within(container);
+    for (const box of [view.getByTestId('case-prompt-text'), view.getByTestId('case-answer-body')]) {
+      expect(box.className).toContain('overflow-y-auto');
+      expect(box.className).toMatch(/max-h-/);
+      expect(box.tabIndex).toBe(0);
+    }
   });
 });

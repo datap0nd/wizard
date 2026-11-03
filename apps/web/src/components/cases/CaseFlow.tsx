@@ -8,6 +8,9 @@ import {AnswerMarkdown} from '../AnswerMarkdown';
 import {CheckBadge, DataModeBadge} from '../Badges';
 
 const PROMPT = '#1428a0';  // Samsung Blue: the person's words; Wizard's answers are white windows
+// A long prompt or answer scrolls inside its box instead of stretching the case (owner, 3 Nov 2026). Focusable, so the
+// box also scrolls with the keyboard.
+const SCROLL = 'overflow-y-auto overscroll-contain [scrollbar-width:thin]';
 const ARROW = '#6b7891';
 
 function Right({className}: {className?: string}) {
@@ -30,7 +33,8 @@ function PromptCard({turn, className}: {turn: CaseTurn; className?: string}) {
     <section aria-label={`Prompt ${turn.n}`} className={cn('flex flex-col gap-3 rounded-2xl p-5 text-white lg:p-6', className)} style={{background: PROMPT}} data-testid="case-prompt">
       <p className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.08em] text-[#d3dbf7]">
         {check ? <ListChecks className="size-4" /> : <User className="size-4" />}Prompt {turn.n}</p>
-      <p className="whitespace-pre-wrap text-[17px] font-medium leading-[1.45]">{check ? 'Check my data: recompute the figures in the answer above from its sources.' : turn.prompt}</p>
+      <p tabIndex={0} aria-label={`Prompt ${turn.n} text`} data-testid="case-prompt-text"
+        className={cn('max-h-[16rem] whitespace-pre-wrap pr-1 text-[17px] font-medium leading-[1.45] [scrollbar-color:#8fa3e6_transparent] focus-visible:outline focus-visible:outline-2 focus-visible:outline-white', SCROLL)}>{check ? 'Check my data: recompute the figures in the answer above from its sources.' : turn.prompt}</p>
       <p className="text-[12px] text-[#c9d3f5]">{formatDate(turn.asked_at, true)}</p>
     </section>
   );
@@ -57,7 +61,8 @@ function AnswerWindow({turn, className}: {turn: CaseTurn; className?: string}) {
           <CheckBadge status={turn.check.status} />
         </span>
       </div>
-      <div className="px-5 py-4 lg:px-6">
+      <div tabIndex={0} aria-label={`Answer ${turn.n} text`} data-testid="case-answer-body"
+        className={cn('max-h-[min(36rem,70vh)] px-5 py-4 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent lg:px-6', SCROLL)}>
         <AnswerMarkdown text={turn.answer} visuals={turn.visuals} onEvidence={show} />
       </div>
       {(turn.sources.length > 0 || turn.steps.length > 0) && (
