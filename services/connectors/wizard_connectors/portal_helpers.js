@@ -435,18 +435,70 @@ const W = (() => {
       } catch (e) { /* no collection */ }
       return out.sort((a, b) => b.rows - a.rows);
     },
-    // The client's own functions (gfn_/fn_ by Nexacro convention): shortcuts such as opening a report by menu id. On
-    // the application, the top, left and toolbar forms and the active report, with the start of each source to read
-    // its parameters. pattern: a RegExp or text to choose other names.
-    functions: (pattern = /^(g|l|c)?fn_|^gfn|^fn[A-Z]/, limit = 150) => {
-      const re = pattern instanceof RegExp ? pattern : new RegExp(String(pattern), 'i');
+    // Where the client keeps its own functions: the application, the top, left and toolbar forms, the report forms.
+    places: () => {
       const places = [['application', W.nexacro.app()]];
       for (const path of ['mainframe.VFrameSet.TopFrame.form', 'mainframe.VFrameSet.LeftFrame.form', 'mainframe.VFrameSet.MdiFrame.form', ...W.nexacro.activeForms()]) {
         const form = W.nexacro.resolve(path);
         if (form) places.push([path, form]);
       }
+      return places;
+    },
+    // Calls one of the client's own functions with its owner as `this`, as the client does. Taken out of its form a
+    // function fails (a run of 3 Nov 2026: "this.gfn_isNull is not a function"). name: 'fn_openMenu' (the first place
+    // that has it, in W.nexacro.functions() order) or 'mainframe.VFrameSet.TopFrame.form.fn_openMenu' (that place).
+    call: (name, ...args) => {
+      const text = String(name || '');
+      const cut = text.lastIndexOf('.');
+      const fname = cut < 0 ? text : text.slice(cut + 1);
+      const where = cut < 0 ? null : text.slice(0, cut);
+      const owners = where === null ? W.nexacro.places()
+        : [[where, where === 'application' ? W.nexacro.app() : W.nexacro.resolve(where)]];
+      for (const [, owner] of owners) {
+        let fn = null;
+        try { fn = owner && owner[fname]; } catch (e) { /* none */ }
+        if (typeof fn === 'function') return fn.apply(owner, args);
+      }
+      throw new Error(`no client function ${text}${where ? '' : ' on the application or its forms'}: W.nexacro.functions() lists them`);
+    },
+    // Waits until the client has finished starting: the application with its mainframe, the client's own functions
+    // loaded, and no busy overlay. Calls made while it starts fail in different ways ("Cannot read properties of
+    // undefined (reading 'mainframe')", a function missing on its form): call this after any page load.
+    ready: async (ms = 90000) => {
+      await W.waitFor(() => {
+        const app = W.nexacro.app();
+        return app && app.mainframe && W.nexacro.functions(undefined, 1).length > 0 && !W.nexacro.busy();
+      }, ms, 500);
+      await W.nexacro.idle(Math.min(ms, 30000)).catch(() => null);
+      return true;
+    },
+    // Opens a report the way the client's menu does, in one step: waits for the client, calls its open function (the
+    // map's topic names it, e.g. W.nexacro.open('fn_openMenu', 'DB4009')) with its owner as `this`, waits for the
+    // report's window and the overlay, and says which form and title it found.
+    open: async (name, ...args) => {
+      const options = args.length > 1 && args[args.length - 1] && typeof args[args.length - 1] === 'object' ? args.pop() : {};
+      const ms = options.ms || 120000;
+      await W.nexacro.ready(ms);
+      const before = new Set(W.nexacro.activeForms());
+      const titleBefore = W.nexacro.title();
+      const value = await W.nexacro.call(name, ...args);
+      let form = null;
+      await W.waitFor(() => {
+        form = W.nexacro.activeForms().find(f => !before.has(f)) || null;
+        return form || (W.nexacro.title() && W.nexacro.title() !== titleBefore);
+      }, Math.min(ms, 60000), 500).catch(() => null);
+      await W.nexacro.idle(ms).catch(() => null);
+      form = form || W.nexacro.activeForms()[0] || null;
+      return {called: String(name), args, returned: value === undefined ? null : value, form,
+              title: form ? W.nexacro.title(form) : null, new_window: !!form && !before.has(form)};
+    },
+    // The client's own functions (gfn_/fn_ by Nexacro convention): shortcuts such as opening a report by menu id. On
+    // the application, the top, left and toolbar forms and the active report, with the start of each source to read
+    // its parameters. pattern: a RegExp or text to choose other names.
+    functions: (pattern = /^(g|l|c)?fn_|^gfn|^fn[A-Z]/, limit = 150) => {
+      const re = pattern instanceof RegExp ? pattern : new RegExp(String(pattern), 'i');
       const out = [];
-      for (const [where, owner] of places) {
+      for (const [where, owner] of W.nexacro.places()) {
         const names = new Set();
         let o = owner;
         for (let d = 0; o && d < 2 && o !== Object.prototype; d++) { try { Object.getOwnPropertyNames(o).forEach(n => names.add(n)); } catch (e) { /* none */ } o = Object.getPrototypeOf(o); }

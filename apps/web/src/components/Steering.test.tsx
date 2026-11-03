@@ -33,7 +33,7 @@ function queried(status: 'running' | 'succeeded' = 'running'): RunView {
 }
 
 function actions(overrides: Partial<SteerActions> = {}): SteerActions {
-  return {live: true, notThis: vi.fn(async () => {}), remember: vi.fn(async () => true), turnOn: vi.fn(), ...overrides};
+  return {live: true, notThis: vi.fn(async () => {}), remember: vi.fn(async () => true), turnOn: vi.fn(), reply: vi.fn(), ...overrides};
 }
 
 const card = (run: RunView, steer: SteerActions) => (
@@ -161,6 +161,37 @@ describe('steering on the card', () => {
       onChoose={() => {}} /></TooltipProvider>);
     fireEvent.pointerDown(screen.getByTestId('systems-picker'), {button: 0, ctrlKey: false});
     expect(screen.getByTestId('auto-hint').textContent).toBe('Wizard picks from all but NERP (only when asked)');
+  });
+});
+
+describe('Wizard asks before going on', () => {
+  const asked = (status: 'running' | 'succeeded') => {
+    let run = applyEvent(queried('running'), ev('tool_started', {call_id: 'c2', name: 'wizard_ask_person', label: 'Asked you: Daily or weekly?', category: 'present'}));
+    run = applyEvent(run, ev('person_asked', {question: 'Daily from GSCM, or weekly from the database?',
+      options: ['Daily, from GSCM (a few minutes)', 'Weekly, from the database (seconds)'], why: 'Only GSCM has each day.'}));
+    if (status === 'succeeded') run = applyEvent(run, ev('run_finished', {status: 'succeeded', report_id: 'r', answer: 'Daily or weekly?', data_mode: null, check_status: 'NOT_CHECKED'}));
+    return run;
+  };
+
+  it('shows the question with its options, and a click asks the chosen one as the next question', () => {
+    const steer = actions();
+    render(card(asked('succeeded'), steer));
+    const box = screen.getByTestId('person-question');
+    expect(box.textContent).toContain('Daily from GSCM, or weekly from the database?');
+    expect(box.textContent).toContain('Only GSCM has each day.');
+    fireEvent.click(screen.getByRole('button', {name: 'Weekly, from the database (seconds)'}));
+    expect(steer.reply).toHaveBeenCalledWith(expect.objectContaining({id: 'run_1'}), 'Weekly, from the database (seconds)');
+    expect(screen.getAllByTestId('person-option').every(b => (b as HTMLButtonElement).disabled)).toBe(true);
+  });
+
+  it('takes no click while the answer runs, or on an earlier answer of the conversation', () => {
+    render(card(asked('running'), actions()));
+    expect(screen.getAllByTestId('person-option').every(b => (b as HTMLButtonElement).disabled)).toBe(true);
+    cleanup();
+    render(<TooltipProvider><SystemsContext.Provider value={SYSTEMS}><SteerContext.Provider value={actions()}>
+      <RunCard run={asked('succeeded')} latest={false} onEvidence={() => {}} onCheck={() => {}} onCancel={() => {}} onRetry={() => {}} onFeedback={() => {}} onEmail={() => {}} busy={false} />
+    </SteerContext.Provider></SystemsContext.Provider></TooltipProvider>);
+    expect(screen.getAllByTestId('person-option').every(b => (b as HTMLButtonElement).disabled)).toBe(true);
   });
 });
 

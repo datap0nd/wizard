@@ -73,6 +73,9 @@ CANNOT_RUN = ("gemini_signin_required", "runtime_unavailable", "model_quota", "m
 # A new chat's name from Gemini (owner, 30 Oct 2026): asked beside the first answer; the answer waits at most this long
 # for it before it is shown finished, so the chat list it refreshes already has the name.
 TITLE_WAIT_S = 5.0
+# Gemini asks the person one question before a long route (owner, 3 Nov 2026: "ASKING the user for more info before
+# proceeding ... like a prompt helper"): only in a question, once, and the run then stops gathering data.
+ASK_PERSON = "wizard_ask_person"
 
 
 def wrap_up_s(timeout_s: int) -> int:
@@ -245,6 +248,7 @@ class ActiveRun:
     # keeps its tools in the list, and the gate refuses them, so earlier calls in the conversation stay valid.
     ever_on: frozenset[str] | None = None
     offers_ask: bool = False  # wizard_ask_for_system is in the list (some system was off)
+    asked: bool = False  # Gemini asked the person a question (wizard_ask_person): it ends its turn with it
     steers: list[dict[str, Any]] = field(default_factory=list)  # the person's notes, and system changes, for Gemini
     rejected: list[str] = field(default_factory=list)  # evidence the person marked Not this
     seq: int = 0
@@ -424,6 +428,7 @@ def tool_label(name: str, args: dict[str, Any], services: Services) -> str:
             "wizard_render_visual": f"Prepared a {args.get('kind', 'visual')}: {args.get('title', '')}",
             "wizard_schedule_brief": f"Prepared a recurring brief for Metronome: {args.get('title', '')}",
             ASK_FOR_SYSTEM: f"Asked you to switch on {args.get('system', 'a system')}",
+            ASK_PERSON: f"Asked you: {str(args.get('question', ''))[:160]}",
             "wizard_check_my_data": f"Checked {len(args.get('claims', []))} figure(s) against the evidence"}.get(name, name)
 
 
@@ -477,6 +482,8 @@ def tool_summary(name: str, outcome: ToolOutcome) -> str:
         return "waiting for you to open the request form and submit it"
     if name == ASK_FOR_SYSTEM:
         return f"waiting for you to switch on {data.get('name')}"
+    if name == ASK_PERSON:
+        return "waiting for your answer: " + " · ".join(str(o) for o in data.get("options") or [])
     if name.endswith("_run_report"):
         extra = f" of {data['total_rows']}" if data.get("truncated") else ""
         as_of = f" · as of {str(data.get('as_of'))[:10]}" if data.get("as_of") else ""
@@ -660,7 +667,7 @@ class RunManager:
         reads_path = run.kind == "task" and bool((run.work or {}).get("path"))
         return [t for t in self.registry.describe(scope)
                 if (run.offers_ask if t["name"] == ASK_FOR_SYSTEM else offered(t["name"], shown, catalogs, portals))
-                and (reads_path or t["name"] not in TASK_FILE_NAMES)]
+                and (reads_path or t["name"] not in TASK_FILE_NAMES) and (run.kind == "ask" or t["name"] != ASK_PERSON)]
 
     def subscribe(self, run_id: str) -> asyncio.Queue[dict[str, Any]] | None:
         run = self.active.get(run_id)
@@ -766,7 +773,7 @@ class RunManager:
         if outcome.ok and "schedule" in outcome.data:
             schedule = next(s for s in self.store.schedules(run.conversation_id, run.id) if s["label"] == outcome.data["schedule"])
             await self.emit(run, "schedule_proposed", {"schedule": public_schedule(schedule)})
-        if outcome.ok and name in MAP_WRITES:
+        if outcome.ok and (name in MAP_WRITES or (name == "portal_save_script" and outcome.data.get("in_map"))):
             run.maps_changed.add(str(outcome.data.get("system")))
         if outcome.ok and name == "wizard_kb_save_notes":
             run.kb_saves += 1
@@ -774,6 +781,10 @@ class RunManager:
             run.needs_sign_in = True
         if outcome.ok and name == "portal_request_access":
             await self.emit(run, "access_request_proposed", {"request": outcome.data["access_request"]})
+        if outcome.ok and name == ASK_PERSON:
+            run.asked = True
+            await self.emit(run, "person_asked", {"question": outcome.data["question"], "options": outcome.data["options"],
+                                                  "why": outcome.data.get("why")})
         if outcome.ok and name == ASK_FOR_SYSTEM:
             await self.emit(run, "system_requested", {"system": outcome.data["system"], "name": outcome.data["name"],
                                                       "reason": outcome.data["reason"]})
@@ -802,6 +813,17 @@ class RunManager:
                                    "wizard_task_files_done, then summarise this round; Wizard starts the next round with "
                                    "the files left." if in_rounds else
                                    "Answer with what you have and say what is missing."))
+        if name == ASK_PERSON and run.kind != "ask":
+            return ToolOutcome(False, {}, 0, "no_one_to_ask",
+                               "Nobody is waiting to answer a question in this run: decide yourself, and say what you "
+                               "assumed in your summary.")
+        if name == ASK_PERSON and run.asked:
+            return ToolOutcome(False, {}, 0, "already_asked", "You already asked the person a question in this run: end "
+                                                              "your turn with it.")
+        if run.asked and (category in RESEARCH or name in MAP_WRITES):
+            return ToolOutcome(False, {}, 0, "asked_person",
+                               "You asked the person a question: end your turn now with it. Their choice comes as their "
+                               "next message.")
         if name in TASK_ONLY and run.kind != "task":
             return ToolOutcome(False, {}, 0, "task_only",
                                f"{name} changes the company knowledge base, so it runs only in a task from Settings → "
@@ -835,8 +857,19 @@ class RunManager:
         if run.started and left < wrap_up_s(self.settings.run_timeout_s):
             return ToolOutcome(False, {}, 0, "time_nearly_up",
                                f"About {max(1, round(left / 60))} minute(s) remain before this run's time limit. Stop "
-                               "gathering data and write your answer now with what you have; say what is missing.")
+                               "gathering data and write your answer now with what you have; say what is missing. If what "
+                               "you have does not answer what was asked (its period, granularity, breakdown or markets), "
+                               "say so in your first sentence and name the source that holds it.")
         return None
+
+    def _database(self, run: ActiveRun) -> tuple[str, list[str]] | None:
+        """The database's name and the schemas Gemini may query, when the company limits them and this run may query it."""
+        postgres = self.services.postgres
+        if postgres is None or not postgres.settings.schemas or run.kind == "explore":
+            return None
+        if run.choice is not None and not run.choice.allows("postgresql"):
+            return None
+        return self.services.postgres_name, list(postgres.settings.schemas)
 
     # Execution ---------------------------------------------------------------------------------------------------------
     def history(self, run: ActiveRun) -> list[Turn]:
@@ -1150,6 +1183,7 @@ class RunManager:
                                     for a in self.store.conversation_attachments(run.conversation_id)], explore=run.explore,
                                    task=run.work, systems=systems, order=order,
                                    when_asked=[choice.name(s) for s in choice.off()] if choice and choice.auto else None,
+                                   database=self._database(run),
                                    remembered=[] if run.kind in LANES
                                    else [m["text"] for m in self.store.memories(run.identity.id)]),
                     question=run.question, kind=run.kind,  # type: ignore[arg-type]

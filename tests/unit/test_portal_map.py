@@ -164,6 +164,41 @@ def test_gemini_reads_the_map_first_and_adds_to_it(tmp_path: Path):
     assert bad.error_code == "invalid_arguments"
 
 
+def test_saved_scripts_travel_with_the_map_and_a_missing_one_is_named(tmp_path: Path):
+    """The owner's run of 3 Nov 2026: the published map named a script that was saved on no PC reading it, and the run
+    spent a step finding that out. Scripts are kept in the map now, and a report whose script nobody saved says so."""
+    from wizard_connectors.tools import portal_tools
+
+    registry, context = tools(tmp_path)
+    saved = registry.execute("portal_map_save", {"system": "gscm", "reports": [
+        {"id": "as470", "name": "Actual Sales", "status": "mapped", "script": "actual-sales"}]}, context)
+    assert saved.ok and "actual-sales" in saved.data["warning"], "a script name nobody saved is flagged at once"
+    report = registry.execute("portal_map", {"system": "gscm", "report": "as470"}, context).data["report"]
+    assert "not saved on this PC or in the map" in report["script_missing"]
+    found = registry.execute("portal_map", {"system": "gscm", "find": "actual sales"}, context).data["reports"][0]
+    assert "script_missing" in found
+
+    kept = registry.execute("portal_save_script", {"system": "gscm", "name": "actual-sales", "description": "Actual sales by market.",
+                                                   "steps": [{"action": "evaluate", "script": "return P.market;"}],
+                                                   "params": [{"name": "market", "value": "AE"}]}, context)
+    assert kept.ok and kept.data["in_map"] and "in the portal's map" in kept.data["note"]
+    assert "script_missing" not in registry.execute("portal_map", {"system": "gscm", "report": "as470"}, context).data["report"]
+    assert "## Saved scripts" in render(context.services.portal_maps.load("gscm"))
+
+    # Another person (another PC) has no scripts of their own, only the map: the script runs from the map's copy.
+    other = ToolContext(identity=Identity(id="colleague", email="c@example.com", name="C", role="Owner",
+                                          entitlements={"gscm": SystemRights(reports=["*"], markets=["*"])}),
+                        run_id="run_u", recorder=MemoryRecorder(), services=context.services)
+    guide = registry.execute("portal_guide", {"system": "gscm"}, other)
+    assert [(s["name"], s.get("from")) for s in guide.data["saved_scripts"]] == [("actual-sales", "map")]
+    portal = context.services.portals.settings.portal("gscm")
+    steps, params = portal_tools._steps(other, portal_tools.RunArgs(system="gscm", script="actual-sales",
+                                                                    params=[{"name": "market", "value": "SA"}]), portal)
+    assert steps == [{"action": "evaluate", "script": "return P.market;"}] and params == {"market": "SA"}
+    gone = registry.execute("portal_run", {"system": "gscm", "script": "never-saved"}, other)
+    assert gone.error_code == "script_not_found" and "request or its open steps" in gone.error_message
+
+
 def test_the_catalog_tools_say_the_portal_itself_is_read_live(tmp_path: Path):
     registry, context = tools(tmp_path)
     found = registry.execute("gscm_search_reports", {"query": "report"}, context)

@@ -100,6 +100,10 @@ def test_only_the_portals_their_company_domain_and_sign_in_hosts_are_reachable()
     ("GET", "https://catalog.example.com/api/v1/access-requests?status=pending", None),
     ("GET", "https://catalog.example.com/tables/sales_daily/requests", None),
     ("POST", "https://p.corp.example.com/svc/selectAccessRequestList.do", "SSV:utf-8\x1e"),
+    # A page's own images, styles, scripts and fonts are files it reads, whatever they are called (GSCM's update.svg).
+    ("GET", "https://p.corp.example.com/gscm30/images/update.svg", None),
+    ("GET", "https://p.corp.example.com/save/delete_icon.PNG?v=3", None),
+    ("HEAD", "https://p.corp.example.com/lib/updateHelper.js", None),
 ])
 def test_reads_go_through(method, url, body):
     assert write_reason(method, url, body) is None
@@ -126,6 +130,10 @@ def test_reads_go_through(method, url, body):
     ("POST", "https://catalog.example.com/api/graphql", json.dumps({"query": "mutation { createAccessRequest(urn: \"t\") }"}),
      "mutation"),
     ("POST", "https://catalog.example.com/api/graphql", json.dumps([{"query": "# ask\n  mutation Ask { x }"}]), "mutation"),
+    # Only a GET of a static file is a read: posting to one, or a static file that names an action, is not.
+    ("POST", "https://p.corp.example.com/svc/update.svg", None, "update"),
+    ("GET", "https://p.corp.example.com/img/x.png?action=deleteAll", None, "delete"),
+    ("GET", "https://p.corp.example.com/svc/update.do", None, "update"),
 ])
 def test_writes_are_refused(method, url, body, word):
     reason = write_reason(method, url, body)

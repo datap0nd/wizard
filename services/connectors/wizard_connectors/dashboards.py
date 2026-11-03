@@ -53,6 +53,10 @@ PROBE_S = 10.0
 LIST_S = 90.0
 READ_S = 100.0  # a tool call answers well within the 180 seconds the Gemini CLI route gives it
 LISTING_S = 60.0  # the folder is walked again at most once a minute
+# A folder that could not be listed is not walked again for this long, unless the person asks (fresh): the owner's run
+# of 3 Nov 2026 waited 90 s for the share, then 41 s more when Gemini tried it again. A walk cut short goes on in the
+# background and its listing is kept when it finishes, so the next try can be instant.
+FAILED_S = 300.0
 PARSER = 1  # a cached parse made by another version of the reader is made again
 
 T = TypeVar("T")
@@ -152,6 +156,24 @@ def bounded(work: Callable[[], T], seconds: float, what: str) -> T:
     return box["value"]
 
 
+class _Walk(threading.Thread):
+    """One walk of the dashboards folder; what it found is kept on the folder when it ends, even late."""
+
+    def __init__(self, owner: Dashboards):
+        super().__init__(name="wizard-dashboards-list", daemon=True)
+        self.owner = owner
+        self.found: list[Dashboard] = []
+        self.error: Exception | None = None
+
+    def run(self) -> None:
+        try:
+            self.found = self.owner._list()
+        except Exception as error:  # handed to the caller that waits for it
+            self.error = error
+            return
+        self.owner._listed(self.found)
+
+
 def dashboard_id(relative: str) -> str:
     return "d" + hashlib.sha256(relative.casefold().encode("utf-8")).hexdigest()[:10]
 
@@ -225,6 +247,8 @@ class Dashboards:
         self._lock = threading.Lock()
         self._listing: tuple[float, list[Dashboard]] | None = None
         self._probe: tuple[float, str | None] | None = None
+        self._failed: tuple[float, str] | None = None  # when the folder last could not be listed, and why
+        self._walking: _Walk | None = None  # the walk of the folder, while it runs
 
     # Reaching the folder ------------------------------------------------------------------------------------------------
     def _check_root(self) -> str | None:
@@ -259,15 +283,41 @@ class Dashboards:
         cached = self._listing
         if cached and not fresh and time.monotonic() - cached[0] < LISTING_S:
             return cached[1]
+        failed = self._failed
+        if failed and not fresh and time.monotonic() - failed[0] < FAILED_S:
+            ago = round(time.monotonic() - failed[0])
+            raise DashboardError("folder_unreachable", unreachable(self.root, failed[1]) + (
+                f" (This was {ago} s ago; Wizard tries the folder again after {round(FAILED_S / 60)} minutes, so do not "
+                "call the dashboards tools again for this answer.)"))
         problem = self.problem(fresh=True)
         if problem:
+            self._failed = (time.monotonic(), problem)
             raise DashboardError("folder_unreachable", unreachable(self.root, problem))
         try:
-            found = bounded(self._list, LIST_S, "Listing the dashboards folder")
+            found = self._walk_listing()
         except DashboardError as error:
+            self._failed = (time.monotonic(), error.message)
             raise DashboardError("folder_unreachable", unreachable(self.root, error.message)) from None
-        self._listing = (time.monotonic(), found)
         return found
+
+    def _walk_listing(self) -> list[Dashboard]:
+        """Walk the folder in a thread and wait at most LIST_S. A walk still running from an earlier call is waited for,
+        never started twice; one that finishes after its caller stopped waiting still keeps its listing."""
+        with self._lock:
+            walk = self._walking
+            if walk is None or not walk.is_alive():
+                walk = self._walking = _Walk(self)
+                walk.start()
+        walk.join(LIST_S)
+        if walk.is_alive():
+            raise DashboardError("no_answer", f"Listing the dashboards folder did not answer within {round(LIST_S)} "
+                                              "seconds (it goes on in the background)")
+        if walk.error is not None:
+            raise walk.error
+        return walk.found
+
+    def _listed(self, found: list[Dashboard]) -> None:
+        self._listing, self._failed = (time.monotonic(), found), None
 
     def _list(self) -> list[Dashboard]:
         found = []

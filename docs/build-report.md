@@ -3,7 +3,33 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-03 (latest) — Cases: a long prompt or answer scrolls inside its box
+## 2026-11-03 (latest) — Wizard asks before a long route; GSCM opens reports without restarting; a GSCM options task
+
+The owner's run on the work PC (eval log, 3 Nov 2026): "sell-out by operator against the day before" took 29.6 minutes
+and answered a different question. The owner's review of it, written by another assistant, was checked against the code
+first; most of it held, two points did not: a cap of two attempts per portal step would have stopped the run before the
+attempt that worked (the causes are fixed instead), and the 25 s per step was not only context: about 7.5 minutes were
+waits for Google's capacity.
+- **Asking first** ([decision](decisions/2026-11-03-ask-the-person.md)): `wizard_ask_person` puts one question with two
+  to four options on the answer as buttons; a click asks the option next. Only in a question, once, and the run stops
+  gathering data after it. Run event `person_asked`.
+- **GSCM.** A `goto` to the page a running Nexacro client is on is not sent (`kept`; `reload: true` forces it): it
+  restarted the client. `W.nexacro.ready()` waits for the client to finish starting, `W.nexacro.call()` calls a client
+  function with its form as `this`, `W.nexacro.open(fn, menuId)` does both and waits for the report.
+- **Scripts travel with the map.** `portal_save_script` keeps a copy in the portal's map (published with it);
+  `portal_run(script=)` falls back to it; `portal_map` marks a report whose script is saved nowhere (`script_missing`),
+  and `portal_map_save` warns when a report names one.
+- **Read-only rule.** A GET of an image, style sheet, script or font is a read whatever its name (`update.svg`); its
+  query is still checked.
+- **Dashboards.** A folder that could not be listed is not walked again for 5 minutes unless asked afresh; a walk cut
+  short keeps going and keeps its listing.
+- **Prompt.** A `<database>` block names the schemas Wizard may query; answer the period asked or say so first; growth
+  from zero is undefined, −100% is the lowest; the wrap-up message asks to say first when the data does not match.
+- **Task** `gscm-report-options` (repeats until done): prove one way to open a report, then map what each sales,
+  sell-out, sell-in and stock report's configuration gear adds (account, customer, channel), the request and a script
+  that read it, and route operator and account questions; it also re-checks the two notes changed by hand that day.
+
+## 2026-11-03 — Cases: a long prompt or answer scrolls inside its box
 
 The owner asked that a case's prompt and answer boxes scroll once they pass a reasonable length instead of stretching
 the page. In `CaseFlow.tsx` a prompt's text stops at 16rem and an answer's body at 36rem (or 70% of the window, the

@@ -31,6 +31,16 @@ class NoArgs(Args):
     pass
 
 
+class AskPersonArgs(Args):
+    question: str = Field(min_length=5, max_length=300, description="One short question in the person's language, e.g. "
+                          "'Daily from GSCM, or weekly from the database?'.")
+    options: list[str] = Field(min_length=2, max_length=4, description="Two to four answers the person can click, each a "
+                               "few words and what it costs when that differs a lot (e.g. 'Daily, from GSCM (a live "
+                               "read, a few minutes)'); the one you would choose first.")
+    why: str | None = Field(default=None, max_length=300, description="One short sentence: what the choice changes in the "
+                            "answer.")
+
+
 class AskForSystemArgs(Args):
     system: str = Field(min_length=1, max_length=60, description="The switched-off system the answer needs: its id or "
                         "name as the request's systems list gives it (e.g. gscm, ASAP).")
@@ -445,6 +455,20 @@ def ask_for_system(ctx: ToolContext, args: AskForSystemArgs) -> dict[str, Any]:
     return {"system": found, "name": choice.name(found), "reason": args.reason.strip(),
             "next": "A button under your answer lets the person switch it on and continue. Answer with what the systems "
                     "that are on show, and say what this one would add; never fill in its data."}
+
+
+def ask_person(ctx: ToolContext, args: AskPersonArgs) -> dict[str, Any]:
+    """A question for the person before a long route (owner, 3 Nov 2026: "if you believe that perhaps ASKING the user
+    for more info before proceeding, feel free ... like a prompt helper"). The options become buttons under the answer;
+    the one the person clicks is their next question. runs.py ends the research once it is asked."""
+    options = list(dict.fromkeys(" ".join(o.split())[:160] for o in args.options if o.strip()))
+    if len(options) < 2:
+        raise ToolError("invalid_arguments", "Give at least two different options.")
+    return {"question": " ".join(args.question.split()), "options": options,
+            "why": " ".join((args.why or "").split()) or None,
+            "next": "The options are buttons under your answer. End your turn now: write the question in one or two "
+                    "short lines and what each option means for the answer. Gather no more data; the person's choice "
+                    "comes as their next message."}
 
 
 def search_catalog(ctx: ToolContext, args: CatalogSearchArgs) -> dict[str, Any]:
@@ -950,6 +974,11 @@ CORE_TOOLS = [
              "under your answer to switch it on and continue. Never guess that system's data instead.", AskForSystemArgs,
              ask_for_system,
              "wizard", "present"),
+    ToolSpec("wizard_ask_person", "Ask the person one short question before a long route, when their answer changes "
+             "where the data comes from or what the answer is (daily or weekly, which market, units or value, what a "
+             "breakdown means) and nothing they said settles it. Give two to four options: they become buttons, and the "
+             "one clicked is their next message. Then end your turn with the question; ask at most once per request.",
+             AskPersonArgs, ask_person, "wizard", "present"),
     ToolSpec("wizard_check_my_data", "Optional verification. Recompute figures you state from the cited evidence rows, "
              "check that each figure covers the period you claim, and optionally re-run cited requests to detect changed "
              "source data. Reports MATCH, DISCREPANCY, PERIOD_MISMATCH or NOT_VERIFIABLE per figure; it never edits your "

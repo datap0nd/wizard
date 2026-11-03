@@ -237,6 +237,7 @@ export function App({compact = false}: {compact?: boolean}) {
       setChosen(next);
       void ask(`Continue with ${request.name} switched on.`, next);
     },
+    reply: (_run: RunView, text: string) => { void ask(text); },
   }), [ask, available, boot?.runtime?.steering, choose, chosen, steerRun]);
 
   const check = useCallback(async (run: RunView) => {

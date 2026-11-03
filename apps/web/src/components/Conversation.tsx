@@ -43,7 +43,7 @@ export function Conversation({runs, empty, ...handlers}: Props) {
         onScroll={() => { const el = scroller.current; if (el) setFollowing(el.scrollHeight - el.scrollTop - el.clientHeight < 120); }}>
         <div className="mx-auto flex w-full max-w-[1000px] flex-col gap-6 px-4 py-6 md:px-6">
           {runs.length === 0 && empty}
-          {runs.map(run => (
+          {runs.map((run, index) => (
             <article key={run.id} className="flex flex-col gap-3" data-testid="turn">
               {run.kind !== 'check' && <div className="group flex flex-col items-end gap-1.5">
                 <LongText text={run.question} lines={12} chars={1200} clamp="line-clamp-12" testId="user-turn"
@@ -53,7 +53,7 @@ export function Conversation({runs, empty, ...handlers}: Props) {
                   <RememberButton text={run.question} runId={run.id} label="Remember this" />
                 </div>}
               </div>}
-              <RunCard run={run} {...handlers} />
+              <RunCard run={run} latest={index === runs.length - 1} {...handlers} />
             </article>
           ))}
         </div>

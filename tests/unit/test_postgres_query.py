@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 import datetime as dt
 import json
+from datetime import date
 from decimal import Decimal
 from typing import Any
 
@@ -309,3 +310,36 @@ def test_the_tool_refuses_another_schema_and_records_no_evidence():
     outcome = build_registry(services).execute("wizard_query_postgresql", {"sql": "SELECT * FROM restricted.customers"}, ctx)
     assert not outcome.ok and outcome.error_code == "schema_not_allowed"
     assert "restricted.customers" in str(outcome.error_message) and ctx.recorder.get_evidence("E1") is None
+
+
+def test_the_prompt_names_the_schemas_wizard_may_query_before_the_first_query(tmp_path):
+    """The owner's run of 3 Nov 2026 learned the allowed schema from three refusals, two for a table a note named."""
+    from fastapi.testclient import TestClient
+    from tests.helpers import HEADERS, login, make_settings, wait_run
+    from tests.integration.test_steering_api import ScriptedRuntime, say
+
+    from wizard_agent.prompting import compose
+    from wizard_api.app import create_app
+
+    block = compose("Units?", [], "ask", date(2026, 11, 3), database=("AI Team Database", ["reporting"]))
+    assert "<database>\nWizard may query only these schemas of the AI Team Database: reporting" in block
+    assert "<database>" not in compose("Units?", [], "ask", date(2026, 11, 3), database=("AI Team Database", []))
+
+    runtime = ScriptedRuntime()
+
+    async def script(request, emit, tools):
+        await say(emit, "Done.")
+
+    runtime.script = script
+    settings = make_settings(tmp_path, WIZARD_PG_HOST="db.corp.example", WIZARD_PG_USER="reader",
+                             WIZARD_PG_SCHEMAS="reporting")
+    with TestClient(create_app(settings, runtime=runtime)) as client:  # type: ignore[arg-type]
+        login(client, "u-ceo")
+        started = client.post("/api/v1/runs", json={"question": "Units by market?"}, headers=HEADERS).json()
+        assert wait_run(client, started["run_id"])["status"] == "succeeded"
+        assert "may query only these schemas" in runtime.requests[0].prompt and "reporting" in runtime.requests[0].prompt
+        chosen = client.post("/api/v1/runs", json={"question": "From the knowledge base only?", "systems": ["knowledge"]},
+                             headers=HEADERS).json()
+        assert wait_run(client, chosen["run_id"])["status"] == "succeeded"
+        assert "<database>" not in runtime.requests[1].prompt, "a question without the database is not told about it"
+
