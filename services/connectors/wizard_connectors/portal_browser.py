@@ -1228,7 +1228,7 @@ class PortalBrowser:
                     "el => { const own = el.closest('[id]'); return {text: (el.innerText || el.textContent || '').slice(0, 200),"
                     " aria: el.getAttribute('aria-label'), title: el.getAttribute('title'), value: el.value,"
                     " name: el.getAttribute('name'), alt: el.getAttribute('alt'), id: el.id || (own && own.id) || ''} }")
-                refusal = portals.click_refusal(descriptor)
+                refusal = portals.click_refusal(descriptor, portal.id)
                 if refusal:
                     raise PortalError("click_refused", f"Wizard does not click this control because {refusal}: portal "
                                                        "scripts only read.")

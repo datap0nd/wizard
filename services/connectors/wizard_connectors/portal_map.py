@@ -35,12 +35,16 @@ TOPICS_INLINE = 16_000   # topic texts shown in full in the summary up to this m
 # How much each part of a report counts when a question's words are matched against the map. use_for is written for
 # exactly this match: the business questions and terms the report answers.
 WEIGHTS = (("name", 4.0), ("use_for", 3.0), ("path", 2.5), ("summary", 2.0), ("menu_id", 3.0), ("id", 2.0),
-           ("definitions", 1.0), ("filters", 1.0), ("data", 1.0), ("notes", 0.5))
+           ("definitions", 1.0), ("filters", 1.0), ("data", 1.0), ("views", 2.0), ("notes", 0.5))
 # Business routing (owner, 30 Oct 2026: "I dont see business logic saying: THIS report is used for THESE terms"): what a
 # report answers, its near misses with the report to use instead, and the knowledge notes that define its terms.
 ROUTING = ("use_for", "not_for", "definitions")
 ROUTED = ("mapped", "partial")  # reports that need routing; a todo report gets it when it is mapped
 TO_ROUTE_LIMIT = 15
+# Every option a report has, not only its default view (owner, 3 Nov 2026: "explore not only default options, but all of
+# them", above all the configuration a report grid's gear opens: DB4009 shows the account (OrgSales) only when it is
+# added there). A mapped report keeps them in `views`; one mapped before has no `views` and is explored again.
+TO_CONFIGURE_LIMIT = 15
 
 
 def now() -> str:
@@ -122,12 +126,24 @@ class PortalMaps:
         """Mapped reports that do not say yet what they are for (mapped before the map kept business routing)."""
         return [r for r in data["reports"] if r.get("status") in ROUTED and not r.get("routed")]
 
+    def unviewed(self, data: dict[str, Any]) -> list[dict[str, Any]]:
+        """Mapped reports whose options beyond the default view (the configuration gear, column choosers, view and
+        grouping switches) were never explored: no `views`, not even an empty list saying there are none."""
+        return [r for r in data["reports"] if r.get("status") in ROUTED and not isinstance(r.get("views"), list)]
+
+    def to_configure(self, system: str, limit: int = TO_CONFIGURE_LIMIT) -> list[dict[str, Any]]:
+        return [{"id": r["id"], "name": r.get("name"), "menu_id": r.get("menu_id"),
+                 **{k: r[k] for k in ("open", "script") if r.get(k)},
+                 "data": [{k: d[k] for k in ("dataset", "component", "columns") if d.get(k)}
+                          for d in r.get("data") or [] if isinstance(d, dict)]}
+                for r in self.unviewed(self.load(system))[:limit]]
+
     def status(self, system: str) -> dict[str, Any]:
         data = self.load(system)
         counts = self.counts(data)
         return {"system": system, "updated": data.get("updated"), "has_overview": bool(data.get("overview")),
                 "topics": len(data["topics"]), "reports": len(data["reports"]), **{f"reports_{k}": v for k, v in counts.items()},
-                "reports_to_route": len(self.unrouted(data)),
+                "reports_to_route": len(self.unrouted(data)), "reports_to_configure": len(self.unviewed(data)),
                 "published": data.get("published"), "source": self._source(system),
                 "can_publish": self.writer is not None}
 
@@ -393,6 +409,9 @@ def render(data: dict[str, Any]) -> str:
             lines.append(f"- Filter {item.get('name')}: {item.get('kind') or ''} {item.get('values') or ''}".rstrip())
         for item in report.get("data") or []:
             lines.append(f"- Data {item.get('dataset')}: {', '.join(item.get('columns') or [])}")
+        for item in report.get("views") or []:
+            lines.append(f"- Option {item.get('name')}: {item.get('options') or ''}".rstrip()
+                         + (f" (adds {', '.join(item['columns'])})" if item.get("columns") else ""))
         for item in report.get("requests") or []:
             lines.append(f"- Request {item.get('name')}: {item.get('method') or 'POST'} {item.get('url')}"
                          + (" (verified)" if item.get("verified") else ""))

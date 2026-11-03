@@ -64,7 +64,8 @@ default, at most 150 s); one call stops after about 3 minutes, so split long wor
 - Clicks on controls whose label, title, value, name or id names save, delete, remove, clear, reset, unselect, apply,
   submit, confirm, pin, share, new, add, edit, modify, update, upload, import, send, approve, publish, request, sign
   out...
-  (Metronome's list). Confirmation dialogs are always answered No; downloads are off.
+  (Metronome's list). GSCM allows Apply (a grid's column dialog). Confirmation dialogs are always answered No;
+  downloads are off.
 
 A refused request makes the step fail with `request_refused`; use another route. Never try to get around a refusal.
 

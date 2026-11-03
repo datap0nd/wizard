@@ -2373,7 +2373,7 @@
             "type": "string"
           },
           "todo": {
-            "description": "True: the reports still to map (todo, partial, failed), for exploring, and the mapped reports still to route (portal_map_route) (default false)",
+            "description": "True: the reports still to map (todo, partial, failed), for exploring, the mapped reports whose options beyond the default view are still to explore (to_configure), and the mapped reports still to route (portal_map_route) (default false)",
             "type": "boolean"
           }
         },
@@ -2494,7 +2494,7 @@
                   "description": "(0-120 characters)"
                 },
                 "status": {
-                  "description": "todo: listed, not mapped yet. mapped: open, filters, data and a proven fast route are known. partial: some of it. failed / skipped: say why in notes.",
+                  "description": "todo: listed, not mapped yet. mapped: open, filters, data, every option beyond the default view (views) and a proven fast route are known. partial: some of it. failed / skipped: say why in notes.",
                   "enum": [
                     "todo",
                     "mapped",
@@ -2590,6 +2590,52 @@
                     },
                     "required": [
                       "dataset"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 30,
+                  "type": "array"
+                },
+                "views": {
+                  "description": "Every option beyond the default view: the configuration gear's column chooser, view, grouping, measure and unit switches, with every choice and what it adds. An empty list says the report has none (explored); leaving it out means it was not explored yet.",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "name": {
+                        "description": "The option as the screen names it: the grid's gear / Configuration (column chooser), a view or grouping switch, a measure or unit toggle, a layout tab (0-160 characters)",
+                        "type": "string"
+                      },
+                      "component": {
+                        "description": "How to reach it: the control's component path, and the dialog it opens (0-400 characters)",
+                        "type": "string"
+                      },
+                      "options": {
+                        "description": "Every choice it offers (each selectable column, grouping, measure...), the default ones marked, e.g. 'OrgSales (account), Country, Model (default off); Region (default on)' (0-8000 characters)",
+                        "type": "string"
+                      },
+                      "columns": {
+                        "description": "The column ids the non-default choices add to the dataset, e.g. orgsales.",
+                        "items": {
+                          "type": "string"
+                        },
+                        "maxItems": 200,
+                        "type": "array"
+                      },
+                      "effect": {
+                        "description": "What choosing it changes, as proved: a new request parameter (name and values), another dataset or route, or only columns the dataset already had; and whether the choice stays saved for the person (0-3000 characters)",
+                        "type": "string"
+                      },
+                      "how": {
+                        "description": "The proven steps or request that read the report with these choices (e.g. open the gear, tick OrgSales, Apply, search; or the request with its parameter) (0-4000 characters)",
+                        "type": "string"
+                      },
+                      "notes": {
+                        "type": "string",
+                        "description": "(0-2000 characters)"
+                      }
+                    },
+                    "required": [
+                      "name"
                     ],
                     "type": "object"
                   },

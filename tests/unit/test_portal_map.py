@@ -254,6 +254,26 @@ def test_the_route_tool_takes_routing_only_and_checks_its_notes(tmp_path: Path):
     assert saved.ok and context.services.portal_maps.report("gscm", "mt100")["routed"], "mapping a report routes it too"
 
 
+def test_mapped_reports_without_their_options_are_explored_again(tmp_path: Path):
+    registry, context = tools(tmp_path)
+    maps = context.services.portal_maps
+    maps.save("gscm", overview="A Nexacro client.", reports=MAPPED)
+    assert maps.status("gscm")["reports_to_configure"] == 2
+    todo = registry.execute("portal_map", {"system": "gscm", "todo": True}, context).data
+    assert [r["id"] for r in todo["to_configure"]] == ["as470", "ms100"] and todo["to_configure_left"] == 2
+    assert todo["to_configure"][0]["data"][0]["columns"] == ["MKT", "QTY"]
+    saved = registry.execute("portal_map_save", {"system": "gscm", "reports": [
+        {"id": "as470", "views": [{"name": "Configuration (gear)", "component": "...form.btn_config",
+                                   "options": "OrgSales (off), Country (off)", "columns": ["orgsales"],
+                                   "effect": "adds request parameter orgsales=Y"}]},
+        {"id": "ms100", "views": []}]}, context)
+    assert saved.ok, saved
+    assert maps.unviewed(maps.load("gscm")) == [] and "to_configure" not in registry.execute(
+        "portal_map", {"system": "gscm", "todo": True}, context).data, "an empty list means explored, none there"
+    assert [r["id"] for r in maps.find("gscm", "orgsales")][:1] == ["as470"]
+    assert "- Option Configuration (gear): OrgSales (off), Country (off) (adds orgsales)" in render(maps.load("gscm"))
+
+
 # Mapping rounds through the API, with a scripted Gemini --------------------------------------------------------------
 class Mapper:
     """Each mapping round maps one more report; a question answers at once. `stall` makes rounds add nothing, `hold`
@@ -288,14 +308,21 @@ class Mapper:
             ok, text = await tools.call("portal_map", {"system": "gscm", "todo": True})
             reply = json.loads(text) if ok else {}
             todo, to_route = reply.get("todo", []), reply.get("to_route", [])
+            to_configure = reply.get("to_configure", [])
+            if to_configure:
+                await tools.call("portal_map_save", {"system": "gscm", "reports": [
+                    {"id": r["id"], "views": [{"name": "Configuration", "options": "OrgSales (off)", "columns": ["orgsales"]}]}
+                    for r in to_configure]})
             if to_route:
                 await tools.call("portal_map_route", {"system": "gscm", "reports": [
                     {"id": r["id"], "use_for": [f"{r['name']} by market"]} for r in to_route]})
+            elif to_configure:
+                pass
             elif "This is round 1;" in request.prompt:
                 await tools.call("portal_map_save", {"system": "gscm", "overview": "A Nexacro client.", "reports": REPORTS})
             elif todo:
                 await tools.call("portal_map_save", {"system": "gscm", "reports": [
-                    {"id": todo[0]["id"], "status": "mapped", "use_for": [f"{todo[0]['name']} by market"]}]})
+                    {"id": todo[0]["id"], "status": "mapped", "views": [], "use_for": [f"{todo[0]['name']} by market"]}]})
         await emit("text_delta", {"text": "Round done."})
 
 
@@ -344,8 +371,10 @@ def test_a_finished_map_is_routed_by_the_next_mapping_before_anything_else(tmp_p
         assert client.post("/api/v1/portals/gscm/map", headers=HEADERS).status_code == 200
         view = wait_mapping(client, lambda v: v["mapping"]["state"] != "running")
         assert view["mapping"]["state"] == "finished" and view["mapping"]["round"] == 1, view
-        assert view["map"]["reports_to_route"] == 0 and "step 4" in runtime.prompts[0]
-        assert {r["id"]: without_routing(r) for r in maps.load("gscm")["reports"]} == before
+        assert view["map"]["reports_to_route"] == 0 and "step 5" in runtime.prompts[0]
+        assert view["map"]["reports_to_configure"] == 0, "the options of reports mapped before are explored too"
+        assert {r["id"]: without_routing({k: v for k, v in r.items() if k != "views"})
+                for r in maps.load("gscm")["reports"]} == before
 
 
 def test_mapping_stops_when_rounds_add_nothing(tmp_path: Path):

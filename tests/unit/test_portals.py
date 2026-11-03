@@ -160,6 +160,15 @@ def test_metronomes_forbidden_controls_are_never_clicked():
         assert click_refusal(control) is None, control
 
 
+def test_gscm_allows_apply_and_nothing_else():
+    for control in ({"text": "Apply"}, {"name": "btnApply"}, {"id": "mainframe.VFrameSet.WorkFrame0.form.div_col.form.btn_apply"}):
+        assert click_refusal(control, "gscm") is None, control
+        assert click_refusal(control), control
+        assert click_refusal(control, "asap"), control
+    for control in ({"text": "Save"}, {"text": "Apply and save"}, {"text": "Reset"}, {"name": "btnConfirm"}):
+        assert click_refusal(control, "gscm"), control
+
+
 def test_secrets_never_reach_gemini():
     url = portals.redact_url("https://p.example.com/x?authToken=abc&week=2026W40&SESSIONID=1")
     assert "abc" not in url and "week=2026W40" in url

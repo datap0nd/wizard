@@ -172,6 +172,16 @@ class MapRequest(Args):
     notes: str | None = Field(default=None, max_length=2000)
 
 
+class MapView(Args):
+    name: str = Field(max_length=160, description="The option as the screen names it: the grid's gear / Configuration (column chooser), a view or grouping switch, a measure or unit toggle, a layout tab.")
+    component: str | None = Field(default=None, max_length=400, description="How to reach it: the control's component path, and the dialog it opens.")
+    options: str | None = Field(default=None, max_length=8000, description="Every choice it offers (each selectable column, grouping, measure...), the default ones marked, e.g. 'OrgSales (account), Country, Model (default off); Region (default on)'.")
+    columns: list[str] = Field(default_factory=list, max_length=200, description="The column ids the non-default choices add to the dataset, e.g. orgsales.")
+    effect: str | None = Field(default=None, max_length=3000, description="What choosing it changes, as proved: a new request parameter (name and values), another dataset or route, or only columns the dataset already had; and whether the choice stays saved for the person.")
+    how: str | None = Field(default=None, max_length=4000, description="The proven steps or request that read the report with these choices (e.g. open the gear, tick OrgSales, Apply, search; or the request with its parameter).")
+    notes: str | None = Field(default=None, max_length=2000)
+
+
 NOTE_ID = r"^[a-z0-9][a-z0-9-]{0,80}$"
 TARGET = r"^([a-z][a-z0-9]{1,15}:)?[a-z0-9][a-z0-9_.-]{0,79}$"
 
@@ -192,11 +202,12 @@ class MapReport(MapRouting):
     name: str | None = Field(default=None, max_length=200)
     path: list[str] | None = Field(default=None, max_length=8, description="Menu path, top level first.")
     menu_id: str | None = Field(default=None, max_length=120)
-    status: Literal["todo", "mapped", "partial", "failed", "skipped"] | None = Field(default=None, description="todo: listed, not mapped yet. mapped: open, filters, data and a proven fast route are known. partial: some of it. failed / skipped: say why in notes.")
+    status: Literal["todo", "mapped", "partial", "failed", "skipped"] | None = Field(default=None, description="todo: listed, not mapped yet. mapped: open, filters, data, every option beyond the default view (views) and a proven fast route are known. partial: some of it. failed / skipped: say why in notes.")
     summary: str | None = Field(default=None, max_length=3000, description="What the report shows in business words: measures, grain, period, units.")
     open: str | None = Field(default=None, max_length=6000, description="The fastest proven way to open it (a call, steps or JavaScript), and how to tell it has loaded.")
     filters: list[MapFilter] | None = Field(default=None, max_length=60)
     data: list[MapData] | None = Field(default=None, max_length=30)
+    views: list[MapView] | None = Field(default=None, max_length=30, description="Every option beyond the default view: the configuration gear's column chooser, view, grouping, measure and unit switches, with every choice and what it adds. An empty list says the report has none (explored); leaving it out means it was not explored yet.")
     requests: list[MapRequest] | None = Field(default=None, max_length=20)
     script: str | None = Field(default=None, pattern=SCRIPT_NAME, description="A saved script (portal_save_script) that reads it with parameters.")
     notes: str | None = Field(default=None, max_length=6000, description="Pitfalls: waits, popups, paging, limits, why it failed.")
@@ -219,7 +230,7 @@ class MapArgs(Args):
     find: str | None = Field(default=None, max_length=300, description="Business words or a report name: returns the best matching reports in full.")
     report: str | None = Field(default=None, max_length=120, description="One report's id or menu id: returns it in full.")
     topic: str | None = Field(default=None, max_length=80, description="One topic's id: returns its full text.")
-    todo: bool = Field(default=False, description="True: the reports still to map (todo, partial, failed), for exploring, and the mapped reports still to route (portal_map_route).")
+    todo: bool = Field(default=False, description="True: the reports still to map (todo, partial, failed), for exploring, the mapped reports whose options beyond the default view are still to explore (to_configure), and the mapped reports still to route (portal_map_route).")
 
 
 class MapSaveArgs(Args):
@@ -482,6 +493,13 @@ def read_map(ctx: ToolContext, args: MapArgs) -> dict[str, Any]:
         data["todo"] = maps.todo(portal.id)
         data["counts"] = maps.counts(maps.load(portal.id))
         unrouted = len(maps.unrouted(maps.load(portal.id)))
+        unviewed = len(maps.unviewed(maps.load(portal.id)))
+        if unviewed:
+            data["to_configure"] = maps.to_configure(portal.id)
+            data["to_configure_left"] = unviewed
+            data["to_configure_note"] = ("Mapped reports whose options beyond the default view were never explored. Open "
+                                         "each, explore its configuration gear and every other option, and save its "
+                                         "views with portal_map_save (an empty list when it has none).")
         if unrouted:
             data["to_route"] = maps.to_route(portal.id)
             data["to_route_left"] = unrouted

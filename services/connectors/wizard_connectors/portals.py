@@ -13,7 +13,8 @@ The rules, applied inside the tool, never by Gemini's goodwill:
   the verb that starts a path segment or a service name, a POST to an access-request collection, a GraphQL mutation),
   PUT/PATCH/DELETE only for MicroStrategy prompt answers;
 - Superset SQL Lab runs one SELECT at a time;
-- clicks on controls named Save, Delete, Submit, Pin, Request... are refused (Metronome's list, FORBIDDEN_CLICK_WORDS);
+- clicks on controls named Save, Delete, Submit, Pin, Request... are refused (Metronome's list, FORBIDDEN_CLICK_WORDS),
+  except the words a portal allows (CLICK_ALLOWED: Apply in GSCM);
 - session tokens, passwords and cookies are redacted from everything Gemini sees."""
 from __future__ import annotations
 
@@ -83,6 +84,11 @@ FORBIDDEN_CLICK_WORDS = frozenset({
     "request",
 })
 FORBIDDEN_CLICK_PHRASES = ("sign out", "log out", "log off", "export all")
+# Words a portal may click although they are on the list above. GSCM (owner, 3 Nov 2026: "Allow Apply in GSCM"): a
+# report grid's gear opens a column dialog (OrgSales and other columns are added there) that only takes effect on Apply;
+# without it Wizard maps and reads only a report's default columns. Requests are still checked: an Apply that sends a
+# save request is refused by its verb.
+CLICK_ALLOWED = {"gscm": frozenset({"apply"})}
 
 # Names whose values are secrets: session ids, tokens, passwords, keys. A key named just "session" (ASAP's whole
 # session object, or W.mstr.session()'s summary) is not one: the secret fields inside it are redacted by name.
@@ -326,9 +332,10 @@ def sql_problem(body: str) -> str | None:
     return None
 
 
-def click_refusal(descriptor: dict[str, Any]) -> str | None:
+def click_refusal(descriptor: dict[str, Any], system: str | None = None) -> str | None:
     """Why a control must not be clicked (its label, title, value or name, or the last part of its id, names a change),
-    or None."""
+    or None. system: the portal, whose CLICK_ALLOWED words may be clicked there."""
+    allowed = CLICK_ALLOWED.get(system or "", frozenset())
     label_parts = [str(descriptor.get(k) or "")[:200] for k in ("text", "aria", "title", "value", "name", "alt")]
     element_id = str(descriptor.get("id") or "")
     last = element_id.split(".")[-1].split(":")[0] if element_id else ""
@@ -337,7 +344,7 @@ def click_refusal(descriptor: dict[str, Any]) -> str | None:
         for phrase in FORBIDDEN_CLICK_PHRASES:
             if phrase in lowered:
                 return f"it is labelled '{text.strip()[:60]}'"
-        hit = next((w for w in _tokens(text) if w in FORBIDDEN_CLICK_WORDS), None)
+        hit = next((w for w in _tokens(text) if w in FORBIDDEN_CLICK_WORDS and w not in allowed), None)
         if hit:
             return f"'{text.strip()[:60]}' names '{hit}'"
     return None

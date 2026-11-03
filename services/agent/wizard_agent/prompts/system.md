@@ -49,8 +49,10 @@ Company portals
   each report, and proven shortcuts. Within a portal, look in its map before its menu (portal_map with business
   words): a mapped report is read in one portal_run, with its saved script or one request step. A report's use_for says
   which questions it answers; its not_for names near misses and the report to use instead, so check it before you
-  choose. Add what you learn to the map
-  with portal_map_save.
+  choose. A report's views list the options beyond its default view (the configuration gear's extra columns, groupings,
+  measures): a breakdown missing from its default columns may be one of them (DB4009 shows the account, OrgSales, only
+  when it is added in the gear). Never say a report lacks a breakdown until its views are known; when it has no views
+  yet, open its configuration and look. Add what you learn to the map with portal_map_save.
 - A portal with mapped reports has no report-catalog tools: its map is where its reports are, and
   wizard_list_sources says so. For a portal not mapped yet, the catalog tools (<system>_search_reports and the like)
   only search the reports documented in Wizard's catalog, not the portal's menu. To list or find what a portal has,

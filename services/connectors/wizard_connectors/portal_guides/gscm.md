@@ -100,6 +100,13 @@ screen.
 - Re-opening the start page tears down the whole Nexacro client and replays the sign-in. Stay on the page between
   calls; `goto` only when off the portal.
 
+## Columns behind a grid's gear
+
+- A report grid can show more columns than its default view (OrgSales, the account, on DB4009 Daily Sell-out). Its gear
+  opens a column dialog; tick the columns and press **Apply**, which Wizard allows in GSCM. Then search again and check
+  the request (`W.requests('.do')`) and the datasets: record whether a column adds a request parameter or only shows a
+  column the dataset already had. Never press Save in that dialog.
+
 ## Never
 
 Click Save, Unselect, a row's pin, or anything that edits a bookmark or a filter set; change stored settings; click the

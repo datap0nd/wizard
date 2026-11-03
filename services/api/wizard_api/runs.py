@@ -943,6 +943,7 @@ class RunManager:
         exploration.stalls = 0 if progressed else exploration.stalls + 1
         waiting = after.get("todo", 0) + after.get("partial", 0)
         to_route = len(maps.unrouted(data)) if maps and data else 0  # mapped before the map kept business routing
+        waiting += len(maps.unviewed(data)) if maps and data else 0  # mapped before the map kept every option (views)
         if status == "cancelled":
             exploration.state, exploration.message = "stopped", f"Round {exploration.round} was cancelled."
         elif code in ("gemini_signin_required", "runtime_unavailable", "model_quota", "model_permission_denied",
