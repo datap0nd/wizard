@@ -12,7 +12,7 @@
     "type": {"enum": ["run_started", "status", "agent_session", "text_delta", "note", "model_tool_trace", "tool_started",
                       "tool_finished", "visual_added", "check_result", "schedule_proposed", "access_request_proposed", "file_made",
                       "warning", "agent_stats", "model_wait", "diagnostic", "steer", "steer_read", "systems_changed",
-                      "system_requested", "run_finished", "run_failed"]},
+                      "system_requested", "person_asked", "run_finished", "run_failed"]},
     "payload": {"type": "object"}
   },
   "allOf": [
@@ -38,6 +38,9 @@
     {"if": {"properties": {"type": {"const": "system_requested"}}},
      "then": {"properties": {"payload": {"required": ["system", "name", "reason"],
        "description": "Gemini asked for a system the person switched off (wizard_ask_for_system)."}}}},
+    {"if": {"properties": {"type": {"const": "person_asked"}}},
+     "then": {"properties": {"payload": {"required": ["question", "options", "why"],
+       "description": "Gemini asked the person one question before going on (wizard_ask_person); each option is a button that asks it as the next question."}}}},
     {"if": {"properties": {"type": {"const": "run_finished"}}},
      "then": {"properties": {"payload": {"required": ["status", "report_id", "answer", "data_mode", "check_status"]}}}},
     {"if": {"properties": {"type": {"const": "run_failed"}}},

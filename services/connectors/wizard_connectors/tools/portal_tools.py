@@ -51,6 +51,7 @@ class Step(Args):
         "knows. The reply is parsed (Nexacro SSV or XML, JSON); a reply with one dataset comes back as a table, else "
         "give script, a JavaScript body that gets R = {status, contentType, text, data} and returns a table."))
     url: str | None = Field(default=None, max_length=4000, description="goto / request: '/path?query' on the portal application the page is on, or a full portal address (portal_guide lists them; the Big Data Portal's information catalog and Superset have one each).")
+    reload: bool | None = Field(default=None, description="goto: open the address even when the browser is already on it with GSCM's client running (Wizard keeps that page otherwise: a reload restarts the client and its sign-in, a minute or more). Only for a stuck client.")
     method: Literal["GET", "POST", "PUT"] | None = Field(default=None, description="request: the HTTP method (default POST with a body, else GET).")
     body: str | None = Field(default=None, max_length=200_000, description="request: the request body exactly as the portal sends it (a Nexacro SSV or XML body, form fields, JSON); {{name}} parameters are filled in.")
     headers: dict[str, str] | None = Field(default=None, description="request: headers the route needs, such as Content-Type (cookies are the browser's own).")
@@ -204,7 +205,7 @@ class MapReport(MapRouting):
     menu_id: str | None = Field(default=None, max_length=120)
     status: Literal["todo", "mapped", "partial", "failed", "skipped"] | None = Field(default=None, description="todo: listed, not mapped yet. mapped: open, filters, data, every option beyond the default view (views) and a proven fast route are known. partial: some of it. failed / skipped: say why in notes.")
     summary: str | None = Field(default=None, max_length=3000, description="What the report shows in business words: measures, grain, period, units.")
-    open: str | None = Field(default=None, max_length=6000, description="The fastest proven way to open it (a call, steps or JavaScript), and how to tell it has loaded.")
+    open: str | None = Field(default=None, max_length=6000, description="The fastest proven way to open it (a call, steps or JavaScript), and how to tell it has loaded. In GSCM, one evaluate step without a goto: await W.nexacro.open('<the client's open function>', '<menu id>').")
     filters: list[MapFilter] | None = Field(default=None, max_length=60)
     data: list[MapData] | None = Field(default=None, max_length=30)
     views: list[MapView] | None = Field(default=None, max_length=30, description="Every option beyond the default view: the configuration gear's column chooser, view, grouping, measure and unit switches, with every choice and what it adds. An empty list says the report has none (explored); leaving it out means it was not explored yet.")
@@ -281,6 +282,11 @@ def guide(ctx: ToolContext, args: GuideArgs) -> dict[str, Any]:
     status = browser.status()
     saved = [{"name": s["name"], "description": s["description"], "params": s.get("params", []),
               "last_ok": s.get("last_ok")} for s in _saved(ctx) if s.get("system") == portal.id]
+    if ctx.services.portal_maps is not None:
+        mine = {s["name"] for s in saved}
+        saved += [{"name": s["name"], "description": s.get("description"), "params": s.get("params", []), "from": "map"}
+                  for s in ctx.services.portal_maps.load(portal.id).get("scripts") or []
+                  if isinstance(s, dict) and s.get("name") and s["name"] not in mine]
     address = urlsplit(portal.url)
     start = (address.path or "/") + (f"?{address.query}" if address.query else "")
     data = {"system": portal.id, "name": portal.name, "start_page": start, "browser": status["browser"],
@@ -330,8 +336,12 @@ def _steps(ctx: ToolContext, args: RunArgs, portal: portals.Portal) -> tuple[lis
     params = {p.name: p.value for p in args.params}
     if args.script:
         found = next((s for s in _saved(ctx) if s.get("system") == portal.id and s.get("name") == args.script), None)
+        if found is None and ctx.services.portal_maps is not None:
+            found = ctx.services.portal_maps.script(portal.id, args.script)
         if found is None:
-            raise ToolError("script_not_found", f"No saved {portal.name} script named '{args.script}'. portal_guide lists them.")
+            raise ToolError("script_not_found", f"No saved {portal.name} script named '{args.script}', on this PC or in "
+                                                "the map. Read the report with its request or its open steps from the map "
+                                                "instead, and save the steps that work with portal_save_script.")
         missing = [p["name"] for p in found.get("params", []) if p["name"] not in params]
         if missing:
             raise ToolError("invalid_arguments", f"The script needs {', '.join(missing)}.")
@@ -460,9 +470,17 @@ def save_script(ctx: ToolContext, args: SaveArgs) -> dict[str, Any]:
                   "params": [{"name": p.name, "example": p.value} for p in args.params],
                   "saved": time.strftime("%Y-%m-%d"), "last_ok": None})
     _write(ctx, saved)
-    return {"saved": args.name, "system": portal.id,
-            "note": f"Run it with portal_run(system='{portal.id}', script='{args.name}', params=[...]). It is kept on "
-                    "this PC for this person only."}
+    in_map = False
+    if ctx.services.portal_maps is not None:
+        try:
+            ctx.services.portal_maps.keep_script(portal.id, saved[-1])
+            in_map = True
+        except portal_map.MapError:
+            pass
+    return {"saved": args.name, "system": portal.id, "in_map": in_map,
+            "note": f"Run it with portal_run(system='{portal.id}', script='{args.name}', params=[...]). " + (
+                "It is kept on this PC and in the portal's map, which Wizard publishes, so a report in the map can name "
+                "it." if in_map else "It is kept on this PC for this person only.")}
 
 
 def _maps(ctx: ToolContext) -> portal_map.PortalMaps:
@@ -479,14 +497,14 @@ def read_map(ctx: ToolContext, args: MapArgs) -> dict[str, Any]:
         found = maps.report(portal.id, args.report)
         if found is None:
             raise ToolError("not_found", f"No report '{args.report}' in the {portal.name} map; portal_map(find=...) searches it.")
-        data["report"] = found
+        data["report"] = _with_scripts(ctx, portal.id, [found])[0]
     elif args.topic:
         found = maps.topic(portal.id, args.topic)
         if found is None:
             raise ToolError("not_found", f"No topic '{args.topic}' in the {portal.name} map.")
         data["topic"] = found
     elif args.find:
-        data["reports"] = maps.find(portal.id, args.find)
+        data["reports"] = _with_scripts(ctx, portal.id, maps.find(portal.id, args.find))
         if not data["reports"]:
             data["note"] = "Nothing in the map matches: explore the portal (portal_guide), then save what you find."
     elif args.todo:
@@ -510,6 +528,26 @@ def read_map(ctx: ToolContext, args: MapArgs) -> dict[str, Any]:
     return data
 
 
+def _script_known(ctx: ToolContext, system: str, name: str) -> bool:
+    maps = ctx.services.portal_maps
+    return any(s.get("system") == system and s.get("name") == name for s in _saved(ctx)) or (
+        maps is not None and maps.script(system, name) is not None)
+
+
+def _with_scripts(ctx: ToolContext, system: str, reports: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Reports as a question reads them: one whose script is saved neither on this PC nor in the map says so, so the
+    question reads it with its request or open steps instead of trying the script."""
+    out = []
+    for report in reports:
+        name = report.get("script")
+        if name and not _script_known(ctx, system, str(name)):
+            report = {**report, "script_missing": f"The script '{name}' is not saved on this PC or in the map: read this "
+                                                  "report with its request or open steps, and save the steps that work "
+                                                  "with portal_save_script under that name."}
+        out.append(report)
+    return out
+
+
 def _check_definitions(ctx: ToolContext, reports: list[MapReport] | list[MapRoute]) -> None:
     unknown = sorted({d for r in reports for d in r.definitions or [] if d not in ctx.services.knowledge.by_id})
     if unknown:
@@ -528,7 +566,10 @@ def save_map(ctx: ToolContext, args: MapSaveArgs) -> dict[str, Any]:
                                  note=args.note)
     except portal_map.MapError as error:
         raise ToolError("map_full", str(error)) from None
+    unsaved = sorted({r.script for r in args.reports if r.script and not _script_known(ctx, portal.id, r.script)})
     return {"system": portal.id, **result,
+            **({"warning": f"Not saved as scripts yet: {', '.join(unsaved)}. Save each with portal_save_script under that "
+                           "name, or the report names a script no PC can run."} if unsaved else {}),
             "note": f"Saved in the {portal.name} map on this PC; Wizard publishes it to the knowledge base after this run "
                     "when this PC has the knowledge base's write token."}
 

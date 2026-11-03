@@ -35,3 +35,4 @@ Evidence**. A decision that changes repository rules also updates [AGENTS.md](..
 - [2026-11-02 Tasks are the only writer of the knowledge base; the documentation kit is retired](2026-11-02-tasks-only-writer.md)
 - [2026-11-02 A task queue: tasks run one after another, and a task may repeat until done](2026-11-02-task-queue.md)
 - [2026-11-02 The company's source order, a test for "enough", and the schemas Wizard may query](2026-11-02-source-order.md)
+- [2026-11-03 Wizard asks the person before a long route](2026-11-03-ask-the-person.md)

@@ -241,6 +241,18 @@ def where_to_start_block(levels: list[list[tuple[str, str]]]) -> str:
     return "\n".join(lines)
 
 
+def database_block(name: str, schemas: list[str]) -> str:
+    """The schemas Gemini's queries may read (Settings: WIZARD_PG_SCHEMAS), said before the first query: the owner's run of
+    3 Nov 2026 learned them from three refusals, two for the same table a note named."""
+    return "\n".join([
+        "<database>",
+        f"Wizard may query only these schemas of the {name}: {', '.join(schemas)} (and pg_catalog and information_schema "
+        "for metadata). A query that reads another schema is refused, whatever a knowledge note says about its tables: "
+        "never query one, and say so when the answer needs data that is only there.",
+        "</database>",
+    ])
+
+
 def remembered_block(notes: list[str]) -> str:
     """Notes the person asked Wizard to remember (Remember this under a note or a question): their own instructions."""
     return "\n".join(["<remembered_by_this_person>",
@@ -318,10 +330,12 @@ def clean_title(text: str) -> str | None:
 def compose(question: str, history: list[Turn], kind: str, today: date, files: list[dict[str, Any]] | None = None,
             explore: dict[str, Any] | None = None, systems: tuple[list[str], list[str]] | None = None,
             remembered: list[str] | None = None, task: dict[str, Any] | None = None,
-            order: list[list[tuple[str, str]]] | None = None, when_asked: list[str] | None = None) -> str:
+            order: list[list[tuple[str, str]]] | None = None, when_asked: list[str] | None = None,
+            database: tuple[str, list[str]] | None = None) -> str:
     """systems: (names on, names off) when the person chose the systems for this request; None is Auto. order: the
     company's source order for this request's sources, as levels of (name, use it for); None adds no block. when_asked:
-    in Auto, the names of the sources the company uses only when asked."""
+    in Auto, the names of the sources the company uses only when asked. database: the database's name and the schemas
+    Wizard may query, when the company limits them."""
     parts = [calendar_block(today)]
     if remembered:
         parts.append(remembered_block(remembered))
@@ -331,6 +345,8 @@ def compose(question: str, history: list[Turn], kind: str, today: date, files: l
         parts.append(when_asked_block(when_asked))
     if order:
         parts.append(where_to_start_block(order))
+    if database and database[1]:
+        parts.append(database_block(*database))
     if files:
         parts.append(attachments_block(files))
     if history:

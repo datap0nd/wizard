@@ -9,6 +9,7 @@ import base64
 import json
 import os
 import struct
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -166,6 +167,47 @@ def test_a_share_that_does_not_answer_is_cut_short(monkeypatch, tmp_path):
     monkeypatch.setattr(dashboards, "PROBE_S", 0.2)
     monkeypatch.setattr(Dashboards, "_check_root", lambda self: time.sleep(3))
     assert "did not answer" in (Dashboards(tmp_path, None).problem(fresh=True) or "")
+
+
+def test_a_folder_that_did_not_answer_is_not_walked_again_and_a_late_listing_is_kept(monkeypatch, tmp_path):
+    """The owner's run of 3 Nov 2026: listing the share took longer than 90 s, and Gemini's second try waited 41 s more."""
+    root = folder(tmp_path)
+    walks: list[float] = []
+    slow = threading.Event()
+    real = Dashboards._list
+
+    def walk(self):
+        walks.append(time.monotonic())
+        slow.wait(5)  # the share answers only when the test lets it
+        return real(self)
+
+    monkeypatch.setattr(dashboards, "LIST_S", 0.2)
+    monkeypatch.setattr(Dashboards, "_list", walk)
+    shelf = Dashboards(root, None)
+    with pytest.raises(DashboardError, match="did not answer within"):
+        shelf.listing()
+    with pytest.raises(DashboardError, match=r"This was \d+ s ago.*do not call the dashboards tools again"):
+        shelf.listing()
+    assert len(walks) == 1, "a second call answers at once instead of walking the share again"
+    slow.set()
+    for _ in range(50):
+        if shelf.known_count():
+            break
+        time.sleep(0.05)
+    assert shelf.known_count() == 5, "the walk that ran on in the background keeps its listing"
+    assert len(shelf.listing()) == 5 and len(walks) == 1
+
+
+def test_asking_afresh_tries_a_folder_that_failed_again(monkeypatch, tmp_path):
+    root = folder(tmp_path)
+    monkeypatch.setattr(Dashboards, "_check_root", lambda self: "it is not there")
+    shelf = Dashboards(root, None)
+    with pytest.raises(DashboardError, match="it is not there"):
+        shelf.listing()
+    monkeypatch.setattr(Dashboards, "_check_root", lambda self: None)
+    with pytest.raises(DashboardError, match="s ago"):
+        shelf.listing()
+    assert len(shelf.listing(fresh=True)) == 5, "Settings and the installation check ask afresh"
 
 
 # What is in the folder, and only that ---------------------------------------------------------------------------------

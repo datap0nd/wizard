@@ -1,4 +1,4 @@
-import type {AccessRequest, Attachment, RunEvent, RunKind, RunRecord, RunView, Schedule, Steer, SystemRequest, TimelineItem} from './types';
+import type {AccessRequest, Attachment, PersonQuestion, RunEvent, RunKind, RunRecord, RunView, Schedule, Steer, SystemRequest, TimelineItem} from './types';
 
 const REASON_WORDS: Record<string, string> = {table: 'Wrong table', filter: 'Wrong filter', period: 'Wrong period', other: 'Not this'};
 
@@ -14,7 +14,7 @@ export function emptyRun(id: string, conversationId: string, question: string, k
   return {id, conversationId, kind, question, status: 'queued', runtime: 'replay', runtimeLabel: '', model: '', timeline: [],
     streamText: '', answer: null, visuals: [], evidence: [], check: null, checkStatus: 'NOT_CHECKED', checkSummary: null,
     dataMode: null, reportId: null, error: null, warnings: [], lastSeq: 0, attachments: [], schedules: [], accessRequests: [],
-    systems: null, steers: [], systemRequests: [],
+    systems: null, steers: [], systemRequests: [], questions: [],
     createdAt: new Date().toISOString(),
     startedAt: null, finishedAt: null, parentRunId: null, diagnostics: []};
 }
@@ -63,6 +63,9 @@ export function applyEvent(run: RunView, event: RunEvent): RunView {
       return {...next, systems: Array.isArray(p.systems) ? p.systems.map(String) : null};
     case 'system_requested':
       return {...next, systemRequests: [...next.systemRequests.filter(r => r.system !== p.system), p as SystemRequest]};
+    case 'person_asked':
+      return {...next, questions: [...next.questions, {question: String(p.question ?? ''),
+        options: Array.isArray(p.options) ? p.options.map(String) : [], why: p.why ? String(p.why) : null} as PersonQuestion]};
     case 'file_made':
       return {...next, attachments: [...next.attachments.filter(a => a.id !== p.attachment.id), p.attachment as Attachment]};
     case 'check_result':

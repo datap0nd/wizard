@@ -320,6 +320,9 @@ export interface Steer { id: string; text: string; reason: SteerReason | null; a
 /** Gemini asked for a system the person switched off for this question. */
 export interface SystemRequest { system: string; name: string; reason: string }
 
+/** A question Gemini asked the person before going on (wizard_ask_person): each option is a button that asks it. */
+export interface PersonQuestion { question: string; options: string[]; why: string | null }
+
 /** A note the person asked Wizard to remember: it goes into every question they ask. */
 export interface Memory { id: string; text: string; run_id: string | null; created_at: string }
 
@@ -590,6 +593,7 @@ export interface RunView {
   steers: Steer[];
   /** Systems Gemini asked the person to switch on. */
   systemRequests: SystemRequest[];
+  questions: PersonQuestion[];
   createdAt: string;
   /** Server time the agent started (run_started), the zero point for each step's start time. */
   startedAt: string | null;

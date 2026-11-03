@@ -198,6 +198,27 @@ MENU = {"ROOT": [{"id": "S", "name": "01.Sales"}, {"id": "F", "name": "02.Financ
         "F": {"id": "F", "name": "02.Finance", "children": [{"id": "R2", "name": "P&L"}]}}
 
 
+# A Nexacro client that starts in stages, like GSCM after a reload: the application first, its mainframe later, the
+# client's own functions last. Its open function needs its form as `this` (the work PC's fn_openMenu calls
+# this.gfn_isNull) and opens the report in a new WorkFrame a moment later.
+BOOT_PAGE = """<!doctype html><html><head><title>GSCM</title><script>
+const APP = {};
+window.nexacro = {getApplication: () => APP};
+const TOP = {};
+setTimeout(() => { APP.mainframe = {VFrameSet: {TopFrame: {form: TOP}}}; }, 300);
+setTimeout(() => {
+  TOP.gfn_isNull = v => v == null || v === '';
+  TOP.fn_openMenu = function (id) {
+    if (this.gfn_isNull(id)) throw new Error('no menu id');
+    APP.mainframe.VFrameSet.WorkFrame1 = {form: {sta_title: {text: 'Daily ' + id}}};
+    setTimeout(() => { const el = document.createElement('div'); el.id = 'mainframe.VFrameSet.WorkFrame1.form.sta_title:text';
+      el.style.cssText = 'width:100px;height:20px'; el.textContent = 'Daily ' + id; document.body.appendChild(el); }, 300);
+    return 'opening ' + id;
+  };
+}, 900);
+</script></head><body><p>GSCM</p></body></html>"""
+
+
 class Portal(SimpleHTTPRequestHandler):
     hits: list[str] = []
 
@@ -214,7 +235,7 @@ class Portal(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802 - http.server's name
         self.hits.append(f"GET {self.path}")
-        pages = {"/": GSCM_PAGE, "/asap": ASAP_PAGE, "/login": "<title>Sign in</title><input type=password>",
+        pages = {"/": GSCM_PAGE, "/asap": ASAP_PAGE, "/nexacro-boot": BOOT_PAGE, "/login": "<title>Sign in</title><input type=password>",
                  "/sso": "<title>Company</title><p>Single Sign On</p><input type=email>",
                  "/help": "<title>Help</title><p>Trouble with single sign-on? Call the desk.</p><input type=text>",
                  "/report": "<title>Report</title><table><tr><th>A</th></tr><tr><td>1</td></tr></table>",
@@ -327,7 +348,7 @@ def test_bookmarks_tables_and_the_page_outline(setup):
 
 def test_a_captured_nexacro_transaction_is_replayed_with_new_parameters(setup):
     outcome = call(setup, "portal_run", {"system": "gscm", "steps": [
-        {"action": "goto", "url": "/"},
+        {"action": "goto", "url": "/", "reload": True},  # the page's own load sends the request this test captures
         {"action": "evaluate", "script": "await W.waitFor(() => W.requests('selectWeekly').length);"
                                           "const reply = await W.replay('selectWeekly', {replace: [['2026W40', '2026W41']]});"
                                           "return W.parse(reply.text).datasets.ds_out;"}]})
@@ -868,3 +889,39 @@ def test_the_person_submits_one_request_then_wizard_sends_the_ones_they_approve_
     assert [d["detail"]["tables"] for d in sent_by_wizard] == [["t6"], ["tfail"]]
     assert browser.finish_sign_in()["window"] is None
     access_requests.set_sending(root, "bdp", False)
+
+
+def test_a_running_gscm_client_is_kept_and_a_report_opens_with_its_form_as_this(setup):
+    """The owner's run of 3 Nov 2026: a goto of GSCM's start page restarted its client, calls made while it started
+    failed three different ways, and the open function called without its form failed ("this.gfn_isNull is not a
+    function"): eight minutes to open one report."""
+    opened = call(setup, "portal_run", {"system": "gscm", "steps": [
+        {"action": "goto", "url": "/nexacro-boot", "reload": True},
+        {"action": "evaluate", "script": "await W.nexacro.ready(); const bare = W.nexacro.resolve('mainframe.VFrameSet.TopFrame.form').fn_openMenu;"
+                                         "try { bare('X'); return 'bare call worked'; } catch (e) { return String(e.message); }"},
+        {"action": "evaluate", "script": "return await W.nexacro.open('fn_openMenu', 'DB1');"}]})
+    assert opened.ok, opened.error_message
+    bare, report = opened.data["outputs"][1]["value"], opened.data["outputs"][2]["value"]
+    assert "gfn_isNull is not a function" in bare, bare
+    assert report["form"] == "mainframe.VFrameSet.WorkFrame1.form" and report["title"] == "Daily DB1", report
+    assert report["new_window"] is True and report["returned"] == "opening DB1"
+
+    for address in ("/nexacro-boot", "/"):  # the page itself, and the portal's start page: neither restarts the client
+        kept = call(setup, "portal_run", {"system": "gscm", "steps": [
+            {"action": "goto", "url": address},
+            {"action": "evaluate", "script": "return {forms: W.nexacro.activeForms()};"}]})
+        assert kept.ok, kept.error_message
+        assert "Not reloaded" in kept.data["outputs"][0]["kept"]
+        assert kept.data["outputs"][1]["value"]["forms"] == ["mainframe.VFrameSet.WorkFrame1.form"], "the open report is still there"
+    called = call(setup, "portal_run", {"system": "gscm", "steps": [
+        {"action": "evaluate", "script": "return W.nexacro.call('mainframe.VFrameSet.TopFrame.form.fn_openMenu', 'DB2');"}]})
+    assert called.ok and called.data["outputs"][0]["value"] == "opening DB2"
+
+    reloaded = call(setup, "portal_run", {"system": "gscm", "steps": [
+        {"action": "goto", "url": "/nexacro-boot", "reload": True},
+        {"action": "evaluate", "script": "return {forms: W.nexacro.activeForms()};"}]})
+    assert reloaded.ok and "kept" not in reloaded.data["outputs"][0]
+    assert reloaded.data["outputs"][1]["value"]["forms"] == [], "reload: true starts the client again"
+    restored = call(setup, "portal_run", {"system": "gscm", "steps": [{"action": "goto", "url": "/", "reload": True}]})
+    assert restored.ok
+

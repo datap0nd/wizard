@@ -1,5 +1,5 @@
 import {createContext, useContext, useState} from 'react';
-import {Ban, BookmarkPlus, Check, CheckCircle2, Clock3, Layers, UserRound} from 'lucide-react';
+import {Ban, BookmarkPlus, Check, CheckCircle2, Clock3, Layers, MessageCircleQuestionMark, UserRound} from 'lucide-react';
 import {cn} from '@/lib/utils';
 import {steerLabel} from '@/runState';
 import {Button} from './ui/button';
@@ -13,6 +13,8 @@ export interface SteerActions {
   notThis: (run: RunView, step: TimelineItem, reason: SteerReason, text: string) => Promise<void>;
   remember: (text: string, runId: string | null) => Promise<boolean>;
   turnOn: (run: RunView, request: SystemRequest) => void;
+  /** The person's answer to a question Gemini asked (one of its options): asked as the next question. */
+  reply: (run: RunView, text: string) => void;
 }
 
 export const SteerContext = createContext<SteerActions | null>(null);
@@ -136,3 +138,29 @@ export function SystemRequests({run}: {run: RunView}) {
     ))}
   </>;
 }
+
+/** Gemini asked the person before going on (wizard_ask_person): one click on an option asks it as the next question.
+ * Only the latest answer of a conversation takes a click; an earlier one shows what was asked. */
+export function PersonQuestions({run, latest = true}: {run: RunView; latest?: boolean}) {
+  const actions = useContext(SteerContext);
+  const [chosen, setChosen] = useState<string | null>(null);
+  if (!run.questions.length || !actions) return null;
+  const running = run.status === 'running' || run.status === 'queued';
+  const open = latest && !running && run.status === 'succeeded' && chosen === null;
+  return <>
+    {run.questions.map((item, index) => (
+      <div key={index} className="rounded-xl border border-accent-line bg-accent-soft/40 px-3 py-2.5 text-[13px]" data-testid="person-question">
+        <p className="flex items-start gap-2"><MessageCircleQuestionMark className="mt-0.5 size-4 shrink-0 text-accent" />
+          <span className="min-w-0"><span className="font-medium">{item.question}</span>{item.why && <span className="text-ink-2"> {item.why}</span>}</span></p>
+        <div className="mt-2 flex flex-wrap gap-1.5" role="group" aria-label="Your answer">
+          {item.options.map(option => (
+            <Button key={option} size="sm" variant={chosen === option ? 'accent' : 'outline'} disabled={!open}
+              data-testid="person-option" onClick={() => { setChosen(option); actions.reply(run, option); }}>{option}</Button>
+          ))}
+        </div>
+        {open && <p className="mt-1.5 text-[11.5px] text-ink-3">Or type your own answer below.</p>}
+      </div>
+    ))}
+  </>;
+}
+

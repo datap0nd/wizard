@@ -45,6 +45,9 @@ TO_ROUTE_LIMIT = 15
 # them", above all the configuration a report grid's gear opens: DB4009 shows the account (OrgSales) only when it is
 # added there). A mapped report keeps them in `views`; one mapped before has no `views` and is explored again.
 TO_CONFIGURE_LIMIT = 15
+# Saved scripts travel with the map (owner's run of 3 Nov 2026: the map named a script that was on no PC that read it,
+# and the run spent a step finding that out). portal_save_script keeps a copy here, so every PC with the map can run it.
+MAX_SCRIPTS = 150
 
 
 def now() -> str:
@@ -53,7 +56,7 @@ def now() -> str:
 
 def empty(system: str, name: str = "") -> dict[str, Any]:
     return {"format": FORMAT, "system": system, "name": name or system, "updated": None, "overview": "", "topics": [],
-            "reports": [], "log": []}
+            "reports": [], "scripts": [], "log": []}
 
 
 def clean(value: Any, depth: int = 0) -> Any:
@@ -176,6 +179,14 @@ class PortalMaps:
     def report(self, system: str, report_id: str) -> dict[str, Any] | None:
         return _match(self.load(system)["reports"], report_id)
 
+    def script(self, system: str, name: str) -> dict[str, Any] | None:
+        """A script kept in the map (portal_save_script on any PC that publishes it), by name."""
+        return next((s for s in self.load(system).get("scripts") or [] if isinstance(s, dict) and s.get("name") == name),
+                    None)
+
+    def script_names(self, system: str) -> list[str]:
+        return [str(s["name"]) for s in self.load(system).get("scripts") or [] if isinstance(s, dict) and s.get("name")]
+
     def topic(self, system: str, topic_id: str) -> dict[str, Any] | None:
         return next((t for t in self.load(system)["topics"] if t["id"] == topic_id.strip().lower()), None)
 
@@ -267,6 +278,19 @@ class PortalMaps:
             data["name"] = self.names.get(system, data.get("name") or system)
             self._write(system, data)
             return {"added": added, "updated": updated, "removed": sorted(gone), "counts": self.counts(data)}
+
+    def keep_script(self, system: str, script: dict[str, Any]) -> None:
+        """Keep a saved script in the map, replacing one of the same name: its steps, parameters and description (no
+        rows; secrets removed like everything in the map)."""
+        with self._lock:
+            data = self.load(system)
+            kept = [s for s in data.get("scripts") or [] if isinstance(s, dict) and s.get("name") != script["name"]]
+            if len(kept) >= MAX_SCRIPTS:
+                raise MapError(f"The map already keeps {MAX_SCRIPTS} scripts: reuse one.")
+            entry = clean({k: script[k] for k in ("name", "description", "steps", "params") if k in script})
+            data["scripts"] = [*kept, {**entry, "updated": now()}]
+            data["updated"] = now()
+            self._write(system, data)
 
     def route(self, system: str, reports: list[dict[str, Any]], note: str | None = None) -> dict[str, Any]:
         """Add business routing to reports already in the map, and nothing else. use_for, not_for and definitions are
@@ -385,6 +409,11 @@ def render(data: dict[str, Any]) -> str:
         lines += ["## How it works", "", str(data["overview"]), ""]
     for topic in data.get("topics", []):
         lines += [f"## {topic.get('title') or topic['id']}", "", str(topic.get("text") or ""), ""]
+    if data.get("scripts"):
+        lines += ["## Saved scripts", ""]
+        lines += [f"- `{item.get('name')}`: {item.get('description') or ''}".rstrip(": ")
+                  for item in data["scripts"] if isinstance(item, dict)]
+        lines.append("")
     lines += ["## Reports", ""]
     for report in data.get("reports", []):
         path = " > ".join(report.get("path") or [])

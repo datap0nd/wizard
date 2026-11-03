@@ -57,6 +57,10 @@ WRITE_VERBS = frozenset({
 ACCESS_WORDS = frozenset({"access", "permission", "permissions", "authority", "privilege", "privileges"})
 REQUEST_WORDS = frozenset({"request", "requests"})
 EXTENSIONS = frozenset({"do", "json", "jsp", "action", "xml"})
+# Files a page loads to draw itself: images, style sheets, scripts and fonts. A GET of one reads a file, whatever its
+# name (owner's run of 3 Nov 2026: GSCM's update.svg icon was refused as an update). Its query is still checked.
+STATIC_FILES = frozenset({"svg", "png", "gif", "jpg", "jpeg", "webp", "ico", "bmp", "css", "js", "mjs", "map", "woff",
+                          "woff2", "ttf", "otf", "eot"})
 # A GraphQL mutation (optionally named, then its variables or selection), not a search text that starts with the word.
 GRAPHQL_MUTATION = re.compile(r"^\s*(#[^\n]*\n\s*)*mutation\b\s*([A-Za-z_]\w*)?\s*[({]")
 # Query or form parameters whose value names the action a generic endpoint performs.
@@ -254,6 +258,12 @@ def _starts_with_verb(name: str) -> str | None:
     return words[0] if words and words[0] in WRITE_VERBS else None
 
 
+def _static_file(path: str) -> bool:
+    """The address names an image, style sheet, script or font file (its last part has such an extension)."""
+    name, dot, extension = path.rsplit("/", 1)[-1].split(";")[0].rpartition(".")
+    return bool(dot and name) and extension.casefold() in STATIC_FILES
+
+
 def write_reason(method: str, url: str, body: str | None = None) -> str | None:
     """Why this request would change something in the portal, or None when it reads. Conservative: a refused read
     costs Gemini a retry with another route; an allowed write could change company data."""
@@ -262,7 +272,7 @@ def write_reason(method: str, url: str, body: str | None = None) -> str | None:
     path = parts.path or "/"
     if method not in READ_METHODS and not (method in ("PUT",) and any(p.search(path) for p in WRITE_METHODS_ALLOWED)):
         return f"{method} requests change data"
-    for segment in path.split("/"):
+    for segment in [] if method in ("GET", "HEAD") and _static_file(path) else path.split("/"):
         verb = _starts_with_verb(segment.split(";")[0])
         if verb:
             return f"'{segment}' in the address starts with '{verb}'"

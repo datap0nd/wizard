@@ -13,7 +13,7 @@ import {Diagnostics} from './Diagnostics';
 import {MadeFiles} from './Attachments';
 import {RecurringCard} from './RecurringCard';
 import {AccessRequestCard} from './AccessRequestCard';
-import {SteerNotes, SystemRequests} from './Steering';
+import {PersonQuestions, SteerNotes, SystemRequests} from './Steering';
 import {SystemsContext, SystemsStage} from './SystemsStage';
 import {onlyNames} from '@/systems';
 import {VisualBlock} from './VisualBlock';
@@ -40,6 +40,8 @@ interface Props {
   onSchedule?: (run: RunView, schedule: Schedule, action: 'create' | 'dismiss') => void;
   /** Metronome is connected and this person may schedule queries. */
   canRecur?: boolean;
+  /** The last answer of the conversation: only it takes a click on a question's options. */
+  latest?: boolean;
   busy: boolean;
 }
 
@@ -115,7 +117,7 @@ function ErrorDetails({run}: {run: RunView}) {
 }
 
 export const RunCard = memo(function RunCard({run, onEvidence, onCheck, onCancel, onRetry, onFeedback, onEmail, onRecurring, onSchedule,
-  canRecur = false, busy}: Props) {
+  canRecur = false, latest = true, busy}: Props) {
   const running = run.status === 'running' || run.status === 'queued';
   const text = run.answer ?? run.streamText;
   const placed = placedVisuals(text);
@@ -145,6 +147,7 @@ export const RunCard = memo(function RunCard({run, onEvidence, onCheck, onCancel
           onCreate={s => onSchedule?.(run, s, 'create')} onDismiss={s => onSchedule?.(run, s, 'dismiss')} />)}
         {run.accessRequests.map(request => <AccessRequestCard key={request.id} request={request} />)}
         <SystemRequests run={run} />
+        <PersonQuestions run={run} latest={latest} />
         <CheckPanel run={run} />
         {run.warnings.length > 0 && run.status !== 'running' && (
           <ul className="space-y-1 rounded-xl border border-warn-line bg-warn-soft px-4 py-2 text-[13px] text-warn" data-testid="warnings">

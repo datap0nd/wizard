@@ -65,9 +65,12 @@ screen.
   menu id.
 - **Opening a report directly.** `W.nexacro.functions()` lists the client's own functions (`gfn_*`, `fn_*`) on the
   application, the top, left and toolbar forms and the active report, with the start of each source. Look for the one
-  the menu calls to open a menu id (open, menu, popup, link in its name), call it in an `evaluate` step with a report's
-  menu id, wait for the overlay (`W.nexacro.idle()`) and for the new WorkFrame (`W.nexacro.activeForms()`), and save
-  the call that works as a topic: every later question then opens reports in one step.
+  the menu calls to open a menu id (open, menu, popup, link in its name) and open the report with
+  `await W.nexacro.open('<that function>', '<menu id>')`: it waits until the client has started
+  (`W.nexacro.ready()`), calls the function with its own form as `this` (`W.nexacro.call`), waits for the new
+  WorkFrame and the overlay, and returns the form and its title. Never take a client function out of its form and call
+  it bare: it fails with errors such as "this.gfn_isNull is not a function". Save the call that works as a topic and in
+  each report's `open`: every later question then opens reports in one step.
 - **Filters.** `W.nexacro.inputs()` lists the active report form's inputs: Combo, Calendar, Edit, Radio... with their
   value, and a combo's options from its inner Dataset as `code = label`. Note which request parameter each filter
   sets (compare the search request's body with the values on screen).
@@ -97,8 +100,12 @@ screen.
   close them with their `close`/`x` control (never one named save/ok/apply). Escape closes a stray panel.
 - After Go, a report can take a minute or more: wait for the overlay to clear, then for the report title in the
   active WorkFrame, then read its datasets.
-- Re-opening the start page tears down the whole Nexacro client and replays the sign-in. Stay on the page between
-  calls; `goto` only when off the portal.
+- Re-opening the start page tears down the whole Nexacro client and replays the sign-in, a minute or more, and calls
+  made while it starts fail in different ways ("Execution context was destroyed", `getApplication()` undefined, a
+  missing `gfn_` function). Stay on the page between calls; `goto` only when off the portal. Wizard does not reload a
+  page whose client is running (the goto's result says `kept`); `reload: true` forces it, only for a stuck client.
+- After any page load, start with `await W.nexacro.ready()` before calling the client: a check that only finds
+  `mainframe` is not enough.
 
 ## Columns behind a grid's gear
 

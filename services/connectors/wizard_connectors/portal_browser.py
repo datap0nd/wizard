@@ -59,6 +59,11 @@ IDLE_CLOSE_S = 600          # a background browser nobody used for this long is 
 SIGN_IN_LIMIT_S = 20 * 60   # a sign-in window left open this long is closed
 CALL_LIMIT_S = 170          # one tool call's steps together (under the Gemini CLI tool bridge's 180 s)
 MAX_PAGES = 6
+# A goto to the page a running Nexacro client is on is not sent: reloading restarts GSCM's whole client and its sign-in,
+# a minute or more, and calls made while it starts fail (owner's run of 3 Nov 2026: eight minutes to open one report).
+KEPT_PAGE = ("Not reloaded: the browser is already on this page and the portal's Nexacro client is running, so your next "
+             "steps use it as it is. Reloading restarts the client and its sign-in (a minute or more); give reload: true "
+             "only when the client is stuck.")
 DATA_TYPES = ("xhr", "fetch", "document")
 TEXT_TYPES = ("json", "xml", "text", "javascript", "csv", "x-www-form-urlencoded", "ssv")
 MAX_CAPTURED = 60
@@ -1207,6 +1212,8 @@ class PortalBrowser:
             target = _address(portal, step["url"], page.url)
             if not self.policy.allowed(urlsplit(target).hostname):
                 raise PortalError("host_not_allowed", f"{urlsplit(target).hostname} is not a portal address.")
+            if not step.get("reload") and _same_page(target, page.url, portal) and _client_running(page):
+                return {"status": None, "url": portals.redact_url(page.url)[:300], "kept": KEPT_PAGE}
             response = page.goto(target, wait_until="domcontentloaded", timeout=max(timeout, 45_000))
             return {"status": response.status if response else None, "url": portals.redact_url(page.url)[:300]}
         if action == "back":
@@ -1344,6 +1351,36 @@ def _first_line(error: BaseException) -> str:
     for marker in ("Call log:", "==========", "\n    at ", " at window.", " at __run"):
         text = text.split(marker)[0]
     return " ".join(text.split())[:400] or type(error).__name__
+
+
+def _same_page(target: str, current: str, portal: Portal) -> bool:
+    """A goto to the page the browser is on: the same address (its #fragment aside), or this portal's start page (or
+    the host's root) while the page is that portal's (under its start page's path, on the same host)."""
+    there, here = urlsplit(target), urlsplit(current)
+    if (there.scheme, (there.hostname or "").lower(), there.port) != (here.scheme, (here.hostname or "").lower(), here.port):
+        return False
+    if (there.path or "/", there.query) == (here.path or "/", here.query):
+        return True
+    start = urlsplit(portal.url).path or "/"
+    if there.query or (there.path or "/") not in {"/", start}:
+        return False
+    return (here.path or "/") == start or (here.path or "/").startswith(start if start.endswith("/") else start + "/")
+
+
+# Whether a Nexacro client (GSCM) has started in the page or one of its frames.
+CLIENT_RUNNING = ("() => { try { return !!document.getElementById('mainframe.VFrameSet') || (typeof nexacro !== 'undefined'"
+                  " && !!nexacro && typeof nexacro.getApplication === 'function' && !!(nexacro.getApplication() || {})"
+                  ".mainframe); } catch (e) { return false; } }")
+
+
+def _client_running(page: Any) -> bool:
+    for frame in page.frames[:10]:
+        try:
+            if frame.evaluate(CLIENT_RUNNING):
+                return True
+        except Exception:  # noqa: BLE001, S112 - a frame navigating or cross-origin has no client to keep
+            continue
+    return False
 
 
 def _address(portal: Portal, url: str, current: str = "") -> str:

@@ -1455,6 +1455,42 @@
       }
     },
     {
+      "name": "wizard_ask_person",
+      "description": "Ask the person one short question before a long route, when their answer changes where the data comes from or what the answer is (daily or weekly, which market, units or value, what a breakdown means) and nothing they said settles it. Give two to four options: they become buttons, and the one clicked is their next message. Then end your turn with the question; ask at most once per request.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "question": {
+            "description": "One short question in the person's language, e.g. 'Daily from GSCM, or weekly from the database?' (5-300 characters)",
+            "type": "string"
+          },
+          "options": {
+            "description": "Two to four answers the person can click, each a few words and what it costs when that differs a lot (e.g. 'Daily, from GSCM (a live read, a few minutes)'); the one you would choose first.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 4,
+            "minItems": 2,
+            "type": "array"
+          },
+          "why": {
+            "description": "One short sentence: what the choice changes in the answer (0-300 characters)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question",
+          "options"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
       "name": "wizard_check_my_data",
       "description": "Optional verification. Recompute figures you state from the cited evidence rows, check that each figure covers the period you claim, and optionally re-run cited requests to detect changed source data. Reports MATCH, DISCREPANCY, PERIOD_MISMATCH or NOT_VERIFIABLE per figure; it never edits your answer.",
       "inputSchema": {
@@ -1931,6 +1967,10 @@
                   "description": "goto / request: '/path?query' on the portal application the page is on, or a full portal address (portal_guide lists them; the Big Data Portal's information catalog and Superset have one each) (0-4000 characters)",
                   "type": "string"
                 },
+                "reload": {
+                  "description": "goto: open the address even when the browser is already on it with GSCM's client running (Wizard keeps that page otherwise: a reload restarts the client and its sign-in, a minute or more). Only for a stuck client.",
+                  "type": "boolean"
+                },
                 "method": {
                   "description": "request: the HTTP method (default POST with a body, else GET).",
                   "enum": [
@@ -2102,6 +2142,10 @@
                 "url": {
                   "description": "goto / request: '/path?query' on the portal application the page is on, or a full portal address (portal_guide lists them; the Big Data Portal's information catalog and Superset have one each) (0-4000 characters)",
                   "type": "string"
+                },
+                "reload": {
+                  "description": "goto: open the address even when the browser is already on it with GSCM's client running (Wizard keeps that page otherwise: a reload restarts the client and its sign-in, a minute or more). Only for a stuck client.",
+                  "type": "boolean"
                 },
                 "method": {
                   "description": "request: the HTTP method (default POST with a body, else GET).",
@@ -2509,7 +2553,7 @@
                   "type": "string"
                 },
                 "open": {
-                  "description": "The fastest proven way to open it (a call, steps or JavaScript), and how to tell it has loaded (0-6000 characters)",
+                  "description": "The fastest proven way to open it (a call, steps or JavaScript), and how to tell it has loaded. In GSCM, one evaluate step without a goto: await W.nexacro.open('<the client's open function>', '<menu id>') (0-6000 characters)",
                   "type": "string"
                 },
                 "filters": {
