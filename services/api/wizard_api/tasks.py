@@ -145,7 +145,7 @@ def _sorted(tasks: list[Task]) -> list[Task]:
 
 
 def run_order(tasks: list[Task]) -> list[Task]:
-    """The order a queue runs them in: oldest added first, then by id, so numbered tasks (kb-review-1 ... 7) run in turn."""
+    """The order a queue runs them in: oldest added first, then by id, so numbered tasks (review-1, review-2 ...) run in turn."""
     return sorted(tasks, key=lambda t: (t.added, t.id))
 
 

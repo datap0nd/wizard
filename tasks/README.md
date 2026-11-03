@@ -9,7 +9,7 @@ One Markdown file per task, named after its id:
 
 ```
 ---
-id: kb-review-3-where-to-get-it
+id: check-where-to-get-it
 title: Check and correct every metric note's "Where to get it"
 summary: One line shown in Settings: what it changes and why.
 added: 2026-10-31
@@ -49,7 +49,7 @@ apply to an `every_file` task, which already runs until every file is done.
 
 **The queue.** Settings → Tasks runs tasks one after another: **Run all** (every task), **Run selected** (the ticked
 ones) or **Add to queue** on one task fills the queue in run order, oldest `added` first, then id. Tasks meant to run
-in turn get the same `added` and numbered ids (`kb-review-1-…`, `kb-review-2-…`). The person can reorder the queue,
+in turn get the same `added` and numbered ids (`review-1-…`, `review-2-…`). The person can reorder the queue,
 then presses **Start**: each task starts when the one before ended succeeded (its last round, or its last run when it
 repeats). A failure or a stop stops the queue there; **Continue** runs that task again and goes on. A task
 that asks for a path is queued only with the path typed in its box. Do not write a task that relies on another

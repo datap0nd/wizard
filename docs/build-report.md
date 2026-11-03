@@ -3,7 +3,26 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-02 (latest) — Fix: a task stopped on a note file that was gone; a failed run is tried once more
+## 2026-11-03 (latest) — Knowledge review tasks 0 to 8 removed
+
+The owner asked to remove the knowledge-base review tasks 0 to 8: `tasks/kb-review-0-dashboards.md` to
+`tasks/kb-review-8-route-reports.md` are gone, so Settings → Tasks no longer lists them (a queue that still names one
+skips it, as for any task that is gone). The queue test that read those files now checks numbered run order with tasks
+of its own; `tasks/README.md` uses neutral example ids. Checks: full `pytest tests`, `verify_spec.py`, web typecheck
+and tests passed.
+
+## 2026-11-03 — GSCM mapping explores every report option; Apply is allowed in GSCM
+
+DB4009 Daily Sell-out looked as if it had no account (operator) breakdown: mapping read only the default view, and the
+account (OrgSales) is added in the grid's configuration gear, whose dialog needs Apply, a word the click guard refused.
+Clicks on Apply are now allowed in GSCM only (`portals.CLICK_ALLOWED`; requests are still checked by verb). A mapped
+report keeps `views`: every option beyond the default view, with its choices, the columns they add and how they change
+the request. Mapping explores them for every report and revisits reports mapped before (`portal_map(todo=true)` lists
+them under `to_configure`; rounds go on until none is left); views count when a question is matched to a report, and
+the answering prompt no longer lets Wizard say a report lacks a breakdown before its views are known. Released as
+desktop 1.0.157.0 (commit 08de246).
+
+## 2026-11-02 — Fix: a task stopped on a note file that was gone; a failed run is tried once more
 
 On the work PC, "Knowledge review 3" (build 1.0.153.0) stopped after 31 steps with `FileNotFoundError` on a note's file
 (`knowledge\metrics\market-share.md`). The service reads notes from the knowledge-base snapshot it started with; each
