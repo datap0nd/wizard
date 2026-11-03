@@ -15,6 +15,8 @@ from wizard_connectors.dashboards import DEFAULT_NAME as DASHBOARDS_NAME
 from wizard_connectors.dashboards import folder_path as dashboards_folder
 from wizard_connectors.metronome import MetronomeConfigError, MetronomeSettings
 from wizard_connectors.metronome import settings_from as metronome_settings
+from wizard_connectors.nerp import NerpSettings
+from wizard_connectors.nerp import settings_from as nerp_settings
 from wizard_connectors.paths import FIXTURES, ROOT
 from wizard_connectors.pg import PgError, PgSettings
 from wizard_connectors.pg import settings_from as pg_settings
@@ -92,6 +94,10 @@ class Settings:
     postgres: PgSettings | None = None
     # The name people see for that database in the app (the systems stage, sources, evidence).
     pg_name: str = "AI Team Database"
+    # NERP's views on their own server (WIZARD_NERP_*; nerp.py); None = not set. A setting that is incomplete leaves NERP
+    # off and says why in nerp_problem: it never stops Wizard.
+    nerp: NerpSettings | None = None
+    nerp_problem: str | None = None
     # The company's order of the data sources (Settings → Source order, WIZARD_SOURCE_ORDER): where Gemini starts, what
     # each source is for, and which are used only when asked; None = the default order (source_order.DEFAULT).
     source_order: tuple[SourceEntry, ...] | None = None
@@ -285,6 +291,10 @@ def load_settings(env: dict[str, str] | None = None, env_file: Path | None = Non
     except PgError as error:
         raise ConfigError(f"PostgreSQL settings: {error}") from None
     settings.pg_name = (get("WIZARD_PG_NAME", "AI Team Database") or "AI Team Database").strip()[:60]
+    try:
+        settings.nerp = nerp_settings({k: v for k, v in merged.items() if k.startswith("WIZARD_NERP_")})
+    except PgError as error:
+        settings.nerp, settings.nerp_problem = None, str(error)
     try:
         settings.source_order = source_order.parse(get("WIZARD_SOURCE_ORDER"))
     except source_order.OrderError as error:

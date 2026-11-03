@@ -177,8 +177,7 @@ class PostgresQuery:
         started = time.perf_counter()
         try:
             session.rows("START TRANSACTION READ ONLY")
-            if self.settings.schemas:
-                self.check_schemas(session, wrapped)
+            self.check(session, text, wrapped)
             columns, rows = session.query(wrapped)
         except SourceError:
             raise
@@ -207,6 +206,12 @@ class PostgresQuery:
         digest = hashlib.sha256(json.dumps([names, out_rows], default=str, sort_keys=True).encode()).hexdigest()
         return QueryResult(database, out_columns, out_rows, len(rows) > max_rows,
                            int((time.perf_counter() - started) * 1000), digest)
+
+    def check(self, session: QuerySession, text: str, wrapped: str) -> None:
+        """What a statement must pass before it runs, in its own read-only transaction: here, the schemas it reads.
+        NERP's query (nerp.py) checks that it names only the views of its schema instead."""
+        if self.settings.schemas:
+            self.check_schemas(session, wrapped)
 
     def allows(self, schema: str) -> bool:
         """A query may read this schema: no limit is set, it is listed, or it is metadata."""

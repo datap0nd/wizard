@@ -394,6 +394,15 @@ def list_sources(ctx: ToolContext, _: NoArgs) -> dict[str, Any]:
                         "connector_status": "READ_ONLY_SQL", "data_mode": "LIVE", "your_market_access": "all markets",
                         "how_to_navigate": "wizard_browse_knowledge(area='datasets') → wizard_read_knowledge → "
                                            "wizard_query_postgresql"})
+    nerp = ctx.services.nerp
+    if nerp is not None and ctx.identity.can_use_system("nerp") and _on(ctx, "nerp"):
+        systems.append({"system": "nerp", "name": f"{nerp.name} (views on its own PostgreSQL server)",
+                        "description": f"{nerp.name}'s views in schema {nerp.schema} of database {nerp.settings.database}, "
+                                       "read live with your own SELECT: only those views, never a table. Each view's "
+                                       "dataset note says what a row is and how to filter it.",
+                        "connector_status": "READ_ONLY_SQL", "data_mode": "LIVE", "your_market_access": "all markets",
+                        "how_to_navigate": "nerp_list_views → the view's dataset note (wizard_read_knowledge) → "
+                                           "nerp_query"})
     folder = ctx.services.dashboards
     if folder is not None and ctx.identity.can_use_system(dashboards.SYSTEM) and _on(ctx, dashboards.SYSTEM):
         problem = folder.problem()
@@ -879,6 +888,17 @@ def check_my_data(ctx: ToolContext, args: CheckArgs) -> dict[str, Any]:
             if ctx.services.dashboards is None or not ctx.identity.can_use_system(dashboards.SYSTEM):
                 return "UNAVAILABLE", "the dashboards are not available to you on this PC"
             return dashboards.replay(ctx.services.dashboards, original["request"], original["digest"])
+        if original.get("tool") == "nerp_query":
+            if ctx.services.nerp is None or not ctx.identity.can_use_system("nerp"):
+                return "UNAVAILABLE", "NERP is not available to you on this PC"
+            request = original["request"]
+            try:
+                again = ctx.services.nerp.run(request["sql"], None, request["max_rows"])
+            except SourceError as error:
+                return "UNAVAILABLE", error.message
+            if again.digest == original["digest"]:
+                return "UNCHANGED", "the query returns the same rows today"
+            return "CHANGED", "the query now returns different rows than when the answer was prepared"
         if original.get("system") == "postgresql":
             if ctx.services.postgres is None or not _postgres_allowed(ctx):
                 return "UNAVAILABLE", "PostgreSQL is not available to you on this server"

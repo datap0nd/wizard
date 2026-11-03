@@ -35,7 +35,7 @@ from wizard_connectors.paths import ROOT
 from wizard_connectors.portal_browser import PortalBrowser, PortalBrowsers, PortalError
 from wizard_connectors.portal_map import PortalMaps, Published
 from wizard_connectors.task_files import TaskFiles
-from wizard_connectors.tools import build_registry, build_services, retire_portal_catalogs
+from wizard_connectors.tools import build_registry, build_services, connect_nerp, retire_portal_catalogs
 from wizard_connectors.tools.systems import SystemChoice
 
 from . import __version__, brain, knowledge_sync, provisioning, settings_pane, systems
@@ -205,7 +205,7 @@ class SettingsBody(Body):
 
 
 class SettingsTestBody(Body):
-    section: Literal["postgres", "knowledge", "metronome", "dashboards"]
+    section: Literal["postgres", "knowledge", "metronome", "dashboards", "nerp"]
     values: dict[str, str | None] = Field(default_factory=dict, max_length=40)
 
 
@@ -350,6 +350,10 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
     else:
         services = build_services(postgres=settings.postgres, postgres_name=settings.pg_name)
     services.metronome, services.mail_domains = settings.metronome, settings.google_domains
+    if settings.nerp:  # NERP's views on their own server take over its report catalog (decision 2026-11-03)
+        connect_nerp(services, settings.nerp)
+    elif settings.nerp_problem:
+        log.warning("NERP is off: %s (Settings → NERP)", settings.nerp_problem)
     secret_box = SecretBox()
     if settings.portals:
         services.portals = PortalBrowsers(settings.portals, settings.user_home, secrets=secret_box)
@@ -381,7 +385,8 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         owner = Identity(id=OWNER_ID, email=email.lower(), name=settings.local_user_name or "You", role="Owner (local test)",
                          entitlements={system: SystemRights(reports=["*"], markets=["*"]) for system in
                                        [*(s.id for s in services.catalog.systems), *(["postgresql"] if services.postgres else []),
-                                        *portal_ids, *(["dashboards"] if services.dashboards else [])]})
+                                        *portal_ids, *(["dashboards"] if services.dashboards else []),
+                                        *(["nerp"] if services.nerp else [])]})
         others = [] if settings.desktop else [i for i in identities.all() if not owner.email or i.email != owner.email]
         identities = IdentityDirectory([owner, *others])
     interrupted = store.mark_interrupted()
@@ -1753,6 +1758,8 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         try:
             if body.section == "postgres":
                 return await asyncio.to_thread(settings_pane.test_postgres, settings, dict(body.values))
+            if body.section == "nerp":
+                return await asyncio.to_thread(settings_pane.test_nerp, settings, dict(body.values))
             if body.section == "metronome":
                 return await asyncio.to_thread(settings_pane.test_metronome, settings, dict(body.values),
                                                metronome_transport)

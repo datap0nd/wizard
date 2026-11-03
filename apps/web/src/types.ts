@@ -98,7 +98,7 @@ export interface SettingsView {
 }
 
 /** The settings sections with a test: a connection, or (Dashboards) finding the dashboards in the folder typed. */
-export type SettingsTest = 'postgres' | 'knowledge' | 'metronome' | 'dashboards';
+export type SettingsTest = 'postgres' | 'knowledge' | 'metronome' | 'dashboards' | 'nerp';
 
 export interface SettingsTestResult {
   ok: boolean;

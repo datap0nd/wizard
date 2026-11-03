@@ -20,6 +20,7 @@ PORTAL_TOOLS = frozenset({"portal_run", "portal_guide", "portal_save_script", "p
 KNOWLEDGE_TOOLS = frozenset({"wizard_lookup_definitions", "wizard_browse_knowledge", "wizard_read_knowledge"})
 ATTACHMENT_TOOLS = frozenset({"wizard_read_attachment", "wizard_query_attachment", "wizard_edit_attachment"})
 DASHBOARD_TOOLS = frozenset({"wizard_dashboards", "wizard_read_dashboard"})  # the Dashboards system (dashboards.py)
+NERP_TOOLS = frozenset({"nerp_list_views", "nerp_view_columns", "nerp_query"})  # NERP's views, read live (nerp.py)
 CATALOG_TOOL = re.compile(r"^([a-z0-9]+)_(search_reports|get_report_schema|run_report)$")
 ASK_FOR_SYSTEM = "wizard_ask_for_system"
 
@@ -65,6 +66,8 @@ def system_of(name: str, args: dict[str, Any] | None = None) -> str | None:
         return "attachment"
     if name in DASHBOARD_TOOLS:
         return "dashboards"
+    if name in NERP_TOOLS:
+        return "nerp"
     match = CATALOG_TOOL.match(name)
     return match.group(1) if match else None
 

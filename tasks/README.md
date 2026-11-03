@@ -79,7 +79,8 @@ Rules:
   figures). Gemini finds those with its tools on the person's PC.
 - A task runs with Wizard's tools: the knowledge tools, `wizard_kb_note_source`, `wizard_kb_standard`, `wizard_kb_save_notes`, the portal
   map and portal tools, the database and catalog tools, the dashboards tools (`wizard_dashboards`,
-  `wizard_read_dashboard`) when the PC has a dashboards folder, and the task-file tools when it asks for a path. A task
+  `wizard_read_dashboard`) when the PC has a dashboards folder, NERP's view tools (`nerp_list_views`,
+  `nerp_view_columns`, `nerp_query`) when NERP is connected, and the task-file tools when it asks for a path. A task
   that needs a tool Wizard does not have needs an update first.
 - Say what must not change, and what to do with a SIGNED note: Wizard refuses to change one, so usually propose the
   change in the summary.

@@ -36,6 +36,8 @@ def available(settings: Settings, services: Services, identity: Identity) -> lis
         found.append({"id": portal.id, "name": portal.name, "kind": "portal", "data_mode": "LIVE"})
     if services.postgres and identity.can_use_system("postgresql"):
         found.append({"id": "postgresql", "name": services.postgres_name, "kind": "database", "data_mode": "LIVE"})
+    if services.nerp and identity.can_use_system("nerp"):  # NERP's views, read live: its catalog is gone (tools/__init__.py)
+        found.append({"id": "nerp", "name": services.nerp.name, "kind": "database", "data_mode": "LIVE"})
     if services.knowledge.notes:
         found.append({"id": "knowledge", "name": "Knowledge base", "kind": "knowledge", "notes": len(services.knowledge.notes)})
     found.append({"id": "attachment", "name": "Attached files", "kind": "files"})

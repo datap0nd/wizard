@@ -172,6 +172,13 @@
       "sha256": "4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274"
     },
     {
+      "name": "sqlglot",
+      "version": "30.29.0",
+      "filename": "sqlglot-30.29.0-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/10/b0/d7f3f0169fdf0261e924bfd37149aa5cb98798aec330fe0e94721a68a2a1/sqlglot-30.29.0-py3-none-any.whl",
+      "sha256": "16e47cc30c48bbf66bd24a680cb6edc2203d4ed4644acf84dd377109ecbe70fc"
+    },
+    {
       "name": "starlette",
       "version": "1.7.0",
       "filename": "starlette-1.7.0-py3-none-any.whl",

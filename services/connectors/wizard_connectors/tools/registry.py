@@ -25,6 +25,7 @@ from ..entitlements import Identity
 from ..fixture_source import FixtureSource, SourceError
 from ..knowledge import KnowledgeBase
 from ..metronome import MetronomeSettings
+from ..nerp import NerpQuery
 from ..portal_browser import PortalBrowsers
 from ..portal_map import PortalMaps, Writer
 from ..postgres_query import PostgresQuery
@@ -79,6 +80,8 @@ class Services:
     task_files: TaskFiles | None = None
     # The team's HTML dashboards folder (dashboards.py), a system of its own; None = no folder set on this PC.
     dashboards: Dashboards | None = None
+    # NERP's views on their own PostgreSQL server (nerp.py), read with Gemini's SELECT; None = not connected here.
+    nerp: NerpQuery | None = None
     now: Callable[[], datetime] = field(default=lambda: datetime.now(UTC))
 
 

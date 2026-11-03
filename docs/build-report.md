@@ -3,7 +3,26 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-03 (latest) — Wizard asks before a long route; GSCM opens reports without restarting; a GSCM options task
+## 2026-11-03 (latest) — NERP: its views on their own server, views only, and a task that maps them
+
+The owner: "add a little NERP section. NERP is just a few sql views or tables. I should be able to restrict it to a
+certain DB, with a certain URL, certain Schema. It only will have access to views", and "we need proper mapping. It's a
+huge table." PostgreSQL, one read-only account ([decision](decisions/2026-11-03-nerp-views.md)).
+- **Settings → NERP** (`WIZARD_NERP_*`): name, server (host, host:port or `postgresql://` address), port, database,
+  schema, read-only user, password, SSL; company file and Export carry them. Incomplete settings leave NERP off and log
+  why. **Test connection** counts the views the account reads and warns when it reads tables too.
+- **Tools** `nerp_list_views`, `nerp_view_columns`, `nerp_query` (`nerp.py`, `tools/nerp_tools.py`). The query runs as
+  the AI Team Database's does, in the configured database only, after `sqlglot` parses it: every relation it reads must
+  be a view of the schema (CTE scoping honoured, so a CTE cannot hide a table's name); tables, other schemas, the
+  catalog, another database, other schemas' functions and functions that run SQL text are refused before anything
+  runs; `search_path` is the schema. Evidence `LIVE` / `READ_ONLY_SQL`; Check my data reruns it.
+- Connected, NERP replaces its report catalog (`connect_nerp`) and is a live database on the stage, in the picker,
+  in `wizard_list_sources` and in the source order.
+- **Task** `nerp-map-views` (repeats until done): one dataset note per view: grain, every column and its values, date
+  range, the filter every query needs (rows per day, timings), example queries proved with `LIMIT 0`.
+- New dependency `sqlglot` 30.29.0 (pure Python); `PostgresQuery.check` is the hook NERP's check uses.
+
+## 2026-11-03 — Wizard asks before a long route; GSCM opens reports without restarting; a GSCM options task
 
 The owner's run on the work PC (eval log, 3 Nov 2026): "sell-out by operator against the day before" took 29.6 minutes
 and answered a different question. The owner's review of it, written by another assistant, was checked against the code

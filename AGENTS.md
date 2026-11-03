@@ -57,7 +57,11 @@ around a precomputed result is withdrawn. Its credential, entitlement, DLP and h
   ([docs/decisions/2026-10-06-live-postgresql.md](docs/decisions/2026-10-06-live-postgresql.md)):
   `wizard_query_postgresql` runs Gemini's own SELECT. It sends one statement as a subquery, in a READ ONLY
   transaction that is always rolled back, on a fresh connection closed after each call, under a read-only account.
-  Keep all of those protections.
+  Keep all of those protections. NERP's views (owner decision,
+  [docs/decisions/2026-11-03-nerp-views.md](docs/decisions/2026-11-03-nerp-views.md)) are read the same way by
+  `nerp_query`, on their own server, database and schema from Settings → NERP, under a read-only account: the statement
+  is parsed and may name only that schema's views, never a table, another schema, the catalog or a function that runs
+  SQL text or reaches outside the database. Keep that check with the protections above.
   The second exception, also an owner decision
   ([docs/decisions/2026-10-20-metronome-recurring-extractions.md](docs/decisions/2026-10-20-metronome-recurring-extractions.md)):
   recurring briefs emailed by Metronome
