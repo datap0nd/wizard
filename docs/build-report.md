@@ -3,7 +3,14 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-04 (latest) — NERP: the views Wizard may query
+## 2026-11-04 (latest) — The DB4009 check needs no export: the direct read against the screen
+
+The owner: "Im not exporting anything." `wizard_compare_evidence` (`tools/compare_tools.py`) checks one of Wizard's reads
+against another, row by row and number by number: the proven direct request against the grid the report's own screen
+showed for the same filters. The map keeps the outcome as `reply_check` with what it was checked against;
+`wizard_task_compare` uses the same comparison for a task's file. The DB4009 task asks for no file.
+
+## 2026-11-04 — NERP: the views Wizard may query
 
 The owner: "specify what views I can access in NERP (use the same comma separator for views please). The NERP task will
 only access that one." Settings → NERP → **Views Wizard may query** (`WIZARD_NERP_VIEWS`), parsed like the schemas
@@ -22,7 +29,7 @@ The owner asked how GSCM can be mapped precisely, and whether Wizard reads it th
   (`portal_map_save` ignores Gemini's `verified`, demotes to partial, never drops a proof). Each reply is evidence.
 - `portal_map_save` / `portal_map_route` refuse a sentence saying a report lacks a breakdown.
 - `wizard_task_compare`: a task's spreadsheet (now converted with its tables) against evidence, row by row and number by
-  number; the outcome is kept in the report's map entry (`export_check`).
+  number; the outcome is kept in the report's map entry (`reply_check`).
 - Task `gscm-db4009-daily-sellout` (asks for the person's export): the code, the person's path, every Configuration
   category, the proven ORG Sales request, the check against the export, the earlier claim corrected. The broad task
   `gscm-report-options` now runs after it, skips DB4009, reads code first and proves with the new tool.

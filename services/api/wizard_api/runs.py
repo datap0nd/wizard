@@ -76,6 +76,9 @@ TITLE_WAIT_S = 5.0
 # Gemini asks the person one question before a long route (owner, 3 Nov 2026: "ASKING the user for more info before
 # proceeding ... like a prompt helper"): only in a question, once, and the run then stops gathering data.
 ASK_PERSON = "wizard_ask_person"
+# Checking one read against another is mapping and task work (a portal's direct request against its own screen): offered
+# in those runs only, so a question's every step does not carry its declaration.
+COMPARE_EVIDENCE = "wizard_compare_evidence"
 
 
 def wrap_up_s(timeout_s: int) -> int:
@@ -667,7 +670,8 @@ class RunManager:
         reads_path = run.kind == "task" and bool((run.work or {}).get("path"))
         return [t for t in self.registry.describe(scope)
                 if (run.offers_ask if t["name"] == ASK_FOR_SYSTEM else offered(t["name"], shown, catalogs, portals))
-                and (reads_path or t["name"] not in TASK_FILE_NAMES) and (run.kind == "ask" or t["name"] != ASK_PERSON)]
+                and (reads_path or t["name"] not in TASK_FILE_NAMES) and (run.kind == "ask" or t["name"] != ASK_PERSON)
+                and (run.kind in ("task", "explore") or t["name"] != COMPARE_EVIDENCE)]
 
     def subscribe(self, run_id: str) -> asyncio.Queue[dict[str, Any]] | None:
         run = self.active.get(run_id)

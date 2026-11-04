@@ -13,6 +13,7 @@ from ..nerp import NerpQuery, NerpSettings
 from ..paths import KNOWLEDGE, SOURCE_CONTRACTS, SYNTHETIC
 from ..pg import PgSettings
 from ..postgres_query import PostgresQuery
+from .compare_tools import COMPARE_TOOLS
 from .core_tools import CORE_TOOLS
 from .dashboard_tools import DASHBOARD_TOOLS
 from .kb_tools import KB_TOOLS
@@ -74,6 +75,7 @@ def build_registry(services: Services) -> ToolRegistry:
     for system in services.catalog.systems:
         specs.extend(make_source_tools(system.id, system.name))
     specs.extend(CORE_TOOLS)
+    specs.extend(COMPARE_TOOLS)
     specs.extend(KB_TOOLS)
     specs.extend(TASK_FILE_TOOLS)
     if services.portals is not None:

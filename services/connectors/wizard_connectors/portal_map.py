@@ -168,7 +168,7 @@ class PortalMaps:
         index = [{"id": r["id"], "name": r.get("name"), "path": " > ".join(r.get("path") or []), "status": r.get("status"),
                   **({"fast": True} if any(q.get("verified") for q in r.get("requests") or []) or r.get("script") else {}),
                   **({"proven": True} if any(q.get("proven") for q in r.get("requests") or []) else {}),
-                  **({"export_check": r["export_check"].get("verdict")} if isinstance(r.get("export_check"), dict) else {})}
+                  **({"reply_check": r["reply_check"].get("verdict")} if isinstance(r.get("reply_check"), dict) else {})}
                  for r in ready[:INDEX_LIMIT]]
         out: dict[str, Any] = {"updated": data.get("updated"), "overview": data.get("overview") or None, "topics": topics,
                                "counts": counts, "reports": index}
@@ -300,14 +300,15 @@ class PortalMaps:
             report["updated"] = data["updated"] = now()
             self._write(system, data)
 
-    def check_export(self, system: str, report_id: str, result: dict[str, Any]) -> None:
-        """Keep the outcome of a check of the report's reply against a person's own export (wizard_task_compare)."""
+    def check_reply(self, system: str, report_id: str, result: dict[str, Any]) -> None:
+        """Keep the outcome of a check of the report's reply against a reference: its own screen for the same filters
+        (wizard_compare_evidence) or a file the person gave a task (wizard_task_compare)."""
         with self._lock:
             data = self.load(system)
             report = _match(data["reports"], report_id)
             if report is None:
                 raise MapError(f"No report '{report_id}' in the {system} map.")
-            report["export_check"] = clean(result)
+            report["reply_check"] = clean(result)
             report["updated"] = data["updated"] = now()
             self._write(system, data)
 
@@ -479,10 +480,10 @@ def render(data: dict[str, Any]) -> str:
             lines.append(f"- Request {item.get('name')}: {item.get('method') or 'POST'} {item.get('url')}"
                          + (f" (proven by Wizard {str(item['proven'].get('at', ''))[:10]})" if isinstance(item.get("proven"), dict)
                             else " (verified, by Gemini's own account)" if item.get("verified") else ""))
-        if isinstance(report.get("export_check"), dict):
-            check = report["export_check"]
-            lines.append(f"- Checked against a person's own export on {str(check.get('at', ''))[:10]}: {check.get('verdict')} "
-                         f"({check.get('rows_matched', 0)} of {check.get('rows_compared', 0)} rows)")
+        if isinstance(report.get("reply_check"), dict):
+            check = report["reply_check"]
+            lines.append(f"- Checked against {check.get('against') or 'a reference'} on {str(check.get('at', ''))[:10]}: "
+                         f"{check.get('verdict')} ({check.get('rows_matched', 0)} of {check.get('rows_compared', 0)} rows)")
         if report.get("script"):
             lines.append(f"- Saved script: {report['script']}")
         if report.get("notes"):

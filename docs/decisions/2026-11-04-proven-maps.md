@@ -37,7 +37,13 @@ through Configuration. Direct requests were possible and preferred, but no GSCM 
   rows per read, every option of a drop-down, whole request bodies in the browser's log, map fields up to 200,000
   characters, a repeating task up to 50 runs.
 
-**Consequences.**
+**Addendum, the same day.** The owner: "Im not exporting anything." The reference is the report's own screen instead:
+the task follows the person's path once with chosen filters, reads the grid's rows, proves the direct request with the
+same filters, and `wizard_compare_evidence` checks one against the other row by row (keys, numbers, the rows one side
+only has). The outcome is kept in the map as `reply_check`, with what it was checked against. The DB4009 task asks for no
+file; `wizard_task_compare` stays for a task that is given one.
+
+**Consequences.
 - Earlier maps keep their reports' status; a request only "verified" there is marked as Gemini's own account in the
   map's page, and the system prompt says to check its reply.
 - A map's word "mapped" now means a proven request; "checked against an export" means a MATCH.

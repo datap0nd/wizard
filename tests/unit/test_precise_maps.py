@@ -14,6 +14,7 @@ from tests.helpers import MemoryRecorder
 from tests.unit.test_portal_map import tools
 
 from wizard_connectors.entitlements import Identity, SystemRights
+from wizard_connectors.portal_map import render
 from wizard_connectors.task_files import TaskFiles
 from wizard_connectors.tools import ToolContext, build_registry, build_services
 from wizard_documents.tables import from_csv
@@ -154,8 +155,9 @@ def test_a_comparison_is_kept_in_the_reports_map_entry(tmp_path: Path):
     file_id = registry.execute("wizard_task_files", {}, context).data["files"][0]["id"]
     checked = registry.execute("wizard_task_compare", {**compare_args(file_id), "system": "gscm", "report": "db4009"}, context)
     assert checked.data["kept_in_map"] == "gscm:db4009"
-    kept = context.services.portal_maps.report("gscm", "db4009")["export_check"]
-    assert kept["verdict"] == "MATCH" and kept["rows_matched"] == 6 and kept["evidence"] == "E1"
+    kept = context.services.portal_maps.report("gscm", "db4009")["reply_check"]
+    assert kept["verdict"] == "MATCH" and kept["rows_matched"] == 6 and kept["evidence"] == ["E1"]
+    assert kept["against"] == "the person's own file"
     unknown = registry.execute("wizard_task_compare", {**compare_args(file_id), "keys": [{"file": "Acct", "wizard": "X"}]}, context)
     assert unknown.error_code == "unknown_column" and "Account" in unknown.error_message
 
@@ -164,3 +166,30 @@ def test_the_comparison_is_only_for_a_task_that_asked_for_a_file(tmp_path: Path)
     registry, context, _ = compare_context(tmp_path, REPLY)
     context.task = None
     assert registry.execute("wizard_task_compare", compare_args("f00000000"), context).error_code == "task_only"
+
+
+# Without a file: the direct request against the report's own screen (owner, 4 Nov 2026: "Im not exporting anything") --
+def test_a_direct_request_is_checked_against_what_the_screen_showed(tmp_path: Path):
+    registry, context = tools(tmp_path)
+    recorder = context.recorder
+    screen = recorder.add_evidence({"tool": "portal_run", "system": "gscm", "rows": [row[:] for row in REPLY], "total_rows": 6,
+                                    "columns": [{"key": k} for k in ("ACCOUNT", "COUNTRY", "D1101", "D1102")]})
+    reply = recorder.add_evidence({"tool": "portal_prove_request", "system": "gscm", "rows": [row[:] for row in REPLY],
+                                   "total_rows": 6, "columns": [{"key": k} for k in ("ORGSALES_NM", "COUNTRY_NM", "D20261101", "D20261102")]})
+    registry.execute("portal_map_save", {"system": "gscm", "reports": [{"id": "db4009", "name": "Daily Sell-out"}]}, context)
+    args = {"reference": screen, "checked": reply, "system": "gscm", "report": "db4009",
+            "keys": [{"reference": "ACCOUNT", "checked": "ORGSALES_NM"}, {"reference": "COUNTRY", "checked": "COUNTRY_NM"}],
+            "values": [{"reference": "D1101", "checked": "D20261101"}, {"reference": "D1102", "checked": "D20261102"}]}
+    checked = registry.execute("wizard_compare_evidence", args, context)
+    assert checked.ok and checked.data["verdict"] == "MATCH" and checked.data["rows_compared"] == 6
+    kept = context.services.portal_maps.report("gscm", "db4009")["reply_check"]
+    assert kept["against"] == "the report's own screen" and kept["evidence"] == [screen, reply]
+    assert "Checked against the report's own screen" in render(context.services.portal_maps.load("gscm"))
+
+    off = [row[:] for row in REPLY]
+    off[0][2] = 1240
+    wrong = recorder.add_evidence({"tool": "portal_prove_request", "system": "gscm", "rows": off, "total_rows": 6,
+                                   "columns": [{"key": k} for k in ("ORGSALES_NM", "COUNTRY_NM", "D20261101", "D20261102")]})
+    different = registry.execute("wizard_compare_evidence", {**args, "checked": wrong}, context).data
+    assert different["verdict"] == "DIFFERENT" and different["differences"] == [
+        {"row": ["total", ""], "column": "D1101", "reference": 1250.0, "checked": 1240.0}]

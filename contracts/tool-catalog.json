@@ -1666,6 +1666,101 @@
       }
     },
     {
+      "name": "wizard_compare_evidence",
+      "description": "Check one of your reads against another, row by row and number by number, in Wizard's code: e.g. a portal's direct data request (portal_prove_request's first reply) against the rows the report's own screen showed for the same filters. Rows are matched by the key columns, numbers within the tolerance; the rows only one side has are listed. MATCH means everything agrees. With system and report, the outcome is kept in that report's map entry.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "reference": {
+            "description": "What the result must equal: e.g. the rows the report's own screen showed (its grid's dataset, read after the person's path) (pattern ^E\\d{1,6}$)",
+            "type": "string"
+          },
+          "checked": {
+            "description": "The evidence to check, e.g. the first reply of portal_prove_request for the same filters (pattern ^E\\d{1,6}$)",
+            "type": "string"
+          },
+          "keys": {
+            "description": "The columns that tell one row from another on both sides, e.g. the account and the country.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "reference": {
+                  "description": "The column in the reference evidence, by name (1-200 characters)",
+                  "type": "string"
+                },
+                "checked": {
+                  "description": "The same column in the evidence being checked (1-200 characters)",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "reference",
+                "checked"
+              ],
+              "type": "object"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "type": "array"
+          },
+          "values": {
+            "description": "The numbers to compare (one pair per day for a report with a column per day).",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "reference": {
+                  "description": "The column in the reference evidence, by name (1-200 characters)",
+                  "type": "string"
+                },
+                "checked": {
+                  "description": "The same column in the evidence being checked (1-200 characters)",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "reference",
+                "checked"
+              ],
+              "type": "object"
+            },
+            "maxItems": 5000,
+            "minItems": 1,
+            "type": "array"
+          },
+          "tolerance": {
+            "description": "The largest difference two numbers may have and still match (default 0.0)",
+            "maximum": 1000000,
+            "minimum": 0,
+            "type": "number"
+          },
+          "against": {
+            "description": "What the reference is, in words, for the map (0-120 characters; default \"the report's own screen\")",
+            "type": "string"
+          },
+          "system": {
+            "description": "With report: the portal whose map keeps the outcome, e.g. gscm (pattern ^[a-z][a-z0-9]{1,15}$)",
+            "type": "string"
+          },
+          "report": {
+            "description": "The report's id in that portal's map (pattern ^[a-z0-9][a-z0-9_.-]{0,79}$)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reference",
+          "checked",
+          "keys",
+          "values"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
       "name": "wizard_kb_note_source",
       "description": "The file of knowledge notes as it is in the knowledge base (front matter and body) with its path, to change it with wizard_kb_save_notes.",
       "inputSchema": {

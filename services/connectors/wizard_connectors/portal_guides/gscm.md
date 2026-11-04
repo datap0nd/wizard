@@ -86,8 +86,9 @@ screen.
   (`name:string=value` units) and the datasets it fills. Save it with `{{param}}` placeholders, then **prove it with
   portal_prove_request**: Wizard sends it twice, with the screen's values and with one changed, and keeps it as proven
   only when both answers are clean, alike in shape, and the change changed the rows. Only that marks a request
-  verified, and a report is mapped only once one of its requests is proven. A task with the person's own export then
-  checks the proven reply against it, row by row (wizard_task_compare).
+  verified, and a report is mapped only once one of its requests is proven. Then check the proven reply against what
+  the report's own screen showed for the same filters (its grid read with `W.nexacro.readGrid`), row by row:
+  wizard_compare_evidence. A MATCH proves the direct read reproduces the screen.
 
 ## Bookmarks (Setting > Favorite)
 

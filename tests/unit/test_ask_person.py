@@ -80,6 +80,7 @@ def test_nobody_is_asked_where_nobody_is_waiting(scripted):
     check = client.post(f"/api/v1/runs/{first['id']}/check", headers=HEADERS).json()
     assert wait_run(client, check["run_id"])["status"] == "succeeded"
     assert ASK in runtime.offered[0] and ASK not in runtime.offered[1], "Check my data replays evidence; it asks nothing"
+    assert "wizard_compare_evidence" not in runtime.offered[0], "comparing two reads is task and mapping work"
 
 
 def test_the_prompt_says_when_to_ask_and_when_not_to():
