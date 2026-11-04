@@ -38,3 +38,4 @@ Evidence**. A decision that changes repository rules also updates [AGENTS.md](..
 - [2026-11-03 Wizard asks the person before a long route](2026-11-03-ask-the-person.md)
 - [2026-11-03 NERP is its views, read live on their own server](2026-11-03-nerp-views.md)
 - [2026-11-04 Wizard proves a portal map; Gemini's word does not](2026-11-04-proven-maps.md)
+- [2026-11-04 A run ends with an answer; a question reads a mapped report through its map](2026-11-04-runs-end-with-an-answer.md)

@@ -389,6 +389,26 @@ def test_a_nexacro_dataset_becomes_live_evidence_with_the_script_as_its_query(se
     assert evidence["columns"][2] == {"key": "UNITS", "label": "UNITS", "type": "number"}
 
 
+def test_a_form_given_as_itself_and_its_own_datasets_by_name(setup):
+    # Owner's question run, 4 Nov 2026: W.nexacro.datasets(<the form object>) failed "no component at [object Form]",
+    # and a form's own Dataset (a search's input, nothing on screen bound to it) could not be read by name.
+    script = ("await W.waitFor(() => W.nexacro.activeForms().length);"
+              "const form = W.nexacro.resolve(W.nexacro.activeForms()[0]);"
+              "const sets = W.nexacro.datasets(form);"
+              "let missing = null; try { W.nexacro.read('ds_nowhere'); } catch (e) { missing = String(e.message); }"
+              "let none = null; try { W.nexacro.read(undefined); } catch (e) { none = String(e.message); }"
+              "return JSON.stringify({sets: sets.map(s => [s.dataset, s.bound === false]),"
+              "  market: W.nexacro.read('ds_market').rows, missing, none, columns: W.nexacro.columns(undefined).length});")
+    outcome = call(setup, "portal_run", {"system": "gscm", "steps": [
+        {"action": "goto", "url": "/"}, {"action": "evaluate", "script": script}]})
+    assert outcome.ok, outcome.error_message
+    value = json.loads(outcome.data["outputs"][-1]["value"])
+    assert value["sets"] == [["ds_list", False], ["ds_market", True]], "bound first, then the form's own"
+    assert value["market"] == [["AE", "UAE"], ["SA", "Saudi Arabia"]], "a form's own Dataset is read by its name"
+    assert "no Dataset named ds_nowhere" in value["missing"] and "not a Dataset (undefined)" in value["none"]
+    assert value["columns"] == 0
+
+
 def test_bookmarks_tables_and_the_page_outline(setup):
     outcome = call(setup, "portal_run", {"system": "gscm", "steps": [
         {"action": "goto", "url": "/"}, {"action": "evaluate", "script": "return W.nexacro.bookmarks();"},

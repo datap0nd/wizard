@@ -70,6 +70,15 @@ class ToolBridge(Protocol):
         """The person's notes not yet handed to Gemini, as Gemini reads them; each is marked read on the page."""
         ...
 
+    def answer_now(self) -> str | None:
+        """Why Gemini must write its answer in the next step, without tools (the run's time is nearly up, or it was told
+        to stop gathering data and kept calling tools); None while it may go on."""
+        ...
+
+    def step_took(self, seconds: float) -> None:
+        """How long one model step took, waits for Google included: a slow run keeps more time back for its answer."""
+        ...
+
 
 class AgentRuntime(Protocol):
     kind: RuntimeKind

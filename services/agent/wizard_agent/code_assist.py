@@ -640,6 +640,15 @@ class CodeAssistRuntime:
                 # on mid-run brings its tools. Tools are never taken away mid-run: a switched-off system's tools refuse.
                 contents[-1]["parts"].extend({"text": note} for note in await tools.take_steers())
                 run.declarations = declarations(tools)
+                # The run's time is nearly up (or Gemini was told to stop and kept calling tools): this step writes the
+                # answer, with tools declared but not callable, so the run ends with an answer instead of being cut off.
+                notice = None if run.final else tools.answer_now()
+                if notice:
+                    run.final = True
+                    contents[-1]["parts"].append({"text": notice})
+                    log.info("run %s step %d: the answer is due; tools are off for this step", request.run_id, step)
+                    await emit("status", {"message": "Writing the answer with what Wizard has found"})
+                began = time.monotonic()
                 if run.model != chosen and run.ready(chosen, self._resting):
                     # The fallback answered a step the chosen model could not; the next one is the chosen model's again.
                     await run.switch(chosen, contents, emit, f"{chosen} may answer again")
@@ -647,6 +656,7 @@ class CodeAssistRuntime:
                 tries = [run.model]
                 while reply.empty:
                     reply = await self._again(http, token, run, contents, emit, reply, tries, step, totals, cancelled)
+                tools.step_took(time.monotonic() - began)
                 totals["input_tokens"] += int(reply.usage.get("promptTokenCount", 0))
                 totals["output_tokens"] += int(reply.usage.get("candidatesTokenCount", 0))
                 log.info("run %s step %d on %s: %s prompt tokens, %d tool call(s)", request.run_id, step, run.model,
@@ -660,6 +670,10 @@ class CodeAssistRuntime:
                     return
                 responses = []
                 for call in reply.calls:
+                    if run.final:  # tools are off: a call written anyway is not run
+                        responses.append({"functionResponse": {"name": call.get("name"), "response": {"error": {
+                            "code": "answer_now", "message": "No more tools in this run: write your answer now."}}}})
+                        continue
                     if tools.steers_waiting():
                         responses.append({"functionResponse": {"name": call.get("name"), "response": {"error": NOT_RUN}}})
                         continue
@@ -710,6 +724,7 @@ class _Models:
         self.model = model
         self.generation = runtime._generation(model)
         self.not_before: dict[str, float] = {}  # a model that refused -> when Google said to ask it again
+        self.final = False  # the answer is due: the steps from now on may not call tools
 
     def other(self, resting: dict[str, tuple[float, Limit]]) -> str | None:
         """The model to turn to when the current one refuses: the other of the two, unless its quota is used up."""
@@ -726,6 +741,8 @@ class _Models:
             "contents": contents,
             "systemInstruction": {"role": "user", "parts": [{"text": system_prompt()}]},
             "tools": [{"functionDeclarations": self.declarations}],
+            # Declared but not callable once the answer is due: earlier turns' calls stay valid, no new one is written.
+            **({"toolConfig": {"functionCallingConfig": {"mode": "NONE"}}} if self.final else {}),
             "generationConfig": self.generation}}  # shared: a thinking setting the model rejects stays dropped
 
     async def switch(self, model: str, contents: list[dict[str, Any]], emit: Emit, why: str) -> None:

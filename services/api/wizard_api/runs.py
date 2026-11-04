@@ -86,6 +86,18 @@ def wrap_up_s(timeout_s: int) -> int:
     return min(240, timeout_s // 5)
 
 
+def wrap_up_window(timeout_s: int, slowest_step_s: float) -> float:
+    """The time kept back, grown for a run whose model steps are slow (owner's run, 4 Nov 2026: about two minutes a
+    step, so the four minutes kept back held the step that read the refusal and none to write the answer): two of its
+    slowest steps and a margin, at most a third of the limit."""
+    return min(max(float(wrap_up_s(timeout_s)), 2 * slowest_step_s + 30), timeout_s / 3)
+
+
+def last_step_window(timeout_s: int, slowest_step_s: float) -> float:
+    """When the next step must be the answer: about one slow step's time is left."""
+    return min(max(60.0, 1.25 * slowest_step_s + 30), wrap_up_window(timeout_s, slowest_step_s))
+
+
 def call_signature(name: str, args: dict[str, Any]) -> str:
     """Same tool, same arguments; whitespace inside strings (a reformatted SQL statement) does not make a call new."""
     def squeeze(value: Any) -> Any:
@@ -259,6 +271,8 @@ class ActiveRun:
     cancelled: bool = False
     tool_calls: int = 0
     started: float = 0.0  # time.monotonic() when the agent started; 0 until then
+    slowest_step: float = 0.0  # the longest model step so far, Google's waits included (the runtime reports each)
+    answer_due: str | None = None  # Gemini was told to stop gathering data: its next step writes the answer, no tools
     calls_seen: dict[str, int] = field(default_factory=dict)
     repeats_refused: int = 0
     segment: list[str] = field(default_factory=list)
@@ -357,6 +371,12 @@ class Bridge:
     async def take_steers(self) -> list[str]:
         return await self.manager.take_steers(self.run)
 
+    def answer_now(self) -> str | None:
+        return self.manager.answer_now(self.run)
+
+    def step_took(self, seconds: float) -> None:
+        self.run.slowest_step = max(self.run.slowest_step, seconds)
+
 
 def portal_name(services: Services, system: Any) -> str:
     portal = services.portals.settings.portal(str(system)) if services.portals else None
@@ -446,7 +466,8 @@ def tool_summary(name: str, outcome: ToolOutcome) -> str:
         page = (data.get("page") or {}).get("title") or ""
         text = (f"{len(tables)} table(s), {sum(o['total_rows'] for o in tables):,} rows" if tables
                 else f"on {page}" if page else "done")
-        return text + (f" · stopped: {data['stopped']['code']}" if data.get("stopped") else "") + (
+        stopped = data.get("stopped") or {}
+        return text + (f" · stopped: {stopped.get('code')}: {str(stopped.get('message') or '')[:240]}" if stopped else "") + (
             f" · {len(data['refused'])} request(s) refused" if data.get("refused") else "")
     if name == "portal_guide":
         return f"{data.get('name')} guide · {len(data.get('saved_scripts', []))} saved script(s)"
@@ -788,6 +809,7 @@ class RunManager:
             await self.emit(run, "access_request_proposed", {"request": outcome.data["access_request"]})
         if outcome.ok and name == ASK_PERSON:
             run.asked = True
+            run.answer_due = run.answer_due or "You asked the person a question."
             await self.emit(run, "person_asked", {"question": outcome.data["question"], "options": outcome.data["options"],
                                                   "why": outcome.data.get("why")})
         if outcome.ok and name == ASK_FOR_SYSTEM:
@@ -855,17 +877,47 @@ class RunManager:
         if category is not None and category not in RESEARCH:
             return None
         if run.repeats_refused >= LOOP_STOP:
+            self._answer_due(run, "This run kept repeating calls.")
             return ToolOutcome(False, {}, 0, "loop_stopped",
                                "This run keeps repeating calls. Stop gathering data and write your answer now with what you "
                                "have; say what is missing.")
         left = self.settings.run_timeout_s - (time.monotonic() - run.started)
-        if run.started and left < wrap_up_s(self.settings.run_timeout_s):
+        if run.started and left < wrap_up_window(self.settings.run_timeout_s, run.slowest_step):
+            self._answer_due(run, f"About {max(1, round(left / 60))} minute(s) remain before this run's time limit.")
             return ToolOutcome(False, {}, 0, "time_nearly_up",
                                f"About {max(1, round(left / 60))} minute(s) remain before this run's time limit. Stop "
                                "gathering data and write your answer now with what you have; say what is missing. If what "
                                "you have does not answer what was asked (its period, granularity, breakdown or markets), "
                                "say so in your first sentence and name the source that holds it.")
         return None
+
+    def _answer_due(self, run: ActiveRun, why: str) -> None:
+        """A question's next step writes the answer once Gemini is told to stop gathering data. A task or a mapping round
+        may still save what it learned (map and note writes stay open), so only its last step is held to the answer."""
+        if run.kind not in ("task", "explore") and run.answer_due is None:
+            run.answer_due = why
+
+    def answer_now(self, run: ActiveRun) -> str | None:
+        """Why Gemini's next step must be its answer, with tools off (the Code Assist route asks before each step): it
+        was told to stop gathering data, or about one of its slow steps is left before the time limit. None otherwise."""
+        if not run.started:
+            return None
+        left = self.settings.run_timeout_s - (time.monotonic() - run.started)
+        why = run.answer_due
+        if left < last_step_window(self.settings.run_timeout_s, run.slowest_step):
+            why = f"About {max(1, round(left / 60))} minute(s) remain before this run's time limit."
+        if why is None:
+            return None
+        if run.asked:
+            return "You asked the person a question: write it now as your message, with no more tools."
+        if run.kind == "task":
+            return (f"{why} No more tools in this run: write your final message now, as the task asks (what you did, "
+                    "what you proved, what is left and why, and its last line).")
+        if run.kind == "explore":
+            return f"{why} No more tools in this round: summarise what you mapped and what is left now."
+        return (f"{why} No more tools in this run: write your answer now from the evidence you have, citing it. If it does "
+                "not answer what was asked (its period, granularity, breakdown or markets), say so in your first sentence "
+                "and name the source that holds it.")
 
     def _database(self, run: ActiveRun) -> tuple[str, list[str]] | None:
         """The database's name and the schemas Gemini may query, when the company limits them and this run may query it."""

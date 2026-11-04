@@ -3,7 +3,20 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-04 (latest) — Cases: a click on a query opens it
+## 2026-11-04 (latest) — A run ends with an answer; a question reads DB4009 through its map
+
+The owner's first question after the DB4009 task clicked towards DB4009's Configuration for twenty minutes, at about two
+minutes a model step, and was cut off at 1,800 seconds with no answer ([decision](decisions/2026-11-04-runs-end-with-an-answer.md)).
+The prompt's own DB4009 line had sent it there; it now says a question reads a mapped report with its saved script or
+proven request, and asks the person before a long live read when the map has none.
+- Code Assist route: once the answer is due (a question told to stop, or about one slow step left), the step is sent
+  with tools off (`functionCallingConfig` NONE) and the reason; the time kept back grows with the slowest step.
+- `portal_run` names a mapped report's script or proven request back when Gemini's own steps open it; the map index
+  shows each report's script.
+- `W.nexacro.datasets(form)` takes the form itself and lists its own Datasets; `W.nexacro.read(name)` finds a form's
+  Dataset by name and says what it could not find. A step that stopped part-way shows why.
+
+## 2026-11-04 — Cases: a click on a query opens it
 
 The owner: the queries in a case "are clickable but they dont open the query itself ... Its just strictly visual". A
 case's sources now keep the query that read them (`site.query_of`: the SQL; a portal read's steps without hosts or

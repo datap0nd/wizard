@@ -168,6 +168,7 @@ class PortalMaps:
         index = [{"id": r["id"], "name": r.get("name"), "path": " > ".join(r.get("path") or []), "status": r.get("status"),
                   **({"fast": True} if any(q.get("verified") for q in r.get("requests") or []) or r.get("script") else {}),
                   **({"proven": True} if any(q.get("proven") for q in r.get("requests") or []) else {}),
+                  **({"script": r["script"]} if r.get("script") else {}),
                   **({"reply_check": r["reply_check"].get("verdict")} if isinstance(r.get("reply_check"), dict) else {})}
                  for r in ready[:INDEX_LIMIT]]
         out: dict[str, Any] = {"updated": data.get("updated"), "overview": data.get("overview") or None, "topics": topics,

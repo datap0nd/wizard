@@ -24,8 +24,10 @@ screen.
 
 ## Reading data
 
-- A report's numbers sit in the Dataset bound to its Grid. `W.nexacro.datasets(form)` lists every bound Dataset inside
-  a form with the component's `path`, row count and columns; `W.nexacro.readGrid(path)` returns that grid's rows as
+- A report's numbers sit in the Dataset bound to its Grid. `W.nexacro.datasets(form)` (a form's path, as
+  `W.nexacro.activeForms()` gives it, or the form itself) lists every bound Dataset inside it with the component's
+  `path`, row count and columns, and then the form's own Datasets that nothing on screen shows (the search's input
+  datasets among them), with `bound: false`; `W.nexacro.readGrid(path)` returns that grid's rows as
   `{columns, rows, total_rows}`, a table you can return as evidence. `W.nexacro.boundDataset(path)` gives the Dataset
   itself and `W.nexacro.read(dataset, {limit, columns})` reads any Dataset.
 - Dataset API, as GSCM's build exposes it: `getRowCount()`, `getColumn(row, columnId)`; `getRowCountNF()` /
@@ -120,6 +122,9 @@ screen.
 
 ## A report's Configuration (the columns and breakdowns beyond its default view)
 
+- This is mapping work. In a question, a report the map reads with a saved script or a proven request (portal_map
+  lists them as `script` or `proven`) is read that way, in one portal_run: clicking through Configuration takes many
+  slow steps, and a question has one run's time.
 - A report shows more than its default view through its own **Configuration** button. This is not the top bar's
   Setting gear (`btn_setting`, the application's settings and Favorite). The button may sit in the report form or in the
   report toolbar (`MdiFrame`), which `W.nexacro.inputs()` does not search: find it anywhere on screen with

@@ -65,6 +65,8 @@ class Bridge:
         self.calls = []
         self.steers: list[str] = []  # notes the person sent, not yet read by Gemini
         self.on_call = None  # called with each tool call: a test sends a note mid-step
+        self.due: str | None = None  # Wizard says the answer is due: the next step has tools off
+        self.steps: list[float] = []
 
     async def call(self, name, arguments):
         self.calls.append((name, arguments))
@@ -78,6 +80,12 @@ class Bridge:
     async def take_steers(self):
         taken, self.steers = self.steers, []
         return taken
+
+    def answer_now(self):
+        return self.due
+
+    def step_took(self, seconds):
+        self.steps.append(seconds)
 
     def describe(self):
         return [{"name": "nerp_run_report", "description": "d", "inputSchema": {"type": "object", "properties": {
@@ -123,6 +131,53 @@ def test_agent_loop_executes_tool_calls_and_echoes_thought_signatures(tmp_path):
     response = second["request"]["contents"][2]["parts"][0]["functionResponse"]
     assert response["name"] == "nerp_run_report" and response["response"]["evidence_id"] == "E1"
     assert [e for e in events if e[0] == "text_delta"][-1][1]["text"] == "EG spent $1.5M [E1]."
+
+
+def test_when_the_answer_is_due_the_step_has_tools_off_and_ends_the_run(tmp_path):
+    # Owner's run, 4 Nov 2026: refused near the time limit, Gemini kept calling tools and the run was cut off at 1800 s
+    # with no answer. Once Wizard says the answer is due, that step may not call tools: it writes the answer.
+    fake = FakeGoogle([
+        [{"functionCall": {"name": "nerp_run_report", "args": {"report_id": "a"}}}],
+        [{"text": "Weekly only [E1]; the daily account breakdown is in GSCM DB4009."}],
+    ])
+    rt, req = make(tmp_path, fake)
+    bridge = Bridge()
+
+    def due_after_first_call(name):
+        bridge.due = "About 2 minute(s) remain. No more tools in this run: write your answer now."
+
+    bridge.on_call = due_after_first_call
+
+    async def emit(kind, payload):
+        pass
+
+    asyncio.run(rt.run(req, emit, bridge, lambda: False))
+    first, second = fake.requests
+    assert "toolConfig" not in first["request"]
+    assert second["request"]["toolConfig"] == {"functionCallingConfig": {"mode": "NONE"}}
+    assert second["request"]["tools"][0]["functionDeclarations"], "declared, so earlier calls stay valid"
+    assert second["request"]["contents"][-1]["parts"][-1] == {"text": bridge.due}
+    assert len(bridge.steps) == 2 and all(s >= 0 for s in bridge.steps), "each step's time is reported"
+
+
+def test_a_call_written_after_the_answer_is_due_is_not_run(tmp_path):
+    fake = FakeGoogle([
+        [{"functionCall": {"name": "nerp_run_report", "args": {"report_id": "b"}}}],
+        [{"text": "What I have [E1]."}],
+    ])
+    rt, req = make(tmp_path, fake)
+    bridge = Bridge()
+    bridge.due = "No more tools in this run: write your answer now."
+
+    async def emit(kind, payload):
+        pass
+
+    asyncio.run(rt.run(req, emit, bridge, lambda: False))
+    assert bridge.calls == []
+    refused = fake.requests[1]["request"]["contents"][-1]["parts"][0]["functionResponse"]["response"]["error"]
+    assert refused["code"] == "answer_now"
+    assert fake.requests[0]["request"]["contents"][0]["parts"][-1] == {"text": bridge.due}, "said once, at the first step"
+    assert all(p != {"text": bridge.due} for p in fake.requests[1]["request"]["contents"][-1]["parts"])
 
 
 def test_a_busy_gemini_is_retried(tmp_path, monkeypatch):

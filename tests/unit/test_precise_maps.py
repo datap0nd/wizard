@@ -193,3 +193,32 @@ def test_a_direct_request_is_checked_against_what_the_screen_showed(tmp_path: Pa
     different = registry.execute("wizard_compare_evidence", {**args, "checked": wrong}, context).data
     assert different["verdict"] == "DIFFERENT" and different["differences"] == [
         {"row": ["total", ""], "column": "D1101", "reference": 1250.0, "checked": 1240.0}]
+
+
+def test_a_question_clicking_through_a_mapped_report_is_told_its_proven_route(tmp_path: Path):
+    # Owner's question run, 4 Nov 2026: it clicked through DB4009's Configuration for twenty minutes and ran out of
+    # time. A portal_run whose own steps name a report the map reads in one call says so, in the result or the error.
+    from wizard_connectors.tools.portal_tools import MAPPED_NOTE, _mapped_routes
+
+    registry, context = tools(tmp_path)
+    assert registry.execute("portal_map_save", {"system": "gscm", "reports": [
+        {"id": "db4009", "menu_id": "DB4009", "name": "Daily Sell-out", "status": "partial", "requests": [REQUEST],
+         "script": "db4009-by-account"},
+        {"id": "as470", "menu_id": "AS470", "name": "Actual Sales"}]}, context).ok
+    steps = [{"action": "evaluate", "script": "W.nexacro.open('DB4009'); return W.nexacro.find(/config/i);"}]
+    assert _mapped_routes(context, "gscm", steps) == [], "nothing proven and no script kept yet"
+    context.services.portal_maps.prove("gscm", "db4009", REQUEST, PROOF)
+    found = _mapped_routes(context, "gscm", steps)
+    assert found == [{"report": "db4009", "name": "Daily Sell-out", "proven_requests": ["search"]}], \
+        "a script named in the map but saved nowhere is not offered"
+    assert _mapped_routes(context, "gscm", [{"action": "evaluate", "script": "W.nexacro.open('AS470')"}]) == []
+    assert _mapped_routes(context, "gscm", [{"action": "evaluate", "script": "return 'XDB4009X'"}]) == []
+    task = ToolContext(identity=context.identity, run_id="run_t", recorder=MemoryRecorder(), services=context.services,
+                       task={"id": "gscm-db4009-daily-sellout"})
+    assert _mapped_routes(task, "gscm", steps) == [], "a task may be mapping it"
+    assert "proven request" in MAPPED_NOTE and "Configuration" in MAPPED_NOTE
+    context.services.portal_maps.keep_script("gscm", {"name": "db4009-by-account", "description": "By account",
+                                                       "steps": [{"action": "request"}], "params": [{"name": "day"}]})
+    assert _mapped_routes(context, "gscm", steps)[0]["script"] == "db4009-by-account", "a script kept in the map is"
+    index = registry.execute("portal_map", {"system": "gscm"}, context).data["reports"]
+    assert next(r for r in index if r["id"] == "db4009")["script"] == "db4009-by-account"

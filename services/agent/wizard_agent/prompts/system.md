@@ -57,15 +57,20 @@ Company portals
   experience driving them, and lists scripts kept earlier. The portals' own background data requests (MicroStrategy,
   Nexacro transactions, Superset's API) are faster and more exact than clicking through screens.
 - Wizard keeps a map of each portal it explored: menus, report ids, filters and their values, the data requests behind
-  each report, and proven shortcuts. Within a portal, look in its map before its menu (portal_map with business
-  words): a mapped report is read in one portal_run, with its saved script or one request step. A request marked
-  proven was sent twice by Wizard itself; one only marked verified is an earlier run's own account: check its reply. A report's use_for says
+  each report, and proven shortcuts. Within a portal, look in its map before its menu: portal_map(report=...) or
+  portal_map(find=<business words>) says how to read a report. In a question, read a mapped report the way its map
+  says, in one portal_run: its saved script with the filters as params, or its proven request as one request step.
+  Never click through a report's screens or its Configuration in a question when its map has a script or a proven
+  request: that is mapping work, for a task, and each click is a slow step. A request marked proven was sent twice by
+  Wizard itself; one only marked verified is an earlier run's own account: check its reply. A report's use_for says
   which questions it answers; its not_for names near misses and the report to use instead, so check it before you
-  choose. A report's views list the options beyond its default view (the configuration gear's extra columns, groupings,
-  measures): a breakdown missing from its default columns may be one of them. DB4009 Daily Sell-out has the account
-  (operator, retailer): Configuration → Sales → Sales → ORG Sales, Apply, after choosing the subsidiaries one by one
-  (a region is refused as too granular). Never say a report lacks a breakdown: a choice nobody has found yet is
-  unknown, not absent. When a report's views do not show it, open its Configuration (W.nexacro.find) and look. Add what you learn to the map with portal_map_save.
+  choose. A report's views list the options beyond its default view (the Configuration's extra columns, groupings,
+  measures) and what each requires: a breakdown missing from its default columns may be one of them (DB4009 Daily
+  Sell-out's account, the operator or retailer, is its ORG Sales view, which needs the subsidiaries chosen one by one).
+  Never say a report lacks a breakdown: a choice nobody has found yet is unknown, not absent. When the map holds no
+  proven way to read the breakdown a question needs, ask the person before a long live read (wizard_ask_person: the
+  live read through the report's screens, or a source that answers sooner), and add what you learn to the map with
+  portal_map_save.
 - A portal with mapped reports has no report-catalog tools: its map is where its reports are, and
   wizard_list_sources says so. For a portal not mapped yet, the catalog tools (<system>_search_reports and the like)
   only search the reports documented in Wizard's catalog, not the portal's menu. To list or find what a portal has,

@@ -314,7 +314,9 @@ def guide(ctx: ToolContext, args: GuideArgs) -> dict[str, Any]:
                                      "returns a report's menu id, what it is for and not for (use_for, not_for with the "
                                      "report to use instead), how to open it, its filters and the data request with "
                                      "the filters as parameters, so one portal_run (a request step or the saved script) "
-                                     "reads it. Add what you learn with portal_map_save."}
+                                     "reads it. A report listed with a script or proven: in a question, read it that way "
+                                     "(portal_map(report=...) has the script's params and the request), never by clicking "
+                                     "through its screens. Add what you learn with portal_map_save."}
     if portal.parts:
         data["applications"] = [{"part": part.id, "name": part.label, "address": part.url} for part in portal.parts]
     if portal.id in access_requests.REQUEST_PORTALS:
@@ -379,14 +381,46 @@ def _cap_value(value: Any) -> Any:
             "note": "The result was too large. Return less: filter or aggregate in the script, or return a table."}
 
 
+def _mapped_routes(ctx: ToolContext, system: str, steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The mapped reports Gemini's own steps name (by menu id or map id) that the map already reads in one call: a saved
+    script or a request Wizard proved (owner's question run, 4 Nov 2026: it clicked through DB4009's Configuration for
+    twenty minutes and ran out of time while the map held its script). Not for a task, which may be mapping it."""
+    maps = ctx.services.portal_maps
+    if maps is None or ctx.task is not None:
+        return []
+    text = json.dumps(steps, default=str)
+    found = []
+    for report in maps.load(system)["reports"]:
+        names = {str(n) for n in (report.get("menu_id"), report.get("id")) if n and len(str(n)) >= 4}
+        if not any(re.search(rf"(?<![A-Za-z0-9_]){re.escape(n)}(?![A-Za-z0-9_])", text, re.IGNORECASE) for n in names):
+            continue
+        script = report.get("script") if report.get("script") and _script_known(ctx, system, str(report["script"])) else None
+        proven = [q.get("name") or q.get("url") for q in report.get("requests") or [] if isinstance(q, dict) and q.get("proven")]
+        if script or proven:
+            found.append({"report": report["id"], "name": report.get("name"),
+                          **({"script": script} if script else {}), **({"proven_requests": proven} if proven else {}),
+                          **({"reply_check": report["reply_check"].get("verdict")}
+                             if isinstance(report.get("reply_check"), dict) else {})})
+    return found[:3]
+
+
+MAPPED_NOTE = ("Already mapped: in a question, read these reports with their saved script (portal_run with script and the "
+               "filters as params) or their proven request as one request step; portal_map(report=...) has both. "
+               "Clicking through their screens or Configuration is mapping work and takes many slow steps.")
+
+
 def run(ctx: ToolContext, args: RunArgs) -> dict[str, Any]:
     portal = _portal(ctx, args.system)
     steps, params = _steps(ctx, args, portal)
+    mapped = [] if args.script else _mapped_routes(ctx, portal.id, steps)
     browser = ctx.services.portals.for_user(ctx.identity.id)  # type: ignore[union-attr]
     try:
         result = browser.execute(portal, steps, params)
     except PortalError as error:
-        raise ToolError(error.code, portals.scrub(error.message)) from None
+        hint = (f" {MAPPED_NOTE} " + "; ".join(
+            f"{m['report']}: " + (f"script {m['script']}" if m.get("script") else "its proven request") for m in mapped)
+            if mapped else "")
+        raise ToolError(error.code, portals.scrub(error.message) + hint) from None
     retrieved = ctx.services.now().isoformat()
     evidence_ids: list[str] = []
     shown_outputs = []
@@ -431,6 +465,9 @@ def run(ctx: ToolContext, args: RunArgs) -> dict[str, Any]:
         data["evidence_ids"] = evidence_ids
     if "stopped" in result:
         data["stopped"] = {**result["stopped"], "message": portals.scrub(result["stopped"]["message"])}
+    if mapped:
+        data["mapped_reports"] = mapped
+        data["mapped_note"] = MAPPED_NOTE
     data["dialogs"] = [portals.scrub(d) for d in data["dialogs"]]
     data["console_errors"] = [portals.scrub(c) for c in data["console_errors"]]
     return data

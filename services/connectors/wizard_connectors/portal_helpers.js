@@ -344,6 +344,7 @@ const W = (() => {
     },
     columns: ds => {
       const cols = [];
+      if (!ds || typeof ds !== 'object') return cols;
       try {
         if (typeof ds.getColCount === 'function' && typeof ds.getColID === 'function') {
           for (let i = 0; i < ds.getColCount(); i++) cols.push(ds.getColID(i));
@@ -354,10 +355,56 @@ const W = (() => {
       }
       return cols.filter(Boolean);
     },
+    // The Datasets a form holds itself (its objects: the search's input datasets, the reply's), bound to anything or not.
+    ownDatasets: form => {
+      const out = [], seen = new Set();
+      const consider = (key, ds) => {
+        if (!ds || typeof ds !== 'object' || typeof ds.getRowCount !== 'function' || typeof ds.getColumn !== 'function' ||
+            seen.has(ds)) return;
+        seen.add(ds);
+        out.push({name: String(ds.name || ds.id || key), ds});
+      };
+      for (const k of ['objects', 'all']) {
+        let col; try { col = form && form[k]; } catch (e) { continue; }
+        if (!col || typeof col.length !== 'number') continue;
+        for (let i = 0; i < col.length && i < 5000; i++) { try { const item = col[i]; consider(item && (item.name || item.id), item); } catch (e) { /* skip */ } }
+      }
+      try { for (const key of Object.keys(form || {})) { try { consider(key, form[key]); } catch (e) { /* a getter that throws */ } } } catch (e) { /* none */ }
+      return out;
+    },
+    // A form given as a path ('mainframe....WorkFrame0.form', W.nexacro.activeForms()) or as the form itself.
+    form: target => {
+      if (target && typeof target === 'object') return target;
+      const found = target ? W.nexacro.resolve(target) : null;
+      if (!found) throw new Error(`no component at ${target}: give a form's path as W.nexacro.activeForms() lists them, or the form itself`);
+      return found;
+    },
+    // A Dataset by name: a path, an application Dataset, or one a report form (or an open pop-up) holds.
+    findDataset: name => {
+      const key = String(name || '').replace(/^@/, '');
+      let ds = null;
+      try { ds = W.nexacro.resolve(key); } catch (e) { /* not a path */ }
+      if (ds && typeof ds.getRowCount === 'function') return ds;
+      try { ds = W.nexacro.app()[key]; } catch (e) { ds = null; }
+      if (ds && typeof ds.getRowCount === 'function') return ds;
+      const forms = [];
+      try { for (const f of W.nexacro.activeForms()) { const c = W.nexacro.resolve(f); if (c) forms.push(c); } } catch (e) { /* none */ }
+      try { for (const frame of W.nexacro.popupFrames()) { if (frame && frame.form) forms.push(frame.form); } } catch (e) { /* none */ }
+      for (const form of forms) {
+        const hit = W.nexacro.dataset(form, key) || (W.nexacro.ownDatasets(form).find(d => d.name === key) || {}).ds;
+        if (hit && typeof hit.getRowCount === 'function') return hit;
+      }
+      return null;
+    },
     // A Dataset as a table. limit caps the rows read (all by default); columns defaults to every column.
     read: (ds, {columns = null, limit = Infinity, unfiltered = false} = {}) => {
-      if (typeof ds === 'string') ds = W.nexacro.resolve(ds) || W.nexacro.app()[ds];
-      if (!ds || typeof ds.getRowCount !== 'function') throw new Error('not a Dataset');
+      const asked = ds;
+      if (typeof ds === 'string') ds = W.nexacro.findDataset(ds);
+      if (!ds || typeof ds.getRowCount !== 'function') {
+        throw new Error(typeof asked === 'string'
+          ? `no Dataset named ${asked} in the application, the report forms or the open pop-ups: W.nexacro.datasets(form) lists a form's`
+          : `not a Dataset (${asked === undefined ? 'undefined' : asked === null ? 'null' : typeof asked}): pass a Dataset's name or W.nexacro.boundDataset(grid)`);
+      }
       const cols = columns || W.nexacro.columns(ds);
       const nf = unfiltered && typeof ds.getRowCountNF === 'function' && typeof ds.getColumnNF === 'function';
       const total = nf ? ds.getRowCountNF() : ds.getRowCount();
@@ -371,8 +418,8 @@ const W = (() => {
     // where a report's data is. W.nexacro.read(W.nexacro.boundDataset(entry.path)) reads one.
     datasets: formPath => {
       const app = W.nexacro.app();
-      const root = formPath ? W.nexacro.resolve(formPath) : app.mainframe;
-      if (!root) throw new Error(`no component at ${formPath}`);
+      const root = formPath ? W.nexacro.form(formPath) : app.mainframe;
+      if (typeof formPath === 'object' && formPath) formPath = String(formPath._unique_id || formPath.name || formPath.id || 'form');
       const out = [], seen = new Set();
       const visit = (c, path, d) => {
         if (!c || typeof c !== 'object' || d > 16 || seen.has(c)) return;
@@ -393,6 +440,15 @@ const W = (() => {
         try { if (c.form) visit(c.form, `${path}.form`, d + 1); } catch (e) { /* none */ }
       };
       visit(root, formPath || 'mainframe', 0);
+      // Then the form's own Datasets nothing on screen shows (a search's inputs, a reply kept apart): read one by name.
+      if (formPath) {
+        const shown = new Set(out.map(o => o.dataset));
+        for (const {name, ds} of W.nexacro.ownDatasets(root)) {
+          if (shown.has(name)) continue;
+          let rows = null; try { rows = ds.getRowCount(); } catch (e) { /* none */ }
+          out.push({path: null, component: null, dataset: name, rows, columns: W.nexacro.columns(ds), bound: false});
+        }
+      }
       return out;
     },
     // The rows a Grid shows: W.nexacro.readGrid('mainframe.VFrameSet.WorkFrame0.form.grd_list').
