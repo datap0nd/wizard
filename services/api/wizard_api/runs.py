@@ -57,6 +57,9 @@ MAP_WRITES = ("portal_map_save", "portal_map_route", "portal_prove_request")  # 
 # Runs that go on in the background beside a question, one of each per person, and what a second one is told.
 LANES = {"explore": "Wizard is already mapping a portal for you. Stop it in Settings → Portals first.",
          "task": "A task is already running for you. Wait for it or stop it in its conversation."}
+# A question from the person's prompt queue (prompt_queue.py) runs in a lane of its own, so they can still ask theirs.
+PROMPTS_LANE = "prompts"
+PROMPTS_BUSY = "Your prompt queue is already running a question. Wait for it or stop the queue in Settings."
 EXPLORE_STALLS = 2
 # A task that goes through every file of a folder (owner, 1 Nov 2026: "digests the whole thing") runs in rounds the same
 # way: each round a fresh session of at most TASK_ROUND_TOOL_CALLS tool calls that continues from the files marked done,
@@ -263,6 +266,8 @@ class ActiveRun:
     # keeps its tools in the list, and the gate refuses them, so earlier calls in the conversation stay valid.
     ever_on: frozenset[str] | None = None
     offers_ask: bool = False  # wizard_ask_for_system is in the list (some system was off)
+    lane: str = "ask"  # ask | explore | task | prompts: one run per lane per person
+    queued: bool = False  # a question from the prompt queue: nobody is waiting to answer a question of Gemini's
     asked: bool = False  # Gemini asked the person a question (wizard_ask_person): it ends its turn with it
     steers: list[dict[str, Any]] = field(default_factory=list)  # the person's notes, and system changes, for Gemini
     rejected: list[str] = field(default_factory=list)  # evidence the person marked Not this
@@ -566,6 +571,9 @@ class RunManager:
         # done | failed | stopped. The task queue (task_queue.py) starts the next task from it.
         self.on_task_end: Callable[[Identity, str, str, str, str], Awaitable[None]] | None = None
         self.task_queue: Any = None  # task_queue.TaskQueues, set by the app: a running queue keeps Wizard busy
+        # Told when a question from the prompt queue ended (prompt_queue.py), with the run's row: the queue goes on.
+        self.on_prompt_end: Callable[[Identity, dict[str, Any]], Awaitable[None]] | None = None
+        self.prompt_queue: Any = None  # prompt_queue.PromptQueues, set by the app: a running queue keeps Wizard busy
         self.closing = False  # the service is shutting down: runs cancelled now were interrupted, not stopped by anyone
 
     @property
@@ -577,11 +585,14 @@ class RunManager:
     # Lifecycle ---------------------------------------------------------------------------------------------------------
     def start(self, identity: Identity, conversation_id: str, question: str, kind: str = "ask",
               parent_run_id: str | None = None, explore: dict[str, Any] | None = None,
-              choice: SystemChoice | None = None, work: dict[str, Any] | None = None) -> dict[str, Any]:
-        # A question, a portal being mapped and a task run side by side: one of each per person.
-        lane = kind if kind in LANES else "ask"
-        if any(r.identity.id == identity.id and (r.kind if r.kind in LANES else "ask") == lane for r in self.active.values()):
-            raise Busy(LANES.get(lane, "A question is already running for you. Wait for it or cancel it."))
+              choice: SystemChoice | None = None, work: dict[str, Any] | None = None,
+              queued: bool = False) -> dict[str, Any]:
+        # A question, a portal being mapped, a task and a question from the prompt queue run side by side: one of each
+        # per person.
+        lane = PROMPTS_LANE if queued else kind if kind in LANES else "ask"
+        if any(r.identity.id == identity.id and r.lane == lane for r in self.active.values()):
+            raise Busy(PROMPTS_BUSY if queued else LANES.get(lane, "A question is already running for you. Wait for it "
+                                                                   "or cancel it."))
         if len(self.active) >= self.settings.max_concurrent_runs * 4:
             raise Busy("Wizard is busy. Try again in a minute.")
         run_id = new_id("run")
@@ -593,7 +604,7 @@ class RunManager:
         self.store.touch_conversation(conversation_id, question[:80] if kind == "ask" else None)
         run = ActiveRun(run_id, identity, conversation_id, kind, question, parent_run_id, self.runtime.kind, explore=explore,
                         work=work, choice=choice, ever_on=None if choice is None else choice.on,
-                        offers_ask=bool(choice and choice.off()))
+                        offers_ask=bool(choice and choice.off()), lane=lane, queued=queued)
         self.active[run_id] = run
         loop = asyncio.get_running_loop()
         if kind == "ask" and hasattr(self.runtime, "title") and len(self.store.runs(conversation_id)) == 1:
@@ -691,7 +702,8 @@ class RunManager:
         reads_path = run.kind == "task" and bool((run.work or {}).get("path"))
         return [t for t in self.registry.describe(scope)
                 if (run.offers_ask if t["name"] == ASK_FOR_SYSTEM else offered(t["name"], shown, catalogs, portals))
-                and (reads_path or t["name"] not in TASK_FILE_NAMES) and (run.kind == "ask" or t["name"] != ASK_PERSON)
+                and (reads_path or t["name"] not in TASK_FILE_NAMES)
+                and ((run.kind == "ask" and not run.queued) or t["name"] != ASK_PERSON)
                 and (run.kind in ("task", "explore") or t["name"] != COMPARE_EVIDENCE)]
 
     def subscribe(self, run_id: str) -> asyncio.Queue[dict[str, Any]] | None:
@@ -711,7 +723,8 @@ class RunManager:
         """Something is running or about to start its next run by itself: a run, a task's rounds, or a task queue. The
         desktop app restarts its service only when this is False (app.py)."""
         return (bool(self.active) or any(r.state == "running" for r in self.task_rounds.values())
-                or bool(self.task_queue is not None and self.task_queue.running()))
+                or bool(self.task_queue is not None and self.task_queue.running())
+                or bool(self.prompt_queue is not None and self.prompt_queue.running()))
 
     async def shutdown(self) -> None:
         self.closing = True
@@ -809,7 +822,6 @@ class RunManager:
             await self.emit(run, "access_request_proposed", {"request": outcome.data["access_request"]})
         if outcome.ok and name == ASK_PERSON:
             run.asked = True
-            run.answer_due = run.answer_due or "You asked the person a question."
             await self.emit(run, "person_asked", {"question": outcome.data["question"], "options": outcome.data["options"],
                                                   "why": outcome.data.get("why")})
         if outcome.ok and name == ASK_FOR_SYSTEM:
@@ -840,7 +852,7 @@ class RunManager:
                                    "wizard_task_files_done, then summarise this round; Wizard starts the next round with "
                                    "the files left." if in_rounds else
                                    "Answer with what you have and say what is missing."))
-        if name == ASK_PERSON and run.kind != "ask":
+        if name == ASK_PERSON and (run.kind != "ask" or run.queued):
             return ToolOutcome(False, {}, 0, "no_one_to_ask",
                                "Nobody is waiting to answer a question in this run: decide yourself, and say what you "
                                "assumed in your summary.")
@@ -898,8 +910,9 @@ class RunManager:
             run.answer_due = why
 
     def answer_now(self, run: ActiveRun) -> str | None:
-        """Why Gemini's next step must be its answer, with tools off (the Code Assist route asks before each step): it
-        was told to stop gathering data, or about one of its slow steps is left before the time limit. None otherwise."""
+        """Why Gemini's next step must be its answer, with tools off (the Code Assist route asks before each step, and
+        puts this in that step's system instruction): it was told to stop gathering data, or about one of its slow
+        steps is left before the time limit. None otherwise; asking the person alone does not make it due."""
         if not run.started:
             return None
         left = self.settings.run_timeout_s - (time.monotonic() - run.started)
@@ -908,8 +921,8 @@ class RunManager:
             why = f"About {max(1, round(left / 60))} minute(s) remain before this run's time limit."
         if why is None:
             return None
-        if run.asked:
-            return "You asked the person a question: write it now as your message, with no more tools."
+        if run.asked:  # it ends its turn with its question by itself; only the time limit holds it to that
+            return f"{why} You asked the person a question: end your turn with it now. No more tools in this run."
         if run.kind == "task":
             return (f"{why} No more tools in this run: write your final message now, as the task asks (what you did, "
                     "what you proved, what is left and why, and its last line).")
@@ -976,6 +989,11 @@ class RunManager:
                     await self.on_task_end(run.identity, ended[0], run.conversation_id, ended[1], ended[2])
                 except Exception:  # noqa: BLE001 - the queue says what went wrong itself; the run is over either way
                     log.exception("task end after run %s", run.id)
+        if run.queued and self.on_prompt_end is not None:
+            try:
+                await self.on_prompt_end(run.identity, self.store.run(run.identity.id, run.id) or {"id": run.id})
+            except Exception:  # noqa: BLE001 - the queue says what went wrong itself; the run is over either way
+                log.exception("prompt queue after run %s", run.id)
 
     # Portal maps -------------------------------------------------------------------------------------------------------
     async def _publish_map(self, system: str) -> None:
@@ -1240,7 +1258,7 @@ class RunManager:
                                     for a in self.store.conversation_attachments(run.conversation_id)], explore=run.explore,
                                    task=run.work, systems=systems, order=order,
                                    when_asked=[choice.name(s) for s in choice.off()] if choice and choice.auto else None,
-                                   database=self._database(run),
+                                   database=self._database(run), away=run.queued,
                                    remembered=[] if run.kind in LANES
                                    else [m["text"] for m in self.store.memories(run.identity.id)]),
                     question=run.question, kind=run.kind,  # type: ignore[arg-type]

@@ -156,7 +156,10 @@ def test_when_the_answer_is_due_the_step_has_tools_off_and_ends_the_run(tmp_path
     assert "toolConfig" not in first["request"]
     assert second["request"]["toolConfig"] == {"functionCallingConfig": {"mode": "NONE"}}
     assert second["request"]["tools"][0]["functionDeclarations"], "declared, so earlier calls stay valid"
-    assert second["request"]["contents"][-1]["parts"][-1] == {"text": bridge.due}
+    assert second["request"]["systemInstruction"]["parts"][-1] == {"text": bridge.due}, "why, in the system instruction"
+    assert all("text" not in part for part in second["request"]["contents"][-1]["parts"]), \
+        "nothing added to the turn Gemini answers: a line there was carried on at the top of the answer"
+    assert len(first["request"]["systemInstruction"]["parts"]) == 1
     assert len(bridge.steps) == 2 and all(s >= 0 for s in bridge.steps), "each step's time is reported"
 
 
@@ -176,8 +179,8 @@ def test_a_call_written_after_the_answer_is_due_is_not_run(tmp_path):
     assert bridge.calls == []
     refused = fake.requests[1]["request"]["contents"][-1]["parts"][0]["functionResponse"]["response"]["error"]
     assert refused["code"] == "answer_now"
-    assert fake.requests[0]["request"]["contents"][0]["parts"][-1] == {"text": bridge.due}, "said once, at the first step"
-    assert all(p != {"text": bridge.due} for p in fake.requests[1]["request"]["contents"][-1]["parts"])
+    assert fake.requests[0]["request"]["contents"] == [{"role": "user", "parts": [{"text": "Which market?"}]}]
+    assert all(r["request"]["systemInstruction"]["parts"][-1] == {"text": bridge.due} for r in fake.requests)
 
 
 def test_a_busy_gemini_is_retried(tmp_path, monkeypatch):

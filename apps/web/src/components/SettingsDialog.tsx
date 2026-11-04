@@ -8,6 +8,7 @@ import {Button} from './ui/button';
 import {Dialog, DialogContent} from './ui/dialog';
 import {PortalSignIn} from './PortalSignIn';
 import {SourceOrder} from './SourceOrder';
+import {PromptQueuePanel} from './PromptQueuePanel';
 import {TasksPanel} from './TasksPanel';
 import type {SettingField, SettingsTest, SettingsTestResult, SettingsView, UpdateInfo} from '@/types';
 
@@ -60,6 +61,7 @@ export function SettingsDialog({open, onClose, onSaved}: {open: boolean; onClose
   const [editingSecret, setEditingSecret] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
   const [tasksOpen, setTasksOpen] = useState(false);
+  const [promptsOpen, setPromptsOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [tests, setTests] = useState<Record<string, Result | 'running'>>({});
@@ -87,7 +89,7 @@ export function SettingsDialog({open, onClose, onSaved}: {open: boolean; onClose
         await waitForRestart();
         setNotice('Saved and applied.');
       } else if (saved.apply === 'after_run') {
-        setNotice('Saved. Wizard restarts to apply the change when the running question or task queue finishes.');
+        setNotice('Saved. Wizard restarts to apply the change when the running question, task queue or prompt queue finishes.');
       } else if (saved.apply === 'manual') {
         setNotice('Saved. Restart Wizard to apply it: close its window and run start.ps1 again.');
       } else setNotice('Saved. It applies to your next question.');
@@ -191,6 +193,12 @@ export function SettingsDialog({open, onClose, onSaved}: {open: boolean; onClose
               {section.id === 'portals' && <PortalSignIn />}
             </Section>
           ))}
+          {view && (
+            <Section id="prompts" title="Prompt queue" onToggle={setPromptsOpen}
+              about="Paste many prompts at once: Wizard asks them one after another, each in a chat of its own, and tries one that fails again up to twice. Run it overnight.">
+              <PromptQueuePanel active={promptsOpen} />
+            </Section>
+          )}
           {view && (
             <Section id="tasks" title="Tasks" onToggle={setTasksOpen}
               about="Work the Wizard team prepared for Gemini. Run one: it works in a conversation of its own and saves what it produces to the knowledge base.">

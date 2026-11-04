@@ -1,6 +1,6 @@
 import type {BrainLive, BrainMap} from './brain';
 import type {CasePreview, CasePublished, SiteStatus} from './cases';
-import type {AccessForm, Answer, Attachment, Bootstrap, Cadence, ConversationSummary, Evidence, GeminiAccount, GeminiQuota, LocalFile, Memory, OpenStep, PortalCheck, PortalMapView, PortalStatus, RecurringList, Report, RunRecord, SavedFile, Schedule, SettingsSaved, SettingsTest, SettingsTestResult, SettingsView, SourceCatalog, SourceSummary, Steer, SteerReason, TasksView, UpdateInfo} from './types';
+import type {AccessForm, Answer, Attachment, Bootstrap, Cadence, ConversationSummary, Evidence, GeminiAccount, GeminiQuota, LocalFile, Memory, OpenStep, PortalCheck, PortalMapView, PortalStatus, PromptQueue, PromptSeparator, RecurringList, Report, RunRecord, SavedFile, Schedule, SettingsSaved, SettingsTest, SettingsTestResult, SettingsView, SourceCatalog, SourceSummary, Steer, SteerReason, TasksView, UpdateInfo} from './types';
 
 /** What a note to Wizard did: reached the running answer (steer), or became the next question (follow_up). */
 export interface SteerResult {
@@ -152,6 +152,17 @@ export const api = {
   moveQueued: (key: string, by: -1 | 1) =>
     request<TasksView>(`/api/v1/tasks/queue/items/${encodeURIComponent(key)}/move`, {body: {by}}),
   removeQueued: (key: string) => request<TasksView>(`/api/v1/tasks/queue/items/${encodeURIComponent(key)}`, {method: 'DELETE'}),
+  // The prompt queue (Settings → Prompt queue): the person's questions one after another, retried up to twice.
+  promptQueue: () => request<PromptQueue>('/api/v1/prompts/queue'),
+  addPrompts: (text: string, separator: PromptSeparator, custom?: string) =>
+    request<PromptQueue>('/api/v1/prompts/queue', {body: {text, separator, ...(separator === 'custom' ? {custom} : {})}}),
+  startPrompts: () => request<PromptQueue>('/api/v1/prompts/queue/start', {body: {}}),
+  stopPrompts: () => request<PromptQueue>('/api/v1/prompts/queue/stop', {body: {}}),
+  clearPrompts: () => request<PromptQueue>('/api/v1/prompts/queue', {method: 'DELETE'}),
+  retryFailedPrompts: () => request<PromptQueue>('/api/v1/prompts/queue/retry-failed', {body: {}}),
+  movePrompt: (key: string, by: -1 | 1) =>
+    request<PromptQueue>(`/api/v1/prompts/queue/items/${encodeURIComponent(key)}/move`, {body: {by}}),
+  removePrompt: (key: string) => request<PromptQueue>(`/api/v1/prompts/queue/items/${encodeURIComponent(key)}`, {method: 'DELETE'}),
   selectTasks: (ids: string[]) => request<TasksView>('/api/v1/tasks/selection', {method: 'PUT', body: {ids}}),
   health: () => request<{status: string; version: string}>('/api/v1/health'),
 };

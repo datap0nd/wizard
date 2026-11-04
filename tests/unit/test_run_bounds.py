@@ -98,8 +98,10 @@ def test_the_answer_is_due_once_a_question_is_told_to_stop(tmp_path):
     assert call(m, looping, "asap_run_report", {"report_id": "a"}).error_code == "loop_stopped"
     assert "kept repeating" in (m.answer_now(looping) or "")
     asked = started_run(100)
-    asked.asked, asked.answer_due = True, "You asked the person a question."
-    assert "write it now" in (m.answer_now(asked) or "")
+    asked.asked = True
+    assert m.answer_now(asked) is None, "after asking, Gemini ends its turn itself: its tools refuse research"
+    asked.started = time.monotonic() - (timeout - 50)
+    assert "end your turn with it now" in (m.answer_now(asked) or "")
 
 
 def test_a_task_may_still_save_until_its_last_step(tmp_path):

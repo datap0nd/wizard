@@ -464,6 +464,39 @@ export interface TaskQueue {
   finished_at: string | null;
 }
 
+/** A question in the prompt queue (Settings → Prompt queue). retry_wait: it failed and is tried again at retry_at. */
+export interface PromptItem {
+  key: string;
+  prompt: string;
+  state: 'waiting' | 'running' | 'retry_wait' | 'done' | 'failed' | 'skipped' | 'stopped' | 'interrupted';
+  /** Tries so far: the first, then up to max_retries more. */
+  attempts: number;
+  conversation_id: string | null;
+  run_id: string | null;
+  message: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  retry_at: string | null;
+}
+
+/** The person's questions one after another, each in a chat of its own, while they are away. */
+export interface PromptQueue {
+  state: 'empty' | 'ready' | 'running' | 'done' | 'failed' | 'stopped' | 'interrupted';
+  items: PromptItem[];
+  message: string | null;
+  total: number;
+  done: number;
+  failed: number;
+  current: string | null;
+  position: number | null;
+  started_at: string | null;
+  finished_at: string | null;
+  max_retries: number;
+  max_prompts: number;
+}
+
+export type PromptSeparator = 'semicolon' | 'newline' | 'blank_line' | 'pipe' | 'dashes' | 'custom';
+
 export interface TasksView {
   tasks: TaskItem[];
   /** github: read from GitHub just now or earlier; bundled: the copy that came with this version. */

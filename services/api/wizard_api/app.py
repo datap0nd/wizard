@@ -43,6 +43,8 @@ from .attachments import AttachmentError, public
 from .config import Settings, kb_source, load_settings
 from .metronome_client import MetronomeClient, MetronomeError
 from .outlook import DraftError, open_outlook_draft
+from .prompt_queue import PromptQueues
+from .prompt_queue import QueueError as PromptQueueError
 from .runs import Busy, RunManager, decode_systems, entitled_to, evidence_summary, public_schedule, step_about
 from .security import REQUEST_HEADER, SECURITY_HEADERS, SESSION_COOKIE, session_token, verify
 from .site import Site, SiteError, brain_snapshot, build_case, case_id
@@ -144,6 +146,13 @@ class QueueAddBody(Body):
 
 class QueueMoveBody(Body):
     by: Literal[-1, 1]
+
+
+class PromptQueueBody(Body):
+    # What the person pasted, cut into prompts at the separator they chose (prompt_queue.split).
+    text: str = Field(min_length=1, max_length=2_000_000)
+    separator: Literal["semicolon", "newline", "blank_line", "pipe", "dashes", "custom"] = "semicolon"
+    custom: str | None = Field(default=None, max_length=40)
 
 
 class TaskSelectionBody(Body):
@@ -394,6 +403,8 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
     manager = RunManager(settings, store, registry, services, runtime)
     manager.task_board = task_board
     task_queues = TaskQueues(task_board, manager, store, services.task_files)  # a queue the last process left running is interrupted
+    prompt_queues = PromptQueues(settings.data_dir, manager, store,  # so is a prompt queue
+                                 lambda identity: systems.choice(settings, services, identity, None))
     kb = kb_source(settings)
     activity = {"last": time.monotonic()}
 
@@ -448,6 +459,7 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
                   openapi_url="/api/v1/openapi.json")
     app.state.settings, app.state.store, app.state.manager, app.state.registry = settings, store, manager, registry
     app.state.task_board, app.state.task_queues = task_board, task_queues
+    app.state.prompt_queues = prompt_queues
     app.state.restart_if_idle = restart_if_idle
 
     def identity_of(request: Request) -> Identity | None:
@@ -1531,6 +1543,54 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
     async def select_tasks(request: Request, body: TaskSelectionBody) -> dict[str, Any]:
         """The tasks ticked for Run selected, kept for this person until the queue starts."""
         return await queue_call(request, lambda who: task_queues.select(who.id, body.ids))
+
+    # The prompt queue (prompt_queue.py): the person's questions one after another, each in a chat of its own, tried again
+    # up to twice when it fails. Anyone may queue their own questions; the endpoints are async like the task queue's.
+    async def prompt_call(request: Request, change: Any) -> dict[str, Any]:
+        identity = me(request)
+        try:
+            outcome = change(identity)
+            if asyncio.iscoroutine(outcome):
+                outcome = await outcome
+        except PromptQueueError as error:
+            raise HTTPException(error.status, error.message) from None
+        return outcome
+
+    @app.get("/api/v1/prompts/queue")
+    async def prompt_queue_view(request: Request) -> dict[str, Any]:
+        return await prompt_call(request, lambda who: prompt_queues.view(who.id))
+
+    @app.post("/api/v1/prompts/queue")
+    async def add_prompts(request: Request, body: PromptQueueBody) -> dict[str, Any]:
+        """The prompts in the pasted text, cut at the separator chosen, at the end of the queue (also while it runs)."""
+        return await prompt_call(request, lambda who: prompt_queues.add(who.id, body.text, body.separator, body.custom))
+
+    @app.delete("/api/v1/prompts/queue")
+    async def clear_prompts(request: Request) -> dict[str, Any]:
+        return await prompt_call(request, lambda who: prompt_queues.clear(who.id))
+
+    @app.post("/api/v1/prompts/queue/start")
+    async def start_prompts(request: Request) -> dict[str, Any]:
+        """Start the queue, or Continue it from the prompt where it stopped."""
+        return await prompt_call(request, lambda who: prompt_queues.start(who))
+
+    @app.post("/api/v1/prompts/queue/stop")
+    async def stop_prompts(request: Request) -> dict[str, Any]:
+        """Stop the queue and the question it is running."""
+        return await prompt_call(request, lambda who: prompt_queues.stop(who))
+
+    @app.post("/api/v1/prompts/queue/retry-failed")
+    async def retry_failed_prompts(request: Request) -> dict[str, Any]:
+        """The prompts that failed every try go back to the queue with their tries again."""
+        return await prompt_call(request, lambda who: prompt_queues.retry_failed(who.id))
+
+    @app.post("/api/v1/prompts/queue/items/{key}/move")
+    async def move_prompt(request: Request, key: str, body: QueueMoveBody) -> dict[str, Any]:
+        return await prompt_call(request, lambda who: prompt_queues.move(who.id, key, body.by))
+
+    @app.delete("/api/v1/prompts/queue/items/{key}")
+    async def remove_prompt(request: Request, key: str) -> dict[str, Any]:
+        return await prompt_call(request, lambda who: prompt_queues.remove(who.id, key))
 
     @app.post("/api/v1/tasks/{task_id}/queue")
     async def queue_task(request: Request, task_id: str, body: QueueAddBody | None = None) -> dict[str, Any]:

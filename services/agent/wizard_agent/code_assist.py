@@ -642,10 +642,11 @@ class CodeAssistRuntime:
                 run.declarations = declarations(tools)
                 # The run's time is nearly up (or Gemini was told to stop and kept calling tools): this step writes the
                 # answer, with tools declared but not callable, so the run ends with an answer instead of being cut off.
+                # Why goes in the system instruction, not the person's turn: a line added there was sometimes carried on
+                # in Gemini's own words at the top of the answer (owner, 4 Nov 2026: "system prompt is in the responses").
                 notice = None if run.final else tools.answer_now()
                 if notice:
-                    run.final = True
-                    contents[-1]["parts"].append({"text": notice})
+                    run.final, run.final_note = True, notice
                     log.info("run %s step %d: the answer is due; tools are off for this step", request.run_id, step)
                     await emit("status", {"message": "Writing the answer with what Wizard has found"})
                 began = time.monotonic()
@@ -725,6 +726,7 @@ class _Models:
         self.generation = runtime._generation(model)
         self.not_before: dict[str, float] = {}  # a model that refused -> when Google said to ask it again
         self.final = False  # the answer is due: the steps from now on may not call tools
+        self.final_note = ""  # why, for the system instruction
 
     def other(self, resting: dict[str, tuple[float, Limit]]) -> str | None:
         """The model to turn to when the current one refuses: the other of the two, unless its quota is used up."""
@@ -739,7 +741,8 @@ class _Models:
     def envelope(self, contents: list[dict[str, Any]]) -> dict[str, Any]:
         return {"model": self.model, "project": self.project, "user_prompt_id": self.request.run_id, "request": {
             "contents": contents,
-            "systemInstruction": {"role": "user", "parts": [{"text": system_prompt()}]},
+            "systemInstruction": {"role": "user", "parts": [{"text": system_prompt()},
+                                                            *([{"text": self.final_note}] if self.final else [])]},
             "tools": [{"functionDeclarations": self.declarations}],
             # Declared but not callable once the answer is due: earlier turns' calls stay valid, no new one is written.
             **({"toolConfig": {"functionCallingConfig": {"mode": "NONE"}}} if self.final else {}),

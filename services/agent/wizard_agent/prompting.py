@@ -327,16 +327,25 @@ def clean_title(text: str) -> str | None:
     return squeeze(line, TITLE_CHARS) or None
 
 
+# A question from the person's prompt queue (owner, 4 Nov 2026: "so I can run overnight"): nobody is there to choose.
+AWAY_BLOCK = ("<from_the_prompt_queue>\nThe person queued this question and is away while it runs: nobody can answer a "
+              "question now, and nobody will see this run until it has ended. Where the request leaves something open, "
+              "choose yourself, say what you chose in the answer's first lines, and answer in full.\n"
+              "</from_the_prompt_queue>")
+
+
 def compose(question: str, history: list[Turn], kind: str, today: date, files: list[dict[str, Any]] | None = None,
             explore: dict[str, Any] | None = None, systems: tuple[list[str], list[str]] | None = None,
             remembered: list[str] | None = None, task: dict[str, Any] | None = None,
             order: list[list[tuple[str, str]]] | None = None, when_asked: list[str] | None = None,
-            database: tuple[str, list[str]] | None = None) -> str:
+            database: tuple[str, list[str]] | None = None, away: bool = False) -> str:
     """systems: (names on, names off) when the person chose the systems for this request; None is Auto. order: the
     company's source order for this request's sources, as levels of (name, use it for); None adds no block. when_asked:
     in Auto, the names of the sources the company uses only when asked. database: the database's name and the schemas
-    Wizard may query, when the company limits them."""
+    Wizard may query, when the company limits them. away: the question runs from the person's prompt queue."""
     parts = [calendar_block(today)]
+    if away:
+        parts.append(AWAY_BLOCK)
     if remembered:
         parts.append(remembered_block(remembered))
     if systems is not None:

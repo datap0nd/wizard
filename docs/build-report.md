@@ -3,7 +3,17 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-04 (latest) — A run ends with an answer; a question reads DB4009 through its map
+## 2026-11-04 (latest) — A prompt queue in Settings
+
+The owner: "a prompt queuer. I will put in 20 prompts, delimited with ';' ... so I can run overnight. If there's an
+error, a retry, up to 2 retries per prompt" ([decision](decisions/2026-11-04-prompt-queue.md)). Settings → Prompt queue:
+the prompts, a separator drop-down (semicolon, new line, blank line, pipe, three dashes, custom), a live count, Add to
+queue / Add and start. `prompt_queue.py` asks each in a chat of its own in a lane of its own, the next when it ends; a
+failed run is tried again up to twice (1 and 5 minutes later), then the queue goes on; a failure no retry mends stops it
+for Continue. Nobody is asked a question back. Kept across restarts (interrupted, Continue), the PC kept awake. Checked
+with a scripted Gemini and in Chromium.
+
+## 2026-11-04 — A run ends with an answer; a question reads DB4009 through its map
 
 The owner's first question after the DB4009 task clicked towards DB4009's Configuration for twenty minutes, at about two
 minutes a model step, and was cut off at 1,800 seconds with no answer ([decision](decisions/2026-11-04-runs-end-with-an-answer.md)).

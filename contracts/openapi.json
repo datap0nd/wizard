@@ -2423,6 +2423,238 @@
         }
       }
     },
+    "/api/v1/prompts/queue": {
+      "get": {
+        "summary": "Prompt Queue View",
+        "operationId": "prompt_queue_view_api_v1_prompts_queue_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Prompt Queue View Api V1 Prompts Queue Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Add Prompts",
+        "description": "The prompts in the pasted text, cut at the separator chosen, at the end of the queue (also while it runs).",
+        "operationId": "add_prompts_api_v1_prompts_queue_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromptQueueBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Add Prompts Api V1 Prompts Queue Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Clear Prompts",
+        "operationId": "clear_prompts_api_v1_prompts_queue_delete",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Clear Prompts Api V1 Prompts Queue Delete"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/prompts/queue/start": {
+      "post": {
+        "summary": "Start Prompts",
+        "description": "Start the queue, or Continue it from the prompt where it stopped.",
+        "operationId": "start_prompts_api_v1_prompts_queue_start_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Start Prompts Api V1 Prompts Queue Start Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/prompts/queue/stop": {
+      "post": {
+        "summary": "Stop Prompts",
+        "description": "Stop the queue and the question it is running.",
+        "operationId": "stop_prompts_api_v1_prompts_queue_stop_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Stop Prompts Api V1 Prompts Queue Stop Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/prompts/queue/retry-failed": {
+      "post": {
+        "summary": "Retry Failed Prompts",
+        "description": "The prompts that failed every try go back to the queue with their tries again.",
+        "operationId": "retry_failed_prompts_api_v1_prompts_queue_retry_failed_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Retry Failed Prompts Api V1 Prompts Queue Retry Failed Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/prompts/queue/items/{key}/move": {
+      "post": {
+        "summary": "Move Prompt",
+        "operationId": "move_prompt_api_v1_prompts_queue_items__key__move_post",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QueueMoveBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Move Prompt Api V1 Prompts Queue Items  Key  Move Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/prompts/queue/items/{key}": {
+      "delete": {
+        "summary": "Remove Prompt",
+        "operationId": "remove_prompt_api_v1_prompts_queue_items__key__delete",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Remove Prompt Api V1 Prompts Queue Items  Key  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/tasks/{task_id}/queue": {
       "post": {
         "summary": "Queue Task",
@@ -3726,6 +3958,47 @@
           "text"
         ],
         "title": "MemoryBody"
+      },
+      "PromptQueueBody": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 2000000,
+            "minLength": 1,
+            "title": "Text"
+          },
+          "separator": {
+            "type": "string",
+            "enum": [
+              "semicolon",
+              "newline",
+              "blank_line",
+              "pipe",
+              "dashes",
+              "custom"
+            ],
+            "title": "Separator",
+            "default": "semicolon"
+          },
+          "custom": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "PromptQueueBody"
       },
       "QueueAddBody": {
         "properties": {

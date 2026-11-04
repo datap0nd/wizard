@@ -39,6 +39,13 @@ Three causes, the first one Wizard's own:
   an open pop-up, and says which name it could not find, or what it was given instead of a Dataset. A portal_run that
   stopped part-way shows why on its step.
 
+**Addendum, the same day.** The owner: "system prompt is in the responses now sometimes". After a question to the person,
+an answer began with lines of instructions Gemini wrote itself ("Explain what the options mean for the answer … Do not
+apologize or thank them …"), carried on from the line Wizard had added to the turn it answered ("You asked the person a
+question: write it now…"). Now: asking the person alone does not make the answer due (its tools already refuse
+research, and Gemini ends its turn with its question, as before); and when the answer is due, why goes into that step's
+system instruction, never into the turn Gemini answers.
+
 **Consequences.**
 - The Gemini CLI route runs Gemini's own loop: there, the refusals still steer it, and the run's time limit stays the
   backstop.
