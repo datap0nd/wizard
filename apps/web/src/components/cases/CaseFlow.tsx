@@ -1,11 +1,12 @@
 import {Fragment, useState} from 'react';
-import {ChevronDown, ListChecks, User} from 'lucide-react';
+import {Check, ChevronDown, Copy, Database, ListChecks, User} from 'lucide-react';
 import mark from '@/assets/wizard-mark.svg';
-import {flowRows, type CaseSource, type CaseTurn} from '@/cases';
+import {flowRows, type CaseQuery, type CaseSource, type CaseTurn} from '@/cases';
 import {formatDate} from '@/format';
 import {cn} from '@/lib/utils';
 import {AnswerMarkdown} from '../AnswerMarkdown';
 import {CheckBadge, DataModeBadge} from '../Badges';
+import {Dialog, DialogContent} from '../ui/dialog';
 
 const PROMPT = '#1428a0';  // Samsung Blue: the person's words; Wizard's answers are white windows
 // A long prompt or answer scrolls inside its box instead of stretching the case (owner, 3 Nov 2026). Focusable, so the
@@ -44,11 +45,57 @@ function sourceName(source: CaseSource): string {
   return [source.system_name, source.report_name].filter(Boolean).join(' · ') || source.id;
 }
 
+function queryText(query: CaseQuery): string {
+  if (query.kind !== 'portal') return query.text ?? '';
+  return (query.steps ?? []).map((step, i) => {
+    const head = [step.action, step.method, step.url, step.selector, step.text, step.name, step.value].filter(Boolean).join(' ');
+    return [`${i + 1}. ${head}`, step.body ? `   body: ${step.body}` : '', step.script ? step.script.replace(/^/gm, '   ') : '']
+      .filter(Boolean).join('\n');
+  }).join('\n\n');
+}
+
+/** The query behind one source, opened from its evidence chip, its source chip or a step (owner, 4 Nov 2026: the
+ *  queries looked clickable but did not open). Its rows are never on the site; the query says how they were read. */
+function QueryDialog({source, onClose}: {source: CaseSource | null; onClose: () => void}) {
+  const [copied, setCopied] = useState(false);
+  const query = source?.query ?? null;
+  const text = query ? queryText(query) : '';
+  const what = query?.kind === 'sql' ? `SQL${query.database ? ` on ${query.database}` : ''}`
+    : query?.kind === 'portal' ? `Steps in the portal${query.script ? ` (saved script ${query.script})` : ''}` : 'Request';
+  return (
+    <Dialog open={source !== null} onOpenChange={open => { if (!open) { onClose(); setCopied(false); } }}>
+      {source && <DialogContent title={`${source.id} · ${sourceName(source)}`} className="w-[min(860px,96vw)]"
+        description={[source.as_of ? `as of ${formatDate(source.as_of)}` : '', typeof source.total_rows === 'number'
+          ? `${source.total_rows.toLocaleString()} row${source.total_rows === 1 ? '' : 's'} read (not published)` : ''].filter(Boolean).join(' · ')}>
+        {query ? (
+          <div className="space-y-2" data-testid="case-query">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-ink-2"><Database className="size-3.5" />{what}</span>
+              <button type="button" onClick={() => void navigator.clipboard?.writeText(text).then(() => setCopied(true))}
+                className="ml-auto inline-flex items-center gap-1 rounded-md border border-line px-2 py-0.5 text-[12px] text-ink-2 hover:bg-surface">
+                {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}{copied ? 'Copied' : 'Copy'}</button>
+            </div>
+            <pre tabIndex={0} data-testid="case-query-text"
+              className="max-h-[60vh] overflow-auto whitespace-pre-wrap rounded-lg border border-line bg-surface p-3 font-mono text-[12.5px] leading-relaxed text-ink [overflow-wrap:anywhere]">{text}</pre>
+          </div>
+        ) : (
+          <p className="text-[13px] text-ink-2" data-testid="case-query-missing">
+            {source.data_mode === 'USER_PROVIDED' ? 'A file the person attached: its name and folder stay on their PC.'
+              : 'This case was published before Wizard kept its queries. Publish it again from Wizard (Share as case) to show them.'}</p>
+        )}
+      </DialogContent>}
+    </Dialog>
+  );
+}
+
 function AnswerWindow({turn, className}: {turn: CaseTurn; className?: string}) {
   const [lit, setLit] = useState<string | null>(null);
+  const [opened, setOpened] = useState<CaseSource | null>(null);
   const show = (id: string) => {
     setLit(id);
-    document.getElementById(`case-${turn.n}-${id}`)?.scrollIntoView({block: 'nearest', behavior: 'smooth'});
+    const source = turn.sources.find(s => s.id === id);
+    if (source) setOpened(source);
+    else document.getElementById(`case-${turn.n}-${id}`)?.scrollIntoView({block: 'nearest', behavior: 'smooth'});
   };
   return (
     <article aria-label={`Answer ${turn.n}`} className={cn('min-w-0 overflow-hidden rounded-[14px] border border-line bg-canvas shadow-card', className)} data-testid="case-answer">
@@ -70,11 +117,14 @@ function AnswerWindow({turn, className}: {turn: CaseTurn; className?: string}) {
           {turn.sources.length > 0 && (
             <ul className="flex flex-wrap gap-1.5" aria-label="Sources" data-testid="case-sources">
               {turn.sources.map(source => (
-                <li key={source.id} id={`case-${turn.n}-${source.id}`}
-                  className={cn('inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[12px]', lit === source.id ? 'border-accent bg-accent-soft text-ink' : 'border-line bg-canvas')}>
-                  <span className="font-semibold text-accent">{source.id}</span>
-                  <span className="text-ink-2">{sourceName(source)}</span>
-                  {source.as_of && <span>as of {formatDate(source.as_of)}</span>}
+                <li key={source.id} id={`case-${turn.n}-${source.id}`}>
+                  <button type="button" onClick={() => show(source.id)} data-testid="case-source" title="Show the query"
+                    className={cn('inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-left text-[12px] hover:border-accent',
+                      lit === source.id ? 'border-accent bg-accent-soft text-ink' : 'border-line bg-canvas')}>
+                    <span className="font-semibold text-accent">{source.id}</span>
+                    <span className="text-ink-2">{sourceName(source)}</span>
+                    {source.as_of && <span>as of {formatDate(source.as_of)}</span>}
+                  </button>
                 </li>
               ))}
             </ul>
@@ -86,13 +136,18 @@ function AnswerWindow({turn, className}: {turn: CaseTurn; className?: string}) {
               <ol className="mt-2 list-decimal space-y-1 pl-5 text-[12.5px] text-ink-2">
                 {turn.steps.map((step, i) => (
                   <li key={i}><span className="font-medium text-ink">{step.label}</span>{step.summary ? `: ${step.summary}` : ''}
-                    {!step.ok && <span className="text-danger"> (failed)</span>}{step.evidence ? ` [${step.evidence}]` : ''}</li>
+                    {!step.ok && <span className="text-danger"> (failed)</span>}
+                    {step.evidence && (turn.sources.some(s => s.id === step.evidence)
+                      ? <> <button type="button" onClick={() => show(step.evidence!)} data-testid="case-step-query"
+                          className="font-semibold text-accent hover:underline">[{step.evidence}]</button></>
+                      : ` [${step.evidence}]`)}</li>
                 ))}
               </ol>
             </details>
           )}
         </div>
       )}
+      <QueryDialog source={opened} onClose={() => setOpened(null)} />
     </article>
   );
 }

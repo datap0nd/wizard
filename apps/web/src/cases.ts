@@ -4,9 +4,16 @@
 // without a browser.
 import type {CheckStatus, DataMode, Visual} from './types';
 
+/** One step of a portal read as a case shows it: what it did, its address without the host, its script. */
+export interface CasePortalStep {
+  action?: string; url?: string; method?: string; body?: string; script?: string; selector?: string; text?: string;
+  role?: string; name?: string; value?: string; frame?: string;
+}
+/** The query that read a source: the SQL as written, a portal read's steps, or the request Wizard sent. */
+export interface CaseQuery { kind: 'sql' | 'portal' | 'request'; text?: string; database?: string; steps?: CasePortalStep[]; script?: string }
 export interface CaseSource {
   id: string; system?: string | null; system_name?: string | null; report_name?: string | null; data_mode?: DataMode | null;
-  as_of?: string | null; total_rows?: number | null; truncated?: boolean | null;
+  as_of?: string | null; total_rows?: number | null; truncated?: boolean | null; query?: CaseQuery | null;
 }
 /** One thing Wizard did for an answer: a tool call, how it ended and the evidence it gave. */
 export interface CaseStep { label: string; summary: string; ok: boolean; evidence?: string | null }

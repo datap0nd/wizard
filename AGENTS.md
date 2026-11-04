@@ -32,8 +32,8 @@ around a precomputed result is withdrawn. Its credential, entitlement, DLP and h
   (`portal-maps/`), an empty repository's first commit (a README, from Test connection or the first write) and, at the
   person's click, the Pages site (Brain and Cases) on its own branch (`gh-pages`, never the
   notes' branch), with the write token the person enters in Settings on their own PC
-  ([decision](docs/decisions/2026-10-30-pages-site.md)): a case carries prompts, answers, charts and source names,
-  never a source's rows; the Brain snapshot never a note's text. Company settings and credentials reach a
+  ([decision](docs/decisions/2026-10-30-pages-site.md)): a case carries prompts, answers, charts, source names and
+  the queries that read them (SQL; portal steps without hosts or secrets), never a source's rows; the Brain snapshot never a note's text. Company settings and credentials reach a
   PC only in the provisioning file (`wizard.provision`), stored with DPAPI on import; **Export settings…** in the tray
   writes one from a PC's own settings at the person's click, never with the write token
   ([decision](docs/decisions/2026-10-30-settings-export.md)). See

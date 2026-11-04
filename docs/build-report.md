@@ -3,7 +3,16 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-04 (latest) — The DB4009 check needs no export: the direct read against the screen
+## 2026-11-04 (latest) — Cases: a click on a query opens it
+
+The owner: the queries in a case "are clickable but they dont open the query itself ... Its just strictly visual". A
+case's sources now keep the query that read them (`site.query_of`: the SQL; a portal read's steps without hosts or
+secrets; else the request; nothing for the person's own files), never rows. On the case page, an evidence chip, a
+source chip or a step's evidence opens the query in a window with Copy (`CaseFlow.tsx`, `QueryDialog`). Share as case
+says so. Checked in Chromium on a built Cases page (an SQL query and a GSCM request); `test_site.py`, `CaseFlow.test.tsx`.
+Cases published before show their queries once published again.
+
+## 2026-11-04 — The DB4009 check needs no export: the direct read against the screen
 
 The owner: "Im not exporting anything." `wizard_compare_evidence` (`tools/compare_tools.py`) checks one of Wizard's reads
 against another, row by row and number by number: the proven direct request against the grid the report's own screen

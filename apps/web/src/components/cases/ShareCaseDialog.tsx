@@ -11,7 +11,7 @@ type Result = {message: string; url?: string | null; failed?: boolean};
 /** Share as case: this chat's answers on the Pages site's Cases page, at the person's click. They choose the answers,
  *  the title (Gemini's name for the chat to start with) and an optional takeaway, can preview it in Wizard, and publish,
  *  update or remove it. What is published is said before the click: prompts, answers, charts, tables and source names,
- *  never rows (services/api/wizard_api/site.py). */
+ *  their queries, never rows (services/api/wizard_api/site.py). */
 export function ShareCaseDialog({conversationId, open, onClose}: {conversationId: string | null; open: boolean; onClose: () => void}) {
   const [preview, setPreview] = useState<CasePreview | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -95,9 +95,10 @@ export function ShareCaseDialog({conversationId, open, onClose}: {conversationId
                 ))}
               </fieldset>
               <p className="rounded-lg border border-line bg-surface p-3 text-[13px] leading-relaxed text-ink-2">
-                Everyone who can open the Pages site will see these prompts and answers, with their charts, tables, data labels and the
-                names of their sources. The sources' rows are never published. Figures read with your own rights are shown as you saw
-                them: share only what they may see.</p>
+                Everyone who can open the Pages site will see these prompts and answers, with their charts, tables, data labels, the
+                names of their sources and the queries that read them (the SQL, or the portal steps without their addresses' hosts).
+                The sources' rows are never published. Figures read with your own rights are shown as you saw them: share only what
+                they may see.</p>
               <div className="flex flex-wrap items-center gap-2">
                 <Button variant="accent" onClick={publish} disabled={busy || !site?.enabled || !chosen.length} data-testid="case-publish">
                   <Upload />{busy ? 'Publishing…' : preview?.published ? 'Update the case' : 'Publish'}</Button>

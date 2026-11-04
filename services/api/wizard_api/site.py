@@ -21,11 +21,13 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
 from wizard_agent import outbound
 from wizard_agent.prompting import squeeze
+from wizard_connectors import portals
 from wizard_connectors.content import _secrets
 
 from .config import Settings
@@ -40,8 +42,11 @@ TAKEAWAY = 400
 MAX_TURNS = 40
 MAX_STEPS = 60                     # what Wizard did, per answer
 MAX_CASE_BYTES = 4 * 1024 * 1024
-# What a case keeps of each source: its name and data label, never its rows, request or folders on someone's PC.
+# What a case keeps of each source: its name and data label, and the query that read it (owner, 4 Nov 2026: the
+# queries in a case looked clickable but did not open), never its rows or folders on someone's PC.
 SOURCE_KEYS = ("id", "system", "system_name", "report_name", "data_mode", "as_of", "total_rows", "truncated")
+QUERY_CHARS = 20_000
+PORTAL_STEP_KEYS = ("action", "selector", "role", "name", "text", "value", "frame")
 VISUAL_KEYS = ("id", "kind", "title", "subtitle", "columns", "rows", "x", "series", "evidence_ids", "note", "derived_by")
 CITATION = re.compile(r"\[(E\d{1,4})\]")
 STEP_CATEGORIES = ("source", "knowledge", "check", "present")  # every tool call but the person-facing ones
@@ -63,6 +68,49 @@ class SiteError(Exception):
 def case_id(conversation_id: str) -> str:
     """A chat's case keeps one address however often it is published again; the chat's own id is not shown."""
     return "c" + hashlib.sha256(conversation_id.encode()).hexdigest()[:14]
+
+
+def _path(url: str) -> str:
+    """A portal address without its host: the path and query, secrets removed."""
+    parts = urlsplit(portals.redact_url(url))
+    return (parts.path or "/") + (f"?{parts.query}" if parts.query else "") if parts.netloc else portals.redact_url(url)
+
+
+def query_of(evidence: dict[str, Any]) -> dict[str, Any] | None:
+    """The query that read a source, as a case shows it: the SQL as written; a portal read's steps (what each did, its
+    address without the host, its script, secrets removed); else the request Wizard sent. None for the person's own files
+    (their names and folders stay on their PC)."""
+    request = evidence.get("request")
+    if not isinstance(request, dict) or evidence.get("data_mode") == "USER_PROVIDED":
+        return None
+    if request.get("sql"):
+        return {"kind": "sql", "text": portals.scrub(str(request["sql"]))[:QUERY_CHARS],
+                **({"database": str(request["database"])} if request.get("database") else {})}
+    if isinstance(request.get("steps"), list):
+        shown = []
+        for step in request["steps"][:60]:
+            if not isinstance(step, dict):
+                continue
+            item = {k: portals.scrub(str(step[k]))[:300] for k in PORTAL_STEP_KEYS if step.get(k) not in (None, "")}
+            if step.get("url"):
+                item["url"] = _path(str(step["url"]))[:1000]
+            if step.get("method"):
+                item["method"] = str(step["method"])[:10]
+            if step.get("body"):
+                item["body"] = portals.redact_text(str(step["body"]), 2000)
+            if step.get("script"):
+                item["script"] = portals.scrub(str(step["script"]))[:4000]
+            shown.append(item)
+        return {"kind": "portal", "steps": shown,
+                **({"script": str(request["script_name"])} if request.get("script_name") else {})}
+    text = json.dumps(portals.redact_json({k: v for k, v in request.items() if k not in ("page", "page_title")}),
+                      ensure_ascii=False, indent=1, default=str)
+    return {"kind": "request", "text": portals.scrub(text)[:QUERY_CHARS]}
+
+
+def source_of(evidence: dict[str, Any]) -> dict[str, Any]:
+    query = query_of(evidence)
+    return {**{k: evidence.get(k) for k in SOURCE_KEYS}, **({"query": query} if query else {})}
 
 
 def steps(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -104,7 +152,7 @@ def turns(store: Store, conversation_id: str) -> list[dict[str, Any]]:
             "asked_at": run["created_at"], "answer": answer, "data_mode": run.get("data_mode"),
             "check": {"status": check.get("status") or run.get("check_status") or "NOT_CHECKED", "summary": check.get("summary")},
             "visuals": [{k: v.get(k) for k in VISUAL_KEYS} for v in visuals],
-            "sources": [{k: e.get(k) for k in SOURCE_KEYS} for e in evidence],
+            "sources": [source_of(e) for e in evidence],
             "steps": steps(store.events(run["id"])), "model": run.get("runtime_label"),
         })
     return out[:MAX_TURNS]

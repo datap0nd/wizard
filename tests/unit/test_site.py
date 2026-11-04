@@ -205,7 +205,12 @@ def test_share_as_case_publishes_the_answers_and_source_names_never_the_rows(tmp
             (cid, "Marketing return by market", "Egypt leads.", 1)]
         stored = json.loads(site[f"cases/{cid}.json"])
         source_keys = {k for t in stored["turns"] for s in t["sources"] for k in s}
-        assert source_keys <= {"id", "system", "system_name", "report_name", "data_mode", "as_of", "total_rows", "truncated"}
+        assert source_keys <= {"id", "system", "system_name", "report_name", "data_mode", "as_of", "total_rows", "truncated",
+                               "query"}
+        first = stored["turns"][0]["sources"][0]
+        assert first["query"]["kind"] == "request" and "filters" in first["query"]["text"], "the request that read it"
+        assert "rows" not in json.dumps([s.get("query") for t in stored["turns"] for s in t["sources"]]).replace(
+            '"total_rows"', ""), "a query never carries the rows"
         assert "run_id" not in stored["turns"][0] and stored["turns"][0]["answer"] == run["answer"]
         # Published again: still one case, at the same address, first published when it first was.
         again = client.post(f"/api/v1/conversations/{conversation}/case", headers=HEADERS,
@@ -264,3 +269,25 @@ def test_the_site_branch_is_never_the_notes_branch(tmp_path):
     with pytest.raises(ConfigError, match="WIZARD_SITE_URL"):
         make_settings(tmp_path, WIZARD_SITE_URL="http://insecure.example.com/")
     assert re.fullmatch(r"c[0-9a-f]{14}", case_id("cnv_abc"))
+
+
+def test_a_cases_sources_carry_their_query_without_hosts_secrets_or_the_persons_files():
+    """Owner, 4 Nov 2026: the queries in a case looked clickable but did not open."""
+    from wizard_api.site import query_of
+    sql = query_of({"data_mode": "LIVE", "request": {"sql": "SELECT market, sum(units)\nFROM reporting.sell_in\nGROUP BY 1",
+                                                     "database": "meto_db", "max_rows": 200}})
+    assert sql == {"kind": "sql", "text": "SELECT market, sum(units)\nFROM reporting.sell_in\nGROUP BY 1", "database": "meto_db"}
+    token = "Tk" + "x" * 50
+    portal = query_of({"data_mode": "LIVE", "request": {
+        "steps": [{"action": "goto", "url": f"https://gscm.corp.example.com/gscm30/main.do?session_id={token}"},
+                  {"action": "request", "method": "POST", "url": "https://gscm.corp.example.com/gscm30/sellout/list.do",
+                   "body": f"SSV:utf-8\x1eauthToken:string={token}\x1fday:string=20261102"},
+                  {"action": "evaluate", "script": "return W.nexacro.readGrid('grd_main');"}],
+        "script_name": "db4009-by-account", "page": "https://gscm.corp.example.com/", "page_title": "GSCM"}})
+    assert portal["kind"] == "portal" and portal["script"] == "db4009-by-account"
+    text = json.dumps(portal)
+    assert "gscm.corp.example.com" not in text and token not in text, "no host, no secret"
+    assert portal["steps"][1]["url"] == "/gscm30/sellout/list.do" and "day:string=20261102" in portal["steps"][1]["body"]
+    assert portal["steps"][2]["script"] == "return W.nexacro.readGrid('grd_main');"
+    assert query_of({"data_mode": "USER_PROVIDED", "request": {"file": "C:/Users/me/plan.xlsx", "sheet": "Q4"}}) is None
+

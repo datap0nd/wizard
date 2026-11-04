@@ -74,3 +74,12 @@ their portal on their own layer). The built site was served from a Pages-like su
 1280×800, 1440×900 and 390×844 (a three-prompt synthetic case, the gallery and the Brain snapshot), with no console
 errors and no sideways scroll. Not run: the company GitHub's Pages itself, which first serves the branch when the owner
 turns Pages on.
+
+**Addendum, 4 November 2026.** The owner: "In Cases pages, we're seeing that the queries it's doing are clickable but they
+dont open the query itself ... Its just strictly visual." Each source of a case now also keeps the query that read it
+(`site.query_of`): the SQL as written (and its database); a portal read's steps, each with what it did, its address
+without the host, its body and script, secrets removed; else the request Wizard sent. A file the person attached keeps
+none: its name and folder stay on their PC. Never a source's rows. A click on an evidence chip in the answer, a source
+chip or a step's evidence opens it in a window with Copy. Share as case says so before the click. A case published
+before keeps no queries until it is published again.
+
