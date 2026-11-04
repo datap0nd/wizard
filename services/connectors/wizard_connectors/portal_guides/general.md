@@ -31,7 +31,9 @@ last page between calls, so you can explore step by step.
    objects) is kept as its rows; anything else (a list of names, a summary object) as key/value rows, so never reshape
    a result only to get an id. Aggregate inside the script when a report has thousands of rows; you see at most
    `max_rows` rows, but all are counted.
-5. **Keep what worked.** `portal_save_script` keeps your steps under a name with parameters (`P.name` in scripts,
+5. **Keep what worked.** A data request you will keep is proven by Wizard, not by you: `portal_prove_request` sends
+   it twice (the values the screen used, then one changed) and marks it verified only when both answers agree in shape
+   and the change shows. `portal_save_script` keeps your steps under a name with parameters (`P.name` in scripts,
    `{{name}}` elsewhere). Next time, `portal_run(script=..., params=[...])` answers without exploring. Put it in the
    map too (`portal_map_save`: the report, a business summary, what it is for and not for, its filters, its request,
    the script's name), so any question finds it.

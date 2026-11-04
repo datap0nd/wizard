@@ -36,7 +36,7 @@ A task that works through a list in several runs (notes to check, figures to tak
 
 ```
 repeat: until_done
-max_runs: 5              # optional: at most this many runs (default 5, never more than 10)
+max_runs: 5              # optional: at most this many runs (default 5, never more than 50)
 ```
 
 Wizard then asks Gemini to end each run's summary with one last line, `Left: <number>`: how many items the task still

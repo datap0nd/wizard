@@ -1878,6 +1878,101 @@
       }
     },
     {
+      "name": "wizard_task_compare",
+      "description": "Only in a task that asks for a file: check Wizard's evidence (a portal reply, a query) against the person's own export, row by row and number by number: rows matched by the key columns, numbers within a tolerance, and the rows only one side has. MATCH means every row and number agrees. With system and report, the outcome is kept in that report's map entry.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "description": "The person's file (a spreadsheet or CSV) from wizard_task_files (pattern ^f[0-9a-f]{8}$)",
+            "type": "string"
+          },
+          "sheet": {
+            "description": "Its sheet, when it has several (0-120 characters)",
+            "type": "string"
+          },
+          "evidence_id": {
+            "description": "The evidence to check, e.g. the first reply of portal_prove_request (pattern ^E\\d{1,6}$)",
+            "type": "string"
+          },
+          "keys": {
+            "description": "The columns that tell one row from another on both sides, e.g. the account, the country and the date.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "file": {
+                  "description": "The column in the person's file: its header as the sheet shows it, or its key (1-200 characters)",
+                  "type": "string"
+                },
+                "wizard": {
+                  "description": "The same column in Wizard's evidence, by name (1-200 characters)",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "file",
+                "wizard"
+              ],
+              "type": "object"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "type": "array"
+          },
+          "values": {
+            "description": "The numbers to compare, file column against Wizard column (one pair per day for a report with a column per day).",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "file": {
+                  "description": "The column in the person's file: its header as the sheet shows it, or its key (1-200 characters)",
+                  "type": "string"
+                },
+                "wizard": {
+                  "description": "The same column in Wizard's evidence, by name (1-200 characters)",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "file",
+                "wizard"
+              ],
+              "type": "object"
+            },
+            "maxItems": 5000,
+            "minItems": 1,
+            "type": "array"
+          },
+          "tolerance": {
+            "description": "The largest difference two numbers may have and still match (rounding on screen) (default 0.5)",
+            "maximum": 1000000,
+            "minimum": 0,
+            "type": "number"
+          },
+          "system": {
+            "description": "With report: the portal whose map keeps the outcome, e.g. gscm (pattern ^[a-z][a-z0-9]{1,15}$)",
+            "type": "string"
+          },
+          "report": {
+            "description": "The report's id in that portal's map (pattern ^[a-z0-9][a-z0-9_.-]{0,79}$)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file",
+          "evidence_id",
+          "keys",
+          "values"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
       "name": "wizard_task_files_done",
       "description": "Only in a task that asks for a folder: mark files done once what they hold is saved in the knowledge base (or they hold nothing to keep), so the next round of the task skips them.",
       "inputSchema": {
@@ -2047,7 +2142,7 @@
               ],
               "type": "object"
             },
-            "maxItems": 30,
+            "maxItems": 60,
             "type": "array"
           },
           "script": {
@@ -2074,7 +2169,7 @@
               ],
               "type": "object"
             },
-            "maxItems": 20,
+            "maxItems": 60,
             "type": "array"
           },
           "title": {
@@ -2223,7 +2318,7 @@
               ],
               "type": "object"
             },
-            "maxItems": 30,
+            "maxItems": 60,
             "minItems": 1,
             "type": "array"
           },
@@ -2247,7 +2342,7 @@
               ],
               "type": "object"
             },
-            "maxItems": 20,
+            "maxItems": 60,
             "type": "array"
           }
         },
@@ -2460,7 +2555,7 @@
                   "description": "(3-160 characters)"
                 },
                 "text": {
-                  "description": "What a later script needs: how it works, the exact calls, selectors, routes and formats, and the steps or JavaScript that proved it (10-20000 characters)",
+                  "description": "What a later script needs: how it works, the exact calls, selectors, routes and formats, and the steps or JavaScript that proved it (10-200000 characters)",
                   "type": "string"
                 }
               },
@@ -2471,7 +2566,7 @@
               ],
               "type": "object"
             },
-            "maxItems": 30,
+            "maxItems": 100,
             "type": "array"
           },
           "reports": {
@@ -2573,7 +2668,7 @@
                         "type": "string"
                       },
                       "values": {
-                        "description": "Its options (code = label, at most about 100) or format (e.g. YYYYWW, Sunday-start weeks), and where the options come from (an inner dataset, a lookup request) (0-6000 characters)",
+                        "description": "Its options (code = label, every one of them) or format (e.g. YYYYWW, Sunday-start weeks), and where the options come from (an inner dataset, a lookup request) (0-200000 characters)",
                         "type": "string"
                       },
                       "default": {
@@ -2597,7 +2692,7 @@
                     ],
                     "type": "object"
                   },
-                  "maxItems": 60,
+                  "maxItems": 300,
                   "type": "array"
                 },
                 "data": {
@@ -2616,11 +2711,11 @@
                         "items": {
                           "type": "string"
                         },
-                        "maxItems": 300,
+                        "maxItems": 5000,
                         "type": "array"
                       },
                       "labels": {
-                        "description": "Column ids with their screen headers and units, e.g. QTY = Sell-out units (0-6000 characters)",
+                        "description": "Column ids with their screen headers and units, e.g. QTY = Sell-out units (0-200000 characters)",
                         "type": "string"
                       },
                       "rows_seen": {
@@ -2637,7 +2732,7 @@
                     ],
                     "type": "object"
                   },
-                  "maxItems": 30,
+                  "maxItems": 200,
                   "type": "array"
                 },
                 "views": {
@@ -2662,7 +2757,7 @@
                         "type": "string"
                       },
                       "options": {
-                        "description": "Every choice it offers (each selectable column, grouping, measure...), the default ones marked, e.g. 'OrgSales (account), Country, Model (default off); Region (default on)' (0-8000 characters)",
+                        "description": "Every choice it offers (each selectable column, grouping, measure...), the default ones marked, e.g. 'OrgSales (account), Country, Model (default off); Region (default on)' (0-200000 characters)",
                         "type": "string"
                       },
                       "columns": {
@@ -2670,15 +2765,15 @@
                         "items": {
                           "type": "string"
                         },
-                        "maxItems": 200,
+                        "maxItems": 5000,
                         "type": "array"
                       },
                       "effect": {
-                        "description": "What choosing it changes, as proved: a new request parameter (name and values), another dataset or route, or only columns the dataset already had; and whether the choice stays saved for the person (0-3000 characters)",
+                        "description": "What choosing it changes, as proved: a new request parameter (name and values), another dataset or route, or only columns the dataset already had; and whether the choice stays saved for the person (0-50000 characters)",
                         "type": "string"
                       },
                       "how": {
-                        "description": "The proven steps or request that read the report with these choices (e.g. open the gear, tick OrgSales, Apply, search; or the request with its parameter) (0-4000 characters)",
+                        "description": "The proven steps or request that read the report with these choices (e.g. open the gear, tick OrgSales, Apply, search; or the request with its parameter) (0-50000 characters)",
                         "type": "string"
                       },
                       "notes": {
@@ -2691,7 +2786,7 @@
                     ],
                     "type": "object"
                   },
-                  "maxItems": 30,
+                  "maxItems": 300,
                   "type": "array"
                 },
                 "requests": {
@@ -2711,7 +2806,7 @@
                         "type": "string"
                       },
                       "body": {
-                        "description": "The body with the filter values as {{param}} placeholders, otherwise exactly as captured (0-60000 characters)",
+                        "description": "The body with the filter values as {{param}} placeholders, otherwise exactly as captured (0-200000 characters)",
                         "type": "string"
                       },
                       "headers": {
@@ -2734,7 +2829,7 @@
                         "type": "string"
                       },
                       "verified": {
-                        "description": "True only when you sent it again with a changed filter and the reply matched what the screen shows (default false)",
+                        "description": "Ignored here: only portal_prove_request marks a request verified, after Wizard itself sent it twice (default false)",
                         "type": "boolean"
                       },
                       "notes": {
@@ -2748,7 +2843,7 @@
                     ],
                     "type": "object"
                   },
-                  "maxItems": 20,
+                  "maxItems": 200,
                   "type": "array"
                 },
                 "script": {
@@ -2756,7 +2851,7 @@
                   "type": "string"
                 },
                 "notes": {
-                  "description": "Pitfalls: waits, popups, paging, limits, why it failed (0-6000 characters)",
+                  "description": "Pitfalls: waits, popups, paging, limits, why it failed (0-50000 characters)",
                   "type": "string"
                 }
               },
@@ -2783,6 +2878,137 @@
         },
         "required": [
           "system"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "portal_prove_request",
+      "description": "Prove a report's data request: Wizard sends it twice from the person's browser, with the values given (first) and with one changed (second), and keeps it in the map as proven only when both answers are clean (no error from the portal), hold the same datasets and columns, and the changed value changed the rows. Only this marks a request verified, and a report is mapped only once one of its requests is proven. Each reply is evidence to cite and to check against the person's own export. Same read-only rules as portal_run.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "system": {
+            "description": "The portal: asap, gscm or bdp (pattern ^[a-z][a-z0-9]{1,15}$)",
+            "type": "string"
+          },
+          "report": {
+            "description": "The report's id in the map, e.g. db4009 (pattern ^[a-z0-9][a-z0-9_.-]{0,79}$)",
+            "type": "string"
+          },
+          "request": {
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "description": "What it does, e.g. search, combo-markets (0-120 characters)",
+                "type": "string"
+              },
+              "method": {
+                "type": "string",
+                "description": "(0-10 characters; default \"POST\")"
+              },
+              "url": {
+                "description": "The route, as a path on the portal (e.g. /gscm/xyz/selectList.do) (0-2000 characters)",
+                "type": "string"
+              },
+              "body": {
+                "description": "The body with the filter values as {{param}} placeholders, otherwise exactly as captured (0-200000 characters)",
+                "type": "string"
+              },
+              "headers": {
+                "description": "Headers it needs (Content-Type...).",
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "params": {
+                "description": "The {{param}} names in url and body, each matching a filter's param.",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 40,
+                "type": "array"
+              },
+              "reply": {
+                "description": "What comes back: dataset names, columns, paging (0-2000 characters)",
+                "type": "string"
+              },
+              "verified": {
+                "description": "Ignored here: only portal_prove_request marks a request verified, after Wizard itself sent it twice (default false)",
+                "type": "boolean"
+              },
+              "notes": {
+                "type": "string",
+                "description": "(0-2000 characters)"
+              }
+            },
+            "required": [
+              "name",
+              "url"
+            ],
+            "type": "object"
+          },
+          "first": {
+            "description": "Values for every {{param}}: the ones the screen used (or the person's own export).",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "description": "Parameter name, used as P.name in scripts and {{name}} in other fields (pattern ^[a-z][a-z0-9_]{0,39}$)",
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string",
+                  "description": "(0-2000 characters)"
+                }
+              },
+              "required": [
+                "name",
+                "value"
+              ],
+              "type": "object"
+            },
+            "maxItems": 60,
+            "minItems": 1,
+            "type": "array"
+          },
+          "second": {
+            "description": "The same values with one changed, e.g. the date one day earlier or another subsidiary.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "description": "Parameter name, used as P.name in scripts and {{name}} in other fields (pattern ^[a-z][a-z0-9_]{0,39}$)",
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string",
+                  "description": "(0-2000 characters)"
+                }
+              },
+              "required": [
+                "name",
+                "value"
+              ],
+              "type": "object"
+            },
+            "maxItems": 60,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "system",
+          "report",
+          "request",
+          "first",
+          "second"
         ],
         "type": "object"
       },

@@ -421,12 +421,17 @@ def redact_json(value: Any, depth: int = 0) -> Any:
     return value
 
 
+# A report can be very wide (one column per day of a long period, plus weekly totals): a table keeps every column up
+# to this, and says so beyond it.
+MAX_TABLE_COLUMNS = 5000
+
+
 def table_from(value: Any) -> tuple[list[str], list[list[Any]], int] | None:
     """Columns, rows and the total row count when a script's result is a table: {columns, rows[, total_rows]} or a list
     of objects. Anything else is not a table."""
     if isinstance(value, dict) and isinstance(value.get("rows"), list) and isinstance(value.get("columns"), list):
         columns = [str(c.get("key") or c.get("label") or c.get("id")) if isinstance(c, dict) else str(c)
-                   for c in value["columns"]][:200]
+                   for c in value["columns"]][:MAX_TABLE_COLUMNS]
         rows: list[list[Any]] = []
         for row in value["rows"]:
             if isinstance(row, dict):
@@ -441,7 +446,7 @@ def table_from(value: Any) -> tuple[list[str], list[list[Any]], int] | None:
         columns = []
         for row in value[:1000]:
             for key in row:
-                if key not in columns and len(columns) < 200:
+                if key not in columns and len(columns) < MAX_TABLE_COLUMNS:
                     columns.append(str(key))
         return columns, [[row.get(c) for c in columns] for row in value], len(value)
     return None

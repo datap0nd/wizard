@@ -17,7 +17,7 @@ from .common import column_letter
 from .sheets import header_row, show
 
 MAX_TABLE_ROWS = 300_000
-MAX_TABLE_COLUMNS = 60
+MAX_TABLE_COLUMNS = 5000  # a daily report exported over a long period has a column per day
 NUMBER = re.compile(r"^[-+]?(\d{1,3}(,\d{3})+|\d+)(\.\d+)?$|^[-+]?\.\d+$")
 ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2})?)?$")
 

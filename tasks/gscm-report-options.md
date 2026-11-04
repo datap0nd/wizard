@@ -1,10 +1,10 @@
 ---
 id: gscm-report-options
 title: "GSCM: map the columns and groupings behind each sales report's Configuration"
-summary: Wizard could not answer daily sell-out by operator because the map knew only the default columns of GSCM's sales reports. This first corrects what an earlier run got wrong about the daily sell-out report, then opens each sales, sell-out, sell-in and stock report's Configuration, maps every category and choice in it (account, customer, channel...) with what each needs first, proves the request and a script that read it, and says what each report answers.
-added: 2026-11-03
+summary: Run it after the daily sell-out (DB4009) task. Goes through GSCM's other sales, sell-out, sell-in and stock reports: reads each report's code for every data request it can send, maps every Configuration category and choice (account, customer, channel...) with what each needs first, has Wizard prove the request that reads it, saves a script, and says what each report answers.
+added: 2026-11-04
 repeat: until_done
-max_runs: 10
+max_runs: 30
 ---
 A person asked for sell-out by operator, compared with the day before. GSCM's daily sell-out report has the account
 (operator, retailer, customer), but only through its own Configuration button, three levels deep, and only after the
@@ -19,30 +19,17 @@ that a report lacks a breakdown.
 
 1. Read portal_guide(system=gscm), above all "Opening a report directly" and "A report's Configuration". Then
    portal_map(system=gscm), its topics, and the topic `options-review` if it exists.
-2. First, correct an earlier run. On 3 November a run looked at the daily sell-out report's search conditions instead
-   of its Configuration, and wrote that it has no account or operator breakdown and that operator questions must use a
-   weekly database view: into the map (the report's views, notes, use_for, not_for) and into the GSCM platform note.
-   That is wrong.
-   a. Open the daily sell-out report (the topic `open-report-directly`). Choose the subsidiaries one by one in its
-      search conditions (all of them; not a region). Find its Configuration button with `W.nexacro.find(/config/i)`,
-      click it, and follow Configuration → Sales → Sales → ORG Sales: read the dialog with `W.nexacro.options()` after
-      each click. Tick ORG Sales, Apply, search. Read the datasets (`W.nexacro.datasets(form)`): the account columns and
-      the rows (a sub-total per account, then one row per country).
-   b. Save the report again (portal_map_save) with the truth: its views (below), its notes without the wrong claim, and
-      route it (portal_map_route) so questions about operators, accounts or customers, daily, come to it.
-   c. Read the GSCM platform note (wizard_kb_note_source) and every other note whose text says this report has no
-      account or operator breakdown (wizard_lookup_definitions with "operator", "account", "daily sell-out"). Rewrite
-      those passages as what you proved: the report holds daily sell-out by account through its Configuration, after
-      choosing subsidiaries; the database view holds it weekly. Save with wizard_kb_save_notes. A SIGNED note is not
-      changed: put your proposal in the summary.
-   d. In `options-review`, set this report back to `left` if it says `done`, and to `done` only when step 4 is done.
+2. The daily sell-out report (DB4009) has its own task, "GSCM daily sell-out by account (DB4009)", which proves it
+   against the person's own export. Leave it to that task: skip it here, whatever `options-review` says.
 3. The list to work through, on the first run only (later runs read `options-review` and continue with the reports
    still `left`): the reports that hold sales, sell-out, sell-in, stock, shipment or channel measures (portal_map with
    those words and with daily, weekly, account, customer, operator, channel), the daily sell-out report first, then the
    other sell-out reports, then the rest. Save the list as the map topic `options-review`, one line per report:
    `<report id> | <name> | left` (or `done`, or `failed: <why>`).
 4. For each report, in that order:
-   a. Open it with the proven call (one evaluate step, no goto). Search with its defaults (never Save).
+   a. Open it with the proven call (one evaluate step, no goto). Read its code first: `W.nexacro.transactions()`
+      lists every data request its functions can send (address, input datasets, arguments), and
+      `W.nexacro.source('<name>')` gives a function's whole code. Then search with its defaults (never Save).
    b. Find its Configuration: `W.nexacro.find(/config/i)` (also try the words the report uses: setting, column, display,
       personal, layout). It may be in the report or in the report toolbar. The top bar's Setting gear is not it.
    c. Open it and read it with `W.nexacro.options()`. Open every category, and every group inside each category, reading
@@ -55,10 +42,10 @@ that a report lacks a breakdown.
       sub-totals per account, one row per country) and how to tell a total or sub-total row from a detail row; and
       whether the search request gained a parameter or only the reply gained columns (compare the request bodies in
       `requests` before and after).
-   f. Prove the fast route with that choice on: send the search request again (a request step, or W.replay) with one
-      filter changed, such as the date one day earlier, and check the reply still has the new columns. Save the request
-      with its filters as `{{param}}` placeholders, and the parameter that turns the choice on when there is one;
-      `verified` only when proven.
+   f. Save the request with its filters as `{{param}}` placeholders, and the parameter that turns the choice on when
+      there is one. Then prove it: portal_prove_request with the values the screen used as `first` and one changed
+      (the date one day earlier) as `second`. Only that marks it verified, and a report is mapped only once one of its
+      requests is proven; when it is not proven, read its problems and fix the request.
    g. If a choice is still ticked after you reopen the report (saved for the person), untick it, unless the request
       alone turns it on.
    h. Save the report (portal_map_save): `views`, one per Configuration category, each with `path` (the clicks, with the

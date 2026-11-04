@@ -355,7 +355,7 @@ def repeat(max_runs: str = "") -> str:
 
 def test_repeat_front_matter():
     assert (parse(repeat()).repeat, parse(repeat()).max_runs) == (True, 5)  # type: ignore[union-attr]
-    assert parse(repeat("3")).max_runs == 3 and parse(repeat("25")).max_runs == 10  # type: ignore[union-attr]
+    assert parse(repeat("3")).max_runs == 3 and parse(repeat("80")).max_runs == 50  # type: ignore[union-attr]
     assert parse(repeat("7  # a long review")).max_runs == 7  # type: ignore[union-attr]
     assert parse(A).repeat is False and parse(A).work()["max_runs"] is None  # type: ignore[union-attr]
     folder = task("f", "F", "2026-11-02", "input: folder\nevery_file: true\nrepeat: until_done\n")

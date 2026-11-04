@@ -75,10 +75,19 @@ screen.
 - **Filters.** `W.nexacro.inputs()` lists the active report form's inputs: Combo, Calendar, Edit, Radio... with their
   value, and a combo's options from its inner Dataset as `code = label`. Note which request parameter each filter
   sets (compare the search request's body with the values on screen).
+- **Read the report's code first.** `W.nexacro.transactions()` lists every data request the open report's functions
+  can send, read from its code rather than from what the screen happened to send: each `transaction()` call (or a
+  wrapper such as `gfn_transaction`) with its service id, address, input and output datasets, arguments and callback;
+  every `.do` address in its code; and the application's wrappers, which show how an address is completed. Read a
+  function whole with `W.nexacro.source('<name>')`, and an input dataset with `W.nexacro.read('<name>')`: its columns
+  are the parameters the request carries (subsidiaries, dates, a dimension or level).
 - **The data request.** After pressing the report's search button (Search, Retrieve, Inquiry...; never Save), the
-  result's `requests` and `W.requests('.do')` show the transaction. Its SSV body names the parameters
-  (`name:string=value` units) and the datasets it fills. Prove the route with a `request` step: the same url and body
-  with one value changed must return the same dataset with the new values. Save it with `{{param}}` placeholders.
+  result's `requests` and `W.requests('.do')` show the transaction, its body in full. Its SSV body names the parameters
+  (`name:string=value` units) and the datasets it fills. Save it with `{{param}}` placeholders, then **prove it with
+  portal_prove_request**: Wizard sends it twice, with the screen's values and with one changed, and keeps it as proven
+  only when both answers are clean, alike in shape, and the change changed the rows. Only that marks a request
+  verified, and a report is mapped only once one of its requests is proven. A task with the person's own export then
+  checks the proven reply against it, row by row (wizard_task_compare).
 
 ## Bookmarks (Setting > Favorite)
 

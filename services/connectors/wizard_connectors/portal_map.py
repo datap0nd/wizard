@@ -28,7 +28,7 @@ from .knowledge import terms
 FORMAT = 1
 STATUSES = ("todo", "mapped", "partial", "failed", "skipped")
 MAX_REPORTS = 3000
-MAX_TOPICS = 100
+MAX_TOPICS = 300
 MAX_LOG = 60
 INDEX_LIMIT = 400        # reports listed in the map summary; the rest are found with portal_map(find=...)
 TOPICS_INLINE = 16_000   # topic texts shown in full in the summary up to this many characters in all
@@ -47,7 +47,7 @@ TO_ROUTE_LIMIT = 15
 TO_CONFIGURE_LIMIT = 15
 # Saved scripts travel with the map (owner's run of 3 Nov 2026: the map named a script that was on no PC that read it,
 # and the run spent a step finding that out). portal_save_script keeps a copy here, so every PC with the map can run it.
-MAX_SCRIPTS = 150
+MAX_SCRIPTS = 1000
 
 
 def now() -> str:
@@ -64,12 +64,12 @@ def clean(value: Any, depth: int = 0) -> Any:
     if depth > 8:
         return None
     if isinstance(value, str):
-        return portals.scrub(value)[:100_000]
+        return portals.scrub(value)[:500_000]
     if isinstance(value, dict):
         return {str(k)[:200]: (portals.REDACTED if portals.SECRET_NAME.search(str(k)) else clean(v, depth + 1))
-                for k, v in list(value.items())[:200]}
+                for k, v in list(value.items())[:5000]}
     if isinstance(value, list):
-        return [clean(v, depth + 1) for v in value[:500]]
+        return [clean(v, depth + 1) for v in value[:50_000]]
     return value
 
 
@@ -166,7 +166,9 @@ class PortalMaps:
                   for t in data["topics"]]
         ready = [r for r in data["reports"] if r.get("status") in ("mapped", "partial")]
         index = [{"id": r["id"], "name": r.get("name"), "path": " > ".join(r.get("path") or []), "status": r.get("status"),
-                  **({"fast": True} if any(q.get("verified") for q in r.get("requests") or []) or r.get("script") else {})}
+                  **({"fast": True} if any(q.get("verified") for q in r.get("requests") or []) or r.get("script") else {}),
+                  **({"proven": True} if any(q.get("proven") for q in r.get("requests") or []) else {}),
+                  **({"export_check": r["export_check"].get("verdict")} if isinstance(r.get("export_check"), dict) else {})}
                  for r in ready[:INDEX_LIMIT]]
         out: dict[str, Any] = {"updated": data.get("updated"), "overview": data.get("overview") or None, "topics": topics,
                                "counts": counts, "reports": index}
@@ -278,6 +280,36 @@ class PortalMaps:
             data["name"] = self.names.get(system, data.get("name") or system)
             self._write(system, data)
             return {"added": added, "updated": updated, "removed": sorted(gone), "counts": self.counts(data)}
+
+    def proven(self, system: str, report_id: str) -> list[dict[str, Any]]:
+        """The report's requests Wizard itself proved (portal_prove_request), with their proof."""
+        found = self.report(system, report_id)
+        return [q for q in (found or {}).get("requests") or [] if isinstance(q, dict) and q.get("proven")]
+
+    def prove(self, system: str, report_id: str, request: dict[str, Any], proof: dict[str, Any]) -> None:
+        """Keep a request Wizard proved: it replaces the report's request of that name, marked verified with its proof.
+        Only portal_prove_request calls this; what Gemini saves never sets verified (tools/portal_tools.py)."""
+        with self._lock:
+            data = self.load(system)
+            report = _match(data["reports"], report_id)
+            if report is None:
+                raise MapError(f"No report '{report_id}' in the {system} map: save it first.")
+            entry = clean({**{k: v for k, v in request.items() if v is not None}, "verified": True, "proven": proof})
+            kept = [q for q in report.get("requests") or [] if isinstance(q, dict) and q.get("name") != entry.get("name")]
+            report["requests"] = [*kept, entry]
+            report["updated"] = data["updated"] = now()
+            self._write(system, data)
+
+    def check_export(self, system: str, report_id: str, result: dict[str, Any]) -> None:
+        """Keep the outcome of a check of the report's reply against a person's own export (wizard_task_compare)."""
+        with self._lock:
+            data = self.load(system)
+            report = _match(data["reports"], report_id)
+            if report is None:
+                raise MapError(f"No report '{report_id}' in the {system} map.")
+            report["export_check"] = clean(result)
+            report["updated"] = data["updated"] = now()
+            self._write(system, data)
 
     def keep_script(self, system: str, script: dict[str, Any]) -> None:
         """Keep a saved script in the map, replacing one of the same name: its steps, parameters and description (no
@@ -445,7 +477,12 @@ def render(data: dict[str, Any]) -> str:
                          + (f"; needs {item['requires']}" if item.get("requires") else ""))
         for item in report.get("requests") or []:
             lines.append(f"- Request {item.get('name')}: {item.get('method') or 'POST'} {item.get('url')}"
-                         + (" (verified)" if item.get("verified") else ""))
+                         + (f" (proven by Wizard {str(item['proven'].get('at', ''))[:10]})" if isinstance(item.get("proven"), dict)
+                            else " (verified, by Gemini's own account)" if item.get("verified") else ""))
+        if isinstance(report.get("export_check"), dict):
+            check = report["export_check"]
+            lines.append(f"- Checked against a person's own export on {str(check.get('at', ''))[:10]}: {check.get('verdict')} "
+                         f"({check.get('rows_matched', 0)} of {check.get('rows_compared', 0)} rows)")
         if report.get("script"):
             lines.append(f"- Saved script: {report['script']}")
         if report.get("notes"):

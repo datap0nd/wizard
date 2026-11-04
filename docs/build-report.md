@@ -3,7 +3,27 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-03 (latest) — GSCM: a report's Configuration is found on screen and read in one step
+## 2026-11-04 (latest) — Precise portal maps: read the code, Wizard proves, checked against the person's export
+
+The owner asked how GSCM can be mapped precisely, and whether Wizard reads it through the screen or directly; then
+"build it, DB4009 first" and "ensure that it doesnt have small limits" ([decision](decisions/2026-11-04-proven-maps.md)).
+- `W.nexacro.transactions()` and `W.nexacro.source()`: every data request a report's code can send, and any function
+  whole.
+- `portal_prove_request`: Wizard sends a request twice and keeps it as proven only when both answers are clean, alike in
+  shape and changed by the change; only it marks verified; a report is mapped only with a proven request
+  (`portal_map_save` ignores Gemini's `verified`, demotes to partial, never drops a proof). Each reply is evidence.
+- `portal_map_save` / `portal_map_route` refuse a sentence saying a report lacks a breakdown.
+- `wizard_task_compare`: a task's spreadsheet (now converted with its tables) against evidence, row by row and number by
+  number; the outcome is kept in the report's map entry (`export_check`).
+- Task `gscm-db4009-daily-sellout` (asks for the person's export): the code, the person's path, every Configuration
+  category, the proven ORG Sales request, the check against the export, the earlier claim corrected. The broad task
+  `gscm-report-options` now runs after it, skips DB4009, reads code first and proves with the new tool.
+- Limits raised: dataset and table columns (60–200 → 5,000; spreadsheets 60 → 5,000), evidence rows per portal read
+  (500 → 50,000), drop-down options listed (30 → 5,000), request bodies in the log and `W.requests()` (1,500 / 500 →
+  200,000 characters), map fields (6,000–20,000 → 50,000–200,000; views 30 → 300, requests 20 → 200), steps per call
+  30 → 60, saved scripts 60 → 500, repeating task runs 10 → 50.
+
+## 2026-11-03 — GSCM: a report's Configuration is found on screen and read in one step
 
 The first run of the task `gscm-report-options` on the work PC read the daily sell-out report's search panel, never found
 its Configuration button, concluded the report had no account breakdown, and wrote that into the map and the GSCM

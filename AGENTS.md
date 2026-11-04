@@ -86,7 +86,8 @@ around a precomputed result is withdrawn. Its credential, entitlement, DLP and h
   [docs/decisions/2026-10-30-portal-maps.md](docs/decisions/2026-10-30-portal-maps.md)): **Map** in Settings → Portals
   explores a portal in rounds, `portal_map` / `portal_map_save` read and add to the map on this PC,
   `portal_map_route` says what mapped reports are for (use_for, not_for, definitions) and can change nothing else in an
-  entry, and Wizard publishes
+  entry, `portal_prove_request` sends a report's request twice under the same rules and is the only thing that marks it
+  verified ([decision](docs/decisions/2026-11-04-proven-maps.md)), and Wizard publishes
   it to the knowledge-base repository with the write token the person entered on their own PC. Maps hold metadata only
   (no rows, secrets removed), and a company provisioning file never carries the write token. Tasks (owner decision,
   [docs/decisions/2026-10-31-tasks.md](docs/decisions/2026-10-31-tasks.md)) are instructions in the repository's

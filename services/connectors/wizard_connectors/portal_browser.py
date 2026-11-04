@@ -1149,7 +1149,7 @@ class PortalBrowser:
     def _finish_log(self) -> dict[str, Any]:
         assert self._log is not None
         shown = []
-        for item in [r for r in self._log.requests if r.resource != "document" or r.method != "GET"][-15:]:
+        for item in [r for r in self._log.requests if r.resource != "document" or r.method != "GET"][-40:]:
             preview = ""
             if item.response is not None and any(t in item.content_type for t in TEXT_TYPES):
                 try:
@@ -1158,7 +1158,7 @@ class PortalBrowser:
                     preview = "(body not available)"
             shown.append({"method": item.method, "url": portals.redact_url(item.url)[:400], "type": item.resource,
                           "status": item.status, "content_type": item.content_type, "size": item.size,
-                          "body": portals.redact_text(item.body, 1500) if item.body else None, "response": preview})
+                          "body": portals.redact_text(item.body, 200_000) if item.body else None, "response": preview})
         return {"requests": shown, "blocked": self._log.blocked[-20:], "dialogs": self._log.dialogs[-10:],
                 "console_errors": self._log.console[-10:]}
 

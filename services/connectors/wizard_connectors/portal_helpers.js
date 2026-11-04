@@ -167,8 +167,8 @@ const W = (() => {
   // Data requests this page made (kept in the page by Wizard). Each: {index, method, url, status, contentType, size,
   // body (first 500 characters), at}. W.request(i) is the full one; W.replay(i, change) sends it again.
   const store = () => (typeof window !== 'undefined' && window.__wizardRequests) || [];
-  W.requests = (pattern = null) => store().map((r, index) => ({index, method: r.method, url: r.url.slice(0, 400), status: r.status,
-    contentType: r.contentType, size: r.size, body: r.body ? String(r.body).slice(0, 500) : null, at: r.at, via: r.via}))
+  W.requests = (pattern = null) => store().map((r, index) => ({index, method: r.method, url: r.url.slice(0, 4000), status: r.status,
+    contentType: r.contentType, size: r.size, body: r.body ? String(r.body).slice(0, 200000) : null, at: r.at, via: r.via}))
     .filter(r => !pattern || (pattern instanceof RegExp ? pattern.test(r.url) : r.url.includes(pattern)));
   W.request = index => {
     const all = store();
@@ -381,12 +381,12 @@ const W = (() => {
         try { if (typeof c.getBindDataset === 'function' || c.binddataset) ds = W.nexacro.boundDataset(c); } catch (e) { /* none */ }
         if (ds && typeof ds.getRowCount === 'function') {
           out.push({path, component: String(c.name || c.id || ''), dataset: String(ds.name || ds.id || ''), rows: ds.getRowCount(),
-                    columns: W.nexacro.columns(ds).slice(0, 60)});
+                    columns: W.nexacro.columns(ds)});
         }
         for (const k of ['components', 'frames']) {
           let children; try { children = c[k]; } catch (e) { continue; }
           if (!children || typeof children.length !== 'number') continue;
-          for (let i = 0; i < children.length && i < 400; i++) {
+          for (let i = 0; i < children.length && i < 5000; i++) {
             try { const child = children[i]; visit(child, `${path}.${child.name || child.id || i}`, d + 1); } catch (e) { /* skip */ }
           }
         }
@@ -437,7 +437,7 @@ const W = (() => {
       const consider = (name, ds) => {
         if (!ds || typeof ds !== 'object' || typeof ds.getRowCount !== 'function' || seen.has(ds)) return;
         seen.add(ds);
-        out.push({name: String(ds.name || ds.id || name), rows: ds.getRowCount(), columns: W.nexacro.columns(ds).slice(0, 80)});
+        out.push({name: String(ds.name || ds.id || name), rows: ds.getRowCount(), columns: W.nexacro.columns(ds)});
       };
       for (const key of Object.keys(app)) { try { consider(key, app[key]); } catch (e) { /* a getter that throws */ } }
       try {
@@ -464,7 +464,7 @@ const W = (() => {
     // and its toolbar (MdiFrame: a report's Configuration button may sit there, not in the report form), the top bar and
     // pop-ups. Read from the page's own ids (component paths; a caption is the element with the ":text" suffix), so
     // each match has a selector a click step can use.
-    find: (pattern, {limit = 40} = {}) => {
+    find: (pattern, {limit = 1000} = {}) => {
       const re = pattern instanceof RegExp ? pattern : new RegExp(String(pattern).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
       const found = new Map();
       for (const el of document.querySelectorAll('[id]')) {
@@ -489,7 +489,7 @@ const W = (() => {
     // checkboxes, with their state) and every list it shows (a Grid, ListBox or tree bound to a Dataset: its rows,
     // which columns are check marks, which rows are ticked). target: a path or component; default the newest pop-up,
     // else the active report. Read it after each category you open: a dialog often shows one category's list at a time.
-    options: (target = null, {rows: maxRows = 300} = {}) => {
+    options: (target = null, {rows: maxRows = 20000} = {}) => {
       const popups = W.nexacro.popupFrames();
       let root = typeof target === 'string' ? W.nexacro.resolve(target) : target;
       let where = typeof target === 'string' ? target : target ? 'given component' : '';
@@ -501,7 +501,7 @@ const W = (() => {
       const flag = v => v === null || v === undefined || v === '' || [0, 1, true, false, '0', '1', 'Y', 'N', 'y', 'n', 'true', 'false'].includes(v);
       const ticked = v => [1, true, '1', 'Y', 'y', 'true'].includes(v);
       const visit = (c, path, d) => {
-        if (!c || typeof c !== 'object' || d > 16 || seen.has(c) || controls.length >= 400) return;
+        if (!c || typeof c !== 'object' || d > 20 || seen.has(c) || controls.length >= 5000) return;
         seen.add(c);
         const type = String(c._type_name || '');
         if (/Button|Tab|Radio|CheckBox|Static|Menu/i.test(type) && !/Frame|Form$/i.test(type)) {
@@ -531,7 +531,7 @@ const W = (() => {
         for (const k of ['components', 'frames', 'tabpages']) {
           let children; try { children = c[k]; } catch (e) { continue; }
           if (!children || typeof children.length !== 'number') continue;
-          for (let i = 0; i < children.length && i < 400; i++) {
+          for (let i = 0; i < children.length && i < 5000; i++) {
             try { const child = children[i]; visit(child, `${path}.${child.name || child.id || i}`, d + 1); } catch (e) { /* skip */ }
           }
         }
@@ -539,6 +539,100 @@ const W = (() => {
       };
       visit(root, String(root.name || root.id || where || 'root'), 0);
       return {where, popups_open: popups.length, controls, lists};
+    },
+    // Every function of a form, its child forms (divs, tabs) and the open pop-ups: [where, name, fn]. own: the form's own
+    // functions and its class's, not those every form inherits.
+    _functionsOf: (root, where) => {
+      const out = [], seen = new Set();
+      const visit = (c, path, d) => {
+        if (!c || typeof c !== 'object' || d > 10 || seen.has(c)) return;
+        seen.add(c);
+        const names = new Set();
+        let o = c;
+        for (let k = 0; o && k < 2 && o !== Object.prototype; k++) { try { Object.getOwnPropertyNames(o).forEach(n => names.add(n)); } catch (e) { /* none */ } o = Object.getPrototypeOf(o); }
+        for (const name of names) {
+          if (name === 'constructor' || name.startsWith('_')) continue;
+          let fn; try { fn = c[name]; } catch (e) { continue; }
+          if (typeof fn === 'function') out.push([path, name, fn]);
+        }
+        for (const k of ['components', 'tabpages']) {
+          let children; try { children = c[k]; } catch (e) { continue; }
+          if (!children || typeof children.length !== 'number') continue;
+          for (let i = 0; i < children.length && i < 5000; i++) {
+            try { const child = children[i]; if (child && child.form) visit(child.form, `${path}.${child.name || child.id || i}.form`, d + 1); } catch (e) { /* skip */ }
+          }
+        }
+      };
+      visit(root, where, 0);
+      return out;
+    },
+    // A function's full code, to read what it sends or does: W.nexacro.source('fn_search') looks in the active report,
+    // its child forms, the pop-ups, the top, left and toolbar forms and the application, in that order.
+    source: (name, where = null) => {
+      const places = where ? [[where, where === 'application' ? W.nexacro.app() : W.nexacro.resolve(where)]]
+        : [...W.nexacro.activeForms().map(p => [p, W.nexacro.resolve(p)]),
+           ...W.nexacro.popupFrames().map(f => [String(f.name || f.id || 'popup'), f.form || f]), ...W.nexacro.places()];
+      for (const [path, owner] of places) {
+        if (!owner) continue;
+        for (const [at, fname, fn] of W.nexacro._functionsOf(owner, path)) {
+          if (fname === name) { const text = String(fn); return {where: at, name, length: text.length, source: text}; }
+        }
+      }
+      throw new Error(`no function ${name}${where ? ' at ' + where : ''}: W.nexacro.transactions() lists the report's functions`);
+    },
+    // Every data request a report's own code can send, read from its functions instead of watching the screen: each call
+    // of transaction() (or a wrapper whose name says transaction, tran or service) with its arguments as written (service
+    // id, address, input and output datasets, extra arguments, callback), every address ending in .do in its code, and
+    // the application's wrappers, which say how an address is completed. Complete by construction: a request the screen
+    // never sent is listed too. Read the arguments' datasets (W.nexacro.read) for the parameters each request carries.
+    transactions: (formPath = null) => {
+      const roots = formPath ? [[formPath, W.nexacro.resolve(formPath)]]
+        : [...W.nexacro.activeForms().map(p => [p, W.nexacro.resolve(p)]),
+           ...W.nexacro.popupFrames().map(f => [String(f.name || f.id || 'popup'), f.form || f])];
+      if (!roots.some(([, r]) => r)) throw new Error('no report is open: open one first (W.nexacro.open)');
+      const split = text => {  // a call's arguments, at the top level only (quotes, brackets and braces kept whole)
+        const args = []; let depth = 0, quote = null, start = 0;
+        for (let i = 0; i < text.length; i++) {
+          const ch = text[i];
+          if (quote) { if (ch === '\\') { i++; continue; } if (ch === quote) quote = null; continue; }
+          if (ch === '"' || ch === "'" || ch === '`') { quote = ch; continue; }
+          if ('([{'.includes(ch)) depth++;
+          else if (')]}'.includes(ch)) { if (depth === 0) { args.push(text.slice(start, i).trim()); return {args, end: i}; } depth--; }
+          else if (ch === ',' && depth === 0) { args.push(text.slice(start, i).trim()); start = i + 1; }
+        }
+        return {args, end: text.length};
+      };
+      const unquote = a => (/^(["'`])[\s\S]*\1$/.test(a || '') ? a.slice(1, -1) : a);
+      const calls = [], addresses = new Set(), functions = [];
+      const caller = /\b((?:this|application|nexacro\.getApplication\(\))\s*\.\s*)?([A-Za-z_$][\w$]*(?:transaction|Transaction|tran|Tran|service|Service)[\w$]*|transaction)\s*\(/g;
+      for (const [root, owner] of roots) {
+        if (!owner) continue;
+        for (const [where, name, fn] of W.nexacro._functionsOf(owner, root)) {
+          const text = String(fn);
+          const sends = /transaction|\.do\b/.test(text);
+          functions.push({where, name, length: text.length, ...(sends ? {sends: true} : {})});
+          for (const m of text.matchAll(/["'`]([^"'`\s]*\.do)(?:\?[^"'`]*)?["'`]/g)) addresses.add(m[1]);
+          caller.lastIndex = 0;
+          let m;
+          while ((m = caller.exec(text)) && calls.length < 10000) {
+            if (/^function$/.test(m[2])) continue;
+            const {args} = split(text.slice(m.index + m[0].length));
+            // A call that sends: transaction() itself, or a wrapper given an address (a .do route, svc::name, a path).
+            if (args.length < 2 || (!/transaction/i.test(m[2]) && !/\.do\b|::|\//.test(args[1]))) continue;
+            calls.push({where, function: name, calls: m[2], service: unquote(args[0]), address: unquote(args[1]),
+                        input: unquote(args[2] || ''), output: unquote(args[3] || ''), arguments: unquote(args[4] || ''),
+                        callback: unquote(args[5] || ''), raw: (m[0] + args.join(', ') + ')').slice(0, 20000)});
+          }
+        }
+      }
+      const wrappers = [];
+      try {
+        for (const [where, name, fn] of W.nexacro._functionsOf(W.nexacro.app(), 'application')) {
+          if (/tran|service/i.test(name)) wrappers.push({where, name, source: String(fn).replace(/\s+/g, ' ').slice(0, 20000)});
+        }
+      } catch (e) { /* no application */ }
+      return {calls, addresses: [...addresses], wrappers,
+              functions: functions.filter(f => f.sends).concat(functions.filter(f => !f.sends))};
     },
     // Where the client keeps its own functions: the application, the top, left and toolbar forms, the report forms.
     places: () => {
@@ -600,7 +694,7 @@ const W = (() => {
     // The client's own functions (gfn_/fn_ by Nexacro convention): shortcuts such as opening a report by menu id. On
     // the application, the top, left and toolbar forms and the active report, with the start of each source to read
     // its parameters. pattern: a RegExp or text to choose other names.
-    functions: (pattern = /^(g|l|c)?fn_|^gfn|^fn[A-Z]/, limit = 150) => {
+    functions: (pattern = /^(g|l|c)?fn_|^gfn|^fn[A-Z]/, limit = 5000) => {
       const re = pattern instanceof RegExp ? pattern : new RegExp(String(pattern), 'i');
       const out = [];
       for (const [where, owner] of W.nexacro.places()) {
@@ -619,7 +713,7 @@ const W = (() => {
     },
     // A report form's inputs (filters, buttons, grids): type, name, caption, value, and a combo's options from its
     // inner Dataset as "code = label" (the first `options`, with the count). What a question needs to set filters.
-    inputs: (formPath = null, {options = 30} = {}) => {
+    inputs: (formPath = null, {options = 5000} = {}) => {
       const start = formPath || W.nexacro.activeForms()[0];
       const root = start ? W.nexacro.resolve(start) : null;
       if (!root) throw new Error(`no form at ${start || 'the active report'}; open a report first`);
@@ -627,7 +721,7 @@ const W = (() => {
       const kinds = /Combo|Calendar|Edit|TextArea|Radio|CheckBox|ListBox|Spin|Button|Grid|DateField|ListView/i;
       const get = (c, k) => { try { const g = c['get_' + k]; return typeof g === 'function' ? g.call(c) : c[k]; } catch (e) { return undefined; } };
       const visit = (c, path, d) => {
-        if (!c || typeof c !== 'object' || d > 14 || seen.has(c) || out.length >= 300) return;
+        if (!c || typeof c !== 'object' || d > 20 || seen.has(c) || out.length >= 5000) return;
         seen.add(c);
         const type = String(c._type_name || (c.constructor && c.constructor.name) || '');
         if (kinds.test(type) && !/Frame|Form$/i.test(type)) {
@@ -650,14 +744,14 @@ const W = (() => {
           }
           if (/Grid/i.test(type)) {
             const ds = W.nexacro.boundDataset(c);
-            if (ds) { item.dataset = String(ds.name || ds.id || ''); item.rows = ds.getRowCount(); item.columns = W.nexacro.columns(ds).slice(0, 80); }
+            if (ds) { item.dataset = String(ds.name || ds.id || ''); item.rows = ds.getRowCount(); item.columns = W.nexacro.columns(ds); }
           }
           out.push(item);
         }
         for (const k of ['components', 'frames']) {
           let children; try { children = c[k]; } catch (e) { continue; }
           if (!children || typeof children.length !== 'number') continue;
-          for (let i = 0; i < children.length && i < 400; i++) {
+          for (let i = 0; i < children.length && i < 5000; i++) {
             try { const child = children[i]; visit(child, `${path}.${child.name || child.id || i}`, d + 1); } catch (e) { /* skip */ }
           }
         }

@@ -58,7 +58,8 @@ Company portals
   Nexacro transactions, Superset's API) are faster and more exact than clicking through screens.
 - Wizard keeps a map of each portal it explored: menus, report ids, filters and their values, the data requests behind
   each report, and proven shortcuts. Within a portal, look in its map before its menu (portal_map with business
-  words): a mapped report is read in one portal_run, with its saved script or one request step. A report's use_for says
+  words): a mapped report is read in one portal_run, with its saved script or one request step. A request marked
+  proven was sent twice by Wizard itself; one only marked verified is an earlier run's own account: check its reply. A report's use_for says
   which questions it answers; its not_for names near misses and the report to use instead, so check it before you
   choose. A report's views list the options beyond its default view (the configuration gear's extra columns, groupings,
   measures): a breakdown missing from its default columns may be one of them. DB4009 Daily Sell-out has the account

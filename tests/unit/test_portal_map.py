@@ -151,10 +151,11 @@ def test_gemini_reads_the_map_first_and_adds_to_it(tmp_path: Path):
          "requests": [{"name": "search", "url": "/gscm/selectActual.do", "body": "SSV:utf-8\x1emarket:string={{market}}",
                        "params": ["market"], "verified": True}], "script": "actual-sales"}]}, context)
     assert mapped.ok and mapped.data["updated"] == ["as470"]
+    assert "saved as partial" in mapped.data["warning"], "mapped only once Wizard proved a request (portal_prove_request)"
     found = registry.execute("portal_map", {"system": "gscm", "find": "actual sales by market"}, context)
     assert found.ok and found.data["reports"][0]["requests"][0]["url"] == "/gscm/selectActual.do"
     todo = registry.execute("portal_map", {"system": "gscm", "todo": True}, context)
-    assert [r["id"] for r in todo.data["todo"]] == ["as480", "mt100"]
+    assert [r["id"] for r in todo.data["todo"]] == ["as480", "mt100", "as470"], "a partial report is still to finish"
     guide = registry.execute("portal_guide", {"system": "gscm"}, context)
     assert guide.ok and guide.data["map"]["reports"][0]["id"] == "as470" and "portal_map(find=" in guide.data["map"]["how_to_use"]
     assert "Read the map first" in guide.data["guide"] and "W.nexacro.functions()" in guide.data["guide"]
@@ -319,6 +320,7 @@ class Mapper:
     def __init__(self, stall: bool = False, hold: bool = False, signed_out: bool = False):
         self.stall, self.hold, self.signed_out = stall, hold, signed_out
         self.prompts: list[str] = []
+        self.maps: PortalMaps | None = None  # set by mapping_app: where a proof is kept
 
     def label(self) -> str:
         return "Mapping test runtime"
@@ -356,8 +358,14 @@ class Mapper:
             elif "This is round 1;" in request.prompt:
                 await tools.call("portal_map_save", {"system": "gscm", "overview": "A Nexacro client.", "reports": REPORTS})
             elif todo:
+                request = {"name": "search", "url": f"/gscm/{todo[0]['id']}.do", "body": "SSV:utf-8\x1eweek:string={{week}}",
+                           "params": ["week"]}
+                if self.maps is not None:  # what portal_prove_request keeps; it needs a browser, which this test has not
+                    self.maps.prove("gscm", todo[0]["id"], request, {"at": "2026-11-04T08:00:00", "first": {"week": "2026W40"},
+                                                                    "second": {"week": "2026W39"}})
                 await tools.call("portal_map_save", {"system": "gscm", "reports": [
-                    {"id": todo[0]["id"], "status": "mapped", "views": [], "use_for": [f"{todo[0]['name']} by market"]}]})
+                    {"id": todo[0]["id"], "status": "mapped", "views": [], "requests": [request],
+                     "use_for": [f"{todo[0]['name']} by market"]}]})
         await emit("text_delta", {"text": "Round done."})
 
 
@@ -365,7 +373,9 @@ def mapping_app(tmp_path: Path, runtime: Mapper) -> TestClient:
     settings = make_settings(tmp_path, WIZARD_PORTAL_GSCM_URL="https://gscm.corp.example.com/",
                              WIZARD_LOCAL_USER_EMAIL="owner@example.com")
     settings.install_mode = True
-    return TestClient(create_app(settings, runtime=runtime))
+    app = create_app(settings, runtime=runtime)
+    runtime.maps = app.state.manager.services.portal_maps
+    return TestClient(app)
 
 
 def wait_mapping(client: TestClient, done: Any, timeout: float = 20) -> dict[str, Any]:

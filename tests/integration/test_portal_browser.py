@@ -253,6 +253,26 @@ function openConfig() {
 </body></html>"""
 
 
+# A report whose own code sends its requests: a search through transaction(), a detail through the application's
+# wrapper, and a callback whose name says tran (it sends nothing). Read from the code, every request is listed, the
+# detail one too, which the screen never sent.
+CODE_PAGE = """<!doctype html><html><head><title>GSCM</title><script>
+const ds = (name, cols, rows) => ({name, getRowCount() { return rows.length; }, getColumn(r, c) { return rows[r][cols.indexOf(c)]; },
+  getColCount() { return cols.length; }, getColID(i) { return cols[i]; }});
+const ds_cond = ds('ds_cond', ['SUBSIDIARY', 'FROM_DT', 'TO_DT', 'ORGLEVEL'], [['AE,SA', '20261101', '20261102', 'ORGSALES']]);
+const form = {
+  ds_cond,
+  fn_search() { this.transaction("search", "svc::gscm30/sellout/dailysellout/list.do", "ds_cond=ds_cond", "ds_list=ds_list",
+                                 "menuId=DB4009 orgLevel=" + this.ds_cond.getColumn(0, "ORGLEVEL"), "fn_tranCallback"); },
+  fn_detail(code) { this.gfn_transaction('detail', '/gscm30/sellout/dailysellout/detail.do', 'ds_in=ds_cond', 'ds_detail=ds_detail', 'code=' + code, 'fn_tranCallback'); },
+  fn_tranCallback(svcId, errorCode, errorMsg) { if (errorCode < 0) alert(errorMsg); },
+};
+const APP = {mainframe: {VFrameSet: {WorkFrame0: {form}}},
+  gfn_transaction(svcId, url, inDs, outDs, args, callback) { return nexacro.getApplication().svcUrl + url; }, svcUrl: '/'};
+window.nexacro = {getApplication: () => APP};
+</script></head><body><div id="mainframe.VFrameSet.WorkFrame0.form.grd_list" style="width:300px;height:40px">grid</div></body></html>"""
+
+
 class Portal(SimpleHTTPRequestHandler):
     hits: list[str] = []
 
@@ -269,7 +289,8 @@ class Portal(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802 - http.server's name
         self.hits.append(f"GET {self.path}")
-        pages = {"/": GSCM_PAGE, "/asap": ASAP_PAGE, "/nexacro-boot": BOOT_PAGE, "/nexacro-config": CONFIG_PAGE, "/login": "<title>Sign in</title><input type=password>",
+        pages = {"/": GSCM_PAGE, "/asap": ASAP_PAGE, "/nexacro-boot": BOOT_PAGE, "/nexacro-config": CONFIG_PAGE,
+                 "/nexacro-code": CODE_PAGE, "/login": "<title>Sign in</title><input type=password>",
                  "/sso": "<title>Company</title><p>Single Sign On</p><input type=email>",
                  "/help": "<title>Help</title><p>Trouble with single sign-on? Call the desk.</p><input type=text>",
                  "/report": "<title>Report</title><table><tr><th>A</th></tr><tr><td>1</td></tr></table>",
@@ -290,6 +311,8 @@ class Portal(SimpleHTTPRequestHandler):
                 return
             folder = self.path.split("folderId=")[1]
             self.reply(json.dumps({"errorCode": 0, "data": json.dumps(MENU[folder])}), "application/json")
+        elif self.path.startswith("/svc/selectWeekly.do") and "week:string=BAD" in body:
+            self.reply("SSV:utf-8\x1eErrorCode:int=-1\x1fErrorMsg:string=Too much granularity\x1e\x1e", "text/plain")
         elif self.path.startswith("/svc/selectWeekly.do"):
             week = body.split("week:string=")[1].split("\x1f")[0]
             self.reply(f"SSV:utf-8\x1eErrorCode:int=0\x1fErrorMsg:string=OK\x1eDataset:ds_out\x1e_RowType_\x1fMARKET:STRING(8)"
@@ -986,4 +1009,64 @@ def test_a_reports_configuration_is_found_on_screen_and_read_in_one_step(setup):
     assert resolved == {"grid": True, "sales": ["pop-up or other", "pop-up or other"]}
     restored = call(setup, "portal_run", {"system": "gscm", "steps": [{"action": "goto", "url": "/", "reload": True}]})
     assert restored.ok
+
+
+def test_a_reports_requests_are_read_from_its_code(setup):
+    outcome = call(setup, "portal_run", {"system": "gscm", "steps": [
+        {"action": "goto", "url": "/nexacro-code", "reload": True},
+        {"action": "evaluate", "script": "return W.nexacro.transactions();"},
+        {"action": "evaluate", "script": "return W.nexacro.source('fn_search');"}]})
+    assert outcome.ok, outcome.error_message
+    found, source = (o["value"] for o in outcome.data["outputs"] if "value" in o)
+    calls = {c["service"]: c for c in found["calls"]}
+    assert set(calls) == {"search", "detail"}, "the callback named tran sends nothing"
+    assert calls["search"]["address"] == "svc::gscm30/sellout/dailysellout/list.do"
+    assert calls["search"]["input"] == "ds_cond=ds_cond" and calls["search"]["output"] == "ds_list=ds_list"
+    assert calls["search"]["arguments"].startswith("\"menuId=DB4009 orgLevel=\" + this.ds_cond.getColumn"), "written as in the code"
+    assert calls["detail"]["calls"] == "gfn_transaction", "a wrapper the screen never called is listed too"
+    assert found["addresses"] == ["svc::gscm30/sellout/dailysellout/list.do", "/gscm30/sellout/dailysellout/detail.do"]
+    assert found["wrappers"][0]["name"] == "gfn_transaction" and "svcUrl" in found["wrappers"][0]["source"]
+    assert source["where"] == "mainframe.VFrameSet.WorkFrame0.form" and "ORGLEVEL" in source["source"]
+    restored = call(setup, "portal_run", {"system": "gscm", "steps": [{"action": "goto", "url": "/", "reload": True}]})
+    assert restored.ok
+
+
+def test_wizard_proves_a_request_itself_or_says_why_not(setup, tmp_path):
+    from wizard_connectors.portal_map import PortalMaps
+
+    services, _ = setup
+    services.portal_maps = PortalMaps(tmp_path / "maps", names={"gscm": "GSCM"})
+    registry = build_registry(services)
+    recorder = MemoryRecorder()
+    identity = Identity(id="owner", email="owner@example.com", name="Owner", role="Owner",
+                        entitlements={"gscm": SystemRights(reports=["*"], markets=["*"])})
+    context = ToolContext(identity=identity, run_id="run_p", recorder=recorder, services=services)
+    request = {"name": "weekly", "url": "/svc/selectWeekly.do", "method": "POST",
+               "body": "SSV:utf-8\x1eweek:string={{week}}\x1f\x1e", "headers": {"Content-Type": "text/plain"}, "params": ["week"]}
+    proved = registry.execute("portal_prove_request", {"system": "gscm", "report": "as480", "request": request,
+                                                        "first": [{"name": "week", "value": "2026W40"}],
+                                                        "second": [{"name": "week", "value": "2026W39"}]}, context)
+    assert proved.ok and proved.data["proven"] is True, proved.data
+    assert proved.data["replies"][0]["datasets"] == [{"name": "ds_out", "columns": ["MARKET", "WEEK", "QTY"], "rows": 2}]
+    kept = services.portal_maps.report("gscm", "as480")
+    assert kept["status"] == "partial" and kept["requests"][0]["verified"] is True
+    assert kept["requests"][0]["proven"]["first"] == {"week": "2026W40"}
+    assert recorder.evidence[0]["rows"] == [["AE", "2026W40", 10], ["SA", "2026W40", None]], "the first reply is evidence"
+
+    refused = registry.execute("portal_prove_request", {"system": "gscm", "report": "as480", "request": request,
+                                                         "first": [{"name": "week", "value": "BAD"}],
+                                                         "second": [{"name": "week", "value": "2026W39"}]}, context)
+    assert refused.ok and refused.data["proven"] is False
+    assert any("refused the first request: -1 Too much granularity" in p for p in refused.data["problems"])
+    fixed = {**request, "body": "SSV:utf-8\x1eweek:string=2026W40\x1f\x1e"}
+    same = registry.execute("portal_prove_request", {"system": "gscm", "report": "as480", "request": {**fixed, "name": "fixed"},
+                                                      "first": [{"name": "week", "value": "1"}],
+                                                      "second": [{"name": "week", "value": "2"}]}, context)
+    assert same.data["proven"] is False and any("did not change the rows" in p for p in same.data["problems"])
+    assert [q["name"] for q in services.portal_maps.report("gscm", "as480")["requests"]] == ["weekly"], "only proofs are kept"
+    missing = registry.execute("portal_prove_request", {"system": "gscm", "report": "as480", "request": request,
+                                                         "first": [{"name": "day", "value": "1"}],
+                                                         "second": [{"name": "day", "value": "2"}]}, context)
+    assert missing.error_code == "invalid_arguments" and "No value for week" in missing.error_message
+    services.portal_maps = None
 

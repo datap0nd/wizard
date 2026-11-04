@@ -43,7 +43,7 @@ from .config import Settings
 LISTING = "https://api.github.com/repos/datap0nd/wizard/contents/tasks?ref=main"
 TASK_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,80}$")
 MAX_RUNS = 5  # a task that repeats until done runs at most this many times, unless it says otherwise ...
-MAX_RUNS_CAP = 10  # ... and never more than this
+MAX_RUNS_CAP = 50  # ... and never more than this
 REFRESH_SECONDS = 300  # GitHub allows 60 unauthenticated requests an hour; an unchanged folder answers 304 for free
 
 
@@ -126,7 +126,8 @@ class Documents:
 
     def convert(self, source: Path, out: Path) -> dict[str, Any]:
         lines, error = self._lines(["convert", str(source), "--out", str(out), "--json", "--slide-images", "none",
-                                    "--office", self.settings.attachment_office], min(self.settings.attachment_timeout_s, TOOL_S))
+                                    "--office", self.settings.attachment_office, "--tables"],  # every row, for comparisons
+                                   min(self.settings.attachment_timeout_s, TOOL_S))
         return lines[-1] if lines else {"status": "failed", "note": error}
 
     def design(self, sources: list[Path]) -> list[dict[str, Any]]:

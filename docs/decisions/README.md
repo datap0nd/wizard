@@ -37,3 +37,4 @@ Evidence**. A decision that changes repository rules also updates [AGENTS.md](..
 - [2026-11-02 The company's source order, a test for "enough", and the schemas Wizard may query](2026-11-02-source-order.md)
 - [2026-11-03 Wizard asks the person before a long route](2026-11-03-ask-the-person.md)
 - [2026-11-03 NERP is its views, read live on their own server](2026-11-03-nerp-views.md)
+- [2026-11-04 Wizard proves a portal map; Gemini's word does not](2026-11-04-proven-maps.md)

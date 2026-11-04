@@ -258,6 +258,18 @@ class TaskFiles:
             return result, ""
         return result, (folder / "converted" / "text.md").read_text(encoding="utf-8")
 
+    def tables(self, item: TaskFile) -> tuple[Path, list[dict[str, Any]]]:
+        """A spreadsheet's (or CSV's) every row, as the tables the converter writes (attachment_tables reads them): the
+        folder they are in and their index. A file converted before tables were kept is converted again."""
+        from .attachment_tables import index
+        folder = self._cache(item)
+        found = index(folder)
+        if not found and item.kind == "spreadsheet":
+            (folder / "converted.json").unlink(missing_ok=True)
+            self.text(item)
+            found = index(folder)
+        return folder, found
+
     def design(self, items: list[TaskFile]) -> list[dict[str, Any]]:
         """Each presentation's design profile (read once, then kept), in the order given."""
         results: dict[str, dict[str, Any]] = {}

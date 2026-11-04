@@ -53,7 +53,7 @@ WORK_LINES = 15  # steps of an earlier answer a follow-up prompt carries: what w
 # until nothing is left to map, a round makes no progress twice, the person stops it, or EXPLORE_ROUNDS have run.
 EXPLORE_TOOL_CALLS = 80
 EXPLORE_ROUNDS = 30
-MAP_WRITES = ("portal_map_save", "portal_map_route")  # still allowed once a round's budget is used, to save its work
+MAP_WRITES = ("portal_map_save", "portal_map_route", "portal_prove_request")  # allowed once a round's budget is used
 # Runs that go on in the background beside a question, one of each per person, and what a second one is told.
 LANES = {"explore": "Wizard is already mapping a portal for you. Stop it in Settings → Portals first.",
          "task": "A task is already running for you. Wait for it or stop it in its conversation."}
@@ -773,7 +773,8 @@ class RunManager:
         if outcome.ok and "schedule" in outcome.data:
             schedule = next(s for s in self.store.schedules(run.conversation_id, run.id) if s["label"] == outcome.data["schedule"])
             await self.emit(run, "schedule_proposed", {"schedule": public_schedule(schedule)})
-        if outcome.ok and (name in MAP_WRITES or (name == "portal_save_script" and outcome.data.get("in_map"))):
+        if outcome.ok and ((name in MAP_WRITES and outcome.data.get("proven", True)) or
+                           (name == "portal_save_script" and outcome.data.get("in_map"))):
             run.maps_changed.add(str(outcome.data.get("system")))
         if outcome.ok and name == "wizard_kb_save_notes":
             run.kb_saves += 1

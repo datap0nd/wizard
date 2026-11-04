@@ -30,7 +30,10 @@ SYSTEM = r"^[a-z][a-z0-9]{1,15}$"
 SCRIPT_NAME = r"^[a-z0-9][a-z0-9-]{1,59}$"
 MAX_VALUE_CHARS = 60_000
 MAX_TABLE_CHARS = 120_000
-MAX_SAVED = 60
+MAX_SAVED = 500
+# Rows of one portal read kept as evidence: enough for a check against a person's own export row by row, and for Check
+# my data. What Gemini sees of them is bounded separately (max_rows, MAX_TABLE_CHARS).
+MAX_EVIDENCE_ROWS = 50_000
 
 
 class Args(BaseModel):
@@ -85,9 +88,9 @@ class Param(Args):
 
 class RunArgs(Args):
     system: str = Field(pattern=SYSTEM, description="The portal: asap, gscm or bdp (portal_guide lists the ones this person has).")
-    steps: list[Step] | None = Field(default=None, max_length=30, description="The steps to run, in order. Omit when running a saved script.")
+    steps: list[Step] | None = Field(default=None, max_length=60, description="The steps to run, in order. Omit when running a saved script.")
     script: str | None = Field(default=None, pattern=SCRIPT_NAME, description="Run a script saved earlier with portal_save_script instead of steps.")
-    params: list[Param] = Field(default_factory=list, max_length=20, description="Values for the script's parameters (P.name / {{name}}).")
+    params: list[Param] = Field(default_factory=list, max_length=60, description="Values for the script's parameters (P.name / {{name}}).")
     title: str | None = Field(default=None, max_length=160, description="What this reads, in business words, e.g. 'GSCM weekly sell-out by market, W40'. Names the evidence.")
     max_rows: int = Field(default=200, ge=1, le=500, description="Rows of each table returned to you (all rows are counted).")
 
@@ -100,8 +103,8 @@ class SaveArgs(Args):
     system: str = Field(pattern=SYSTEM)
     name: str = Field(pattern=SCRIPT_NAME, description="Short kebab-case name, e.g. weekly-sellout-by-market.")
     description: str = Field(min_length=10, max_length=600, description="What it returns and when to use it.")
-    steps: list[Step] = Field(min_length=1, max_length=30)
-    params: list[Param] = Field(default_factory=list, max_length=20, description="Parameters with an example value each.")
+    steps: list[Step] = Field(min_length=1, max_length=60)
+    params: list[Param] = Field(default_factory=list, max_length=60, description="Parameters with an example value each.")
 
 
 class Answer(Args):
@@ -138,14 +141,14 @@ MAP_ID = r"^[a-z0-9][a-z0-9_.-]{0,79}$"
 class MapTopic(Args):
     id: str = Field(pattern=MAP_ID, description="Short stable id, e.g. open-report-by-menu-id, transactions, weeks.")
     title: str = Field(min_length=3, max_length=160)
-    text: str = Field(min_length=10, max_length=20_000, description="What a later script needs: how it works, the exact calls, selectors, routes and formats, and the steps or JavaScript that proved it.")
+    text: str = Field(min_length=10, max_length=200_000, description="What a later script needs: how it works, the exact calls, selectors, routes and formats, and the steps or JavaScript that proved it.")
 
 
 class MapFilter(Args):
     name: str = Field(max_length=160, description="The filter's label on screen, e.g. Week, Market, Plan version.")
     component: str | None = Field(default=None, max_length=400, description="Its component path or selector.")
     kind: str | None = Field(default=None, max_length=60, description="Combo, MultiCombo, Calendar, Edit, Radio, CheckBox, popup...")
-    values: str | None = Field(default=None, max_length=6000, description="Its options (code = label, at most about 100) or format (e.g. YYYYWW, Sunday-start weeks), and where the options come from (an inner dataset, a lookup request).")
+    values: str | None = Field(default=None, max_length=200_000, description="Its options (code = label, every one of them) or format (e.g. YYYYWW, Sunday-start weeks), and where the options come from (an inner dataset, a lookup request).")
     default: str | None = Field(default=None, max_length=400)
     required: bool | None = None
     param: str | None = Field(default=None, max_length=120, description="The request parameter or body field this filter sets.")
@@ -155,8 +158,8 @@ class MapFilter(Args):
 class MapData(Args):
     dataset: str = Field(max_length=160, description="The dataset name, e.g. ds_list.")
     component: str | None = Field(default=None, max_length=400, description="The grid (or chart) showing it.")
-    columns: list[str] = Field(default_factory=list, max_length=300)
-    labels: str | None = Field(default=None, max_length=6000, description="Column ids with their screen headers and units, e.g. QTY = Sell-out units.")
+    columns: list[str] = Field(default_factory=list, max_length=5000)
+    labels: str | None = Field(default=None, max_length=200_000, description="Column ids with their screen headers and units, e.g. QTY = Sell-out units.")
     rows_seen: int | None = Field(default=None, ge=0)
     notes: str | None = Field(default=None, max_length=2000)
 
@@ -165,11 +168,11 @@ class MapRequest(Args):
     name: str = Field(max_length=120, description="What it does, e.g. search, combo-markets.")
     method: str = Field(default="POST", max_length=10)
     url: str = Field(max_length=2000, description="The route, as a path on the portal (e.g. /gscm/xyz/selectList.do).")
-    body: str | None = Field(default=None, max_length=60_000, description="The body with the filter values as {{param}} placeholders, otherwise exactly as captured.")
+    body: str | None = Field(default=None, max_length=200_000, description="The body with the filter values as {{param}} placeholders, otherwise exactly as captured.")
     headers: dict[str, str] | None = Field(default=None, description="Headers it needs (Content-Type...).")
     params: list[str] = Field(default_factory=list, max_length=40, description="The {{param}} names in url and body, each matching a filter's param.")
     reply: str | None = Field(default=None, max_length=2000, description="What comes back: dataset names, columns, paging.")
-    verified: bool = Field(default=False, description="True only when you sent it again with a changed filter and the reply matched what the screen shows.")
+    verified: bool = Field(default=False, description="Ignored here: only portal_prove_request marks a request verified, after Wizard itself sent it twice.")
     notes: str | None = Field(default=None, max_length=2000)
 
 
@@ -178,10 +181,10 @@ class MapView(Args):
     component: str | None = Field(default=None, max_length=400, description="How to reach it: the control's component path, and the dialog it opens.")
     path: str | None = Field(default=None, max_length=600, description="The clicks from the open report to this choice, with the labels exactly as the screen shows them, e.g. 'Configuration > Sales > Sales > ORG Sales, then Apply'.")
     requires: str | None = Field(default=None, max_length=2000, description="What must be set before the choice works, and what the portal says otherwise, e.g. 'subsidiaries chosen one by one in the search area (all of them is fine; a region such as Middle East is refused: \"cannot select so much granularity\")'.")
-    options: str | None = Field(default=None, max_length=8000, description="Every choice it offers (each selectable column, grouping, measure...), the default ones marked, e.g. 'OrgSales (account), Country, Model (default off); Region (default on)'.")
-    columns: list[str] = Field(default_factory=list, max_length=200, description="The column ids the non-default choices add to the dataset, e.g. orgsales.")
-    effect: str | None = Field(default=None, max_length=3000, description="What choosing it changes, as proved: a new request parameter (name and values), another dataset or route, or only columns the dataset already had; and whether the choice stays saved for the person.")
-    how: str | None = Field(default=None, max_length=4000, description="The proven steps or request that read the report with these choices (e.g. open the gear, tick OrgSales, Apply, search; or the request with its parameter).")
+    options: str | None = Field(default=None, max_length=200_000, description="Every choice it offers (each selectable column, grouping, measure...), the default ones marked, e.g. 'OrgSales (account), Country, Model (default off); Region (default on)'.")
+    columns: list[str] = Field(default_factory=list, max_length=5000, description="The column ids the non-default choices add to the dataset, e.g. orgsales.")
+    effect: str | None = Field(default=None, max_length=50_000, description="What choosing it changes, as proved: a new request parameter (name and values), another dataset or route, or only columns the dataset already had; and whether the choice stays saved for the person.")
+    how: str | None = Field(default=None, max_length=50_000, description="The proven steps or request that read the report with these choices (e.g. open the gear, tick OrgSales, Apply, search; or the request with its parameter).")
     notes: str | None = Field(default=None, max_length=2000)
 
 
@@ -208,18 +211,26 @@ class MapReport(MapRouting):
     status: Literal["todo", "mapped", "partial", "failed", "skipped"] | None = Field(default=None, description="todo: listed, not mapped yet. mapped: open, filters, data, every option beyond the default view (views) and a proven fast route are known. partial: some of it. failed / skipped: say why in notes.")
     summary: str | None = Field(default=None, max_length=3000, description="What the report shows in business words: measures, grain, period, units.")
     open: str | None = Field(default=None, max_length=6000, description="The fastest proven way to open it (a call, steps or JavaScript), and how to tell it has loaded. In GSCM, one evaluate step without a goto: await W.nexacro.open('<the client's open function>', '<menu id>').")
-    filters: list[MapFilter] | None = Field(default=None, max_length=60)
-    data: list[MapData] | None = Field(default=None, max_length=30)
-    views: list[MapView] | None = Field(default=None, max_length=30, description="Every option beyond the default view: the configuration gear's column chooser, view, grouping, measure and unit switches, with every choice and what it adds. An empty list says the report has none (explored); leaving it out means it was not explored yet.")
-    requests: list[MapRequest] | None = Field(default=None, max_length=20)
+    filters: list[MapFilter] | None = Field(default=None, max_length=300)
+    data: list[MapData] | None = Field(default=None, max_length=200)
+    views: list[MapView] | None = Field(default=None, max_length=300, description="Every option beyond the default view: the configuration gear's column chooser, view, grouping, measure and unit switches, with every choice and what it adds. An empty list says the report has none (explored); leaving it out means it was not explored yet.")
+    requests: list[MapRequest] | None = Field(default=None, max_length=200)
     script: str | None = Field(default=None, pattern=SCRIPT_NAME, description="A saved script (portal_save_script) that reads it with parameters.")
-    notes: str | None = Field(default=None, max_length=6000, description="Pitfalls: waits, popups, paging, limits, why it failed.")
+    notes: str | None = Field(default=None, max_length=50_000, description="Pitfalls: waits, popups, paging, limits, why it failed.")
 
 
 class MapRoute(MapRouting):
     id: str = Field(pattern=MAP_ID, description="The id of a report already in the map.")
     summary: str | None = Field(default=None, max_length=3000, description="What the report shows in business words: measures, grain, period, units. Kept only when the report has no summary yet.")
     routing_note: str | None = Field(default=None, max_length=600, description="Only when the map says too little to tell what the report is for: what is missing.")
+
+
+class ProveArgs(Args):
+    system: str = Field(pattern=SYSTEM, description="The portal: asap, gscm or bdp.")
+    report: str = Field(pattern=MAP_ID, description="The report's id in the map, e.g. db4009.")
+    request: MapRequest = Field(description="The data request as you will keep it: url and body with {{param}} placeholders for its filters, method, headers, params.")
+    first: list[Param] = Field(min_length=1, max_length=60, description="Values for every {{param}}: the ones the screen used (or the person's own export).")
+    second: list[Param] = Field(min_length=1, max_length=60, description="The same values with one changed, e.g. the date one day earlier or another subsidiary.")
 
 
 class MapRouteArgs(Args):
@@ -239,7 +250,7 @@ class MapArgs(Args):
 class MapSaveArgs(Args):
     system: str = Field(pattern=SYSTEM)
     overview: str | None = Field(default=None, max_length=30_000, description="How the portal works as a whole (replaces the old overview): the client, frames, sign-in and session, how menus and reports open, the data request format, waits and popups.")
-    topics: list[MapTopic] = Field(default_factory=list, max_length=30, description="Technical details and shortcuts, added or updated by id.")
+    topics: list[MapTopic] = Field(default_factory=list, max_length=100, description="Technical details and shortcuts, added or updated by id.")
     reports: list[MapReport] = Field(default_factory=list, max_length=300, description="Reports added or updated by id; only the fields you give change.")
     remove: list[str] = Field(default_factory=list, max_length=100, description="Report ids to drop (duplicates, entries that are not reports).")
     note: str | None = Field(default=None, max_length=600, description="One line for the map's log: what this save adds.")
@@ -427,7 +438,7 @@ def run(ctx: ToolContext, args: RunArgs) -> dict[str, Any]:
 
 def _record(ctx: ToolContext, portal: portals.Portal, args: RunArgs, steps: list[dict[str, Any]], output: dict[str, Any],
             page: dict[str, Any], columns: list[str], rows: list[list[Any]], total: int, retrieved: str) -> str:
-    kept = rows[:500]
+    kept = rows[:MAX_EVIDENCE_ROWS]
     request = {"steps": steps, "script_name": args.script, "params": {p.name: p.value for p in args.params},
                "page": page.get("url"), "page_title": page.get("title"), "step": output["step"]}
     digest = portals.digest({"request": request, "rows": kept})
@@ -557,21 +568,96 @@ def _check_definitions(ctx: ToolContext, reports: list[MapReport] | list[MapRout
                                         "wizard_lookup_definitions or wizard_browse_knowledge, or leave definitions out.")
 
 
+# A sentence saying a report lacks something: refused in the map (owner's task run of 3 Nov 2026 wrote that the daily
+# sell-out report had no account breakdown, which it has three levels deep in its Configuration). What was not found
+# is unknown; a sentence that says what it needs ("only after", "until") is a description, not a claim of absence.
+ABSENCE = re.compile(r"\b(does not|doesn't|do not|don't|cannot|can't|can not|has no|have no|lacks?|without|missing|"
+                     r"no)\b[^.;\n]{0,60}?\b(breakdown|dimension|account|operator|customer|retailer|carrier|orgsales|"
+                     r"org sales)s?\b", re.IGNORECASE)
+# A sentence that says what a choice needs, what was not found yet, or how rows look describes; it claims no absence.
+CONDITIONAL = re.compile(r"\b(until|unless|only (when|after|if|once)|before|first|by default|default view|not yet|"
+                         r"found yet|rows?)\b", re.IGNORECASE)
+
+
+def _absence_claims(value: Any) -> list[str]:
+    """Sentences in a report's map entry that say it lacks a breakdown."""
+    found: list[str] = []
+
+    def walk(node: Any) -> None:
+        if isinstance(node, str):
+            for sentence in re.split(r"(?<=[.;!?])\s+|\n", node):
+                if ABSENCE.search(sentence) and not CONDITIONAL.search(sentence):
+                    found.append(sentence.strip()[:200])
+        elif isinstance(node, dict):
+            for key, child in node.items():
+                if key not in ("url", "body", "headers", "open", "script", "id", "menu_id", "path", "requests", "requires"):
+                    walk(child)
+        elif isinstance(node, list):
+            for child in node:
+                walk(child)
+
+    walk(value)
+    return found
+
+
+def _refuse_absence(reports: list[dict[str, Any]]) -> None:
+    claims = [f"{r['id']}: \"{c}\"" for r in reports for c in _absence_claims(r)]
+    if claims:
+        raise ToolError("unproven_absence",
+                        "The map does not keep that a report lacks a breakdown: a choice nobody found is unknown, not "
+                        "absent (a report's Configuration can hold it several levels deep). Write what you looked at and "
+                        "did not find yet (\"no account found yet in Configuration > Sales after opening every group\"), "
+                        "or leave it out. Refused: " + "; ".join(claims[:5]))
+
+
+def _unproven(ctx: ToolContext, system: str, reports: list[dict[str, Any]]) -> list[str]:
+    """Keep proof Wizard's own: a request keeps verified only when it is the one portal_prove_request proved; a report
+    is mapped only with a proven request (else it is saved as partial). Returns the warnings."""
+    maps = _maps(ctx)
+    warnings = []
+    for report in reports:
+        proven = {(q.get("url"), q.get("method") or "POST", q.get("body")): q for q in maps.proven(system, report["id"])}
+        requests = report.get("requests")
+        if requests is not None:
+            kept = []
+            for request in requests:
+                key = (request.get("url"), request.get("method") or "POST", request.get("body"))
+                if key in proven:
+                    kept.append({**request, "verified": True, "proven": proven[key]["proven"]})
+                else:
+                    if request.get("verified"):
+                        warnings.append(f"{report['id']}: request {request.get('name')} kept as not verified: prove it "
+                                        "with portal_prove_request")
+                    kept.append({**request, "verified": False})
+            # Proven requests stay unless they are given again: a save never drops Wizard's proof.
+            given = {(q.get("url"), q.get("method") or "POST", q.get("body")) for q in kept}
+            kept += [q for key, q in proven.items() if key not in given]
+            report["requests"] = kept
+        if report.get("status") == "mapped" and not (proven or any(q.get("proven") for q in report.get("requests") or [])):
+            report["status"] = "partial"
+            warnings.append(f"{report['id']}: saved as partial: a report is mapped once Wizard proved one of its data "
+                            "requests (portal_prove_request)")
+    return warnings
+
+
 def save_map(ctx: ToolContext, args: MapSaveArgs) -> dict[str, Any]:
     portal = _portal(ctx, args.system)
     if args.overview is None and not (args.topics or args.reports or args.remove):
         raise ToolError("invalid_arguments", "Give an overview, topics, reports or report ids to remove.")
     _check_definitions(ctx, args.reports)
+    reports = [r.model_dump(exclude_none=True) for r in args.reports]
+    _refuse_absence(reports)
+    proof_warnings = _unproven(ctx, portal.id, reports)
     try:
         result = _maps(ctx).save(portal.id, overview=args.overview, topics=[t.model_dump() for t in args.topics],
-                                 reports=[r.model_dump(exclude_none=True) for r in args.reports], remove=args.remove,
-                                 note=args.note)
+                                 reports=reports, remove=args.remove, note=args.note)
     except portal_map.MapError as error:
         raise ToolError("map_full", str(error)) from None
     unsaved = sorted({r.script for r in args.reports if r.script and not _script_known(ctx, portal.id, r.script)})
+    warnings = proof_warnings + ([f"Not saved as scripts yet: {', '.join(unsaved)}. Save each with portal_save_script "
+                                  "under that name, or the report names a script no PC can run."] if unsaved else [])
     return {"system": portal.id, **result,
-            **({"warning": f"Not saved as scripts yet: {', '.join(unsaved)}. Save each with portal_save_script under that "
-                           "name, or the report names a script no PC can run."} if unsaved else {}),
+            **({"warning": " ".join(warnings)} if warnings else {}),
             "note": f"Saved in the {portal.name} map on this PC; Wizard publishes it to the knowledge base after this run "
                     "when this PC has the knowledge base's write token."}
 
@@ -579,6 +665,7 @@ def save_map(ctx: ToolContext, args: MapSaveArgs) -> dict[str, Any]:
 def route_map(ctx: ToolContext, args: MapRouteArgs) -> dict[str, Any]:
     portal = _portal(ctx, args.system)
     _check_definitions(ctx, args.reports)
+    _refuse_absence([r.model_dump(exclude_none=True) for r in args.reports])
     try:
         result = _maps(ctx).route(portal.id, [r.model_dump(exclude_none=True) for r in args.reports], note=args.note)
     except portal_map.MapError as error:
@@ -586,6 +673,112 @@ def route_map(ctx: ToolContext, args: MapRouteArgs) -> dict[str, Any]:
     return {"system": portal.id, **result,
             "note": "Only the routing changed: use_for, not_for, definitions, and a summary where there was none."
                     + (" These kept their own summary: " + ", ".join(result["summary_kept"]) + "." if result["summary_kept"] else "")}
+
+
+# A request step's reply, summed up for a proof: every dataset with its columns and row count, the portal's own error
+# code and message, and the biggest dataset's rows (kept as evidence, to cite and to check against an export).
+PROOF_SCRIPT = """
+const d = (R.data && typeof R.data === 'object') ? R.data : {};
+const p = d.parameters || {};
+const sets = {};
+if (d.datasets) for (const [n, t] of Object.entries(d.datasets)) sets[n] = t;
+else {
+  const src = d.json && typeof d.json === 'object' ? d.json : d;
+  const found = Array.isArray(src) ? [['rows', src]] : Object.entries(src);
+  for (const [k, v] of found) if (Array.isArray(v) && v.length && v[0] && typeof v[0] === 'object') {
+    const cols = Object.keys(v[0]); sets[k] = {columns: cols, rows: v.map(o => cols.map(c => o[c]))}; }
+}
+const name = c => (typeof c === 'string' ? c : (c && (c.id || c.name || c.key)) || String(c));
+const summary = Object.entries(sets).map(([n, t]) => ({name: n, columns: (t.columns || []).map(name), rows: (t.rows || []).length}));
+const big = summary.slice().sort((a, b) => b.rows - a.rows)[0];
+return {status: R.status, error_code: p.ErrorCode === undefined ? null : p.ErrorCode, error_msg: p.ErrorMsg || null,
+        datasets: summary, dataset: big ? big.name : null, columns: big ? big.columns : [],
+        rows: big ? sets[big.name].rows : [], total_rows: big ? big.rows : 0};
+"""
+
+
+def prove_request(ctx: ToolContext, args: ProveArgs) -> dict[str, Any]:
+    """Wizard itself sends the request twice, with the values given and with one changed, and keeps it as proven only
+    when both answers are clean and alike in shape (the same datasets and columns) and the changed value changed the
+    rows. Gemini's own account of a request never marks it verified."""
+    portal = _portal(ctx, args.system)
+    maps = _maps(ctx)
+    template = args.request.model_dump(exclude_none=True)
+    template.pop("verified", None)
+    first, second = ({p.name: p.value for p in values} for values in (args.first, args.second))
+    if first == second:
+        raise ToolError("invalid_arguments", "first and second must differ in at least one value.")
+    steps = []
+    for values in (first, second):
+        url, body = _fill(template["url"], values), _fill(template.get("body") or "", values) or None
+        left = sorted(set(re.findall(r"\{\{([a-z][a-z0-9_]{0,39})\}\}", f"{url} {body or ''}")))
+        if left:
+            raise ToolError("invalid_arguments", f"No value for {', '.join(left)}: give it in first and second.")
+        step = {"action": "request", "url": url, "method": template.get("method") or ("POST" if body else "GET"),
+                "script": PROOF_SCRIPT, "timeout_ms": 120_000}
+        if body:
+            step["body"] = body
+        if template.get("headers"):
+            step["headers"] = template["headers"]
+        steps.append(step)
+    browser = ctx.services.portals.for_user(ctx.identity.id)  # type: ignore[union-attr]
+    try:
+        result = browser.execute(portal, steps, {})
+    except PortalError as error:
+        raise ToolError(error.code, error.message) from None
+    replies = [o.get("value") for o in result.get("outputs", [])]
+    problems = []
+    if "stopped" in result or len(replies) < 2 or not all(isinstance(r, dict) for r in replies):
+        problems.append(str((result.get("stopped") or {}).get("message") or "a request did not answer"))
+    else:
+        for label, reply in zip(("first", "second"), replies, strict=True):
+            if reply.get("status") != 200:
+                problems.append(f"the {label} reply's status is {reply.get('status')}")
+            try:
+                failed = reply.get("error_code") is not None and int(reply["error_code"]) < 0
+            except (TypeError, ValueError):
+                failed = False
+            if failed:
+                problems.append(f"the portal refused the {label} request: {reply.get('error_code')} {reply.get('error_msg') or ''}".strip())
+        shapes = [[(d["name"], tuple(d["columns"])) for d in r.get("datasets") or []] for r in replies]
+        if not problems and shapes[0] != shapes[1]:
+            problems.append("the two replies hold different datasets or columns")
+        if not problems and not replies[0].get("total_rows"):
+            problems.append("the first reply has no rows: use values that have data (the ones the screen showed)")
+        if not problems and portals.digest(replies[0].get("rows")) == portals.digest(replies[1].get("rows")):
+            problems.append("the changed value did not change the rows: it may not be the filter, or both values hold the "
+                            "same data")
+    retrieved = ctx.services.now().isoformat()
+    evidence = []
+    run_args = RunArgs(system=portal.id, title=f"{args.report}: {template.get('name')}")
+    for index, reply in enumerate(replies):
+        if isinstance(reply, dict) and reply.get("columns"):
+            columns = [str(c) for c in reply["columns"]][:portals.MAX_TABLE_COLUMNS]
+            rows = portals.redact_rows(columns, [[portals.plain_cell(c) for c in (row[:len(columns)] if isinstance(row, list) else [])]
+                                                 for row in reply.get("rows") or []])
+            output = {"step": index + 1, "action": "request"}
+            evidence.append(_record(ctx, portal, run_args, [steps[index]], output, result.get("page", {}), columns, rows,
+                                    int(reply.get("total_rows") or len(rows)), retrieved))
+    summary = [{"values": values, "status": r.get("status") if isinstance(r, dict) else None,
+                "datasets": r.get("datasets") if isinstance(r, dict) else None,
+                "rows": r.get("total_rows") if isinstance(r, dict) else None}
+               for values, r in zip((first, second), replies + [None] * (2 - len(replies)), strict=False)]
+    if problems:
+        return {"system": portal.id, "report": args.report, "proven": False, "problems": problems, "replies": summary,
+                "evidence_ids": evidence,
+                "note": "Not kept as proven. Fix the request (its body, a parameter, the values) and prove it again."}
+    proof = {"at": retrieved, "first": first, "second": second, "datasets": replies[0].get("datasets"),
+             "rows_first": replies[0].get("total_rows"), "rows_second": replies[1].get("total_rows")}
+    if maps.report(portal.id, args.report) is None:  # proved before it was saved: the proof starts its entry
+        maps.save(portal.id, reports=[{"id": args.report, "status": "partial"}], note=f"{args.report}: a request proven")
+    try:
+        maps.prove(portal.id, args.report, template, proof)
+    except portal_map.MapError as error:
+        raise ToolError("not_found", str(error)) from None
+    return {"system": portal.id, "report": args.report, "proven": True, "replies": summary, "evidence_ids": evidence,
+            "cite_as": [f"[{e}]" for e in evidence],
+            "note": f"Kept in the map as proven: request {template.get('name')} of {args.report}. The first reply is "
+                    f"evidence {evidence[0] if evidence else '-'}."}
 
 
 def request_access(ctx: ToolContext, args: RequestAccessArgs) -> dict[str, Any]:
@@ -696,6 +889,13 @@ PORTAL_TOOLS = [
              "only: never data rows or secrets. Saved on this PC and published to the knowledge base when this PC can "
              "write to it; it changes nothing in the portal.",
              MapSaveArgs, save_map, "portal", "present"),
+    ToolSpec("portal_prove_request",
+             "Prove a report's data request: Wizard sends it twice from the person's browser, with the values given "
+             "(first) and with one changed (second), and keeps it in the map as proven only when both answers are clean "
+             "(no error from the portal), hold the same datasets and columns, and the changed value changed the rows. "
+             "Only this marks a request verified, and a report is mapped only once one of its requests is proven. Each "
+             "reply is evidence to cite and to check against the person's own export. Same read-only rules as "
+             "portal_run.", ProveArgs, prove_request, "portal", "source"),
     ToolSpec("portal_map_route",
              "Say what reports already in a portal's map are for: use_for (the business questions and terms each "
              "answers), not_for (near misses, with the report to use instead) and definitions (the knowledge notes for "
