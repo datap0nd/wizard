@@ -32,7 +32,7 @@ from sqlglot.errors import SqlglotError
 from sqlglot.optimizer.scope import traverse_scope
 
 from .fixture_source import SourceError
-from .pg import SSL_MODES, PgError, PgSettings, error_text, quote
+from .pg import SSL_MODES, PgError, PgSettings, error_text, quote, schema_list
 from .postgres_query import PostgresQuery, QueryResult, QuerySession, similar_relations
 
 SYSTEM = "nerp"
@@ -63,10 +63,16 @@ class NerpSettings:
     pg: PgSettings
     schema: str
     name: str = DEFAULT_NAME
+    # The views Wizard may read (WIZARD_NERP_VIEWS, comma-separated like the schemas): empty, every view of the schema.
+    views: tuple[str, ...] = ()
 
     def describe(self) -> str:
-        return (f"{self.pg.user}@{self.pg.host}:{self.pg.port}/{self.pg.database}, schema {self.schema}, views only "
+        only = f": {', '.join(self.views)} only" if self.views else ""
+        return (f"{self.pg.user}@{self.pg.host}:{self.pg.port}/{self.pg.database}, schema {self.schema}, views only{only} "
                 f"(sslmode {self.pg.sslmode})")
+
+    def allows(self, view: str) -> bool:
+        return not self.views or view in self.views
 
 
 def settings_from(values: dict[str, str]) -> NerpSettings | None:
@@ -113,9 +119,10 @@ def settings_from(values: dict[str, str]) -> NerpSettings | None:
     sslmode = get("SSLMODE", "prefer").lower()
     if sslmode not in SSL_MODES:
         raise PgError("NERP's SSL mode must be disable, prefer, require, verify-ca or verify-full")
+    views = schema_list(get("VIEWS"), "views Wizard may query in NERP", "view")
     return NerpSettings(PgSettings(host, number, database, user, values.get("WIZARD_NERP_PASSWORD") or "", sslmode,
                                    "Settings (WIZARD_NERP_*)", (schema,)), schema,
-                        (get("NAME", DEFAULT_NAME) or DEFAULT_NAME)[:60])
+                        (get("NAME", DEFAULT_NAME) or DEFAULT_NAME)[:60], views)
 
 
 def _identifier(node: exp.Expression | None) -> tuple[str, bool] | None:
@@ -181,8 +188,8 @@ def check_views(sql: str, views: set[str], schema: str, database: str) -> None:
     if wrong:
         shown = sorted(set(wrong))[:8]
         raise SourceError("not_a_nerp_view",
-                          f"NERP queries may read only the views of schema {schema}; this one names {', '.join(shown)}. "
-                          "nerp_list_views lists them; join and filter those views.")
+                          f"NERP queries may read only the views Wizard may query in schema {schema}; this one names "
+                          f"{', '.join(shown)}. nerp_list_views lists them; join and filter those views.")
 
 
 class NerpQuery(PostgresQuery):
@@ -217,7 +224,8 @@ class NerpQuery(PostgresQuery):
         try:
             session.rows("ROLLBACK")
             session.rows("START TRANSACTION READ ONLY")
-            names = [(self.schema, str(v["name"])) for v in session.rows(VIEWS, schema=self.schema)]
+            names = [(self.schema, str(v["name"])) for v in session.rows(VIEWS, schema=self.schema)
+                 if self.nerp.allows(str(v["name"]))]
         except Exception:  # noqa: BLE001 - the hint is a courtesy; the query's own error stands
             return ""
         similar = similar_relations(missing, names)
@@ -228,7 +236,7 @@ class NerpQuery(PostgresQuery):
         cached = self._views
         if cached and time.monotonic() - cached[0] < VIEWS_CACHE_S:
             return cached[1]
-        found = [dict(r) for r in session.rows(VIEWS, schema=self.schema)]
+        found = [dict(r) for r in session.rows(VIEWS, schema=self.schema) if self.nerp.allows(str(r["name"]))]
         self._views = (time.monotonic(), found)
         return found
 
@@ -251,10 +259,19 @@ class NerpQuery(PostgresQuery):
             session.close()
 
     def views(self, fresh: bool = False) -> list[dict[str, Any]]:
+        """The schema's views this account reads and the settings allow (WIZARD_NERP_VIEWS)."""
         if fresh or not self._views or time.monotonic() - self._views[0] >= VIEWS_CACHE_S:
-            self._views = (time.monotonic(), self._read(VIEWS, schema=self.schema))
+            self._views = (time.monotonic(), [r for r in self._read(VIEWS, schema=self.schema)
+                                              if self.nerp.allows(str(r["name"]))])
         return self._views[1]
 
+    def missing(self) -> list[str]:
+        """Views the settings allow that the schema does not hold (a typo, or a view the account cannot read)."""
+        have = {str(r["name"]) for r in self.views()}
+        return [v for v in self.nerp.views if v not in have]
+
     def columns(self, view: str) -> list[dict[str, Any]]:
+        if not self.nerp.allows(view):
+            return []
         return self._read(COLUMNS, schema=self.schema, view=view)
 

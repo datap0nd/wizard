@@ -220,7 +220,7 @@ def test_settings_show_the_nerp_section_and_its_test_needs_the_essentials(tmp_pa
     assert any(section[0] == "nerp" for section in settings_pane.SECTIONS)
     keys = {f.key for f in settings_pane.FIELDS if f.section == "nerp"}
     assert keys == {"WIZARD_NERP_NAME", "WIZARD_NERP_HOST", "WIZARD_NERP_PORT", "WIZARD_NERP_DATABASE", "WIZARD_NERP_SCHEMA",
-                    "WIZARD_NERP_USER", "WIZARD_NERP_PASSWORD", "WIZARD_NERP_SSLMODE"}
+                    "WIZARD_NERP_VIEWS", "WIZARD_NERP_USER", "WIZARD_NERP_PASSWORD", "WIZARD_NERP_SSLMODE"}
     assert next(f for f in settings_pane.FIELDS if f.key == "WIZARD_NERP_PASSWORD").secret
     settings = make_settings(tmp_path)
     assert settings_pane.test_nerp(settings, {"WIZARD_NERP_HOST": "postgresql://u:p@h/d"})["message"].startswith("Put NERP's password")
@@ -261,4 +261,32 @@ def test_a_company_file_carries_nerp_and_export_writes_it(tmp_path):
     exported = settings_pane.export(settings)
     assert {"WIZARD_NERP_HOST", "WIZARD_NERP_DATABASE", "WIZARD_NERP_SCHEMA", "WIZARD_NERP_USER"} <= set(exported["settings"])
     assert exported["secrets"] == ["WIZARD_NERP_PASSWORD"]
+
+
+# The views the company lists (owner, 4 Nov 2026: "specify what views I can access in NERP (use the same comma separator
+# for views please). The NERP task will only access that one.") -----------------------------------------------------------
+def test_the_views_wizard_may_query_are_listed_like_the_schemas():
+    limited = settings_from({**VALUES, "WIZARD_NERP_VIEWS": ' v_spend , "Spend_Daily", v_spend '})
+    assert limited and limited.views == ("v_spend", "Spend_Daily") and "v_spend, Spend_Daily only" in limited.describe()
+    assert limited.allows("v_spend") and not limited.allows("v_budget") and not limited.allows("spend_daily")
+    every = settings_from(VALUES)
+    assert every and every.views == () and every.allows("anything"), "empty: every view of the schema"
+    with pytest.raises(PgError, match="views Wizard may query in NERP must be view names"):
+        settings_from({**VALUES, "WIZARD_NERP_VIEWS": "v_spend, sell out"})
+
+
+def test_only_the_listed_views_are_listed_described_and_queried(tmp_path):
+    registry, context = tools(tmp_path)
+    limited = settings_from({**VALUES, "WIZARD_NERP_VIEWS": "v_spend, v_missing"})
+    assert limited is not None
+    session = FakeSession()
+    context.services.nerp = NerpQuery(limited, connect=lambda s, database: session)
+    listed = registry.execute("nerp_list_views", {}, context).data
+    assert [v["view"] for v in listed["views"]] == ["v_spend"], "v_budget is in the schema but not listed"
+    assert "Settings → NERP" in listed["only_these"] and listed["listed_but_missing"] == ["v_missing"]
+    refused = registry.execute("nerp_view_columns", {"view": "v_budget"}, context)
+    assert refused.error_code == "not_a_nerp_view" and "v_spend" in refused.error_message
+    query = registry.execute("nerp_query", {"sql": "SELECT * FROM v_budget"}, context)
+    assert query.error_code == "not_a_nerp_view" and "v_budget (not one of reporting's views)" in query.error_message
+    assert registry.execute("nerp_query", {"sql": "SELECT day, sum(amount) FROM v_spend GROUP BY 1"}, context).ok
 

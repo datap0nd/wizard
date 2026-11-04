@@ -87,3 +87,18 @@ def test_tables_other_schemas_the_catalog_and_writes_are_refused(nerp, sql, code
         query.run(sql)
     assert refused.value.code in (code, "query_not_checked"), refused.value.message
     assert admin.run("SELECT count(*) FROM nerp_raw.postings")[0][0] == 3, "nothing changed"
+
+
+def test_only_the_listed_views_are_read(nerp):
+    query, _ = nerp
+    limited = NerpQuery(settings_from({"WIZARD_NERP_HOST": f"{query.settings.host}:{query.settings.port}",
+                                       "WIZARD_NERP_DATABASE": query.settings.database, "WIZARD_NERP_SCHEMA": "nerp_views",
+                                       "WIZARD_NERP_USER": query.settings.user, "WIZARD_NERP_PASSWORD": query.settings.password,
+                                       "WIZARD_NERP_VIEWS": "v_spend_daily"}))  # type: ignore[arg-type]
+    assert [v["name"] for v in limited.views(fresh=True)] == ["v_spend_daily"]
+    assert limited.run("SELECT sum(amount) FROM v_spend_daily").rows == [[550]]
+    with pytest.raises(SourceError) as refused:
+        limited.run("SELECT * FROM v_spend")
+    assert refused.value.code == "not_a_nerp_view"
+    assert limited.columns("v_spend") == [], "a view not listed is not described either"
+

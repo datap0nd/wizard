@@ -36,6 +36,13 @@ schema's views, with the account's grants behind it.
   filter every query needs (rows per day, how long a query without it takes) and example queries proved with
   `LIMIT 0`. The tools point at each view's note.
 
+**Addendum, 4 November 2026.** The owner: "I want to specify what views I can access in NERP (use the same comma
+separator for views please). The NERP task will only access that one." Settings → NERP has **Views Wizard may query**
+(`WIZARD_NERP_VIEWS`), comma-separated and written like the schemas (a plain name is folded to lower case, a quoted one
+kept as written). When it is set, only those views are listed, described and queried, in questions and tasks alike;
+every other view of the schema is refused, and Test connection names a listed view the schema does not hold. Empty, every
+view of the schema the account reads.
+
 **Consequences.**
 - A second exception to "no arbitrary SQL tools" (AGENTS.md), with its own check.
 - One more dependency, `sqlglot` (pure Python, MIT): the portable runtime's locks name it.

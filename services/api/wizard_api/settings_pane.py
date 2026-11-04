@@ -107,6 +107,9 @@ FIELDS = [
     Field("WIZARD_NERP_DATABASE", "Database", "nerp", "The only database Wizard reads on that server.", "nerp"),
     Field("WIZARD_NERP_SCHEMA", "Schema", "nerp", "The only schema: Gemini's queries may name only its views (and "
           "materialized views); a table, another schema or the catalog is refused.", "reporting"),
+    Field("WIZARD_NERP_VIEWS", "Views Wizard may query", "nerp",
+          "Separated by commas. Gemini (and every NERP task) may list, read and query only these views of the schema; "
+          "any other is refused. Empty: every view of the schema the account can read.", "sellout_daily_v, spend_v"),
     Field("WIZARD_NERP_USER", "User (read-only)", "nerp", "An account that can read those views only.", "wizard_nerp_ro"),
     Field("WIZARD_NERP_PASSWORD", "Password", "nerp"),
     Field("WIZARD_NERP_SSLMODE", "SSL", "nerp", "", "prefer", ("disable", "prefer", "require", "verify-ca", "verify-full")),
@@ -335,7 +338,9 @@ def test_nerp(settings: Settings, proposed: dict[str, Any]) -> dict[str, Any]:
         try:
             session.rows("START TRANSACTION READ ONLY")
             who = session.rows("SELECT current_user AS who")[0]["who"]
-            views = session.rows(VIEWS, schema=target.schema)
+            every = session.rows(VIEWS, schema=target.schema)
+            views = [v for v in every if target.allows(str(v["name"]))]
+            missing = [v for v in target.views if v not in {str(r["name"]) for r in every}]
             tables = session.rows(
                 "SELECT count(*) AS n FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
                 "WHERE n.nspname = :schema AND c.relkind IN ('r', 'p', 'f') "
@@ -347,14 +352,20 @@ def test_nerp(settings: Settings, proposed: dict[str, Any]) -> dict[str, Any]:
         return {"ok": False, "message": f"Could not connect: {error}"}
     except Exception as error:  # noqa: BLE001 - a database error, in words
         return {"ok": False, "message": f"Connected, but could not read the schema {target.schema}: {error}"}
+    if missing:
+        return {"ok": False, "message": f"Connected as {who} to {target.pg.database}, but schema {target.schema} has no view "
+                                        f"named {', '.join(missing)} that this account can read: check the names (a name "
+                                        "with capitals needs double quotes) and the account's grants."}
     if not views:
         return {"ok": False, "message": f"Connected as {who} to {target.pg.database}, but this account can read no view "
                                         f"in schema {target.schema}: check the schema's name and the account's grants."}
     names = ", ".join(str(v["name"]) for v in views[:6]) + (f" and {len(views) - 6} more" if len(views) > 6 else "")
     extra = (f" This account can also read {tables} table(s) in that schema; Wizard still queries only the views, but "
              "ask for an account limited to them." if tables else "")
+    limit = (f" Wizard may query these {len(views)} of the schema's {len(every)} view(s)." if target.views else
+             " No views are listed, so Wizard may query every one.")
     return {"ok": True, "message": f"Connected as {who} to {target.pg.database} on {target.pg.host}: {len(views)} "
-                                   f"view(s) in {target.schema} ({names}).{extra}"}
+                                   f"view(s) in {target.schema} ({names}).{limit}{extra}"}
 
 
 def test_knowledge(settings: Settings, proposed: dict[str, Any],

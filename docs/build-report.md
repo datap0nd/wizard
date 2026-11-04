@@ -3,7 +3,15 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-04 (latest) — Precise portal maps: read the code, Wizard proves, checked against the person's export
+## 2026-11-04 (latest) — NERP: the views Wizard may query
+
+The owner: "specify what views I can access in NERP (use the same comma separator for views please). The NERP task will
+only access that one." Settings → NERP → **Views Wizard may query** (`WIZARD_NERP_VIEWS`), parsed like the schemas
+(`pg.schema_list`). Set, `nerp_list_views`, `nerp_view_columns` and `nerp_query` see only those views (the catalog read
+behind all three is filtered), a query naming another is refused, the list says which listed views the schema lacks, and
+Test connection fails on a listed view it cannot find. The task "Map NERP's views" maps only those.
+
+## 2026-11-04 — Precise portal maps: read the code, Wizard proves, checked against the person's export
 
 The owner asked how GSCM can be mapped precisely, and whether Wizard reads it through the screen or directly; then
 "build it, DB4009 first" and "ensure that it doesnt have small limits" ([decision](decisions/2026-11-04-proven-maps.md)).

@@ -69,9 +69,9 @@ def settings_from(values: dict[str, str], environ: dict[str, str]) -> PgSettings
     return PgSettings(host, port, get("DATABASE", "postgres"), user, get("PASSWORD"), sslmode, source, schemas)
 
 
-def schema_list(text: str) -> tuple[str, ...]:
-    """WIZARD_PG_SCHEMAS as the names PostgreSQL stores: comma-separated, a plain name in lower case (as PostgreSQL folds
-    it), a double-quoted one as written. Raises PgError for anything else."""
+def schema_list(text: str, what: str = "schemas Wizard may query", kind: str = "schema") -> tuple[str, ...]:
+    """WIZARD_PG_SCHEMAS (or NERP's views, WIZARD_NERP_VIEWS) as the names PostgreSQL stores: comma-separated, a plain
+    name in lower case (as PostgreSQL folds it), a double-quoted one as written. Raises PgError for anything else."""
     found: list[str] = []
     for raw in text.split(","):
         item = raw.strip()
@@ -83,7 +83,7 @@ def schema_list(text: str) -> tuple[str, ...]:
         elif PLAIN_SCHEMA.fullmatch(item):
             name = item.lower()
         else:
-            raise PgError(f"the schemas Wizard may query must be schema names separated by commas; {item!r} is not one "
+            raise PgError(f"the {what} must be {kind} names separated by commas; {item!r} is not one "
                           '(write a name with capitals or symbols in double quotes, e.g. "Sales Data")')
         if name not in found:
             found.append(name)

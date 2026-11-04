@@ -86,6 +86,9 @@ def list_views(ctx: ToolContext, args: ViewsArgs) -> dict[str, Any]:
         views = [v for _, v in sorted(scored, key=lambda pair: -pair[0])] or views
     return {"system": SYSTEM, "name": nerp.name, "database": nerp.settings.database, "schema": nerp.schema,
             "views": views, "unmapped": unmapped,
+            **({"only_these": "The company limits Wizard to these views of the schema (Settings → NERP); every other "
+                              "view is refused."} if nerp.nerp.views else {}),
+            **({"listed_but_missing": nerp.missing()} if nerp.nerp.views and nerp.missing() else {}),
             "note": "Only these views can be queried (nerp_query). " + NOTE_HINT}
 
 
@@ -102,6 +105,9 @@ def view_columns(ctx: ToolContext, args: ColumnsArgs) -> dict[str, Any]:
         raise ToolError(error.code, error.message) from None
     if not columns:
         names = [str(v["name"]) for v in nerp.views()]
+        if not nerp.nerp.allows(view):
+            raise ToolError("not_a_nerp_view", f"{view} is not one of the views Wizard may query in NERP: "
+                                               f"{', '.join(names) or 'none'} (Settings → NERP).")
         raise ToolError("not_found", f"No view {view} in {nerp.schema}. Its views: {', '.join(names[:40]) or 'none'}.")
     note = _note_for(ctx, nerp.schema, view)
     return {"system": SYSTEM, "view": view, "qualified": f"{nerp.schema}.{view}",

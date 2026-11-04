@@ -6,7 +6,8 @@ added: 2026-11-03
 repeat: until_done
 max_runs: 10
 ---
-NERP is a few SQL views on a server of their own: one database, one schema, views only. You read them with
+NERP is a few SQL views on a server of their own: one database, one schema, views only, and only the views the company
+listed in Settings → NERP (nerp_list_views shows exactly those; any other is refused). You read them with
 nerp_list_views (the views, and `unmapped`: the ones no note documents yet), nerp_view_columns (a view's columns) and
 nerp_query (one SELECT that names only NERP's views). Some views are very large: a query with no filter on a date or
 period column can run for a minute and be stopped. Write one dataset note per view, to section 10 of the knowledge
