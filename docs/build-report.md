@@ -3,7 +3,17 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-06 (latest) — The desktop panel opens on the latest analysis, with the history on the left
+## 2026-11-06 (latest) — The Brain page's title is "Ontology"
+
+The owner: "For now, just the brain page title" (after "Change from knowledge base to 'ontology'"; told the knowledge
+base is not a formal ontology, they kept the change to the title). The heading on `/brain` and the published Brain page's
+browser title say Ontology; nothing else is renamed. [Decision update](decisions/2026-10-28-brain-page.md).
+
+**Tests.** `CI=1 scripts/verify_all.sh --allow-blocked=live-parity,postgres`: all required layers passed (python-tests
+817 passed, 4 skipped; web-unit 158; e2e 32, desktop and narrow; gemini-cli passed); postgres BLOCKED here (no PostgreSQL
+test server) and live-parity BLOCKED (allowed). `BrainPage.test.tsx` checks the title.
+
+## 2026-11-06 — The desktop panel opens on the latest analysis, with the history on the left
 
 The owner: "Wizard, when clicked Ask Wizard at the top, still only shows one chat. Should default to opening latest chat
 and sohuld have sidebar on left with chat history." [Decision update](decisions/2026-10-20-desktop-app.md).

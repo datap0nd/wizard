@@ -173,3 +173,10 @@ head; whole pixels), `BrainPage.test.tsx` (the snapshot's link to `../cases/`), 
 for anyone signed in, from Settings, never asked of GitHub), the e2e test "the Brain page opens once on the pixel wizard
 diving into his brain, and links to Cases" (desktop and narrow), and screenshots in Chromium at 1280×720, 1440×900 and
 1920×1080 over a synthetic knowledge base of 110 notes (466 points, 1,069 edges) and synthetic news (not committed).
+
+**Update (6 November 2026, later): the page's title is "Ontology".** The owner asked to call it an ontology, then, told
+that the knowledge base's untyped links make it a knowledge base rather than a formal ontology, chose "For now, just the
+brain page title". The heading on `/brain` and the published page's browser title (`Ontology · Wizard`) say Ontology;
+everything else (Settings, the sidebar, the subtitle "Company knowledge base", Gemini's tools and instructions, the
+docs) still says knowledge base. Evidence: `BrainPage.test.tsx`.
+

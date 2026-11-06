@@ -48,6 +48,7 @@ describe('the Brain page and the reports mapped in a portal', () => {
     render(<BrainPage snapshot={SNAPSHOT} />);
     expect(screen.getByTestId('brain-cases').getAttribute('href')).toBe('../cases/');
     expect(screen.queryByTestId('brain-intro')).toBeNull();  // the intro is the browser's, not a test's
+    expect(screen.getByTestId('brain-title').textContent).toBe('Ontology');  // owner, 6 Nov 2026: the page's title only
   });
 
   it('shows a report\'s notes and what it is used for, or that it is not linked to a note yet', () => {

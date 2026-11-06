@@ -356,7 +356,7 @@ export function BrainPage({snapshot}: {snapshot?: BrainSnapshot} = {}) {
           : <button type="button" onClick={() => setIntro(true)} title="Play the intro again" aria-label="Play the intro again" data-testid="brain-replay"
             className="rounded-md p-0.5 hover:bg-white/10"><img src={mark} alt="" className="size-7" /></button>}
         <div className="min-w-0">
-          <h1 className="text-[18px] font-semibold leading-tight tracking-tight text-white">Knowledge graph</h1>
+          <h1 className="text-[18px] font-semibold leading-tight tracking-tight text-white" data-testid="brain-title">Ontology</h1>
           <p className="text-[12px] text-slate-400">
             {map?.content === 'company' ? <>Company knowledge base{snapshot ? `, as published ${formatDate(snapshot.published_at, true)}`
               : map.knowledge_synced_at ? `, synced ${formatDate(map.knowledge_synced_at, true)}` : ''}</>

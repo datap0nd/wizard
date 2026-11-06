@@ -190,7 +190,7 @@ def entry(case: dict[str, Any], first_published: str | None) -> dict[str, Any]:
 
 def page_html(template: str, page: str) -> bytes:
     """The built page for one folder of the site: it knows which page it is, and finds the shared code one level up."""
-    title = {"brain": "Knowledge graph · Wizard", "cases": "Cases · Wizard"}[page]
+    title = {"brain": "Ontology · Wizard", "cases": "Cases · Wizard"}[page]  # the Brain page's title (owner, 6 Nov 2026)
     html = template.replace('data-page=""', f'data-page="{page}"', 1).replace('"./assets/', '"../assets/')
     return re.sub(r"<title>[^<]*</title>", f"<title>{title}</title>", html, count=1).encode("utf-8")
 
