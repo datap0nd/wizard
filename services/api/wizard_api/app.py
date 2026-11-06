@@ -611,7 +611,7 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
                 "systems": systems_for(identity),
                 "metronome": {"enabled": can_schedule(identity),
                               "user": settings.metronome.user if settings.metronome else None},
-                "site": {"enabled": may_publish(identity) and site.problem() is None}}
+                "site": {"enabled": may_publish(identity) and site.problem() is None, "cases": site.known_address("cases")}}
 
     # Session (fixture identities only) ---------------------------------------------------------------------------------
     @app.get("/api/v1/session/identities")

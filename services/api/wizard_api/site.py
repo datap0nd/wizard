@@ -1,5 +1,5 @@
-"""The Pages site: Brain and Cases, two pages of their own on the company GitHub's Pages, each at its own address and
-neither linking to the other (owner decision, 30 October 2026, docs/decisions/2026-10-30-pages-site.md).
+"""The Pages site: Brain and Cases, two pages of their own on the company GitHub's Pages, each at its own address; Brain
+links to Cases and nothing links back (owner decisions, 30 October and 6 November 2026, docs/decisions/2026-10-30-pages-site.md).
 
 - **Brain** (`brain/`): a snapshot of what the in-app /brain page shows this PC's person: the knowledge graph (titles,
   summaries, links; never a note's text), the systems and the reports mapped in each portal, and the news as it was read.
@@ -54,7 +54,7 @@ README = """# Wizard site
 
 GitHub Pages serves this branch (Settings → Pages: Deploy from a branch, this branch, / (root)). Wizard writes it from
 the owner's PC: `brain/` is the knowledge graph as last published, `cases/` the analyses people chose to share. Each page
-has its own address and neither links to the other.
+has its own address; Brain links to Cases.
 
 Do not edit it by hand: the next publish from Wizard replaces the pages' code (`assets/`, `*/index.html`). Remove a case
 from Wizard (Share as case → Remove from the site).
@@ -249,6 +249,12 @@ class Site:
                 found = None
             self._found_url = (found.rstrip("/") + "/") if found else ""
         return self._found_url or None
+
+    def known_address(self, page: str) -> str | None:
+        """A page's address when Wizard already knows the site's (Settings → Pages site, or found earlier), without
+        asking GitHub: the Brain page links to Cases with it."""
+        base = self.settings.site_url or self._found_url
+        return f"{base}{page}/" if base else None
 
     def addresses(self) -> dict[str, str | None]:
         base = self.url()

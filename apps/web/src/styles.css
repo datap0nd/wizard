@@ -120,7 +120,7 @@
   /* The Brain page (components/brain, /brain): the knowledge graph on a flat dark surface, made for a meeting-room
      screen. Reduced motion turns its transitions off through the base rule above. */
   .brain-page { color-scheme: dark; background: #0f1117; }
-  .brain-stage { background: #0f1117; }
+  .brain-stage { background: #0f1117; border: 1px solid rgb(255 255 255 / 0.06); }
   .brain-panel { border-radius: 0.75rem; border: 1px solid rgb(255 255 255 / 0.07); background: rgb(22 26 35 / 0.9);
     padding: 0.625rem 0.75rem; backdrop-filter: blur(6px); }
   /* The roadmap page's starfield (components/roadmap). */
@@ -139,6 +139,15 @@
   .brain-caption { animation: brain-caption 0.5s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
   .brain-spotlight > section { box-shadow: 0 0 0 1px rgb(251 113 133 / 0.5), 0 0 40px rgb(251 113 133 / 0.25); transition: box-shadow 0.5s; }
   .brain-fade { mask-image: linear-gradient(to bottom, black 85%, transparent); }
+  /* The first visit's intro (BrainIntro): the page is drawn over the wizard with a clear background, its panels hidden,
+     until the dive into his brain ends; then the panels fade in. */
+  .brain-chrome { transition: opacity 0.7s ease; }
+  .brain-stage { transition: border-color 0.7s ease; }
+  .brain-page.brain-intro { background: transparent; opacity: 0; }
+  .brain-intro .brain-stage { background: transparent; border-color: transparent; }
+  .brain-intro .brain-chrome { opacity: 0; }
+  .brain-intro-wizard { animation: brain-intro-in 0.6s ease-out backwards; }
+  @keyframes brain-intro-in { from { opacity: 0; } }
   /* Reduced motion: what an animation would draw in is drawn. */
   @media (prefers-reduced-motion: reduce) { .brain-draw { stroke-dashoffset: 0; } }
   @keyframes brain-live { 50% { opacity: 0.45; } }

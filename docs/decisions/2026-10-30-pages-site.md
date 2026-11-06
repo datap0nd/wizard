@@ -75,6 +75,13 @@ their portal on their own layer). The built site was served from a Pages-like su
 errors and no sideways scroll. Not run: the company GitHub's Pages itself, which first serves the branch when the owner
 turns Pages on.
 
+**Addendum, 6 November 2026.** The owner: "Brain should have a link to cases page." The Brain page's header links to
+Cases: on the site to `../cases/` beside it, in the app to the site's Cases page when Wizard knows the site's address
+(Settings → Pages site, or found once on the publisher's PC; `site.cases` in the bootstrap, never asked of GitHub for
+it). Cases still does not link to Brain, and the site has no home page. Evidence: `tests/unit/test_site.py`,
+`BrainPage.test.tsx` and the e2e test "the Brain page opens once on the pixel wizard diving into his brain, and links to
+Cases"; [the Brain decision](2026-10-28-brain-page.md) has the rest of that day's change.
+
 **Addendum, 4 November 2026.** The owner: "In Cases pages, we're seeing that the queries it's doing are clickable but they
 dont open the query itself ... Its just strictly visual." Each source of a case now also keeps the query that read it
 (`site.query_of`): the SQL as written (and its database); a portal read's steps, each with what it did, its address

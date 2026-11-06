@@ -2,6 +2,11 @@ import {expect, test, type Page} from '@playwright/test';
 
 const CEO = /best return on marketing investment/i;
 
+/** The Brain page's first-visit intro (BrainIntro) has played in this browser: the page opens as it is. */
+async function introSeen(page: Page) {
+  await page.addInitScript(() => localStorage.setItem('wizard.brain.intro', 'seen'));
+}
+
 async function signIn(page: Page, id: string) {
   await page.goto('/');
   await page.getByTestId(`login-${id}`).click();
@@ -200,6 +205,7 @@ test('the compact desktop view answers and tells its Windows host what happened'
 });
 
 test('the Brain page draws the knowledge base as a graph of communities and walks a presenter through it, beside the app', async ({page}) => {
+  await introSeen(page);
   await signIn(page, 'u-ceo');
   await page.goto('/brain');
   await expect(page.getByTestId('brain-page')).toBeVisible();
@@ -266,6 +272,7 @@ test('on the Brain page, a mapped report links to the notes it names, and the So
     ];
     await route.fulfill({response, json: map});
   });
+  await introSeen(page);
   await signIn(page, 'u-ceo');
   await page.goto('/brain');
   await expect(page.locator('[data-testid=brain-system][data-system=asap]')).toContainText('3 mapped, 2 linked to notes');
@@ -288,6 +295,7 @@ test('on the Brain page, N plays a demo "new article came in" without moving any
     news: {status: 'ok', table: 'public.news', database: 'db', total: 1512, first: '2026-05-01', last: '2026-10-20T08:00:00Z',
       last_7_days: 0, categories: [{name: 'Competitors', count: 800}, {name: 'Smartphones', count: 712}],
       weekly: [{week: '2026-10-12', count: 30}, {week: '2026-10-19', count: 41}], latest, queries: ['SELECT 1'], data_mode: 'LIVE'}}}));
+  await introSeen(page);
   await signIn(page, 'u-ceo');
   await page.goto('/brain');
   const panel = page.getByTestId('news-panel');
@@ -301,6 +309,32 @@ test('on the Brain page, N plays a demo "new article came in" without moving any
   await expect(first).toContainText('just now');
   await expect(panel.getByTestId('news-latest').locator('li')).toHaveCount(8);  // moved to the top, not added
   await expect(panel.getByTestId('news-total')).toHaveText('1,512');
+});
+
+test('the Brain page opens once on the pixel wizard diving into his brain, and links to Cases', async ({page}) => {
+  // The site's address as Settings → Pages site would give it (replay mode has none).
+  await page.route('**/api/v1/bootstrap', async route => {
+    const response = await route.fetch();
+    const boot = await response.json() as Record<string, unknown>;
+    await route.fulfill({response, json: {...boot, site: {enabled: false, cases: 'https://pages.example.com/kb/cases/'}}});
+  });
+  await signIn(page, 'u-ceo');
+  await page.goto('/brain');
+  const intro = page.getByTestId('brain-intro');
+  await expect(intro.getByTestId('wizard-sprite')).toHaveAttribute('data-animation', 'think');
+  await expect(page.getByTestId('brain-page')).toHaveClass(/brain-intro/);
+  await expect(intro).toHaveCount(0, {timeout: 20_000});  // the dive ends by itself, the graph in its place
+  await expect(page.getByTestId('brain-page')).not.toHaveClass(/brain-intro/);
+  expect(await page.getByTestId('brain-page').evaluate(el => getComputedStyle(el).transform)).toBe('none');
+  await expect(page.getByTestId('brain-cases')).toHaveAttribute('href', 'https://pages.example.com/kb/cases/');
+  await page.reload();
+  await expect(page.getByTestId('brain-canvas')).toBeVisible();
+  await expect(intro).toHaveCount(0);  // once per browser
+  await page.getByTestId('brain-replay').click();  // the mark plays it again; any key ends it
+  await expect(intro).toHaveCount(1);
+  await page.keyboard.press('Escape');
+  await expect(intro).toHaveCount(0);
+  await expect(page.getByTestId('brain-caption')).toHaveCount(0);  // the key did nothing else
 });
 
 test('the roadmap shows what Wizard does, and the next Friday on each arrow key', async ({page}) => {

@@ -5,7 +5,7 @@ import {EDGE_STYLE, FOV, frame, INK, Layout, nearest, nodeShown, projector, REPO
 export interface GraphControl { zoom: (factor: number) => void; reset: () => void }
 
 const isJsdom = typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent);
-const START_3D = {yaw: 0.65, pitch: 0.38};
+const START_3D = {yaw: 0.3, pitch: 0.24};  // nearly side on, a little from above: the brain's profile
 const NEAR = 8;
 const FOG = [1, 0.8, 0.6];
 const SOLID: number[] = [];
@@ -77,7 +77,7 @@ export function Graph3D({graph, layers, visible, colors, lit, frameOn, frameKey,
     const s = state.current, p = props.current;
     if (!s.layout) return;
     const shown = p.frameOn ?? p.graph.nodes.filter(n => p.visible[n.i] && nodeShown(n, p.layers)).map(n => n.i);
-    s.goal = frame(s.layout.pos, shown.length ? shown : p.graph.nodes.map(n => n.i), aspect(s.size, p.inset, p.bottom), p.dims === 3 ? 0.78 : 1.06);
+    s.goal = frame(s.layout.pos, shown.length ? shown : p.graph.nodes.map(n => n.i), aspect(s.size, p.inset, p.bottom), p.dims === 3 ? 1.12 : 1.06);
   };
 
   // A new graph keeps the places of the points it shares with the one before; 2D and 3D each have their own layout.

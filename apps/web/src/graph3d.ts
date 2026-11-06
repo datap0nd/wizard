@@ -151,8 +151,9 @@ export function buildGraph(map: BrainMap, news: BrainNews | null): Graph {
   const sets = nodes.map(() => new Set<number>());
   for (const edge of edges) { sets[edge.a].add(edge.b); sets[edge.b].add(edge.a); }
   const neighbors = sets.map(set => [...set]);
-  // A point's size grows with its links, as in graphify: hubs stand out, leaves stay small.
-  for (const node of nodes) node.size = Math.min(9, 2.2 + Math.sqrt(neighbors[node.i].length) * 0.85);
+  // A point's size grows with its links, as in graphify: hubs stand out, leaves stay small (sized for the brain's
+  // spacing, so a point looks as big on the page as it did before the brain held them closer).
+  for (const node of nodes) node.size = Math.min(6.3, 1.55 + Math.sqrt(neighbors[node.i].length) * 0.6);
 
   const found = louvain(nodes.length, edges.map(e => ({a: e.a, b: e.b, w: EDGE_STYLE[e.kind].weight})));
   const communities = nameCommunities(nodes, neighbors, found);
@@ -248,9 +249,113 @@ function nameCommunities(nodes: GNode[], neighbors: number[][], found: Int32Arra
   return out;
 }
 
+// The brain the layout fills (owner, 6 Nov 2026: "Make /brain page an actual brain shape, keep the colors and dots",
+// "I just want the brain shape, dont make it weird"). Overlapping ellipsoids [x, y, z, rx, ry, rz], in units of half the
+// brain's length: x from the back (-) to the front (+), y up, z across. Each hemisphere has four (the cerebrum, the lower
+// frontal lobe, the temporal lobe, the occipital lobe), with a narrow gap between the two hemispheres; the cerebellum
+// spans both under the back, and the brain stem runs down below. In 2D the brain is seen from the side. The force layout
+// still decides which points sit together; as it settles, each point takes a place of its own spread evenly through the
+// brain, matched to where it sits (matchSeats), so the communities stay together and the dots fill the brain's shape.
+const HEMISPHERE: number[][] = [
+  [-0.05, 0.26, 0.42, 0.95, 0.56, 0.40],
+  [0.5, 0.06, 0.4, 0.42, 0.4, 0.36],
+  [0.08, -0.16, 0.46, 0.46, 0.22, 0.3],
+  [-0.62, 0.08, 0.38, 0.36, 0.34, 0.32],
+];
+export const BRAIN: readonly (readonly number[])[] = [
+  ...HEMISPHERE, ...HEMISPHERE.map(([x, y, z, a, b, c]) => [x, y, -z, a, b, c]),
+  [-0.52, -0.36, 0, 0.34, 0.2, 0.62],   // cerebellum
+  [-0.16, -0.52, 0, 0.14, 0.3, 0.14],   // brain stem
+];
+/** The side view: one hemisphere (the other is behind it), the cerebellum and the stem, flat. */
+const BRAIN_2D = BRAIN.filter(part => part[2] >= 0).map(([x, y, , a, b]) => [x, y, 0, a, b, Infinity]);
+const SPACING = {2: 18, 3: 28} as const;  // room per point, so a bigger knowledge base makes a bigger brain
+const SMALLEST_BRAIN = 70;
+
+/** How far a point (in units of half the brain's length) is from inside the brain: the smallest squared normalised
+ *  distance from a part's centre (1 or less is inside), and that part. */
+export function brainDistance(x: number, y: number, z: number, dims: 2 | 3 = 3): {e: number; part: readonly number[]} {
+  const parts = dims === 2 ? BRAIN_2D : BRAIN;
+  let e = Infinity, part = parts[0];
+  for (const p of parts) {
+    const dx = (x - p[0]) / p[3], dy = (y - p[1]) / p[4], dz = dims === 2 ? 0 : (z - p[2]) / p[5];
+    const d = dx * dx + dy * dy + dz * dz;
+    if (d < e) { e = d; part = p; }
+  }
+  return {e, part};
+}
+
+const unitSize: Partial<Record<2 | 3, number>> = {};
+/** The brain's area seen from the side (2D) or its volume (3D), at half a length of 1, counted on a fine grid. */
+function brainSize(dims: 2 | 3): number {
+  if (unitSize[dims] !== undefined) return unitSize[dims]!;
+  const step = dims === 2 ? 0.01 : 0.04;
+  let count = 0;
+  for (let x = -1.1; x <= 1.1; x += step) {
+    for (let y = -1.1; y <= 1.1; y += step) {
+      if (dims === 2) { if (brainDistance(x, y, 0, 2).e <= 1) count++; continue; }
+      for (let z = -1.1; z <= 1.1; z += step) if (brainDistance(x, y, z, 3).e <= 1) count++;
+    }
+  }
+  return (unitSize[dims] = count * step ** dims);
+}
+
+/** Half the brain's length for `n` points: big enough to give each its room, so the points fill the brain evenly. */
+export function brainScale(n: number, dims: 2 | 3 = 3): number {
+  const room = n * SPACING[dims] ** dims / brainSize(dims);
+  return Math.max(SMALLEST_BRAIN, dims === 3 ? Math.cbrt(room) : Math.sqrt(room));
+}
+
+/** The k-th point of a Halton sequence (bases 2, 3, 5): well spread, and the same every time. */
+function halton(k: number, base: number): number {
+  let f = 1, r = 0;
+  for (let i = k; i > 0; i = Math.floor(i / base)) { f /= base; r += f * (i % base); }
+  return r;
+}
+
+const SHELL = 0.3;  // in 3D, a place deep inside is kept this often against one at the surface, so the brain's form reads
+
+/** `n` places spread evenly through the brain (a Halton sequence, so the same every time), at half a length of `scale`:
+ *  a place for each point. In 3D more of them lie towards the surface. */
+export function brainSeats(n: number, dims: 2 | 3, scale: number): Float32Array {
+  const out = new Float32Array(n * 3);
+  let found = 0;
+  for (let k = 1; found < n && k < n * 400 + 1000; k++) {
+    const x = halton(k, 2) * 2.2 - 1.1, y = halton(k, 3) * 2.2 - 1.1, z = dims === 2 ? 0 : halton(k, 5) * 2.2 - 1.1;
+    const {e} = brainDistance(x, y, z, dims);
+    if (e > 1 || (dims === 3 && halton(k, 7) > SHELL + (1 - SHELL) * e)) continue;
+    out[found * 3] = x * scale; out[found * 3 + 1] = y * scale; out[found * 3 + 2] = z * scale;
+    found++;
+  }
+  return out;
+}
+
+/** Each point's place (an index into `seats`): the points and the places are both split in two along the places'
+ *  longest side (the points by where they sit, the places by where they lie), and each half again, down to one point
+ *  and one place. Points that sit together get places together, and every place is taken once. */
+export function matchSeats(pos: Float32Array, seats: Float32Array, n: number, dims: 2 | 3): Int32Array {
+  const out = new Int32Array(n);
+  const points = Int32Array.from({length: n}, (_, i) => i), places = Int32Array.from({length: n}, (_, i) => i);
+  const split = (a: number, b: number) => {
+    if (b - a <= 1) { if (b > a) out[points[a]] = places[a]; return; }
+    let axis = 0, widest = -1;
+    for (let k = 0; k < dims; k++) {
+      let lo = Infinity, hi = -Infinity;
+      for (let j = a; j < b; j++) { const v = seats[places[j] * 3 + k]; if (v < lo) lo = v; if (v > hi) hi = v; }
+      if (hi - lo > widest) { widest = hi - lo; axis = k; }
+    }
+    points.subarray(a, b).sort((x, y) => pos[x * 3 + axis] - pos[y * 3 + axis] || x - y);
+    places.subarray(a, b).sort((x, y) => seats[x * 3 + axis] - seats[y * 3 + axis] || x - y);
+    const mid = (a + b) >> 1;
+    split(a, mid); split(mid, b);
+  };
+  split(0, n);
+  return out;
+}
+
 // The layout: a force simulation in 2D or 3D (springs along the edges, every point repelling every other through a
-// Barnes-Hut tree, a weak pull towards its community and the middle), seeded so the same knowledge base settles the
-// same way.
+// Barnes-Hut tree, a weak pull towards its community and the middle), held inside the brain, seeded so the same
+// knowledge base settles the same way.
 
 function random(seed: number): () => number {  // mulberry32
   let a = seed >>> 0;
@@ -270,6 +375,8 @@ const CHARGE = 30;
 const THETA2 = 0.81;
 const GRAVITY = 0.02;
 const COHESION = 0.04;  // the pull towards the community's centre
+const SEATS_FROM = 0.35; // below this alpha each point is drawn to its place in the brain
+const REMATCH = 6;       // ticks between matching the points to their places again
 
 /** An octree over the points for one tick (a quadtree in effect when every z is 0): each cell holds its total charge
  *  and the charge-weighted centre. */
@@ -378,10 +485,17 @@ export class Layout {
   private readonly bias: Float64Array;
   private readonly linkStrength: Float64Array;
   private readonly centre: Float64Array;
+  /** Half the brain's length, in the layout's units. */
+  readonly brain: number;
+  private readonly seats: Float32Array;
+  private seatOf: Int32Array | null = null;
+  private ticks = 0;
   alpha = 1;
 
   constructor(readonly graph: Graph, seed = 7, previous?: {graph: Graph; pos: Float32Array; alpha?: number}, readonly dims: 2 | 3 = 3) {
     const n = graph.nodes.length;
+    this.brain = brainScale(n, dims);
+    this.seats = brainSeats(n, dims, this.brain);
     this.pos = new Float32Array(n * 3);
     this.vel = new Float32Array(n * 3);
     this.strength = Float64Array.from(graph.nodes, node => -CHARGE * node.charge);
@@ -396,8 +510,8 @@ export class Layout {
     if (carried > 0) this.alpha = Math.max(0.08, 1 - carried, previous?.alpha ?? 0);
   }
 
-  /** Starting places: each community around its own point on a circle (a sphere in 3D), each point beside what it joins.
-   *  Returns the share of points carried over from `previous`. */
+  /** Starting places: each community around its own point inside the brain (well spread, the same every time), each
+   *  point beside what it joins. Returns the share of points carried over from `previous`. */
   private place(seed: number, previous?: {graph: Graph; pos: Float32Array}): number {
     const rand = random(seed);
     const {nodes, neighbors, communities} = this.graph;
@@ -411,12 +525,11 @@ export class Layout {
         if (old) { put(node.i, previous.pos[old.i * 3], previous.pos[old.i * 3 + 1], previous.pos[old.i * 3 + 2]); carried++; }
       }
     }
-    const spread = 60 + Math.sqrt(nodes.length) * 9;
-    const home = communities.map((_, k) => {
-      if (this.dims === 2) { const a = k * Math.PI * (3 - Math.sqrt(5)), r = spread * Math.sqrt((k + 0.5) / communities.length); return [r * Math.cos(a), r * Math.sin(a), 0]; }
-      const y = 1 - (2 * (k + 0.5)) / communities.length, r = Math.sqrt(1 - y * y), a = k * Math.PI * (3 - Math.sqrt(5));
-      return [spread * r * Math.cos(a), spread * y, spread * r * Math.sin(a)];
-    });
+    const home: number[][] = [];
+    for (let k = 1; home.length < communities.length && k < 20_000; k++) {
+      const x = halton(k, 2) * 2 - 1, y = halton(k, 3) * 2 - 1, z = this.dims === 2 ? 0 : halton(k, 5) * 2 - 1;
+      if (brainDistance(x, y, z, this.dims).e <= 0.5) home.push([x * this.brain, y * this.brain, z * this.brain]);
+    }
     // Hubs first, so each point can start beside a placed neighbour.
     const order = [...nodes].sort((a, b) => neighbors[b.i].length - neighbors[a.i].length || a.i - b.i);
     for (const node of order) {
@@ -468,6 +581,33 @@ export class Layout {
       pos[k] += vel[k];
     }
     if (this.dims === 2) for (let k = 2; k < n * 3; k += 3) { pos[k] = 0; vel[k] = 0; }
+    this.contain();
+    // As the layout cools, each point is drawn more and more to the place in the brain that matches where it sits
+    // (matched again every few ticks), and lands on it as the layout settles.
+    if (alpha < SEATS_FROM) {
+      if (!this.seatOf || this.ticks % REMATCH === 0 || this.settled) this.seatOf = matchSeats(pos, this.seats, n, this.dims);
+      const w = this.settled ? 1 : 0.03 + 0.4 * (1 - alpha / SEATS_FROM) ** 2, seats = this.seats, seatOf = this.seatOf;
+      for (let i = 0; i < n; i++) {
+        for (let k = 0; k < 3; k++) pos[i * 3 + k] += (seats[seatOf[i] * 3 + k] - pos[i * 3 + k]) * w;
+      }
+    }
+    this.ticks++;
+  }
+
+  /** Every point back inside the brain: one that left it goes back to the surface of the nearest part, along the line
+   *  from that part's centre, and stops there. */
+  private contain(): void {
+    const {pos, vel, brain} = this;
+    for (let i = 0; i < this.graph.nodes.length; i++) {
+      const x = pos[i * 3] / brain, y = pos[i * 3 + 1] / brain, z = pos[i * 3 + 2] / brain;
+      const {e, part} = brainDistance(x, y, z, this.dims);
+      if (e <= 1) continue;
+      const k = 0.998 / Math.sqrt(e);
+      pos[i * 3] = (part[0] + (x - part[0]) * k) * brain;
+      pos[i * 3 + 1] = (part[1] + (y - part[1]) * k) * brain;
+      pos[i * 3 + 2] = this.dims === 2 ? 0 : (part[2] + (z - part[2]) * k) * brain;
+      vel[i * 3] = 0; vel[i * 3 + 1] = 0; vel[i * 3 + 2] = 0;
+    }
   }
 
   /** Run until settled or `ticks` have run; returns how many ran. */

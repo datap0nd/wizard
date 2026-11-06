@@ -3,7 +3,42 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-04 (latest) — A prompt queue in Settings
+## 2026-11-06 (latest) — The Brain page in the shape of a brain, opened by the wizard, with a link to Cases
+
+The owner: "Make /brain page an actual brain shape, keep the colors and dots. Also, when I open brain page for the first
+time, it should zoom in to the same wizard pixel character, in his brain", "I just want the brain shape, dont make it
+werid" and "Brain should have a link to cases page." [Decision update](decisions/2026-10-28-brain-page.md).
+
+**What changed.**
+- **Layout** (`graph3d.ts`): a brain outline (two hemispheres with a gap between them, the cerebellum, the stem; side on
+  in 2D) sized to the number of points. The force layout runs as before, held inside it, and as it cools each point is
+  drawn to its own place spread evenly through the brain (towards the surface in 3D), matched to where it sits by
+  recursive halving (`brainSeats`, `matchSeats`), landing there when it settles. Points are 0.7 of their old size in the
+  layout's units, so they look as big on the page; 3D frames the whole brain and starts nearly side on (`Graph3D.tsx`).
+  Colours, dots, edges, layers, statistics, the tour and the news are unchanged.
+- **Intro** (`BrainIntro.tsx`, `brainIntro.ts`): on the first visit in a browser, the app's pixel wizard thinks while the
+  page reads, his brain (the graph, small) lights up behind his forehead, and the view dives into his head until the
+  graph is in its place; the panels fade in after. A click or any key ends it; the header's Wizard mark or `?intro` plays
+  it again; reduced motion skips it.
+- **Cases** in the Brain page's header: `../cases/` on the Pages site; in the app, the site's Cases page from
+  `site.cases` in `GET /api/v1/bootstrap` (`Site.known_address`: Settings → Pages site, or the address found earlier; never a
+  request to GitHub), else from `GET /api/v1/site` on the publisher's PC.
+- Docs: the Brain and Pages site decisions, the README table, `site.py`'s README for the branch. The committed `dist/`
+  is rebuilt.
+
+**Not done.** The frame rate on a work PC is not measured; in headless Chromium the intro's dive and the layout's
+settling ran smoothly over 466 points. The brain's look was judged on synthetic knowledge bases only, not the owner's.
+
+**Tests.** `CI=1 scripts/verify_all.sh --allow-blocked=live-parity,postgres` in Playwright's Chromium: lock, spec,
+secrets, contracts, ruff, mypy, python-tests (817 passed, 4 skipped), portal-browser (24), evals-schema, web-types,
+web-unit (158 passed), web-dist, web-build and e2e (30 passed, desktop and narrow) passed; postgres BLOCKED here (no
+PostgreSQL test server; CI runs it) and live-parity BLOCKED (allowed); gemini-cli BLOCKED until the Gemini CLI was
+installed into `.tools`, then its 5 tests passed. New: `apps/web/src/graph3d.test.ts` (3), `apps/web/src/brainIntro.test.ts`
+(3), `BrainPage.test.tsx` (1), `tests/unit/test_site.py` (1), the e2e test "the Brain page opens once on the pixel wizard
+diving into his brain, and links to Cases". Screenshots in Chromium at 1280×720, 1440×900 and 1920×1080, and the intro
+frame by frame, over a synthetic knowledge base of 110 notes (466 points) and synthetic news (not committed).
+
+## 2026-11-04 — A prompt queue in Settings
 
 The owner: "a prompt queuer. I will put in 20 prompts, delimited with ';' ... so I can run overnight. If there's an
 error, a retry, up to 2 retries per prompt" ([decision](decisions/2026-11-04-prompt-queue.md)). Settings → Prompt queue:

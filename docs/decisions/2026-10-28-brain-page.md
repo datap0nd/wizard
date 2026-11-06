@@ -139,3 +139,37 @@ systems, news and point; search; the statistics against hand-computed values), t
 knowledge base as a graph of communities…" (hide and show a community, colour by area, layers, search, 3D), and
 screenshots in Chromium at 1280×720, 1600×900 and 1920×1080 over a synthetic 101-note knowledge base (507 links, 198
 glossary terms) and synthetic news (not committed).
+
+**Update (6 November 2026): the shape of a brain, the wizard's intro, and a link to Cases.** The owner: "Make /brain
+page an actual brain shape, keep the colors and dots. Also, when I open brain page for the first time, it should zoom in
+to the same wizard pixel character, in his brain", "I just want the brain shape, dont make it werid" and "Brain should
+have a link to cases page."
+- **The graph fills a brain** (`graph3d.ts`, `BRAIN`). The outline is overlapping ellipsoids: two hemispheres with a
+  narrow gap between them, each the cerebrum with its lower frontal, temporal and occipital lobes; the cerebellum across
+  both under the back; the brain stem below. 2D shows it from the side. It grows with the number of points. The force
+  layout still decides which points sit together, held inside the outline; as it cools, each point is drawn to a place
+  of its own spread evenly through the brain (more of them towards the surface in 3D, so the form reads as it turns) and
+  lands on it as the layout settles. Places are matched to where the points sit by splitting both in two along the
+  brain's longest side, again and again, so points that sit together get places together and every place is taken once.
+  The colours (communities or areas), the dots sized by their links, the edges, the layers, the statistics and every
+  control are unchanged; a point is drawn about as big on the page as before (0.7 of its old size in the layout's units,
+  as the brain holds the points closer). 3D starts nearly side on, the brain's profile, and frames the whole brain.
+  Nothing is added to the graph: the shape is only where the points sit.
+- **The first visit opens on the wizard** (`BrainIntro.tsx`, `brainIntro.ts`). The app's pixel wizard thinks (his `think`
+  animation, thought bubbles) while the page reads the knowledge base; his brain lights up behind his forehead (the graph
+  itself, small) and the view dives into his head, the wizard growing and fading, until the graph is in its place; then
+  the panels fade in. About five seconds; a click or any key ends it at once (the key does nothing else). Once per
+  browser (kept in the browser's storage); the Wizard mark in the header, or `?intro` in the address, plays it again;
+  never with reduced motion. Decoration only: it reads nothing and says nothing about the knowledge base. The published
+  snapshot plays it too.
+- **A link to Cases** in the header: on the Pages site `../cases/`, in the app the site's Cases page in a new tab when
+  Wizard knows the site's address ([the Pages site decision's addendum](2026-10-30-pages-site.md)). Without an address
+  there is no link.
+
+Evidence for the 6 November update: `apps/web/src/graph3d.test.ts` (3 new: the brain's parts and the gap between the
+hemispheres; every point inside the brain in 2D and 3D, the same every time; the places and the matching),
+`apps/web/src/brainIntro.test.ts` (3: once per browser, `?intro`, reduced motion; the dive keeps the graph inside his
+head; whole pixels), `BrainPage.test.tsx` (the snapshot's link to `../cases/`), `tests/unit/test_site.py` (the address
+for anyone signed in, from Settings, never asked of GitHub), the e2e test "the Brain page opens once on the pixel wizard
+diving into his brain, and links to Cases" (desktop and narrow), and screenshots in Chromium at 1280×720, 1440×900 and
+1920×1080 over a synthetic knowledge base of 110 notes (466 points, 1,069 edges) and synthetic news (not committed).

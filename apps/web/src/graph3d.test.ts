@@ -1,7 +1,7 @@
 import {describe, expect, it} from 'vitest';
 import type {BrainMap, BrainNews, BrainNote} from './brain';
-import {buildGraph, DEFAULT_LAYERS, EDGE_STYLE, edgeShown, focusNodes, frame, LAYERS, Layout, louvain, nearest, networkStats, nodeShown, OTHER,
-  projector, REPORT_LINK, search, SLOTS} from './graph3d';
+import {brainDistance, brainScale, brainSeats, buildGraph, DEFAULT_LAYERS, EDGE_STYLE, edgeShown, focusNodes, frame, LAYERS, Layout, louvain,
+  matchSeats, nearest, networkStats, nodeShown, OTHER, projector, REPORT_LINK, search, SLOTS} from './graph3d';
 
 const note = (id: string, area: string, extra: Partial<BrainNote> = {}): BrainNote =>
   ({id, title: id, area, type: null, stage: 'DRAFT', summary: '', tags: [], terms: null, updated: null, ...extra});
@@ -209,6 +209,53 @@ describe('the layout', () => {
     layout.run(60);
     expect(performance.now() - started).toBeLessThan(6000);
     expect(Array.from(layout.pos).every(Number.isFinite)).toBe(true);
+  });
+});
+
+// Owner, 6 Nov 2026: "Make /brain page an actual brain shape, keep the colors and dots".
+describe('the brain', () => {
+  it('is a brain: two hemispheres with a gap between them, the cerebellum under the back, the stem below', () => {
+    const inside = (x: number, y: number, z: number) => brainDistance(x, y, z).e <= 1;
+    expect(inside(0, 0.3, 0.42)).toBe(true);     // a hemisphere
+    expect(inside(0, 0.3, -0.42)).toBe(true);    // the other
+    expect(inside(0, 0.6, 0)).toBe(false);       // the gap between them
+    expect(inside(0.85, 0.1, 0.4)).toBe(true);   // the front
+    expect(inside(-0.55, -0.4, 0)).toBe(true);   // the cerebellum, across the middle
+    expect(inside(-0.16, -0.75, 0)).toBe(true);  // the brain stem
+    expect(inside(0.5, -0.75, 0.3)).toBe(false); // nothing under the front
+    expect(inside(0, 0.9, 0.42)).toBe(false);    // nothing above the top
+    expect(brainDistance(0, 0.6, 0, 2).e).toBeLessThanOrEqual(1);  // side on (2D) the hemispheres are one outline
+    expect(brainScale(600)).toBeGreaterThan(brainScale(100));       // a bigger knowledge base makes a bigger brain
+    expect(brainScale(1)).toBe(brainScale(3));                      // and a tiny one is still a brain
+  });
+
+  it('lays every point out inside the brain, in 2D and 3D, and the same every time', () => {
+    const graph = buildGraph(map, news);
+    for (const dims of [2, 3] as const) {
+      const layout = new Layout(graph, 7, undefined, dims);
+      layout.run(1000);
+      expect(layout.settled).toBe(true);
+      for (let i = 0; i < graph.nodes.length; i++) {
+        const [x, y, z] = [0, 1, 2].map(k => layout.pos[i * 3 + k] / layout.brain);
+        expect(brainDistance(x, y, z, dims).e).toBeLessThanOrEqual(1.0001);
+      }
+      const again = new Layout(graph, 7, undefined, dims);
+      again.run(1000);
+      expect(Array.from(again.pos)).toEqual(Array.from(layout.pos));
+    }
+  });
+
+  it('gives each point a place of its own spread through the brain, and points that sit together places together', () => {
+    const seats = brainSeats(200, 3, 100);
+    for (let i = 0; i < 200; i++) expect(brainDistance(seats[i * 3] / 100, seats[i * 3 + 1] / 100, seats[i * 3 + 2] / 100).e).toBeLessThanOrEqual(1);
+    expect(Array.from(brainSeats(200, 3, 100))).toEqual(Array.from(seats));
+    // Two groups of points, one behind the other: each takes the places on its own side.
+    const pos = new Float32Array(200 * 3);
+    for (let i = 0; i < 200; i++) pos.set([i < 100 ? -500 - i : 500 + i, (i * 37) % 50, (i * 11) % 30], i * 3);
+    const of = matchSeats(pos, seats, 200, 3);
+    expect(new Set(of).size).toBe(200);  // every place taken once
+    const back = Array.from(of.slice(0, 100), s => seats[s * 3]), front = Array.from(of.slice(100), s => seats[s * 3]);
+    expect(Math.max(...back)).toBeLessThanOrEqual(Math.min(...front));
   });
 });
 

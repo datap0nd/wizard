@@ -44,6 +44,12 @@ describe('the Brain page and the reports mapped in a portal', () => {
     expect(layer.closest('label')!.textContent).toContain('4');
   });
 
+  it('links to Cases beside it on the site (owner, 6 Nov 2026: "Brain should have a link to cases page")', () => {
+    render(<BrainPage snapshot={SNAPSHOT} />);
+    expect(screen.getByTestId('brain-cases').getAttribute('href')).toBe('../cases/');
+    expect(screen.queryByTestId('brain-intro')).toBeNull();  // the intro is the browser's, not a test's
+  });
+
   it('shows a report\'s notes and what it is used for, or that it is not linked to a note yet', () => {
     render(<BrainPage snapshot={SNAPSHOT} />);
     open('Weekly sell-in');

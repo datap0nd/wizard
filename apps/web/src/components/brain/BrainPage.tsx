@@ -1,15 +1,17 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {ArrowLeft, ArrowRight, BadgeCheck, ExternalLink, Maximize2, MessageSquareText, Minus, Pause, Play, Plus, RotateCcw, Search, Upload, X} from 'lucide-react';
+import {ArrowLeft, ArrowRight, BadgeCheck, ExternalLink, FolderOpen, Maximize2, MessageSquareText, Minus, Pause, Play, Plus, RotateCcw, Search, Upload, X} from 'lucide-react';
 import {api} from '@/api';
 import {demoArrival, itemKey, mappedLine, NEWS, plural, ringSystems, tourSteps, type BrainLive, type BrainMap, type BrainPortalReport, type BrainSnapshot,
   type BrainSystem, type Focus, type NewsItem} from '@/brain';
 import mark from '@/assets/wizard-mark.svg';
+import {introWanted} from '@/brainIntro';
 import {formatDate} from '@/format';
 import {buildGraph, DEFAULT_LAYERS, focusNodes, LAYERS, networkStats, OTHER, REPORT_DASH, REPORT_LINK, search, type EdgeKind, type GNode, type Graph,
   type LayerId, type NetworkStats} from '@/graph3d';
 import {cn} from '@/lib/utils';
 import type {Bootstrap} from '@/types';
 import {LoginScreen} from '../LoginScreen';
+import {BrainIntro} from './BrainIntro';
 import {Graph3D, type GraphControl} from './Graph3D';
 import {NewsMissing, NewsPanel} from './NewsPanel';
 
@@ -29,8 +31,11 @@ const UNGROUPED = '#6e7681';   // tags, systems and the news when colouring by a
 type ColourBy = 'community' | 'area';
 type Pin = {kind: 'community'; id: number} | {kind: 'cluster'; id: string} | null;
 
+const isJsdom = typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent);
+const prefersReduced = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
 function useReducedMotion(): boolean {
-  const [reduced] = useState(() => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const [reduced] = useState(prefersReduced);
   return reduced;
 }
 
@@ -201,7 +206,9 @@ function GroupRow({color, name, count, shown, focused, dimmed, testid, data, onS
  * (owner, 30 Oct 2026). A page of its own beside the app: it changes nothing in the chat. Every point, link and number on
  * it was read from the knowledge base, the catalogs and the company database (brain.py); the communities are found from
  * the links (graph3d.ts). The news panel and the presenter tour stay. Keys: → or Space next step, ← back, Esc out,
- * F full screen, N a demo "new article came in", R frame the graph again, / search.
+ * F full screen, N a demo "new article came in", R frame the graph again, / search. The graph fills the shape of a brain
+ * (graph3d.ts, owner 6 Nov 2026), and the first visit opens on the pixel wizard, diving into his brain (BrainIntro).
+ * Cases, the analyses people shared on the Pages site, is one link away (owner, 6 Nov 2026).
  *
  * `snapshot`: the page as published on the Pages site (site.py, owner 30 Oct 2026): the map and news as they were read
  * when the person published them, with no sign-in, no refresh and no way back into the app.
@@ -231,11 +238,19 @@ export function BrainPage({snapshot}: {snapshot?: BrainSnapshot} = {}) {
   const freshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const control = useRef<GraphControl | null>(null);
   const searchBox = useRef<HTMLInputElement>(null);
+  const pageRef = useRef<HTMLDivElement>(null);
   const reduced = useReducedMotion();
+  const [intro, setIntro] = useState(() => !isJsdom && introWanted(location.search, prefersReduced()));
+  const [casesUrl, setCasesUrl] = useState<string | null>(snapshot ? '../cases/' : null);
 
   const loadBoot = useCallback(() => { api.bootstrap().then(setBoot).catch((e: unknown) => setError(e instanceof Error ? e.message : 'Wizard could not start.')); }, []);
   useEffect(() => { if (!snapshot) loadBoot(); }, [loadBoot, snapshot]);
   const signedIn = !!boot?.identity && !boot.auth.login_required;
+  useEffect(() => {
+    if (snapshot || !boot?.site) return;
+    if (boot.site.cases) { setCasesUrl(boot.site.cases); return; }
+    if (boot.site.enabled) api.site().then(status => setCasesUrl(status.pages.cases)).catch(() => undefined);
+  }, [boot, snapshot]);
   useEffect(() => {
     if (!signedIn || snapshot) return;
     const loadMap = () => api.brain().then(setMap).catch((e: unknown) => setError(e instanceof Error ? e.message : 'The knowledge graph could not be read.'));
@@ -307,8 +322,11 @@ export function BrainPage({snapshot}: {snapshot?: BrainSnapshot} = {}) {
     return () => window.removeEventListener('keydown', keydown);
   }, [next, previous, arrive]);
 
+  // The intro stays mounted from the first render (the wizard thinking is the loading screen) until its dive ends.
+  const introLayer = intro && !error && (snapshot || !boot || signedIn)
+    ? <BrainIntro page={pageRef} ready={!!graph && settled.done} inset={PANEL + 12} bottom={STRIP} onDone={() => setIntro(false)} /> : null;
   if (error) return <div className="grid min-h-dvh place-items-center bg-[#0f1117] p-6 text-sm text-rose-300" role="alert">{error}</div>;
-  if (!snapshot && !boot) return <div className="grid min-h-dvh place-content-center bg-[#0f1117] text-sm text-slate-400">Loading Wizard…</div>;
+  if (!snapshot && !boot) return <>{introLayer}{!introLayer && <div className="grid min-h-dvh place-content-center bg-[#0f1117] text-sm text-slate-400">Loading Wizard…</div>}</>;
   if (!snapshot && boot && !signedIn) return <LoginScreen mode={boot.auth.mode} onLogin={loadBoot} />;
   const publish = () => {
     setPublished({busy: true});
@@ -329,10 +347,14 @@ export function BrainPage({snapshot}: {snapshot?: BrainSnapshot} = {}) {
     : graph.areas.map(a => ({key: `a:${a.id}`, name: a.name, count: a.size, color: a.color, pin: {kind: 'cluster', id: a.id} as Pin,
       testid: 'brain-cluster', data: {'data-cluster': a.id}}));
   const allShown = groups.every(g => !hidden.has(g.key));
-  return (
-    <div className="brain-page flex h-dvh w-screen flex-col overflow-hidden text-slate-100" data-testid="brain-page" data-dims={dims}>
-      <header className="z-20 flex flex-wrap items-center gap-3 px-4 pb-2 pt-3">
-        <img src={mark} alt="" className="size-7" />
+  return (<>
+    {introLayer}
+    <div ref={pageRef} className={cn('brain-page flex h-dvh w-screen flex-col overflow-hidden text-slate-100', intro && 'brain-intro relative z-10')}
+      data-testid="brain-page" data-dims={dims}>
+      <header className="brain-chrome z-20 flex flex-wrap items-center gap-3 px-4 pb-2 pt-3">
+        {reduced || isJsdom ? <img src={mark} alt="" className="size-7" />
+          : <button type="button" onClick={() => setIntro(true)} title="Play the intro again" aria-label="Play the intro again" data-testid="brain-replay"
+            className="rounded-md p-0.5 hover:bg-white/10"><img src={mark} alt="" className="size-7" /></button>}
         <div className="min-w-0">
           <h1 className="text-[18px] font-semibold leading-tight tracking-tight text-white">Knowledge graph</h1>
           <p className="text-[12px] text-slate-400">
@@ -374,6 +396,9 @@ export function BrainPage({snapshot}: {snapshot?: BrainSnapshot} = {}) {
               className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-[12.5px] font-medium hover:bg-white/10 disabled:opacity-60">
               <Upload className="size-3.5" />{published.busy ? 'Publishing…' : 'Publish'}</button>
           )}
+          {casesUrl && <a href={casesUrl} target={snapshot ? undefined : '_blank'} rel={snapshot ? undefined : 'noopener noreferrer'} data-testid="brain-cases"
+            title="The analyses people shared from Wizard" className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-[12.5px] font-medium hover:bg-white/10">
+            <FolderOpen className="size-3.5" />Cases</a>}
           {!snapshot && <a href="/" className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#1428a0] px-3 text-[12.5px] font-semibold text-white hover:bg-[#1c34c0]">
             <MessageSquareText className="size-3.5" />Ask Wizard</a>}
         </div>
@@ -386,7 +411,7 @@ export function BrainPage({snapshot}: {snapshot?: BrainSnapshot} = {}) {
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 px-3 pb-3 lg:flex-row">
-        <div className="brain-stage relative min-h-[460px] flex-1 overflow-hidden rounded-2xl border border-white/[0.06]" data-testid="brain-stage">
+        <div className="brain-stage relative min-h-[460px] flex-1 overflow-hidden rounded-2xl" data-testid="brain-stage">
           {graph && map && <>
             <Graph3D graph={graph} layers={layers} visible={visible} colors={colors} lit={lit} frameOn={frameOn} frameKey={`${focusId}|${dims}`}
               selected={pinned} hovered={hover?.key ?? null} labelled={labelled} hubs={hubs} dims={dims} reduced={reduced} rotate={rotate}
@@ -394,7 +419,7 @@ export function BrainPage({snapshot}: {snapshot?: BrainSnapshot} = {}) {
               onProgress={(done, ticks) => setSettled(s => (s.done === done && (done || ticks - s.ticks < 25) ? s : {done, ticks}))} />
 
             {/* The panels on the left: communities (or areas), layers, sources. */}
-            <div className="scroll-thin absolute left-3 top-3 z-10 flex flex-col gap-2 overflow-y-auto pr-0.5" style={{bottom: STRIP + 8, width: PANEL}}>
+            <div className="brain-chrome scroll-thin absolute left-3 top-3 z-10 flex flex-col gap-2 overflow-y-auto pr-0.5" style={{bottom: STRIP + 8, width: PANEL}}>
               <section className="brain-panel" aria-label={colourBy === 'community' ? 'Communities' : 'Areas'}>
                 <div className="mb-1.5 flex items-center gap-2">
                   <p className="flex-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">{colourBy === 'community' ? 'Communities' : 'Areas'}</p>
@@ -459,10 +484,10 @@ export function BrainPage({snapshot}: {snapshot?: BrainSnapshot} = {}) {
             </div>
 
             {/* The statistics, the layout's state and the view controls, along the bottom. */}
-            <div className="absolute inset-x-0 bottom-0 z-10 flex items-center gap-3 border-t border-white/[0.06] bg-[#0f1117]/85 px-4 backdrop-blur" style={{height: STRIP}}>
+            <div className="brain-chrome absolute inset-x-0 bottom-0 z-10 flex items-center gap-3 border-t border-white/[0.06] bg-[#0f1117]/85 px-4 backdrop-blur" style={{height: STRIP}}>
               {stats && <StatsStrip stats={stats} />}
               <span className="hidden shrink-0 font-mono text-[10.5px] tabular-nums text-slate-500 xl:inline" data-testid="brain-layout"
-                title="Force-directed layout: springs along the edges, Barnes-Hut repulsion (θ = 0.9), a weak pull towards each community; seeded, so the same knowledge base settles the same way">
+                title="Force-directed layout in the shape of a brain: springs along the edges, Barnes-Hut repulsion (θ = 0.9), a weak pull towards each community, then each point to its own place in the brain, matched to where it sits; seeded, so the same knowledge base settles the same way">
                 {settled.done ? `layout settled · ${settled.ticks} it.` : `layout · it. ${settled.ticks}`}</span>
               <div className="flex shrink-0 rounded-md border border-white/10 p-px" role="group" aria-label="View">
                 {([2, 3] as const).map(d => (
@@ -482,8 +507,8 @@ export function BrainPage({snapshot}: {snapshot?: BrainSnapshot} = {}) {
               </div>
             </div>
           </>}
-          {!map && <div className="absolute inset-0 grid place-content-center text-sm text-slate-400">Reading what Wizard knows…</div>}
-          {map && map.notes.length === 0 && <p className="absolute left-1/2 top-6 -translate-x-1/2 rounded-lg bg-white/10 px-3 py-2 text-[13px] text-slate-200">No knowledge notes are loaded on this Wizard yet.</p>}
+          {!map && <div className="brain-chrome absolute inset-0 grid place-content-center text-sm text-slate-400">Reading what Wizard knows…</div>}
+          {map && map.notes.length === 0 && <p className="brain-chrome absolute left-1/2 top-6 -translate-x-1/2 rounded-lg bg-white/10 px-3 py-2 text-[13px] text-slate-200">No knowledge notes are loaded on this Wizard yet.</p>}
 
           {graph && card && !current && <NodeCard graph={graph} node={card} color={colors[card.i] ?? OTHER} pinned={!!pinned && card.key === pinned}
             onClose={() => setPinned(null)} onOpen={open} />}
@@ -508,11 +533,11 @@ export function BrainPage({snapshot}: {snapshot?: BrainSnapshot} = {}) {
               </div>
             </div>
           )}
-          {step === null && graph && !card && <p className="pointer-events-none absolute right-4 top-3 z-0 hidden text-[11px] text-slate-500 lg:block">
+          {step === null && graph && !card && <p className="brain-chrome pointer-events-none absolute right-4 top-3 z-0 hidden text-[11px] text-slate-500 lg:block">
             {dims === 2 ? 'Drag to move' : 'Drag to turn'} · scroll to zoom · → for the tour</p>}
         </div>
         {news && (
-          <aside className={cn('flex min-h-0 shrink-0 flex-col lg:w-[400px] xl:w-[460px]', current?.focus.kind === 'cluster' && current.focus.id === NEWS && 'brain-spotlight')}>
+          <aside className={cn('brain-chrome flex min-h-0 shrink-0 flex-col lg:w-[400px] xl:w-[460px]', current?.focus.kind === 'cluster' && current.focus.id === NEWS && 'brain-spotlight')}>
             {showNews ? <NewsPanel news={news} fresh={fresh} incoming={incoming} category={category} onCategory={setCategory} name={live?.name ?? 'Company database'} still={reduced}
               snapshotAt={snapshot?.published_at} />
               : <NewsMissing news={news} />}
@@ -520,5 +545,5 @@ export function BrainPage({snapshot}: {snapshot?: BrainSnapshot} = {}) {
         )}
       </div>
     </div>
-  );
+  </>);
 }

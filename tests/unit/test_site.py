@@ -180,13 +180,15 @@ def test_share_as_case_publishes_the_answers_and_source_names_never_the_rows(tmp
     hub = FakeHub(pages_url="https://pages.github.example.com/acme/kb/")
     with owner_app(tmp_path, monkeypatch, hub) as client:
         login(client, "local-owner")
-        assert client.get("/api/v1/bootstrap").json()["site"] == {"enabled": True}
+        assert client.get("/api/v1/bootstrap").json()["site"] == {"enabled": True, "cases": None}  # not asked of GitHub here
         run = ask(client, CEO_QUESTION)
         assert run["status"] == "succeeded"
         conversation = run["conversation_id"]
         preview = client.get(f"/api/v1/conversations/{conversation}/case").json()
         case = preview["case"]
         assert preview["published"] is None and preview["site"]["pages"]["cases"] == "https://pages.github.example.com/acme/kb/cases/"
+        # Once found, the Brain page's link to Cases has it.
+        assert client.get("/api/v1/bootstrap").json()["site"]["cases"] == "https://pages.github.example.com/acme/kb/cases/"
         assert [t["prompt"] for t in case["turns"]] == [CEO_QUESTION] and case["turns"][0]["run_id"] == run["id"]
         assert case["turns"][0]["sources"] and case["turns"][0]["steps"]
         published = client.post(f"/api/v1/conversations/{conversation}/case", headers=HEADERS,
@@ -246,13 +248,13 @@ def test_only_the_person_at_this_pc_publishes_and_only_with_a_write_token(tmp_pa
     hub = FakeHub()
     with owner_app(tmp_path, monkeypatch, hub) as client:
         login(client, "u-ceo")  # a fixture identity, not the person at this PC
-        assert client.get("/api/v1/bootstrap").json()["site"] == {"enabled": False}
+        assert client.get("/api/v1/bootstrap").json()["site"] == {"enabled": False, "cases": None}
         assert client.post("/api/v1/site/brain", headers=HEADERS, json={}).status_code == 403
     settings = make_settings(tmp_path / "other", WIZARD_SITE_REPO=REPO, WIZARD_LOCAL_USER_EMAIL="owner@example.com")
     settings.install_mode = True
     with TestClient(create_app(settings)) as client:
         login(client, "local-owner")
-        assert client.get("/api/v1/bootstrap").json()["site"] == {"enabled": False}
+        assert client.get("/api/v1/bootstrap").json()["site"] == {"enabled": False, "cases": None}
         refused = client.post("/api/v1/site/brain", headers=HEADERS, json={})
         assert refused.status_code == 409 and "write token" in refused.json()["error"]
     assert hub.writes == []
@@ -291,3 +293,14 @@ def test_a_cases_sources_carry_their_query_without_hosts_secrets_or_the_persons_
     assert portal["steps"][2]["script"] == "return W.nexacro.readGrid('grd_main');"
     assert query_of({"data_mode": "USER_PROVIDED", "request": {"file": "C:/Users/me/plan.xlsx", "sheet": "Q4"}}) is None
 
+
+
+def test_the_brain_page_links_to_cases_wherever_the_site_address_is_set(tmp_path, monkeypatch):
+    """Owner, 6 Nov 2026: "Brain should have a link to cases page". Anyone who opens /brain gets the address, publisher
+    or not; it is the address from Settings, never asked of GitHub for them."""
+    hub = FakeHub()
+    with owner_app(tmp_path, monkeypatch, hub, WIZARD_SITE_URL="https://pages.github.example.com/acme/kb") as client:
+        login(client, "u-ceo")
+        assert client.get("/api/v1/bootstrap").json()["site"] == {"enabled": False,
+                                                                  "cases": "https://pages.github.example.com/acme/kb/cases/"}
+    assert hub.writes == []
