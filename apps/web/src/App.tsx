@@ -15,7 +15,7 @@ import {DropZone} from './components/DropZone';
 import {EmptyState} from './components/EmptyState';
 import {EvidenceDrawer} from './components/EvidenceDrawer';
 import {LoginScreen} from './components/LoginScreen';
-import {QuickEmpty, QuickHeader} from './components/QuickPanel';
+import {QuickEmpty, QuickHeader, QuickHistory} from './components/QuickPanel';
 import {SettingsDialog} from './components/SettingsDialog';
 import {SteerContext, type SteerActions} from './components/Steering';
 import {SystemsContext} from './components/SystemsStage';
@@ -29,6 +29,19 @@ import type {Attachment, Bootstrap, Cadence, ConversationSummary, EvidenceSummar
   SystemRequest, TimelineItem} from './types';
 
 const LAST = 'wizard-conversation';
+const HISTORY = 'wizard-quick-history';     // the panel's history beside the chat: 'hidden' once the person hides it
+const WIDE = '(min-width: 640px)';          // a panel this wide keeps its history beside the chat; a narrower one over it
+
+function useWide(): boolean {
+  const [wide, setWide] = useState(() => typeof matchMedia !== 'function' || matchMedia(WIDE).matches);
+  useEffect(() => {
+    if (typeof matchMedia !== 'function') return;
+    const query = matchMedia(WIDE), change = () => setWide(query.matches);
+    query.addEventListener('change', change);
+    return () => query.removeEventListener('change', change);
+  }, []);
+  return wide;
+}
 
 /** `compact`: the view WizardBar shows in its panel under the button at the top of the screen (/quick). */
 export function App({compact = false}: {compact?: boolean}) {
@@ -42,6 +55,10 @@ export function App({compact = false}: {compact?: boolean}) {
   const [chosen, setChosen] = useState<string[] | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [drawer, setDrawer] = useState<{items: EvidenceSummary[]; focus: string | null} | null>(null);
+  // The desktop panel's history (owner, 6 Nov 2026): beside the chat unless hidden, or over it on a narrow panel.
+  const wide = useWide();
+  const [historyShown, setHistoryShown] = useState(() => { try { return localStorage.getItem(HISTORY) !== 'hidden'; } catch { return true; } });
+  const [historyOver, setHistoryOver] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
   const [files, setFiles] = useState<PendingFile[]>([]);
@@ -53,6 +70,8 @@ export function App({compact = false}: {compact?: boolean}) {
   const [focusTick, setFocusTick] = useState(0);
   const [entering, setEntering] = useState(false);
   const questions = useRef(new Map<string, string>());
+  const reopen = useRef<() => void>(() => undefined);
+  const moved = useRef(0);  // counts the person's own moves (a new question, a chat opened, a question asked)
 
   const settle = useCallback((key: string, attempt: Promise<{attachment: Attachment}>) => {
     attempt.then(({attachment}) => setFiles(prev => prev.map(f => (f.key === key
@@ -127,6 +146,7 @@ export function App({compact = false}: {compact?: boolean}) {
   }, [refreshConversations]);
 
   const loadConversation = useCallback(async (id: string) => {
+    moved.current++;
     const data = await api.conversation(id);
     streams.current.forEach(s => s.close()); streams.current.clear();
     setCurrentId(id); localStorage.setItem(LAST, id);
@@ -137,6 +157,17 @@ export function App({compact = false}: {compact?: boolean}) {
     for (const record of data.runs) if (record.active) follow(record.id, Math.max(0, ...record.events.map(e => e.seq)), record.parent_run_id);
   }, [follow]);
 
+  /** The desktop panel opens on the person's latest analysis (owner, 6 Nov 2026: "Should default to opening latest
+   *  chat"): the newest in the server's list, wherever it was asked (the panel, the full window, the prompt queue). */
+  const openLatest = useCallback(async () => {
+    const at = moved.current;
+    let list: ConversationSummary[];
+    try { list = (await api.conversations()).conversations; } catch { return; }
+    setConversations(list);
+    // Only if the person has not moved on meanwhile (a new question, another chat, a question asked).
+    if (list[0] && moved.current === at) await loadConversation(list[0].id).catch(() => undefined);
+  }, [loadConversation]);
+
   useEffect(() => { void loadBoot(); }, [loadBoot]);
   // A session lapses after hours without Wizard (WizardBar keeps this page open for days, through sleep): sign in
   // again as the same person without asking, as the desktop app signs in at start. Otherwise show sign-in.
@@ -145,10 +176,11 @@ export function App({compact = false}: {compact?: boolean}) {
     signedOut: () => void loadBoot()}), [signedInAs, loadBoot]);
   useEffect(() => {
     if (!boot?.identity) return;
-    void refreshConversations();
     // "Open in a full window" from the compact view links here with ?c=<conversation>.
     const linked = new URLSearchParams(location.search).get('c');
     if (linked) history.replaceState(null, '', location.pathname);
+    if (compact && !linked) { void openLatest(); return; }
+    void refreshConversations();
     const last = linked ?? localStorage.getItem(LAST);
     if (last) void loadConversation(last).catch(() => localStorage.removeItem(LAST));
   }, [boot?.identity?.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -162,7 +194,7 @@ export function App({compact = false}: {compact?: boolean}) {
   const activity = working ? wizardAnimation(working) : null;
   useEffect(() => { if (activity) toHost({type: 'activity', animation: activity}); }, [activity]);
   useEffect(() => onHost(message => {
-    if (message.type === 'focus') { setFocusTick(t => t + 1); setEntering(true); }
+    if (message.type === 'focus') { setFocusTick(t => t + 1); setEntering(true); if (compact) reopen.current(); }
     if (message.type === 'open-settings') setSettingsOpen(true);
     if (message.type === 'attach') addDropped(message.files);
   }), [addDropped]);
@@ -173,12 +205,16 @@ export function App({compact = false}: {compact?: boolean}) {
   }, [entering, focusTick]);
   useEffect(() => {
     if (!compact) return;
-    const keydown = (e: KeyboardEvent) => { if (e.key === 'Escape' && !dialogOpen && !e.defaultPrevented) toHost({type: 'hide'}); };
+    const keydown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || dialogOpen || e.defaultPrevented) return;
+      if (historyOver) setHistoryOver(false); else toHost({type: 'hide'});  // a history open over the chat closes first
+    };
     window.addEventListener('keydown', keydown);
     return () => window.removeEventListener('keydown', keydown);
-  }, [compact, dialogOpen]);
+  }, [compact, dialogOpen, historyOver]);
   const available = useMemo(() => choosable(boot?.systems ?? []), [boot?.systems]);
   const ask = useCallback(async (question: string, systems: string[] | null = chosen) => {
+    moved.current++;
     setNotice(null);
     try {
       const ready = files.filter(f => f.state === 'ok' && f.attachment).map(f => f.attachment!.id);
@@ -297,7 +333,18 @@ export function App({compact = false}: {compact?: boolean}) {
     return Array.from(seen.values());
   }, [runs]);
 
-  const newChat = useCallback(() => { streams.current.forEach(s => s.close()); streams.current.clear(); setCurrentId(null); setRuns([]); setDraft(''); setChosen(null); localStorage.removeItem(LAST); }, []);
+  const newChat = useCallback(() => { moved.current++; streams.current.forEach(s => s.close()); streams.current.clear(); setCurrentId(null); setRuns([]); setDraft(''); setChosen(null); localStorage.removeItem(LAST); }, []);
+  // Each time the panel opens: a blank question goes back to the latest analysis; an open one stays, its list refreshed.
+  reopen.current = () => { if (!currentId && runs.length === 0 && !draft.trim() && files.length === 0) void openLatest(); else void refreshConversations(); };
+  const rename = (id: string, title: string) => void api.rename(id, title).then(refreshConversations);
+  const remove = (id: string) => void api.remove(id).then(async () => { if (id === currentId) newChat(); await refreshConversations(); });
+  const historyOpen = wide ? historyShown : historyOver;
+  const toggleHistory = () => {
+    if (!wide) { setHistoryOver(v => !v); return; }
+    const next = !historyShown;
+    setHistoryShown(next);
+    try { localStorage.setItem(HISTORY, next ? 'shown' : 'hidden'); } catch { /* kept for this session only */ }
+  };
 
   if (fatal) return <div className="grid min-h-dvh place-items-center p-6 text-sm text-danger" role="alert">{fatal}</div>;
   if (!boot) return <div className="grid min-h-dvh place-content-center justify-items-center gap-2 text-sm text-ink-3"><WizardSprite animation="idle" scale={2} />Loading Wizard…</div>;
@@ -339,10 +386,16 @@ export function App({compact = false}: {compact?: boolean}) {
 
   if (compact) return (
     <div className={cn('flex h-dvh w-screen flex-col overflow-hidden bg-page', entering && 'panel-enter')} data-testid="quick">
-      <QuickHeader boot={boot} title={title} conversationId={currentId} synthetic={synthetic} onNew={newChat} onAccount={() => setAccountOpen(true)}
-        onSettings={boot.settings_editable ? () => setSettingsOpen(true) : undefined} />
-      {conversation(<QuickEmpty boot={boot} greeting={focusTick} onAccount={() => setAccountOpen(true)} onPick={q => { if (!blocked) void ask(q); else setDraft(q); }} />)}
-      {composer}
+      <QuickHeader boot={boot} title={title} conversationId={currentId} synthetic={synthetic} history={historyOpen} onHistory={toggleHistory}
+        onNew={newChat} onAccount={() => setAccountOpen(true)} onSettings={boot.settings_editable ? () => setSettingsOpen(true) : undefined} />
+      <div className="relative flex min-h-0 flex-1">
+        {historyOpen && <QuickHistory conversations={conversations} currentId={currentId} overlay={!wide} onRename={rename} onDelete={remove}
+          onSelect={id => { setHistoryOver(false); void loadConversation(id); }} onClose={() => setHistoryOver(false)} />}
+        <div className="flex min-w-0 flex-1 flex-col">
+          {conversation(<QuickEmpty boot={boot} greeting={focusTick} onAccount={() => setAccountOpen(true)} onPick={q => { if (!blocked) void ask(q); else setDraft(q); }} />)}
+          {composer}
+        </div>
+      </div>
       {overlays}
     </div>
   );
@@ -350,8 +403,7 @@ export function App({compact = false}: {compact?: boolean}) {
   return (
     <div className="flex h-dvh w-screen overflow-hidden bg-page">
       <Sidebar boot={boot} conversations={conversations} currentId={currentId} onNew={newChat}
-        onSelect={id => void loadConversation(id)} onRename={(id, t) => void api.rename(id, t).then(refreshConversations)}
-        onDelete={id => void api.remove(id).then(async () => { if (id === currentId) newChat(); await refreshConversations(); })}
+        onSelect={id => void loadConversation(id)} onRename={rename} onDelete={remove}
         busy={busy} onAccount={() => setAccountOpen(true)} onLog={() => setLogOpen(true)}
         onSettings={boot.settings_editable ? () => setSettingsOpen(true) : undefined} onLogout={() => void api.logout().then(() => { localStorage.removeItem(LAST); void loadBoot(); })}
         onAsk={text => setDraft(text)} />

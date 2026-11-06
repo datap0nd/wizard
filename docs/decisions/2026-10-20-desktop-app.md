@@ -156,3 +156,19 @@ attached to the conversation.
   - installs it silently, runs `run.py --check` on the installed copy, and uninstalls it.
 - Not yet run: WizardBar itself on a work PC (the window, the panel, the hotkey, the update). It compiles in CI and in
   development, but no automated test drives its windows.
+
+**Update (6 November 2026): the panel opens on the latest analysis, with the history beside it.** The owner: "Wizard,
+when clicked Ask Wizard at the top, still only shows one chat. Should default to opening latest chat and sohuld have
+sidebar on left with chat history." The panel (`/quick`) showed one chat with no list: the one this panel had last
+open, or a blank question after **+** or a chat asked elsewhere.
+- It now opens on the person's newest analysis from the server's list (wherever it was asked), and each time it opens
+  again on a blank question it goes back to it; an analysis left open stays. The person's own move (a new question,
+  another chat, a question asked) is never overridden by a list still loading.
+- On the left, their analyses, as the full window's sidebar lists them (one shared component, `ChatList`: newest
+  first, by day, search, rename, delete). Beside the chat when the panel is 640 px or wider, hidden or shown by a button
+  at the top left (the choice kept in the panel's storage); over the chat on a narrower panel, closing on a pick, a click
+  beside it or Esc.
+- The full window is unchanged: it already has the sidebar and reopens the analysis last open in that browser.
+- Evidence: the e2e test "the desktop panel opens on the latest analysis, with the person's analyses beside it" (desktop
+  and narrow), the compact view's e2e test now starting its question with **+**, and screenshots of `/quick` at 760×700
+  and 480×700 in Chromium. Not run: the panel in WizardBar's WebView2 on a work PC.

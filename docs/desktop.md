@@ -155,6 +155,13 @@ aside for full-screen apps and slide shows.
 | "Starting Wizard…" (thinking) / "Wizard stopped" (fizzling) | The service is starting / stopped: click for the reason |
 | "Drop to attach", a dashed outline, the wizard with his book open | A file is being dragged over the tab |
 
+**Your analyses in the panel.** The panel opens on your latest analysis, the newest one wherever it was asked (the
+panel, the full window, the prompt queue). Opening the panel again brings you back to it if you left a blank question;
+an analysis you have open stays open. Your analyses are listed on the left, newest first and grouped by day, with a
+search, as in the full window's sidebar (… on one renames or deletes it). The button at the top left hides or shows the
+list; once hidden it stays hidden. On a panel narrower than 640 px the list opens over the chat and closes when you
+pick one, click beside it or press Esc. **+** starts a new question.
+
 **Attaching a file by dropping it.**
 - Drop up to five files on the tab, or on the open panel. The panel opens with them attached to the question being
   written; each shows "Reading…" and then what Wizard read (slides, sheets, parts).

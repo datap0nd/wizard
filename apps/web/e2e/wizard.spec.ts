@@ -166,6 +166,7 @@ test('the compact desktop view answers and tells its Windows host what happened'
   await signIn(page, 'u-ceo');
   await page.goto('/quick');
   await expect(page.getByTestId('quick-header')).toBeVisible();
+  await page.getByTestId('new-chat').click();  // the panel opens on the latest analysis; this question starts a new one
   await page.getByTestId('suggestion').filter({hasText: CEO}).click();
   const card = page.getByTestId('run-card').first();
   await expect(card).toHaveAttribute('data-status', 'succeeded', {timeout: 30_000});
@@ -202,6 +203,52 @@ test('the compact desktop view answers and tells its Windows host what happened'
   await page.goto(full!);
   await expect(page.getByTestId('run-card').first().getByTestId('answer')).toContainText('not proven ROI');
   await expect(page).toHaveURL(/\/$/);
+});
+
+test('the desktop panel opens on the latest analysis, with the person\'s analyses beside it', async ({page}) => {
+  // Owner, 6 Nov 2026: "Should default to opening latest chat and should have sidebar on left with chat history".
+  await page.addInitScript(() => {
+    const listeners: ((event: {data: unknown}) => void)[] = [];
+    Object.assign(window, {
+      __fromHost: (data: unknown) => listeners.forEach(listener => listener({data})),
+      chrome: {webview: {postMessage: () => undefined, postMessageWithAdditionalObjects: () => undefined,
+        addEventListener: (_: string, listener: (event: {data: unknown}) => void) => listeners.push(listener), removeEventListener: () => undefined}},
+    });
+  });
+  await signIn(page, 'u-ceo');
+  await page.goto('/quick');
+  await page.getByTestId('new-chat').click();
+  await page.getByTestId('suggestion').filter({hasText: CEO}).click();
+  await expect(page.getByTestId('run-card').first()).toHaveAttribute('data-status', 'succeeded', {timeout: 30_000});
+  const heading = page.getByTestId('conversation-title');
+  await expect(heading).not.toHaveText('Ask Wizard');
+  const title = (await heading.textContent())!;
+  const history = page.getByTestId('quick-history');
+  await expect(history).toHaveAttribute('data-overlay', 'false');  // beside the chat on a wide panel
+  await expect(history.locator('[data-testid=conversation-item][aria-current=page]')).toHaveText(title);
+  // Opened again, the panel shows the latest analysis, not a blank question.
+  await page.reload();
+  await expect(heading).toHaveText(title);
+  await expect(page.getByTestId('run-card').first().getByTestId('answer')).toContainText('not proven ROI');
+  // A blank question goes back to the latest each time the panel opens.
+  await page.getByTestId('new-chat').click();
+  await expect(page.getByTestId('empty-state')).toBeVisible();
+  await page.evaluate(() => (window as unknown as {__fromHost: (d: unknown) => void}).__fromHost({type: 'focus'}));
+  await expect(heading).toHaveText(title);
+  // Hidden, it stays hidden; on a narrow panel it opens over the chat and closes on a pick.
+  await page.getByTestId('history-toggle').click();
+  await expect(history).toHaveCount(0);
+  await page.reload();
+  await expect(heading).toHaveText(title);
+  await expect(history).toHaveCount(0);
+  await page.setViewportSize({width: 480, height: 720});
+  await page.getByTestId('history-toggle').click();
+  await expect(history).toHaveAttribute('data-overlay', 'true');
+  await page.keyboard.press('Escape');
+  await expect(history).toHaveCount(0);
+  await page.getByTestId('history-toggle').click();
+  await history.getByTestId('conversation-item').first().click();
+  await expect(history).toHaveCount(0);
 });
 
 test('the Brain page draws the knowledge base as a graph of communities and walks a presenter through it, beside the app', async ({page}) => {

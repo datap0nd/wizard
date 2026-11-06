@@ -3,7 +3,26 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-06 (latest) — The Brain page in the shape of a brain, opened by the wizard, with a link to Cases
+## 2026-11-06 (latest) — The desktop panel opens on the latest analysis, with the history on the left
+
+The owner: "Wizard, when clicked Ask Wizard at the top, still only shows one chat. Should default to opening latest chat
+and sohuld have sidebar on left with chat history." [Decision update](decisions/2026-10-20-desktop-app.md).
+- `/quick` (the panel under the Ask Wizard tab) opens on the newest analysis in the server's list, not the one the panel
+  last had open, and goes back to it when the panel opens again on a blank question (`App.tsx`, `openLatest`; a move of
+  the person's own while the list loads wins).
+- The person's analyses on the left (`QuickHistory`), through the full window's list, now one component (`ChatList`,
+  taken out of `Sidebar.tsx` unchanged): beside the chat from 640 px, hidden or shown by a button at the top left;
+  over the chat on a narrower panel. The full window is unchanged.
+- Docs: the desktop decision, `docs/desktop.md`, the README table. The committed `dist/` is rebuilt.
+
+**Tests.** `npm --prefix apps/web run typecheck` and `test` (158 passed); the whole e2e suite in Playwright's Chromium
+(`CI=1`): 32 passed, desktop and narrow, with the new test "the desktop panel opens on the latest analysis, with the
+person's analyses beside it" and the compact view's test now pressing **+** before its question (the panel opens on
+the latest analysis). `CI=1 scripts/verify_all.sh --allow-blocked=live-parity,postgres`: all required layers passed
+(postgres BLOCKED here, no PostgreSQL test server; live-parity BLOCKED, allowed). Screenshots of `/quick` at 760×700 and 480×700. Not run: the panel
+in WizardBar's WebView2 on a work PC.
+
+## 2026-11-06 — The Brain page in the shape of a brain, opened by the wizard, with a link to Cases
 
 The owner: "Make /brain page an actual brain shape, keep the colors and dots. Also, when I open brain page for the first
 time, it should zoom in to the same wizard pixel character, in his brain", "I just want the brain shape, dont make it

@@ -1,21 +1,27 @@
 import {useEffect, useState} from 'react';
-import {ArrowRight, Maximize2, Plus, Settings, UserRound} from 'lucide-react';
+import {ArrowRight, Maximize2, PanelLeftClose, PanelLeftOpen, Plus, Settings, UserRound} from 'lucide-react';
 import mark from '@/assets/wizard-mark.svg';
 import {cn} from '@/lib/utils';
+import {ChatList} from './ChatList';
 import {Button} from './ui/button';
 import {Hint} from './ui/menu';
 import {WizardSprite} from './WizardSprite';
-import type {Bootstrap} from '@/types';
+import type {Bootstrap, ConversationSummary} from '@/types';
 
-/** Top row of the compact view WizardBar shows under its button: title, new question, full window, account. */
-export function QuickHeader({boot, title, conversationId, synthetic, onNew, onAccount, onSettings}: {
-  boot: Bootstrap; title: string; conversationId: string | null; synthetic: boolean; onNew: () => void; onAccount: () => void;
-  onSettings?: () => void;
+/** Top row of the compact view WizardBar shows under its button: the history, title, new question, full window,
+ *  account. */
+export function QuickHeader({boot, title, conversationId, synthetic, history, onHistory, onNew, onAccount, onSettings}: {
+  boot: Bootstrap; title: string; conversationId: string | null; synthetic: boolean; history: boolean; onHistory: () => void; onNew: () => void;
+  onAccount: () => void; onSettings?: () => void;
 }) {
   const account = boot.gemini_account;
   const needsLink = !!account?.needs_link && !account.linked;
   return (
     <header className="relative flex items-center gap-1.5 overflow-hidden border-b border-line bg-canvas px-3 py-2" data-testid="quick-header">
+      <Hint text={history ? 'Hide your analyses' : 'Your analyses'}>
+        <Button variant="ghost" size="icon-sm" onClick={onHistory} aria-label={history ? 'Hide your analyses' : 'Show your analyses'} aria-pressed={history}
+          data-testid="history-toggle">{history ? <PanelLeftClose /> : <PanelLeftOpen />}</Button>
+      </Hint>
       <img src={mark} alt="" className="size-6 shrink-0" />
       <h2 className="mr-1 min-w-0 flex-1 truncate text-[13.5px] font-semibold" data-testid="conversation-title">{title}</h2>
       {synthetic && <span className="rounded-full border border-warn-line bg-warn-soft px-2 py-0.5 text-[11px] font-semibold text-warn" data-testid="synthetic-banner">SYNTHETIC</span>}
@@ -76,4 +82,26 @@ export function QuickEmpty({boot, greeting = 0, onPick, onAccount}: {boot: Boots
         Drop a file on the Ask Wizard button, or here, to attach it.</p>
     </div>
   );
+}
+
+/** The desktop panel's history (owner, 6 Nov 2026: "should have sidebar on left with chat history"): the person's
+ *  analyses as the full window's sidebar lists them. Beside the chat when the panel is wide enough; over it, with a
+ *  shade to click away, when it is not. */
+export function QuickHistory({conversations, currentId, overlay, onSelect, onRename, onDelete, onClose}: {conversations: ConversationSummary[];
+  currentId: string | null; overlay: boolean; onSelect: (id: string) => void; onRename: (id: string, title: string) => void;
+  onDelete: (id: string) => void; onClose: () => void}) {
+  const list = (
+    <aside aria-label="Your analyses" data-testid="quick-history" data-overlay={overlay}
+      className={cn('flex h-full w-[236px] shrink-0 flex-col border-r border-line bg-surface', overlay && 'absolute inset-y-0 left-0 z-50 shadow-2xl')}>
+      <p className="px-4 pb-1.5 pt-3 text-[11px] font-semibold uppercase tracking-wide text-ink-3">Your analyses</p>
+      <div className="min-h-0 flex-1 overflow-y-auto scroll-thin">
+        <ChatList conversations={conversations} currentId={currentId} onSelect={onSelect} onRename={onRename} onDelete={onDelete} />
+      </div>
+    </aside>
+  );
+  if (!overlay) return list;
+  return <>
+    <button type="button" aria-label="Hide your analyses" onClick={onClose} className="absolute inset-0 z-40 cursor-default bg-black/20" data-testid="history-shade" />
+    {list}
+  </>;
 }
