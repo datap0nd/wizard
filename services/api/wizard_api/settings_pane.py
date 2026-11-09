@@ -51,8 +51,8 @@ SECTIONS = [
                            "with the knowledge base's write token."),
     ("postgres", "Company database", "A read-only PostgreSQL account for Gemini's SQL questions."),
     ("nerp", "NERP", "NERP's views on their own PostgreSQL server: one database, one schema, views only, read with a "
-                     "read-only account. Gemini queries only those views; the task \"Map NERP's views\" documents each "
-                     "one so questions go straight to the right columns."),
+                     "read-only account. Gemini queries only those views; each view's dataset note in the knowledge base "
+                     "says what a row is, so questions go straight to the right columns."),
     ("dashboards", "Dashboards", "The team's HTML dashboards: the database's data with the team's business logic, which "
                                  "Gemini reads first when one covers the question. A mapped drive is saved as the network "
                                  "path it stands for, so every PC finds the same folder."),
