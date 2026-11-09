@@ -14,7 +14,11 @@ without an update; what their runs already saved (notes, portal maps, prepared r
 tools they used are unchanged. Settings → NERP's description, a NERP tool's docstring and the README no longer name a
 removed task.
 
-**Tests.** See the commit's checks below.
+**Tests.** `CI=1 scripts/verify_all.sh --allow-blocked=live-parity,postgres`: every other layer passed (python-tests
+817 passed, 4 skipped, `test_tasks.py` checking the two tasks left are well formed; web-unit 158; e2e 32). gemini-cli
+was BLOCKED there (the CLI not installed in this container); after `npm --prefix .tools install @google/gemini-cli`,
+`pytest tests -m gemini_cli`: 5 passed. postgres BLOCKED here (no PostgreSQL test server) and live-parity BLOCKED
+(allowed).
 
 ## 2026-11-06 — The Brain page's title is "Ontology"
 
