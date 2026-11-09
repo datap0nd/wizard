@@ -43,6 +43,19 @@ answered 404 to every query. The error did not say which address it had called.
 - The portal guide (`portal_guides/bdp.md`) describes the working call, starting with `SELECT 1` and small `limit`s,
   partition filters on large tables, `timeout_ms` for slow queries, and what each failure means.
 
+**Tests.** `tests/integration/test_superset_sql.py` (19, new): fake Superset servers in a real Chromium, synthetic
+only, answering in the JSON shapes Superset's source uses. They cover SELECT 1 on a legacy-only, a REST-only and a
+both-address instance; evidence; the row limit; a background query followed and read from the results backend on both
+versions; CSRF refresh; 401, untyped and typed 403; 404 at both addresses; SQL errors; a timeout followed by a working
+query; refused statements; and the page's check against `sql_problem`. With the old helper, the legacy-only test fails
+with the work PC's exact 404. `tests/unit/test_portals.py` adds the legacy address and the follow-up reads to the guard's
+cases. `CI=1 bash scripts/verify_all.sh --allow-blocked=live-parity,postgres`: lock, spec, secrets, contracts, lint,
+types, python-tests (827 passed, 4 skipped), portal-browser (43 passed), evals-schema, web-types, web-unit (177),
+web-dist, web-build and e2e (32) passed. gemini-cli was BLOCKED there (the CLI not installed in this container); after
+`npm --prefix .tools install @google/gemini-cli`, `pytest tests -m gemini_cli`: 5 passed. postgres BLOCKED here (no
+PostgreSQL test server) and live-parity BLOCKED (allowed). Not run: a query against the real Superset, which is first
+read on the work PC.
+
 Where the drafted request and the code differ: SQL errors come back as a 500 with typed `errors`, not a 400, so they
 are recognised by Superset's error type; a 404 can be a real answer, so only the router's 404 falls back. The request
 asked for a pull request; this repository ships every change to `main` with a release (CLAUDE.md), so it went there
