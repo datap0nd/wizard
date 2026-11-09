@@ -3,7 +3,42 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-09 (latest) — Only the presentation tasks are left in Settings → Tasks
+## 2026-11-09 (latest) — Heatmaps; visuals copied and downloaded for PowerPoint and Excel; Cases fold their sources
+
+The owner: "I want wizard to be able to output 'heatmap' visuals. I also want to be able to download visuals as they
+are, in a format excel and powerpoint-friendly ... it created colored balls ... I couldn't copy paste to powerpoint",
+"cases has all the queries and steps instead of an expandable option for it. Also, I want that 'download' or copy button
+to be in Cases" and "it would be good if we could download the data BEHIND the visuals."
+[Decision](decisions/2026-11-09-heatmaps-and-visual-exports.md).
+- **Heatmap.** `wizard_render_visual` takes `kind: "heatmap"` (`x` the row labels, `series` up to 11 shaded columns of
+  one measure, optional `scale` sequential or diverging; mixed measures refused). `VisualBlock` draws it as a table of
+  shaded cells with the value in each and a legend; missing cells stay missing. The tool description and the system
+  prompt tell Gemini never to imitate a chart or heatmap with emoji or Markdown. Email drafts shade its cells.
+- **Copy / download** on every visual (answers, report pages, Cases), built in the page (`visualExport.ts`, loaded on
+  first use; pptxgenjs 4.0.1 and jszip 3.10.1 added): copy picture (PNG), copy table (HTML with fills, `x:num` and
+  number formats for Excel, plus tab-separated text), PowerPoint slide (a native editable chart with its embedded
+  workbook, or a native shaded table paged over slides), Excel workbook (values in Wizard's formats, the Sources sheet,
+  and in Wizard each cited source's rows; a case keeps none) and picture (.png). Each carries the data label and
+  evidence ids.
+- **Downloads on this PC** go through `POST /api/v1/exports` (`exports.py`): only .pptx, .xlsx and .png that are what
+  their name says, up to 25 MB, saved in Downloads never over a file, then **Open**; elsewhere the browser downloads.
+- **Cases**: under each answer, one closed section "How Wizard got this answer (N sources, M steps)" holds the sources
+  (each opening its query) and the steps; a citation still opens its query.
+- Contracts re-exported (the tool's heatmap fields, the two endpoints). The committed `dist/` is rebuilt.
+
+**Tests.** `CI=1 bash scripts/verify_all.sh --allow-blocked=live-parity,postgres` on the merge with `main`: all
+required layers passed (python-tests 821 passed, 4 skipped, with `test_exports.py` and the heatmap tests in
+`test_tools.py`; gemini-cli 5 passed, the CLI installed with `npm --prefix .tools install @google/gemini-cli`; web-unit
+177 with `visualExport.test.ts`, `VisualBlock.test.tsx` and the fold in `CaseFlow.test.tsx`; e2e 32); postgres
+BLOCKED here (no PostgreSQL test server) and live-parity BLOCKED (allowed). The generated .pptx and .xlsx were opened
+with python-pptx and openpyxl and rendered with LibreOffice (bar, line with a gap, scatter, a 4-row and a 40-row
+heatmap); that found and fixed three things: missing values written as empty points (now omitted, as Office writes a
+blank), a single bar series coloured per bar, and the value axis on top of reversed bars. The built Cases page was
+driven in Chromium: the heatmap, the menu, Copy table and Copy picture read back from the clipboard, the three
+downloads, the fold, no console errors. Not run: pasting into PowerPoint and Excel themselves, and Download into
+Downloads from WizardBar's WebView2 on a work PC.
+
+## 2026-11-09 — Only the presentation tasks are left in Settings → Tasks
 
 The owner: "I want you to clear all the tasks besides the presentation ones." Removed from `tasks/`: rank the Big Data
 Portal's datasets (`bdp-relevant-datasets`), prepare its access requests (`bdp-request-dataset-access`), map GSCM's daily
