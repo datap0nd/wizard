@@ -3,7 +3,70 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-09 (latest) — Heatmaps; visuals copied and downloaded for PowerPoint and Excel; Cases fold their sources
+## 2026-11-09 (latest) — Superset queries run on every Superset version
+
+The owner's work PC: every `W.superset.sql(...)` failed, `SELECT 1` included, with `SQL Lab answered 404:
+{"errors":[{"message":"404 Not Found: The requested URL was not found on the server..."}]}`, while
+`W.superset.databases()` and `schemas()` worked. The instance's portal notes say its SQL Lab runs at
+`POST /superset/sql_json/`, not `POST /api/v1/sqllab/execute/`.
+
+**Root cause.** `W.superset.sql` (`portal_helpers.js`) posted only to `/api/v1/sqllab/execute/`. Superset's own source
+(1.5.3, 2.0.1, 2.1.3, 3.1.3, 4.1.4, 6.0.0) shows that address arrived in 2.1. Up to 2.0, SQL Lab runs only at
+`/superset/sql_json/`; 2.1 serves both; from 3.0 only the REST one. The company's Superset predates 2.1, so its router
+answered 404 to every query. The error did not say which address it had called.
+
+**The fix**, in `W.superset.sql`:
+- It sends the query to the REST address, and to `/superset/sql_json/` only when Superset says the address is not
+  there (a 404 or 405 from its router; never a 404 about the query, such as an unknown database) or not this person's
+  (a 401, or a 403 without an error type). None of those runs the query, so a query never runs twice. The address that
+  answered is remembered in the tab's `sessionStorage` for the rest of the browser session, with no token and no rows.
+- The request body carries only the fields Superset's REST schema accepts (it refuses others with a 400), with the
+  CSRF token from `/api/v1/security/csrf_token/` (else the page's own), same-origin credentials and no redirects
+  followed. An expired CSRF token is fetched again and the query sent once more; a SQL error is never retried.
+- A database set to run queries in the background (`allow_run_async`, now also listed by `W.superset.databases()`) is
+  run that way, as Superset's own SQL Lab runs it. The query is then followed where that version's SQL Lab follows it
+  (`/superset/queries/<ms>`, or `/api/v1/query/updated_since`), and its rows are read from the results backend
+  (`/superset/results/<key>/`, or `/api/v1/sqllab/results/`). `{runAsync: false}` runs it in the foreground.
+- Every path returns `{columns, rows, total_rows}`: column names as text, rows in column order, `null` for a missing
+  value. `limit` (default 1000, at most 50,000, the rows a portal read keeps) is applied in the page too when Superset
+  ignores it, and `limit_reached` says when the limit cut the result.
+- One SELECT is checked in the page before anything is sent, with the same rules and words as `portals.sql_problem`
+  (a test compares the two on 32 statements). The browser's own guard still checks every request, and now has a test
+  for the legacy address.
+- A failure names the method, the path (not the host), the status, Superset's error type, issue codes and message,
+  then what to do: sign in again, access is requested in the information catalog, check Superset's address, fix the
+  SQL, or filter the partition column / give the step more `timeout_ms`. With no SQL Lab at all, it names both
+  addresses and the fallback tried.
+- Each request ends when the step's time does (`W.deadline`, which `_script` now sets), so a slow query or a
+  background query's polling stops cleanly. The step reports `step_failed`, the steps before it keep their rows, and
+  the next query runs in the same browser.
+- The portal guide (`portal_guides/bdp.md`) describes the working call, starting with `SELECT 1` and small `limit`s,
+  partition filters on large tables, `timeout_ms` for slow queries, and what each failure means.
+
+**Tests.** `tests/integration/test_superset_sql.py` (19, new): fake Superset servers in a real Chromium, synthetic
+only, answering in the JSON shapes Superset's source uses. They cover SELECT 1 on a legacy-only, a REST-only and a
+both-address instance; evidence; the row limit; a background query followed and read from the results backend on both
+versions; CSRF refresh; 401, untyped and typed 403; 404 at both addresses; SQL errors; a timeout followed by a working
+query; refused statements; and the page's check against `sql_problem`. With the old helper, the legacy-only test fails
+with the work PC's exact 404. `tests/unit/test_portals.py` adds the legacy address and the follow-up reads to the guard's
+cases. `CI=1 bash scripts/verify_all.sh --allow-blocked=live-parity,postgres`: lock, spec, secrets, contracts, lint,
+types, python-tests (827 passed, 4 skipped), portal-browser (43 passed), evals-schema, web-types, web-unit (177),
+web-dist, web-build and e2e (32) passed. gemini-cli was BLOCKED there (the CLI not installed in this container); after
+`npm --prefix .tools install @google/gemini-cli`, `pytest tests -m gemini_cli`: 5 passed. postgres BLOCKED here (no
+PostgreSQL test server) and live-parity BLOCKED (allowed). Not run: a query against the real Superset, which is first
+read on the work PC.
+
+Where the drafted request and the code differ: SQL errors come back as a 500 with typed `errors`, not a 400, so they
+are recognised by Superset's error type; a 404 can be a real answer, so only the router's 404 falls back. The request
+asked for a pull request; this repository ships every change to `main` with a release (CLAUDE.md), so it went there
+directly.
+
+Not fixed here (a separate task): the Wizard browser sometimes fails to start with "Target page, context or browser has
+been closed". A likely cause, not verified on Windows: `_launch` recognises a locked profile only by "ProcessSingleton",
+"SingletonLock" or "already in use". When another Chrome already holds Wizard's profile, Chrome on Windows hands the
+launch over and exits, and Playwright reports only "has been closed", so the person gets the generic message.
+
+## 2026-11-09 — Heatmaps; visuals copied and downloaded for PowerPoint and Excel; Cases fold their sources
 
 The owner: "I want wizard to be able to output 'heatmap' visuals. I also want to be able to download visuals as they
 are, in a format excel and powerpoint-friendly ... it created colored balls ... I couldn't copy paste to powerpoint",

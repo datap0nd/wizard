@@ -94,6 +94,13 @@ def test_only_the_portals_their_company_domain_and_sign_in_hosts_are_reachable()
     ("GET", "https://p.corp.example.com/getUpdatedList.do", None),
     ("GET", "https://p.corp.example.com/addressBook/list", None),
     ("POST", "https://bdp.example.com/api/v1/sqllab/execute/", json.dumps({"sql": "SELECT REPLACE(name, 'a', 'b'), comment FROM t"})),
+    # SQL Lab on Superset before 2.1, and how W.superset.sql follows a background query and reads its rows there.
+    ("POST", "https://bdp.example.com/superset/sql_json/", json.dumps({"sql": "SELECT 1", "runAsync": True})),
+    ("GET", "https://bdp.example.com/superset/queries/1762675200000", None),
+    ("GET", "https://bdp.example.com/superset/results/rk-abc123/?rows=1000", None),
+    ("GET", "https://bdp.example.com/api/v1/query/updated_since?q=(last_updated_ms:1762675200000)", None),
+    ("GET", "https://bdp.example.com/api/v1/sqllab/results/?q=(key:'rk-abc123',rows:1000)", None),
+    ("GET", "https://bdp.example.com/api/v1/security/csrf_token/", None),
     # The information catalog: searching, reading a table and listing one's own access requests are reads.
     ("POST", "https://catalog.example.com/api/search", json.dumps({"query": "mutation testing tables", "page": 1})),
     ("POST", "https://catalog.example.com/api/graphql", json.dumps({"query": "query { search(input: {query: \"sales\"}) { total } }"})),
@@ -147,6 +154,8 @@ def test_writes_are_refused(method, url, body, word):
 def test_sql_lab_runs_one_select_only(sql):
     assert sql_problem(json.dumps({"sql": sql}))
     assert write_reason("POST", "https://bdp.example.com/api/v1/sqllab/execute/", json.dumps({"sql": sql}))
+    # Superset before 2.1 runs SQL Lab at its legacy address: the same rule holds there.
+    assert write_reason("POST", "https://bdp.example.com/superset/sql_json/", json.dumps({"sql": sql}))
 
 
 def test_sql_lab_reads_pass():

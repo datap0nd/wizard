@@ -920,25 +920,306 @@ const W = (() => {
   };
 
   // ---- BDP: Apache Superset under the person's own sign-in ----------------------------------------------------------
+  // SQL Lab runs a query at one of two addresses, by Superset's version: POST /superset/sql_json/ (1.x and 2.0, kept in
+  // 2.1) and POST /api/v1/sqllab/execute/ (2.1 on, the only one from 3.0). A query that runs in the background is
+  // followed where that version's own SQL Lab follows it, and its rows are read from the results backend:
+  //   legacy  GET /superset/queries/<ms>                       GET /superset/results/<key>/?rows=N
+  //   api     GET /api/v1/query/updated_since?q=(...:<ms>)     GET /api/v1/sqllab/results/?q=(key:'<key>',rows:N)
+  // W.superset.sql sends the query to the address that answered before in this tab, and to the other one only when
+  // Superset says that address is not there (404/405 from its router, never a 404 about the query) or not this
+  // person's (401, or a 403 without an error type): none of those runs anything, so a query never runs twice.
+  const SQL_ROUTES = {
+    api: {
+      execute: '/api/v1/sqllab/execute/',
+      poll: since => `/api/v1/query/updated_since?q=${encodeURIComponent(`(last_updated_ms:${since})`)}`,
+      find: (json, clientId) => ((json && json.result) || []).find(q => q && q.id === clientId) || null,
+      results: (key, rows) => `/api/v1/sqllab/results/?q=${encodeURIComponent(`(key:'${String(key).replace(/!/g, '!!').replace(/'/g, "!'")}',rows:${rows})`)}`,
+    },
+    legacy: {
+      execute: '/superset/sql_json/',
+      poll: since => `/superset/queries/${since}`,
+      find: (json, clientId) => (json && typeof json === 'object' && !Array.isArray(json) && json[clientId]) || null,
+      results: (key, rows) => `/superset/results/${encodeURIComponent(key)}/?rows=${rows}`,
+    },
+  };
+  const CSRF_PATH = '/api/v1/security/csrf_token/';
+  const SQL_MAX_ROWS = 50000;  // the rows a portal read keeps as evidence (portal_tools.MAX_EVIDENCE_ROWS)
+  const SQL_MEMO = 'wizard.superset';
+  // What this tab learned about this Superset, for the rest of the browser session (sessionStorage is per tab and
+  // origin): which SQL Lab address answered, and which databases run queries in the background. Never a token or rows.
+  const memo = (update = null) => {
+    let value = {};
+    try { value = JSON.parse(sessionStorage.getItem(SQL_MEMO) || '{}') || {}; } catch (e) { value = window.__wizardSuperset || {}; }
+    if (update) {
+      value = {...value, ...update};
+      try { sessionStorage.setItem(SQL_MEMO, JSON.stringify(value)); } catch (e) { window.__wizardSuperset = value; }
+    }
+    return value;
+  };
+  const clip = (text, n) => {
+    const t = String(text == null ? '' : text).replace(/\s+/g, ' ').trim();
+    return t.length > n ? t.slice(0, n - 1) + '…' : t;
+  };
+  const stop = text => (/[.…!?]$/.test(text) ? text : text + '.');  // Superset's own message may end a sentence
+  // What Superset said: its first error's message, type and issue codes (SIP-40 errors), else FAB's message, else text.
+  const said = (json, text) => {
+    const first = (json && Array.isArray(json.errors) && json.errors[0]) || {};
+    let message = first.message || (json && (json.message || json.error || json.errorMessage || json.msg)) ||
+      String(text || '').replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ');
+    if (typeof message !== 'string') message = JSON.stringify(message);
+    const issues = ((first.extra && first.extra.issue_codes) || []).map(i => i && i.code).filter(Boolean);
+    return {message: clip(message, 400), type: first.error_type || null, issues};
+  };
+  const HINTS = {
+    signed_out: 'Not signed in: ask the person to sign in again (Settings → Portals → Sign in to the portals).',
+    forbidden: 'No permission for this database or table: access is requested in the information catalog.',
+    route_missing: "Check Superset's address in Settings → Portals.",
+    not_found: 'Check the id with W.superset.databases().',
+    sql: "Fix the SQL from Superset's message; Wizard does not retry it.",
+    timeout: 'Filter on the partition/date column, aggregate, ask for fewer rows, or give the step a longer timeout_ms.',
+    results: 'It ran but its rows could not be read: run it again with {runAsync: false}.',
+    csrf: 'Superset refused its CSRF token twice: ask the person to sign in again.',
+    server: 'Superset itself failed (not a SQL mistake): try again later.',
+    network: "It did not reach Superset: Wizard refused it (see the step's log) or the network failed.",
+    refused: '',
+  };
+  const sqlError = (kind, text) => {
+    // No final period: Wizard ends the step's message with one.
+    const error = new Error(`SQL Lab: ${text}${HINTS[kind] ? ' ' + HINTS[kind] : ''}`.replace(/\.$/, ''));
+    error.kind = kind;
+    return error;
+  };
+  // One request to this Superset, ended at `end` (aborted then, so nothing is left running in the page). Same origin
+  // only: the person's cookies and Superset's token go nowhere else.
+  const call = async (method, path, {body, token, end}) => {
+    const left = end - Date.now();
+    if (left < 250) return {method, path, status: 0, timedOut: true};
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), left);
+    try {
+      const response = await fetch(path, {
+        method, credentials: 'same-origin', redirect: 'manual', cache: 'no-store', signal: controller.signal,
+        headers: {Accept: 'application/json', ...(body === undefined ? {} : {'Content-Type': 'application/json'}),
+                  ...(token ? {'X-CSRFToken': token} : {})},
+        body: body === undefined ? undefined : JSON.stringify(body)});
+      const text = await response.text();
+      let json = null;
+      try { json = JSON.parse(text); } catch (e) { /* not JSON: a sign-in or error page */ }
+      return {method, path, status: response.status, redirected: response.type === 'opaqueredirect', json, text};
+    } catch (error) {
+      const timedOut = !!error && error.name === 'AbortError';
+      return {method, path, status: 0, timedOut, failed: timedOut ? null : String((error && error.message) || error)};
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  // What a reply means: null when it carries an answer, else why not (the kind picks the hint, and whether the other
+  // SQL Lab address is worth trying).
+  const kindOf = r => {
+    if (r.timedOut) return 'timeout';
+    if (r.failed) return 'network';
+    if (r.redirected) return 'signed_out';
+    const {message, type} = said(r.json, r.text);
+    const untyped = !type || type === 'GENERIC_BACKEND_ERROR';
+    if (r.status >= 200 && r.status < 300) {
+      if (r.json && typeof r.json === 'object') return null;
+      return /type=["']?password|sign[ -]?in|log[ -]?in/i.test(r.text || '') ? 'signed_out' : 'server';
+    }
+    if (r.status === 401) return 'signed_out';
+    if ((r.status === 404 || r.status === 405) && untyped) return 'route_missing';
+    if (r.status === 403 && untyped) return 'route_forbidden';
+    if (r.status === 400 && /csrf/i.test(message)) return 'csrf';
+    if (r.status === 403 || (type && /SECURITY_ACCESS_ERROR|MISSING_OWNERSHIP|PERMISSIONS_ERROR/.test(type))) return 'forbidden';
+    if (r.status === 408 || r.status === 504 || (type && /TIMEOUT/.test(type))) return 'timeout';
+    if (type === 'DATABASE_NOT_FOUND_ERROR') return 'not_found';
+    if (r.status === 410 || (type && /RESULTS_BACKEND/.test(type))) return 'results';
+    if (r.status >= 500 && untyped) return 'server';
+    return 'sql';
+  };
+  // "POST /superset/sql_json/ answered 500 GENERIC_DB_ENGINE_ERROR (issue 1002): <Superset's message>."
+  const answered = (r, n = 140) => {
+    if (r.timedOut) return `${r.method} ${r.path} got no answer in time.`;
+    if (r.failed) return `${r.method} ${r.path} failed (${clip(r.failed, 60)}).`;
+    if (r.redirected) return `${r.method} ${r.path} was redirected to a sign-in page.`;
+    const {message, type, issues} = said(r.json, r.text);
+    const label = [type, issues.length ? `(issue ${issues.join(', ')})` : ''].filter(Boolean).join(' ');
+    return stop(`${r.method} ${r.path} answered ${r.status}${label ? ' ' + label : ''}${message ? ': ' + clip(message, n) : ''}`);
+  };
+  // A query running in the background, followed where this version's SQL Lab follows it until it ends.
+  const follow = async (route, query, end) => {
+    if (!query.id) throw sqlError('server', `${route.execute} answered with neither rows nor a query to follow.`);
+    const since = Math.floor(Number(query.startDttm) || Number(query.changedOn) || Date.now() - 60000) - 1000;
+    for (let wait = 500; ; wait = Math.min(wait * 2, 3000)) {
+      if (Date.now() + wait >= end) {
+        throw sqlError('timeout', `query ${query.id} was still running in Superset when the step's time ran out ` +
+                                  `(followed at GET ${route.poll(since).split('?')[0]}).`);
+      }
+      await sleep(wait);
+      const r = await call('GET', route.poll(since), {end});
+      const kind = kindOf(r);
+      if (kind) throw sqlError(['route_missing', 'route_forbidden'].includes(kind) ? 'server' : kind, `following query ${query.id}: ${answered(r)}`);
+      const found = route.find(r.json, query.id);
+      const state = String((found && found.state) || '').toLowerCase();
+      if (state === 'success') return found;
+      if (['failed', 'stopped', 'timed_out'].includes(state)) {
+        const detail = said({errors: (found.extra && found.extra.errors) || []}, '');
+        const label = [detail.type, detail.issues.length ? `(issue ${detail.issues.join(', ')})` : ''].filter(Boolean).join(' ');
+        throw sqlError(state === 'timed_out' ? 'timeout' : state === 'stopped' ? 'server' : 'sql',
+                       stop(`query ${query.id} ${state} in Superset${label ? ' ' + label : ''}: ${clip(found.errorMessage || detail.message || state, 140)}`));
+      }
+    }
+  };
+  // Superset's result as {columns, rows, total_rows}: column names as text, each row in column order, null for a
+  // missing value, at most `limit` rows. total_rows counts the rows Superset returned; limit_reached says more may exist.
+  const table = (payload, limit) => {
+    const data = Array.isArray(payload.data) ? payload.data : [];
+    let columns = (payload.columns || []).map(c => String(c && typeof c === 'object' ? (c.column_name ?? c.name) : c));
+    if (!columns.length && data.length && data[0] && !Array.isArray(data[0])) columns = Object.keys(data[0]);
+    const rows = data.slice(0, limit).map(row => (Array.isArray(row)
+      ? columns.map((_, i) => (row[i] === undefined ? null : row[i]))
+      : columns.map(c => (row == null || row[c] === undefined ? null : row[c]))));
+    const out = {columns, rows, total_rows: data.length};
+    const factor = payload.query && payload.query.limitingFactor;
+    if (data.length >= limit || payload.displayLimitReached || factor === 'DROPDOWN' || factor === 'QUERY_AND_DROPDOWN') out.limit_reached = true;
+    return out;
+  };
+  // The token Superset wants on a POST: from its API, else from the page Superset rendered.
+  const csrf = async end => {
+    const r = await call('GET', CSRF_PATH, {end});
+    const token = r.json && typeof r.json.result === 'string' ? r.json.result : null;
+    return token || document.querySelector('input#csrf_token, input[name=csrf_token]')?.value || null;
+  };
+  // The characters of SQL outside comments, with their index; a quoted text or name is one item, its opening quote
+  // (postgres_query._code, so the check below and portals.sql_problem read a statement the same way).
+  const sqlCode = text => {
+    const out = [];
+    for (let i = 0, n = text.length; i < n; i += 1) {
+      const c = text[i], start = i;
+      if (c === "'") {
+        const escapes = i > 0 && 'eE'.includes(text[i - 1]);
+        i += 1;
+        while (i < n && !(text[i] === "'" && !(i + 1 < n && text[i + 1] === "'"))) i += (text[i] === "'" || (escapes && text[i] === '\\')) ? 2 : 1;
+      } else if (c === '"') {
+        i = text.indexOf('"', i + 1);
+        if (i < 0) i = n;
+      } else if (text.startsWith('--', i)) {
+        i = text.indexOf('\n', i);
+        i = (i < 0 ? n : i) - 1;
+        continue;
+      } else if (text.startsWith('/*', i)) {
+        let depth = 1;
+        i += 2;
+        while (i < n && depth) {
+          const opens = text.startsWith('/*', i), closes = text.startsWith('*/', i);
+          depth += opens ? 1 : closes ? -1 : 0;
+          i += opens || closes ? 2 : 1;
+        }
+        i -= 1;
+        continue;
+      } else if (c === '$') {
+        const tag = /^\$[A-Za-z_]?[A-Za-z0-9_]*\$/.exec(text.slice(i));
+        if (tag) {
+          const close = text.indexOf(tag[0], i + tag[0].length);
+          i = close < 0 ? n : close + tag[0].length - 1;
+        }
+      }
+      out.push([start, c]);
+    }
+    return out;
+  };
+
   W.superset = {
-    csrf: async () => (await W.fetchJson('/api/v1/security/csrf_token/')).json?.result || null,
+    csrf: async () => csrf(Date.now() + 30000),
     databases: async () => {
       const r = await W.fetchJson('/api/v1/database/?q=' + encodeURIComponent('(page_size:100)'));
-      return (r.json?.result || []).map(d => ({id: d.id, name: d.database_name, backend: d.backend, allow_dml: d.allow_dml}));
+      const list = (r.json?.result || []).map(d => ({id: d.id, name: d.database_name, backend: d.backend, allow_dml: d.allow_dml,
+                                                       allow_run_async: !!d.allow_run_async}));
+      if (list.length) memo({async: Object.fromEntries(list.map(d => [d.id, d.allow_run_async]))});
+      return list;
     },
     schemas: async databaseId => (await W.fetchJson(`/api/v1/database/${databaseId}/schemas/`)).json?.result || [],
-    // One SELECT through SQL Lab (Wizard refuses anything else): {columns, rows, total_rows}.
-    sql: async (databaseId, sql, {schema = null, limit = 1000} = {}) => {
-      const token = await W.superset.csrf();
-      const response = await fetch('/api/v1/sqllab/execute/', {
-        method: 'POST', credentials: 'include',
-        headers: {'Content-Type': 'application/json', Accept: 'application/json', ...(token ? {'X-CSRFToken': token} : {})},
-        body: JSON.stringify({database_id: databaseId, sql, schema, runAsync: false, queryLimit: limit, client_id: Math.random().toString(36).slice(2, 12)})});
-      const body = await response.json().catch(() => null);
-      if (!response.ok || !body) throw new Error(`SQL Lab answered ${response.status}: ${JSON.stringify(body).slice(0, 400)}`);
-      if (body.status && body.status !== 'success') throw new Error(`SQL Lab: ${body.status} ${body.error || ''}`.trim());
-      const columns = (body.columns || []).map(c => c.column_name || c.name);
-      return {columns, rows: (body.data || []).map(row => columns.map(c => row[c] ?? null)), total_rows: (body.data || []).length};
+    // Why Wizard refuses this SQL, or null: portals.sql_problem's rules and words, checked before anything is sent (the
+    // browser checks the request itself again). One statement; SELECT, WITH, SHOW, EXPLAIN, DESCRIBE or VALUES; no word
+    // that writes outside comments and quoted text.
+    check: sql => {
+      const original = String(sql == null ? '' : sql);
+      let cut = null;  // without_terminator: drop a final semicolon followed only by blanks and comments
+      for (const [i, c] of sqlCode(original)) {
+        if (c === ';') { if (cut === null) cut = i; } else if (!/\s/.test(c)) cut = null;
+      }
+      const text = (cut === null ? original : original.slice(0, cut)).trim();
+      if (!text) return 'the SQL is empty';
+      const code = sqlCode(text).map(([, c]) => c).join('');
+      if (code.includes(';')) return 'SQL Lab runs one statement at a time';
+      if (!/^\s*(\(\s*)*(select|with|show|explain|describe|desc|values)\b/i.test(code)) return 'only SELECT (or WITH ... SELECT) runs in SQL Lab';
+      const write = /\b(insert|update|delete|merge|upsert|drop|create|alter|truncate|grant|revoke|copy|call|into|overwrite|analyze|analyse|vacuum|execute|exec|refresh|optimize|msck)\b/i.exec(code);
+      return write ? `the SQL contains ${write[1].toUpperCase()}` : null;
+    },
+    // One read-only statement through SQL Lab: {columns, rows, total_rows[, limit_reached]}. Options: schema; limit
+    // (rows, default 1000, at most 50000); runAsync (default: as the database is set up, the way Superset's own SQL Lab
+    // runs it); timeout_ms (default: what is left of the step's time).
+    sql: async (databaseId, sql, {schema = null, limit = 1000, runAsync = null, timeout_ms: ms = null} = {}) => {
+      const problem = W.superset.check(sql);
+      if (problem) throw sqlError('refused', `Wizard refused the query before sending it: ${problem}.`);
+      const id = Number(databaseId);
+      if (!Number.isInteger(id) || id <= 0) throw sqlError('not_found', `${clip(JSON.stringify(databaseId), 40)} is not a database id.`);
+      const rows = Math.max(1, Math.min(Math.floor(Number(limit)) || 1000, SQL_MAX_ROWS));
+      const end = Math.min(W.deadline ? W.deadline - 1000 : Date.now() + 120000, ms ? Date.now() + Number(ms) : Infinity);
+      let background = runAsync;
+      if (background === null || background === undefined) {
+        if (!(String(id) in (memo().async || {}))) { try { await W.superset.databases(); } catch (e) { /* run it in the foreground */ } }
+        background = !!(memo().async || {})[id];
+      }
+      const body = {database_id: id, sql: String(sql), schema: schema || null, runAsync: !!background, queryLimit: rows,
+                    select_as_cta: false, expand_data: false, tab: 'Wizard', templateParams: null, client_id: ''};
+      const known = memo().route;
+      const order = known === 'legacy' ? ['legacy', 'api'] : ['api', 'legacy'];
+      const tried = [];
+      let token = await csrf(end);
+      for (const name of order) {
+        const route = SQL_ROUTES[name];
+        let r;
+        for (let attempt = 0; ; attempt += 1) {
+          body.client_id = Math.random().toString(36).slice(2, 12).padEnd(10, '0');  // Superset keeps 11 characters
+          r = await call('POST', route.execute, {body, token, end});
+          if (kindOf(r) !== 'csrf' || attempt) break;
+          token = await csrf(end);  // an expired token: once more with a fresh one
+        }
+        tried.push(r);
+        const kind = kindOf(r);
+        if (kind === 'route_missing' || kind === 'route_forbidden' || (kind === 'signed_out' && r.status === 401)) continue;
+        if (kind) {
+          if (kind !== 'network' && kind !== 'timeout' && kind !== 'signed_out') memo({route: name});
+          const first = tried.length > 1 ? ` (after ${tried[0].method} ${tried[0].path} answered ${tried[0].status})` : '';
+          throw sqlError(kind, answered(r).replace(/\.$/, '') + first + '.');
+        }
+        memo({route: name});
+        let payload = r.json;
+        const status = String(payload.status || '').toLowerCase();
+        if (['failed', 'stopped', 'timed_out'].includes(status)) {
+          throw sqlError(status === 'timed_out' ? 'timeout' : 'sql', stop(`${r.method} ${r.path} said the query ${status}: ${clip(payload.error || said(payload, '').message, 140)}`));
+        }
+        if (!Array.isArray(payload.data)) {
+          const query = payload.query || {};
+          const done = String(query.state || '').toLowerCase() === 'success' ? query : await follow(route, query, end);
+          if (!done.resultsKey) throw sqlError('results', `query ${query.id} succeeded but Superset kept no results for it.`);
+          const got = await call('GET', route.results(done.resultsKey, rows), {end});
+          const gotKind = kindOf(got);
+          if (gotKind) {
+            got.path = got.path.split('?')[0].replace(encodeURIComponent(done.resultsKey), '<key>');
+            throw sqlError(['route_missing', 'route_forbidden'].includes(gotKind) ? 'results' : gotKind, answered(got));
+          }
+          payload = got.json;
+          const gotStatus = String(payload.status || 'success').toLowerCase();
+          if (gotStatus !== 'success') throw sqlError('sql', stop(`query ${query.id} ${gotStatus}: ${clip(payload.error || said(payload, '').message, 140)}`));
+        }
+        return table(payload, rows);
+      }
+      const steps = tried.map(r => `${r.method} ${r.path} (${r.status})`).join(', then at the fallback ');
+      const last = tried.filter(r => kindOf(r) !== 'route_missing').pop();
+      if (!last) throw sqlError('route_missing', stop(`not served at ${steps}: ${clip(said(tried[0].json, tried[0].text).message, 90)}`));
+      const kind = kindOf(last) === 'route_forbidden' ? 'forbidden' : kindOf(last);
+      throw sqlError(kind, stop(`refused at ${steps}: ${clip(said(last.json, last.text).message, 90)}`));
     },
   };
   return W;
