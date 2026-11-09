@@ -42,22 +42,40 @@ application by its full address; a `/path` then stays on the application the pag
 
 ## Superset: queries
 
-- `await W.superset.databases()` lists the databases this person can use: `{id, name, backend, allow_dml}`.
+- `await W.superset.databases()` lists the databases this person can use: `{id, name, backend, allow_dml,
+  allow_run_async}`.
 - `await W.superset.schemas(databaseId)` lists schemas.
-- `await W.superset.sql(databaseId, "SELECT ...", {schema, limit})` runs one SELECT through SQL Lab
-  (`POST /api/v1/sqllab/execute/` with the page's CSRF token) and returns `{columns, rows, total_rows}`: return it to
-  record it as evidence. Wizard refuses anything but one SELECT (or WITH ... SELECT).
-- The `W.superset` helpers work on a Superset page: `goto` Superset's address first when the page is on the catalog.
+- `await W.superset.sql(databaseId, "SELECT ...", {schema, limit})` runs one SELECT through SQL Lab and returns
+  `{columns, rows, total_rows}`: return it to record it as evidence. It works on every Superset version: it sends the
+  query to `POST /api/v1/sqllab/execute/` or, where Superset does not serve that (versions before 2.1), to
+  `POST /superset/sql_json/`, with the page's CSRF token, and remembers which one answered. A database that runs
+  queries in the background (`allow_run_async`) is followed until the query ends and its rows are read from Superset's
+  results; `{runAsync: false}` runs it in the foreground instead. Write your own `fetch` to SQL Lab only to read
+  something `W.superset.sql` does not return.
+- Wizard refuses anything but one SELECT (or WITH ... SELECT) before it is sent, and again in the browser.
+- Start cheap: `SELECT 1` on a database proves the route and your access; then read a table with a small `limit` (10 to
+  100) and few columns before asking for more.
 - Big tables are usually partitioned by date: always filter on the partition column (often `dt`, `ds`, `date` or
-  `p_date`; the information catalog may name it) and aggregate in SQL. Ask for few columns; set `limit`.
-- A database's engine decides the SQL dialect (`backend`: hive, presto/trino, spark, impala, postgresql...).
+  `p_date`; the information catalog may name it) and aggregate in SQL. Ask for few columns; set `limit` (default 1000,
+  at most 50000). `total_rows` larger than the rows you got, or `limit_reached`, means the limit cut the result.
+- A query gets the rest of its step's time (30 s unless you give the step `timeout_ms`, up to 150000): give a step that
+  queries a large table `timeout_ms: 120000`.
+- The `W.superset` helpers work on a Superset page: `goto` Superset's address first when the page is on the catalog.
+- A database's engine decides the SQL dialect (`backend`: bigquery, hive, presto/trino, spark, impala, postgresql...).
+  In BigQuery, quote a full table name with backticks: `` `project.dataset.table` ``.
 - Charts and datasets: `GET /api/v1/chart/?q=...`, `GET /api/v1/dataset/?q=...`, and `POST /api/v1/chart/data` (the
   payload a chart sends, visible in `requests` after opening it) read existing work without writing SQL.
 
 ## When it fails
 
-- `401`/`403` or a sign-in page: the person is not signed in to that application, or has no access to that table. Say
+A failed query stops its step with `SQL Lab: <method> <path> answered <status> <Superset's error type> (issue <code>):
+<Superset's message>`, then what to do:
+
+- **Not signed in** (401, or a sign-in page): the person signs in again in Settings → Portals.
+- **No permission** (403, or a `..._SECURITY_ACCESS_ERROR`): the person has no access to that database or table. Say
   so; access is requested in the information catalog, not in Wizard.
-- A query that runs asynchronously returns a query id instead of rows: poll `GET /api/v1/query/?q=...` sparingly, or
-  ask a smaller question.
-- Superset's error text explains SQL mistakes: read it and fix the query.
+- **Not served at either address** (404 at both): Superset's address in Settings → Portals is wrong, or SQL Lab is off.
+- **A SQL error** (`GENERIC_DB_ENGINE_ERROR`, `SYNTAX_ERROR`, `COLUMN_DOES_NOT_EXIST_ERROR`...): read Superset's
+  message, fix the query and run it again yourself; Wizard never retries it.
+- **Took too long**: filter on the partition column, aggregate, ask for fewer rows, or give the step more `timeout_ms`.
+- An expired CSRF token is refreshed and the query sent once more by the helper itself.

@@ -1399,9 +1399,11 @@ def _address(portal: Portal, url: str, current: str = "") -> str:
 def _script(body: str, params: dict[str, Any], timeout_ms: int, prelude: str = "") -> str:
     """Gemini's JavaScript as the body of an async function, with Wizard's helpers (W) and the parameters (P), and a
     time limit so a script that never settles cannot hold the browser. `prelude` runs first, inside the time limit,
-    with the evaluate argument as __arg."""
+    with the evaluate argument as __arg. W.deadline is when that limit falls, so a helper that waits on a portal (a
+    Superset query) stops its own requests in time and says why."""
     return (
-        "async (__arg) => {\n" + HELPERS + "\nconst P = " + json.dumps(params, ensure_ascii=False) + ";\n"
+        "async (__arg) => {\n" + HELPERS + f"\nW.deadline = Date.now() + {int(timeout_ms)};\n"
+        "const P = " + json.dumps(params, ensure_ascii=False) + ";\n"
         "const __run = async () => {\n" + prelude + body + "\n};\n"
         f"const __limit = new Promise((_, reject) => setTimeout(() => reject(new Error('the script did not finish within "
         f"{timeout_ms // 1000} s')), {timeout_ms}));\n"
