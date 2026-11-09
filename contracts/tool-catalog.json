@@ -997,16 +997,17 @@
     },
     {
       "name": "wizard_render_visual",
-      "description": "Show a chart or table in the answer. Provide the exact values, units and the evidence ids they come from; returns an id such as V1 to place in the answer.",
+      "description": "Show a chart, heatmap or table in the answer. Provide the exact values, units and the evidence ids they come from; returns an id such as V1 to place in the answer. The person can copy it into PowerPoint or Excel and download it as an editable PowerPoint slide or an Excel file of its data, so never draw a chart or heatmap with text, emoji or Markdown.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "kind": {
-            "description": "bar for ranking/comparison, line for time series, scatter for two measures, table for exact values.",
+            "description": "bar for ranking/comparison, line for time series, scatter for two measures, heatmap for one measure across two dimensions (markets by month, products by market: a grid of cells shaded by value, with the value in each cell), table for exact values. Never imitate a heatmap with coloured symbols in a table: use heatmap.",
             "enum": [
               "bar",
               "line",
               "scatter",
+              "heatmap",
               "table"
             ],
             "type": "string"
@@ -1077,16 +1078,24 @@
             "type": "array"
           },
           "x": {
-            "description": "Column key for categories or time (charts).",
+            "description": "Column key for categories or time (charts); for a heatmap, the column naming each row (e.g. market).",
             "type": "string"
           },
           "series": {
-            "description": "Numeric column keys to plot (charts).",
+            "description": "Numeric column keys to plot (charts, at most 6); for a heatmap, its columns in order (e.g. one per month), all the same measure, type and unit. Leave a missing cell null: it shows as missing, never as zero.",
             "items": {
               "type": "string"
             },
-            "maxItems": 6,
+            "maxItems": 11,
             "type": "array"
+          },
+          "scale": {
+            "description": "heatmap only: sequential (light to dark, for amounts) or diverging (around zero, for growth, change or variance: negative red, positive blue). Omit to choose by the values' signs.",
+            "enum": [
+              "sequential",
+              "diverging"
+            ],
+            "type": "string"
           },
           "evidence_ids": {
             "description": "Evidence ids the values come from, e.g. ['E1','E2'].",

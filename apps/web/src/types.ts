@@ -201,13 +201,17 @@ export interface Evidence extends EvidenceSummary {
 
 export interface Visual {
   id: string;
-  kind: 'bar' | 'line' | 'scatter' | 'table';
+  kind: 'bar' | 'line' | 'scatter' | 'heatmap' | 'table';
   title: string;
   subtitle: string | null;
   columns: {key: string; label: string; type: string; unit: string | null}[];
   rows: (string | number | null)[][];
+  /** Charts: the category or time column. Heatmap: the column naming each row. */
   x: string | null;
+  /** Charts: the plotted columns. Heatmap: its shaded columns, in order. */
   series: string[];
+  /** Heatmap: sequential (amounts) or diverging (around zero); absent: chosen by the values' signs. */
+  scale?: 'sequential' | 'diverging' | null;
   evidence_ids: string[];
   note: string | null;
   derived_by: string;

@@ -40,3 +40,4 @@ Evidence**. A decision that changes repository rules also updates [AGENTS.md](..
 - [2026-11-04 Wizard proves a portal map; Gemini's word does not](2026-11-04-proven-maps.md)
 - [2026-11-04 A run ends with an answer; a question reads a mapped report through its map](2026-11-04-runs-end-with-an-answer.md)
 - [2026-11-04 A prompt queue: the person's questions one after another, overnight](2026-11-04-prompt-queue.md)
+- [2026-11-09 Heatmaps, and visuals copied and downloaded for PowerPoint and Excel](2026-11-09-heatmaps-and-visual-exports.md)

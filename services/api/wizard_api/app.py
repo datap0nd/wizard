@@ -41,6 +41,7 @@ from wizard_connectors.tools.systems import SystemChoice
 from . import __version__, brain, knowledge_sync, provisioning, settings_pane, systems
 from .attachments import AttachmentError, public
 from .config import Settings, kb_source, load_settings
+from .exports import Exports
 from .metronome_client import MetronomeClient, MetronomeError
 from .outlook import DraftError, open_outlook_draft
 from .prompt_queue import PromptQueues
@@ -460,6 +461,7 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
     app.state.settings, app.state.store, app.state.manager, app.state.registry = settings, store, manager, registry
     app.state.task_board, app.state.task_queues = task_board, task_queues
     app.state.prompt_queues = prompt_queues
+    exports = app.state.exports = Exports()
     app.state.restart_if_idle = restart_if_idle
 
     def identity_of(request: Request) -> Identity | None:
@@ -789,6 +791,37 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
             manager.attachments.open_saved(identity, attachment_id)
         except AttachmentError as error:
             raise HTTPException(error.status, error.message) from None
+        return {"ok": True}
+
+    # Exported visuals --------------------------------------------------------------------------------------------------
+    @app.post("/api/v1/exports")
+    async def save_export(request: Request) -> dict[str, Any]:
+        """A visual's PowerPoint slide, Excel workbook or picture, built by the page from what it shows, saved in the
+        person's Downloads folder (never over a file) where Wizard runs on their own PC. Elsewhere the browser downloads it."""
+        identity = me(request)
+        if not on_this_pc(request):
+            raise HTTPException(409, {"error": "Wizard saves files only on your own PC.", "code": "not_on_this_pc"})
+        if int(request.headers.get("content-length") or 0) > 25 * 1024 * 1024:
+            raise HTTPException(413, "The file is larger than 25 MB.")
+        filename = unquote(request.headers.get("X-File-Name", ""))
+        try:
+            saved = exports.save(identity.id, filename, await request.body())
+        except AttachmentError as error:
+            raise HTTPException(error.status, error.message) from None
+        store.audit(identity.id, "export:save", detail={"filename": saved["filename"]})
+        return {"saved": saved}
+
+    @app.post("/api/v1/exports/{export_id}/open")
+    def open_export(request: Request, export_id: str) -> dict[str, Any]:
+        """Open an export Wizard saved in Downloads (PowerPoint, Excel), on the person's click."""
+        identity = me(request)
+        if not on_this_pc(request):
+            raise HTTPException(409, {"error": "Wizard opens files only on your own PC.", "code": "not_on_this_pc"})
+        try:
+            path = exports.open(identity.id, export_id)
+        except AttachmentError as error:
+            raise HTTPException(error.status, error.message) from None
+        store.audit(identity.id, "export:open", detail={"filename": path.name})
         return {"ok": True}
 
     @app.delete("/api/v1/attachments/{attachment_id}")

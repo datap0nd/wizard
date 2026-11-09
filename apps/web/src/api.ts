@@ -1,5 +1,6 @@
 import type {BrainLive, BrainMap} from './brain';
 import type {CasePreview, CasePublished, SiteStatus} from './cases';
+import type {SavedExport} from './visualEnv';
 import type {AccessForm, Answer, Attachment, Bootstrap, Cadence, ConversationSummary, Evidence, GeminiAccount, GeminiQuota, LocalFile, Memory, OpenStep, PortalCheck, PortalMapView, PortalStatus, PromptQueue, PromptSeparator, RecurringList, Report, RunRecord, SavedFile, Schedule, SettingsSaved, SettingsTest, SettingsTestResult, SettingsView, SourceCatalog, SourceSummary, Steer, SteerReason, TasksView, UpdateInfo} from './types';
 
 /** What a note to Wizard did: reached the running answer (steer), or became the next question (follow_up). */
@@ -91,6 +92,9 @@ export const api = {
   localFiles: (q = '') => request<{enabled: boolean; folders: string[]; files: LocalFile[]}>('/api/v1/attachments/local' + (q ? `?q=${encodeURIComponent(q)}` : '')),
   attachLocal: (path: string) => request<{attachment: Attachment}>('/api/v1/attachments/local', {body: {path}}),
   removeAttachment: (id: string) => request<{ok: true}>(`/api/v1/attachments/${encodeURIComponent(id)}`, {method: 'DELETE'}),
+  /** A visual's PowerPoint slide, Excel workbook or picture, saved in Downloads where Wizard runs on this PC. */
+  saveExport: (file: Blob, filename: string) => request<{saved: SavedExport}>('/api/v1/exports', {file: new File([file], filename)}),
+  openExport: (id: string) => request<{ok: true}>(`/api/v1/exports/${encodeURIComponent(id)}/open`, {body: {}}),
   saveFile: (id: string) => request<{saved: SavedFile}>(`/api/v1/attachments/${encodeURIComponent(id)}/save`, {body: {}}),
   openFile: (id: string) => request<{ok: true}>(`/api/v1/attachments/${encodeURIComponent(id)}/open`, {body: {}}),
   check: (runId: string) => request<{run_id: string; conversation_id: string}>(`/api/v1/runs/${encodeURIComponent(runId)}/check`, {body: {}}),

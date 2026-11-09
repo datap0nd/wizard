@@ -650,6 +650,69 @@
         }
       }
     },
+    "/api/v1/exports": {
+      "post": {
+        "summary": "Save Export",
+        "description": "A visual's PowerPoint slide, Excel workbook or picture, built by the page from what it shows, saved in the\nperson's Downloads folder (never over a file) where Wizard runs on their own PC. Elsewhere the browser downloads it.",
+        "operationId": "save_export_api_v1_exports_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Save Export Api V1 Exports Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/exports/{export_id}/open": {
+      "post": {
+        "summary": "Open Export",
+        "description": "Open an export Wizard saved in Downloads (PowerPoint, Excel), on the person's click.",
+        "operationId": "open_export_api_v1_exports__export_id__open_post",
+        "parameters": [
+          {
+            "name": "export_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Export Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Open Export Api V1 Exports  Export Id  Open Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/attachments/{attachment_id}": {
       "delete": {
         "summary": "Remove Attachment",

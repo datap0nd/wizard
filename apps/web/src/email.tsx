@@ -5,6 +5,7 @@ import {citedEvidence, placedVisuals, prepareAnswer} from './citations';
 import {CHECK_TEXT, DATA_MODE_TEXT, formatDate, formatValue} from './format';
 import {sourceGroups} from './sources';
 import type {CheckStatus, DataMode, Evidence, EvidenceSummary, Visual} from './types';
+import {grid} from './visuals';
 
 /** The Email button's message: the question, the answer, how long it took and the sources the answer rests on.
  *  Inline styles only, because Outlook's Word engine ignores most style sheets. Charts go in as their data tables. */
@@ -49,6 +50,23 @@ const SMALL: CSSProperties = {margin: '0 0 6px', fontSize: '12px', color: GREY};
 const RULE = <hr style={{border: 0, borderTop: '1px solid #e5e7eb', margin: '14px 0'}} />;
 
 function VisualTable({visual}: {visual: Visual}) {
+  // A heatmap goes in as it is: its cells shaded, the values in them (Outlook keeps a cell's background).
+  if (visual.kind === 'heatmap') {
+    const g = grid(visual);
+    return (
+      <div style={{margin: '0 0 12px'}}>
+        <p style={{margin: '0 0 4px', fontWeight: 600}}>{visual.title}</p>
+        {visual.subtitle && <p style={SMALL}>{visual.subtitle}</p>}
+        <table cellPadding={0} cellSpacing={0} style={TABLE}>
+          <thead><tr>{g.header.map((h, j) => <th key={j} style={{...CELL, background: '#f3f4f6', textAlign: j === 0 ? 'left' : 'right'}}>{h}</th>)}</tr></thead>
+          <tbody>{g.rows.map((row, r) => <tr key={r}>{row.map((c, i) => (
+            <td key={i} style={{...CELL, textAlign: i === 0 ? 'left' : 'right', fontWeight: i === 0 ? 600 : undefined,
+              ...(c.fill ? {background: c.fill, color: c.color} : {})}}>{c.text}</td>
+          ))}</tr>)}</tbody>
+        </table>
+      </div>
+    );
+  }
   return (
     <div style={{margin: '0 0 12px'}}>
       <p style={{margin: '0 0 4px', fontWeight: 600}}>{visual.title}</p>

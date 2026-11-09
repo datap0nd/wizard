@@ -10,6 +10,8 @@ import {EvidenceDrawer} from './EvidenceDrawer';
 import {LongText} from './LongText';
 import {Button} from './ui/button';
 import {VisualBlock} from './VisualBlock';
+import {VisualEnvContext} from '@/visualEnv';
+import {wizardVisualEnv} from '@/wizardVisualEnv';
 import type {Report} from '@/types';
 
 /** The dated web report behind a stable link. Reopening re-checks the viewer's current source rights. */
@@ -51,8 +53,10 @@ export function ReportPage({id}: {id: string}) {
           {report.check.summary && <p className="mt-2 text-xs text-ink-2">Check: {report.check.summary}</p>}
         </header>
         <div className="px-6 py-6 sm:px-8">
-          <AnswerMarkdown text={report.answer} visuals={report.visuals} onEvidence={open} />
-          {report.visuals.filter(v => !placed.has(v.id)).map(v => <VisualBlock key={v.id} visual={v} onEvidence={open} />)}
+          <VisualEnvContext.Provider value={wizardVisualEnv(null, report.data_mode, report.evidence)}>
+            <AnswerMarkdown text={report.answer} visuals={report.visuals} onEvidence={open} />
+            {report.visuals.filter(v => !placed.has(v.id)).map(v => <VisualBlock key={v.id} visual={v} onEvidence={open} />)}
+          </VisualEnvContext.Provider>
           {report.warnings.length > 0 && <ul className="mt-4 space-y-1 rounded-xl border border-warn-line bg-warn-soft px-4 py-2 text-[13px] text-warn">{report.warnings.map(w => <li key={w}>{w}</li>)}</ul>}
         </div>
         <section className="border-t border-line px-6 py-5 sm:px-8">

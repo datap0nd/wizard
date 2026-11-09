@@ -47,7 +47,8 @@ MAX_CASE_BYTES = 4 * 1024 * 1024
 SOURCE_KEYS = ("id", "system", "system_name", "report_name", "data_mode", "as_of", "total_rows", "truncated")
 QUERY_CHARS = 20_000
 PORTAL_STEP_KEYS = ("action", "selector", "role", "name", "text", "value", "frame")
-VISUAL_KEYS = ("id", "kind", "title", "subtitle", "columns", "rows", "x", "series", "evidence_ids", "note", "derived_by")
+VISUAL_KEYS = ("id", "kind", "title", "subtitle", "columns", "rows", "x", "series", "scale", "evidence_ids", "note",
+               "derived_by")
 CITATION = re.compile(r"\[(E\d{1,4})\]")
 STEP_CATEGORIES = ("source", "knowledge", "check", "present")  # every tool call but the person-facing ones
 README = """# Wizard site

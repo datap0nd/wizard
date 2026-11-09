@@ -32,7 +32,25 @@ describe('a case', () => {
     expect(screen.getAllByTestId('case-row').map(r => r.dataset.reversed)).toEqual(['false', 'true', 'false']);
     expect(screen.getAllByTestId('case-drop').map(d => d.dataset.side)).toEqual(['right', 'left']);
     expect(screen.getAllByTestId('case-sources')[0].textContent).toContain('NERP · Marketing spend');
-    expect(screen.getAllByText(/What Wizard did \(1 step\)/)).toHaveLength(3);
+    expect(screen.getAllByTestId('case-behind-toggle').map(t => t.textContent)).toEqual(Array(3).fill('How Wizard got this answer (1 source, 1 step)'));
+  });
+
+  it('folds the sources and steps behind each answer away until opened', () => {
+    render(<TooltipProvider><CaseFlow turns={[queried()]} /></TooltipProvider>);
+    const behind = screen.getByTestId('case-behind') as HTMLDetailsElement;
+    expect(behind.open).toBe(false);
+    expect(screen.getByTestId('case-behind-toggle').textContent).toBe('How Wizard got this answer (3 sources, 1 step)');
+    expect(within(behind).getByTestId('case-steps').textContent).toContain('Queried the AI Team Database');
+    fireEvent.click(screen.getByTestId('case-behind-toggle'));
+    expect(behind.open).toBe(true);
+  });
+
+  it('opens the fold when the answer cites a source the case does not list', () => {
+    const turnWithGap = {...queried(), answer: 'An older figure [E9].'};
+    render(<TooltipProvider><CaseFlow turns={[turnWithGap]} /></TooltipProvider>);
+    fireEvent.click(screen.getByRole('button', {name: 'Show evidence E9'}));
+    expect((screen.getByTestId('case-behind') as HTMLDetailsElement).open).toBe(true);
+    expect(screen.queryByTestId('case-query')).toBeNull();
   });
 
   it('keeps a long prompt and a long answer in boxes that scroll, reachable by keyboard', () => {

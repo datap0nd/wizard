@@ -108,3 +108,33 @@ def test_render_visual_validates_and_requires_known_evidence(registry, context):
     assert ctx.recorder.visuals[0]["rows"][0] == ["EG", 1500000.0]
     assert registry.execute("wizard_render_visual", {**base, "rows": [["EG", "lots"]]}, ctx).error_code == "invalid_visual"
     assert registry.execute("wizard_render_visual", {**base, "series": ["market"]}, ctx).error_code == "invalid_visual"
+
+
+def test_render_visual_draws_a_heatmap_of_one_measure(registry, context):
+    ctx = context()
+    columns = [{"key": "market", "label": "Market"}] + [
+        {"key": m, "label": m.title(), "type": "percent", "unit": "%"} for m in ("jul", "aug", "sep", "oct", "nov", "dec", "jan")]
+    heat = {"kind": "heatmap", "title": "Growth by market and month", "columns": columns, "x": "market",
+            "series": ["jul", "aug", "sep", "oct", "nov", "dec", "jan"],
+            "rows": [["EG", 12.5, "-4%", 30, None, 1, 2, 3], ["SA", -30, 0, None, 4, 5, 6, 7]]}
+    made = registry.execute("wizard_render_visual", {**heat, "scale": "diverging"}, ctx)
+    assert made.ok, made.error_message
+    stored = ctx.recorder.visuals[-1]
+    assert stored["kind"] == "heatmap" and stored["scale"] == "diverging" and stored["rows"][0][2] == -4.0
+    assert stored["rows"][1][3] is None, "a missing cell stays missing"
+    assert registry.execute("wizard_render_visual", heat, ctx).ok, "the scale is optional"
+    mixed = {**heat, "columns": [*columns[:2], {"key": "aug", "label": "Aug", "type": "currency", "unit": "USD"}, *columns[3:]]}
+    refused = registry.execute("wizard_render_visual", mixed, ctx)
+    assert refused.error_code == "invalid_visual" and "same type and unit" in (refused.error_message or "")
+    assert registry.execute("wizard_render_visual", {**heat, "series": ["market", "jul"]}, ctx).error_code == "invalid_visual"
+    assert registry.execute("wizard_render_visual", {**heat, "kind": "line"}, ctx).error_code == "invalid_visual", \
+        "a line chart shows at most 6 series"
+    bar = {"kind": "bar", "title": "Spend", "columns": columns[:2], "rows": [["EG", 1]], "x": "market", "series": ["jul"]}
+    assert registry.execute("wizard_render_visual", {**bar, "scale": "sequential"}, ctx).error_code == "invalid_visual"
+
+
+def test_gemini_is_told_to_draw_heatmaps_not_to_imitate_them(registry):
+    tool = next(t for t in registry.describe() if t["name"] == "wizard_render_visual")
+    assert "heatmap" in tool["inputSchema"]["properties"]["kind"]["enum"]
+    assert "never draw a chart or heatmap with text, emoji or Markdown" in tool["description"]
+    assert "Never imitate a heatmap with coloured symbols" in tool["inputSchema"]["properties"]["kind"]["description"]

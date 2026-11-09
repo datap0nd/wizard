@@ -1,4 +1,4 @@
-import {memo, useContext, useEffect, useState} from 'react';
+import {memo, useContext, useEffect, useMemo, useState} from 'react';
 import {AlertTriangle, CalendarClock, ChevronDown, Copy, ExternalLink, Flag, Info, Layers, Link2, ListTree, Mail, RotateCcw, ShieldCheck, Square} from 'lucide-react';
 import {placedVisuals} from '@/citations';
 import {sourceCount, sourceGroups} from '@/sources';
@@ -17,6 +17,8 @@ import {PersonQuestions, SteerNotes, SystemRequests} from './Steering';
 import {SystemsContext, SystemsStage} from './SystemsStage';
 import {onlyNames} from '@/systems';
 import {VisualBlock} from './VisualBlock';
+import {VisualEnvContext} from '@/visualEnv';
+import {wizardVisualEnv} from '@/wizardVisualEnv';
 import mark from '@/assets/wizard-mark.svg';
 import type {Cadence, RunView, Schedule} from '@/types';
 
@@ -123,6 +125,8 @@ export const RunCard = memo(function RunCard({run, onEvidence, onCheck, onCancel
   const placed = placedVisuals(text);
   const loose = run.visuals.filter(v => !placed.has(v.id));
   const took = duration(run.createdAt, run.finishedAt);
+  // Copies and downloads of this answer's visuals: its data label, and the rows of the evidence each one cites.
+  const visualEnv = useMemo(() => wizardVisualEnv(run.conversationId, run.dataMode, run.evidence), [run.conversationId, run.dataMode, run.evidence]);
   const queried = run.evidence.some(e => e.system === 'postgresql');
   const sources = sourceCount(sourceGroups(run.evidence));  // tables, reports and files, not each query
   return (
@@ -140,8 +144,10 @@ export const RunCard = memo(function RunCard({run, onEvidence, onCheck, onCancel
         <SystemsStage run={run} onEvidence={id => onEvidence(run, id)} />
         <SteerNotes run={run} />
         <ActivityTimeline run={run} onEvidence={id => onEvidence(run, id)} />
-        {text && <AnswerMarkdown text={text} visuals={run.visuals} streaming={running} onEvidence={id => onEvidence(run, id)} />}
-        {loose.map(v => <VisualBlock key={v.id} visual={v} onEvidence={id => onEvidence(run, id)} />)}
+        <VisualEnvContext.Provider value={visualEnv}>
+          {text && <AnswerMarkdown text={text} visuals={run.visuals} streaming={running} onEvidence={id => onEvidence(run, id)} />}
+          {loose.map(v => <VisualBlock key={v.id} visual={v} onEvidence={id => onEvidence(run, id)} />)}
+        </VisualEnvContext.Provider>
         <MadeFiles files={run.attachments} />
         {run.schedules.map(schedule => <RecurringCard key={schedule.id} schedule={schedule}
           onCreate={s => onSchedule?.(run, s, 'create')} onDismiss={s => onSchedule?.(run, s, 'dismiss')} />)}

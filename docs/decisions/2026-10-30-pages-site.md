@@ -75,6 +75,13 @@ their portal on their own layer). The built site was served from a Pages-like su
 errors and no sideways scroll. Not run: the company GitHub's Pages itself, which first serves the branch when the owner
 turns Pages on.
 
+**Addendum, 9 November 2026.** The owner: "cases has all the queries and steps instead of an expandable option for
+it. Also, I want that 'download' or copy button to be in Cases." Under each answer, one closed section ("How Wizard got
+this answer (N sources, M steps)") holds the sources, each still opening its query, and the steps; a citation in the
+answer still opens its query directly. Each visual of a case has the same Copy / download menu as in Wizard; its Excel
+file holds the visual's own values and the sources (names, data labels, queries), never their rows.
+[Decision](2026-11-09-heatmaps-and-visual-exports.md).
+
 **Addendum, 6 November 2026.** The owner: "Brain should have a link to cases page." The Brain page's header links to
 Cases: on the site to `../cases/` beside it, in the app to the site's Cases page when Wizard knows the site's address
 (Settings → Pages site, or found once on the publisher's PC; `site.cases` in the bootstrap, never asked of GitHub for

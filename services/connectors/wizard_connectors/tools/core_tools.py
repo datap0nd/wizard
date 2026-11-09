@@ -314,13 +314,21 @@ class VisualColumn(Args):
 
 
 class VisualArgs(Args):
-    kind: Literal["bar", "line", "scatter", "table"] = Field(description="bar for ranking/comparison, line for time series, scatter for two measures, table for exact values.")
+    kind: Literal["bar", "line", "scatter", "heatmap", "table"] = Field(description=(
+        "bar for ranking/comparison, line for time series, scatter for two measures, heatmap for one measure across two "
+        "dimensions (markets by month, products by market: a grid of cells shaded by value, with the value in each "
+        "cell), table for exact values. Never imitate a heatmap with coloured symbols in a table: use heatmap."))
     title: str = Field(min_length=1, max_length=120)
     subtitle: str | None = Field(default=None, max_length=240)
     columns: list[VisualColumn] = Field(min_length=1, max_length=12)
     rows: list[list[float | str | None]] = Field(min_length=1, max_length=100, description="One list per row, in column order. Numbers may be given as numbers or numeric text.")
-    x: str | None = Field(default=None, description="Column key for categories or time (charts).")
-    series: list[str] = Field(default_factory=list, max_length=6, description="Numeric column keys to plot (charts).")
+    x: str | None = Field(default=None, description="Column key for categories or time (charts); for a heatmap, the column naming each row (e.g. market).")
+    series: list[str] = Field(default_factory=list, max_length=11, description=(
+        "Numeric column keys to plot (charts, at most 6); for a heatmap, its columns in order (e.g. one per month), "
+        "all the same measure, type and unit. Leave a missing cell null: it shows as missing, never as zero."))
+    scale: Literal["sequential", "diverging"] | None = Field(default=None, description=(
+        "heatmap only: sequential (light to dark, for amounts) or diverging (around zero, for growth, change or "
+        "variance: negative red, positive blue). Omit to choose by the values' signs."))
     evidence_ids: list[str] = Field(default_factory=list, max_length=20, description="Evidence ids the values come from, e.g. ['E1','E2'].")
     note: str | None = Field(default=None, max_length=400, description="How values were derived and any caveat.")
 
@@ -854,6 +862,17 @@ def render_visual(ctx: ToolContext, args: VisualArgs) -> dict[str, Any]:
             raise ToolError("invalid_visual", "Charts need series set to numeric column keys.")
         if args.kind == "scatter" and len(args.series) != 2:
             raise ToolError("invalid_visual", "A scatter chart needs exactly two numeric series (x measure, y measure).")
+        if args.kind in ("bar", "line") and len(args.series) > 6:
+            raise ToolError("invalid_visual", "A bar or line chart shows at most 6 series; use a heatmap or a table for more.")
+        if args.kind == "heatmap":
+            if args.x in args.series:
+                raise ToolError("invalid_visual", "A heatmap's x is the column naming each row; it cannot also be a series.")
+            measures = {(c.type, c.unit) for c in args.columns if c.key in args.series}
+            if len(measures) > 1:
+                raise ToolError("invalid_visual", "A heatmap shades one measure: its series need the same type and unit. "
+                                "Show different measures in separate visuals or a table.")
+    if args.scale is not None and args.kind != "heatmap":
+        raise ToolError("invalid_visual", "scale applies to a heatmap only.")
     known = {e["id"] for e in ctx.recorder.all_evidence()}
     unknown = [e for e in args.evidence_ids if e not in known]
     if unknown:
@@ -977,8 +996,10 @@ CORE_TOOLS = [
              PostgresQueryArgs, query_postgresql, "wizard", "source"),
     ToolSpec("wizard_calculate", "Evaluate arithmetic exactly over named numbers (e.g. growth, ratios, per-million "
              "normalisation) instead of doing long arithmetic in your head.", CalculateArgs, calculate, "wizard", "check"),
-    ToolSpec("wizard_render_visual", "Show a chart or table in the answer. Provide the exact values, units and the "
-             "evidence ids they come from; returns an id such as V1 to place in the answer.", VisualArgs, render_visual,
+    ToolSpec("wizard_render_visual", "Show a chart, heatmap or table in the answer. Provide the exact values, units "
+             "and the evidence ids they come from; returns an id such as V1 to place in the answer. The person can copy "
+             "it into PowerPoint or Excel and download it as an editable PowerPoint slide or an Excel file of its data, "
+             "so never draw a chart or heatmap with text, emoji or Markdown.", VisualArgs, render_visual,
              "wizard", "present"),
     ToolSpec("wizard_schedule_brief", "Propose a recurring brief: a short newsletter email Metronome sends on a "
              "schedule (daily, weekly or monthly), by default to the user's own address at 08:00 Dubai time, with an "

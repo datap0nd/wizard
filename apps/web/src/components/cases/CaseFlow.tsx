@@ -1,9 +1,10 @@
-import {Fragment, useState} from 'react';
+import {Fragment, useMemo, useState} from 'react';
 import {Check, ChevronDown, Copy, Database, ListChecks, User} from 'lucide-react';
 import mark from '@/assets/wizard-mark.svg';
 import {flowRows, type CaseQuery, type CaseSource, type CaseTurn} from '@/cases';
 import {formatDate} from '@/format';
 import {cn} from '@/lib/utils';
+import {VisualEnvContext, type VisualEnv} from '@/visualEnv';
 import {AnswerMarkdown} from '../AnswerMarkdown';
 import {CheckBadge, DataModeBadge} from '../Badges';
 import {Dialog, DialogContent} from '../ui/dialog';
@@ -88,15 +89,33 @@ function QueryDialog({source, onClose}: {source: CaseSource | null; onClose: () 
   );
 }
 
+/** What a case's visuals can be copied and downloaded with: the answer's data label and its sources' names and queries.
+ *  A case never publishes a source's rows, so its Excel file holds the visual's own values and the sources sheet. */
+function caseVisualEnv(turn: CaseTurn): VisualEnv {
+  return {dataMode: turn.data_mode, rowsBehind: false, sources: async ids => ({rows: [], sources: turn.sources
+    .filter(s => ids.includes(s.id)).map(s => ({id: s.id, name: sourceName(s), dataMode: s.data_mode, asOf: s.as_of,
+      totalRows: s.total_rows, truncated: s.truncated, query: s.query ? queryText(s.query) : null}))})};
+}
+
+function count(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
 function AnswerWindow({turn, className}: {turn: CaseTurn; className?: string}) {
   const [lit, setLit] = useState<string | null>(null);
   const [opened, setOpened] = useState<CaseSource | null>(null);
+  // The sources and steps behind an answer are folded away under it (owner, 9 Nov 2026: a case showed every query and
+  // step instead of an option to open them); a citation still opens its query directly.
+  const [behind, setBehind] = useState(false);
+  const env = useMemo(() => caseVisualEnv(turn), [turn]);
   const show = (id: string) => {
     setLit(id);
     const source = turn.sources.find(s => s.id === id);
-    if (source) setOpened(source);
-    else document.getElementById(`case-${turn.n}-${id}`)?.scrollIntoView({block: 'nearest', behavior: 'smooth'});
+    if (source) { setOpened(source); return; }
+    setBehind(true);
+    requestAnimationFrame(() => document.getElementById(`case-${turn.n}-${id}`)?.scrollIntoView({block: 'nearest', behavior: 'smooth'}));
   };
+  const parts = [turn.sources.length ? count(turn.sources.length, 'source', 'sources') : '', turn.steps.length ? count(turn.steps.length, 'step', 'steps') : ''].filter(Boolean);
   return (
     <article aria-label={`Answer ${turn.n}`} className={cn('min-w-0 overflow-hidden rounded-[14px] border border-line bg-canvas shadow-card', className)} data-testid="case-answer">
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2 border-b border-line bg-surface px-4 py-2.5">
@@ -110,42 +129,50 @@ function AnswerWindow({turn, className}: {turn: CaseTurn; className?: string}) {
       </div>
       <div tabIndex={0} aria-label={`Answer ${turn.n} text`} data-testid="case-answer-body"
         className={cn('max-h-[min(36rem,70vh)] px-5 py-4 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent lg:px-6', SCROLL)}>
-        <AnswerMarkdown text={turn.answer} visuals={turn.visuals} onEvidence={show} />
+        <VisualEnvContext.Provider value={env}>
+          <AnswerMarkdown text={turn.answer} visuals={turn.visuals} onEvidence={show} />
+        </VisualEnvContext.Provider>
       </div>
-      {(turn.sources.length > 0 || turn.steps.length > 0) && (
-        <div className="space-y-2 border-t border-line px-5 py-3 text-[13px] text-ink-3 lg:px-6">
-          {turn.sources.length > 0 && (
-            <ul className="flex flex-wrap gap-1.5" aria-label="Sources" data-testid="case-sources">
-              {turn.sources.map(source => (
-                <li key={source.id} id={`case-${turn.n}-${source.id}`}>
-                  <button type="button" onClick={() => show(source.id)} data-testid="case-source" title="Show the query"
-                    className={cn('inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-left text-[12px] hover:border-accent',
-                      lit === source.id ? 'border-accent bg-accent-soft text-ink' : 'border-line bg-canvas')}>
-                    <span className="font-semibold text-accent">{source.id}</span>
-                    <span className="text-ink-2">{sourceName(source)}</span>
-                    {source.as_of && <span>as of {formatDate(source.as_of)}</span>}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          {turn.steps.length > 0 && (
-            <details className="group">
-              <summary className="inline-flex cursor-pointer list-none items-center gap-1 font-medium text-accent hover:underline">
-                <ChevronDown className="size-3.5 transition-transform group-open:rotate-180" />What Wizard did ({turn.steps.length} {turn.steps.length === 1 ? 'step' : 'steps'})</summary>
-              <ol className="mt-2 list-decimal space-y-1 pl-5 text-[12.5px] text-ink-2">
-                {turn.steps.map((step, i) => (
-                  <li key={i}><span className="font-medium text-ink">{step.label}</span>{step.summary ? `: ${step.summary}` : ''}
-                    {!step.ok && <span className="text-danger"> (failed)</span>}
-                    {step.evidence && (turn.sources.some(s => s.id === step.evidence)
-                      ? <> <button type="button" onClick={() => show(step.evidence!)} data-testid="case-step-query"
-                          className="font-semibold text-accent hover:underline">[{step.evidence}]</button></>
-                      : ` [${step.evidence}]`)}</li>
-                ))}
-              </ol>
-            </details>
-          )}
-        </div>
+      {parts.length > 0 && (
+        <details open={behind} onToggle={e => setBehind(e.currentTarget.open)} className="group border-t border-line px-5 py-3 text-[13px] text-ink-3 lg:px-6" data-testid="case-behind">
+          <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 font-medium text-accent hover:underline" data-testid="case-behind-toggle">
+            <ChevronDown className="size-3.5 transition-transform group-open:rotate-180" />How Wizard got this answer ({parts.join(', ')})</summary>
+          <div className="mt-3 space-y-3">
+            {turn.sources.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-[12px] font-semibold uppercase tracking-[0.06em] text-ink-3">Sources · open one to see its query</p>
+                <ul className="flex flex-wrap gap-1.5" aria-label="Sources" data-testid="case-sources">
+                  {turn.sources.map(source => (
+                    <li key={source.id} id={`case-${turn.n}-${source.id}`}>
+                      <button type="button" onClick={() => show(source.id)} data-testid="case-source" title="Show the query"
+                        className={cn('inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-left text-[12px] hover:border-accent',
+                          lit === source.id ? 'border-accent bg-accent-soft text-ink' : 'border-line bg-canvas')}>
+                        <span className="font-semibold text-accent">{source.id}</span>
+                        <span className="text-ink-2">{sourceName(source)}</span>
+                        {source.as_of && <span>as of {formatDate(source.as_of)}</span>}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {turn.steps.length > 0 && (
+              <div className="space-y-1.5" data-testid="case-steps">
+                <p className="text-[12px] font-semibold uppercase tracking-[0.06em] text-ink-3">What Wizard did</p>
+                <ol className="list-decimal space-y-1 pl-5 text-[12.5px] text-ink-2">
+                  {turn.steps.map((step, i) => (
+                    <li key={i}><span className="font-medium text-ink">{step.label}</span>{step.summary ? `: ${step.summary}` : ''}
+                      {!step.ok && <span className="text-danger"> (failed)</span>}
+                      {step.evidence && (turn.sources.some(s => s.id === step.evidence)
+                        ? <> <button type="button" onClick={() => show(step.evidence!)} data-testid="case-step-query"
+                            className="font-semibold text-accent hover:underline">[{step.evidence}]</button></>
+                        : ` [${step.evidence}]`)}</li>
+                  ))}
+                </ol>
+              </div>
+            )}
+          </div>
+        </details>
       )}
       <QueryDialog source={opened} onClose={() => setOpened(null)} />
     </article>
