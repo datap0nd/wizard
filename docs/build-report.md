@@ -3,7 +3,20 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-06 (latest) — The Brain page's title is "Ontology"
+## 2026-11-09 (latest) — Only the presentation tasks are left in Settings → Tasks
+
+The owner: "I want you to clear all the tasks besides the presentation ones." Removed from `tasks/`: rank the Big Data
+Portal's datasets (`bdp-relevant-datasets`), prepare its access requests (`bdp-request-dataset-access`), map GSCM's daily
+sell-out report (`gscm-db4009-daily-sellout`) and its other reports' Configuration (`gscm-report-options`), and map
+NERP's views (`nerp-map-views`). Left: digest a folder of presentations (`digest-presentations`) and write the
+presentation guide (`presentation-guide`). Wizard reads the folder from GitHub, so the removed tasks leave the list
+without an update; what their runs already saved (notes, portal maps, prepared requests) stays where it is, and the
+tools they used are unchanged. Settings → NERP's description, a NERP tool's docstring and the README no longer name a
+removed task.
+
+**Tests.** See the commit's checks below.
+
+## 2026-11-06 — The Brain page's title is "Ontology"
 
 The owner: "For now, just the brain page title" (after "Change from knowledge base to 'ontology'"; told the knowledge
 base is not a formal ontology, they kept the change to the title). The heading on `/brain` and the published Brain page's

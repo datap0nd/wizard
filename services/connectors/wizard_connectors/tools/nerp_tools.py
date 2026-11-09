@@ -2,7 +2,7 @@
 
 Owner decision (3 November 2026, docs/decisions/2026-11-03-nerp-views.md): NERP is a few SQL views on a server of its
 own, restricted to one database and one schema, views only. The views can be very large, so each tool points at the
-view's dataset note (written by the task "Map NERP's views"), which says what a row is and which filters keep a query
+view's dataset note in the knowledge base, which says what a row is and which filters keep a query
 fast. Every query is evidence LIVE / READ_ONLY_SQL with its SQL as the request."""
 from __future__ import annotations
 
