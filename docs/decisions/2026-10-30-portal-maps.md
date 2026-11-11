@@ -65,8 +65,8 @@ can make changes to wizard-content github repo (samsung enterprise github)".
   `portal-maps/<portal>.json` and a readable `portal-maps/<portal>.md` (under `WIZARD_KB_PATH`) in one commit through
   GitHub's API (`wizard_documents.kb.write_files`). Only those files change, an unchanged map makes no commit, and only
   to a private repository. It refuses a map the knowledge base's own check would reject, which would stop every PC's
-  sync. `docs.ps1 kb-publish` leaves `portal-maps/` alone. A PC without a map of its own reads the published one from
-  the synced knowledge base. **Publish now** and **Start over** (this PC's copy) are in Settings → Portals.
+  sync. `docs.ps1 kb-publish` leaves `portal-maps/` alone. The published map always wins: a PC reads its own file only
+  while that continues the published map it has ([decision](2026-11-11-published-map-wins.md)). **Publish now** and **Start over** (this PC's copy) are in Settings → Portals.
 - **The rule.** The ban on copied browser cookies, `/mstr` event URLs and a debugging browser is lifted; AGENTS.md
   keeps only "never disable TLS certificate checks". Use whatever route reads a portal fastest. The read-only rules
   stay: writes are refused by name and method, other hosts are refused, forbidden controls are never clicked, and

@@ -23,8 +23,8 @@ answered: "your recommendation".
 
 **Decision.** Option 3, the recommendation.
 - **When.** A system's catalog is retired when the system is a portal set up on this PC (Settings → Portals) and its
-  map has at least one report marked mapped or partial: this PC's map, else the one published to the knowledge base
-  (`portal-maps/<portal>.json`), as `PortalMaps` already loads them. Decided once at start-up
+  map has at least one report marked mapped or partial: the one published to the knowledge base
+  (`portal-maps/<portal>.json`), else this PC's own ([the published map wins](2026-11-11-published-map-wins.md)), as `PortalMaps` already loads them. Decided once at start-up
   (`tools.retire_portal_catalogs`, called by `create_app` before the registry is built), because the tool list and
   Gemini CLI's MCP servers are fixed then too. A portal mapped while Wizard runs is retired at the next start.
 - **What changes for a retired catalog.** It leaves `services.catalog`: no `<system>_*` tools in Gemini's tool list

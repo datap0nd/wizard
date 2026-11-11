@@ -3,7 +3,22 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-11 (latest) — Every table copies and downloads; the Korean report style
+## 2026-11-11 (latest) — The published portal map always wins
+
+Owner: "make the published one always win". A PC's own map file used to hide the map published to the knowledge-base
+repository. Now the published map is the one Wizard reads; a PC's file is used only while it continues that published
+map (saved on top of it, or what this PC itself committed), and a published map that changed replaces it
+([decision](decisions/2026-11-11-published-map-wins.md)).
+
+- Changed: `services/connectors/wizard_connectors/portal_map.py` (`_current`, the `based_on` and `sent` digests, kept
+  on the PC and never published), `tests/unit/test_portal_map.py`, the portal-map and catalog-retirement decisions,
+  README.
+- Not changed: the Settings → Portals screen (it already says "from the knowledge base" and offers Publish now and
+  Start over only for this PC's own map).
+- Checks: see the commit's CI run. Tested with files on disk and a fake writer; the first real sync of a published
+  map over a PC's older file happens on the work PC.
+
+## 2026-11-11 — Every table copies and downloads; the Korean report style
 
 The owner: "All wizard's visuals and tables should be copy pastable to powerpoint, and they should show up nicely there
 ... tables should be easily copy pastable to excel too. Can you look at the composer repo and try to get 'korean style'

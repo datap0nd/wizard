@@ -7,12 +7,15 @@ their values, the datasets and columns it fills, and the data requests that retu
 parameters. A question then reads the map (portal_map) and reads the data in one or two portal_run calls instead of
 exploring.
 
-One map per portal, as JSON on this PC (data/portal-maps/<portal>.json). When this PC has the knowledge base's write
-token, Wizard publishes it to the knowledge-base repository (portal-maps/<portal>.json and a readable .md beside it),
-and a PC without a map of its own starts from the published one. Maps hold metadata only: no rows, and secrets are
-removed on every save."""
+One map per portal. The knowledge-base repository holds the master copy (portal-maps/<portal>.json and a readable .md
+beside it), and the published map always wins (owner, 11 Nov 2026): this PC's own file (data/portal-maps/<portal>.json)
+is read only while it continues the published map this PC has, that is, it was saved on top of it or it is what this PC
+published. A published map that changed since replaces it, whatever this PC had not published. Without a published map
+the PC's own file is the map. When this PC has the knowledge base's write token, Wizard publishes its map after each
+round. Maps hold metadata only: no rows, and secrets are removed on every save."""
 from __future__ import annotations
 
+import hashlib
 import json
 import threading
 import time
@@ -99,17 +102,34 @@ class PortalMaps:
     def path(self, system: str) -> Path:
         return self.local / f"{system}.json"
 
+    def _file(self, path: Path | None, system: str) -> tuple[dict[str, Any] | None, str | None]:
+        """A map file's content and the digest of its bytes; (None, None) when it is missing or not this portal's map."""
+        if path is None:
+            return None, None
+        try:
+            raw = path.read_bytes()
+            value = json.loads(raw.decode("utf-8"))
+        except (OSError, ValueError):
+            return None, None
+        if not isinstance(value, dict) or value.get("system") != system:
+            return None, None
+        return value, hashlib.sha256(raw).hexdigest()
+
+    def _current(self, system: str) -> tuple[dict[str, Any] | None, str]:
+        """The map in use and where it is from. The published map always wins: this PC's file is used only while it
+        continues that very published map (saved on top of it, or what this PC itself published), so nothing it holds
+        is older than the repository's copy."""
+        published, digest = self._file(self.published / f"{system}.json" if self.published else None, system)
+        local, _ = self._file(self.path(system), system)
+        if published is None:
+            return local, "this_pc" if local is not None else "none"
+        if local is not None and digest in (local.get("based_on"), local.get("sent")):
+            return local, "this_pc"
+        return published, "knowledge_base"
+
     def load(self, system: str) -> dict[str, Any]:
-        places = [self.path(system)] + ([self.published / f"{system}.json"] if self.published else [])
-        for path in places:
-            try:
-                value = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                continue
-            if isinstance(value, dict) and value.get("system") == system:
-                base = empty(system, self.names.get(system, ""))
-                return {**base, **value}
-        return empty(system, self.names.get(system, ""))
+        value, _ = self._current(system)
+        return {**empty(system, self.names.get(system, "")), **(value or {})}
 
     def counts(self, data: dict[str, Any]) -> dict[str, int]:
         counts = dict.fromkeys(STATUSES, 0)
@@ -151,11 +171,7 @@ class PortalMaps:
                 "can_publish": self.writer is not None}
 
     def _source(self, system: str) -> str:
-        if self.path(system).is_file():
-            return "this_pc"
-        if self.published and (self.published / f"{system}.json").is_file():
-            return "knowledge_base"
-        return "none"
+        return self._current(system)[1]
 
     def summary(self, system: str) -> dict[str, Any]:
         """The map as a question first sees it: the overview and shortcuts, the counts, and the report index."""
@@ -384,6 +400,9 @@ class PortalMaps:
     def _write(self, system: str, data: dict[str, Any]) -> None:
         self.local.mkdir(parents=True, exist_ok=True)
         path = self.path(system)
+        # Which published map this file continues: load() drops the file once the repository's copy is another one.
+        _, digest = self._file(self.published / f"{system}.json" if self.published else None, system)
+        data = {**{k: v for k, v in data.items() if k != "based_on"}, **({"based_on": digest} if digest else {})}
         temporary = path.with_suffix(".tmp")
         temporary.write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8")
         temporary.replace(path)
@@ -398,9 +417,9 @@ class PortalMaps:
             return Published("not_configured", "No knowledge-base write token on this PC (Settings → Knowledge base).")
         with self._lock:
             data = self.load(system)
-            if not self.path(system).is_file():
+            if self._source(system) != "this_pc":
                 return Published("unchanged", "This PC has no map of its own to publish.")
-            body = {k: v for k, v in data.items() if k != "published"}
+            body = {k: v for k, v in data.items() if k not in ("published", "based_on", "sent")}
             text = json.dumps(body, indent=1, ensure_ascii=False)
             found = _secrets(text, f"portal-maps/{system}.json")
             if found:  # the knowledge base's own check would refuse the whole commit on every PC
@@ -415,6 +434,10 @@ class PortalMaps:
             result = Published("failed", str(error)[:400])
         with self._lock:
             data = self.load(system)
+            if result.outcome in ("published", "unchanged"):
+                # The digest of what the repository now holds: the next sync brings these bytes back, and this PC's
+                # file, with whatever it saved since, still continues them. A later failed publish keeps it.
+                data["sent"] = hashlib.sha256(text.encode("utf-8")).hexdigest()
             data["published"] = {"at": now(), "outcome": result.outcome, "message": result.message[:400],
                                  "commit": result.commit}
             self._write(system, data)
