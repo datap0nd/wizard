@@ -1,6 +1,7 @@
 // Copies and downloads of a visual, built in the page from what it shows (loaded only when the person asks for one):
 // - Copy table: the cells as HTML with their shading (PowerPoint and Word paste a native table, Excel paste cells with
-//   numbers it can calculate) and as tab-separated text.
+//   numbers it can calculate) and as tab-separated text. In the Korean report style (koreanTable.ts) the same table
+//   carries merged labels and grouped headers, in the clipboard and in the Excel file.
 // - Copy picture / Picture (.png): the chart, heatmap or table drawn with its title and source line.
 // - PowerPoint (.pptx): one slide with an editable PowerPoint chart (its data opens in Excel) or a native table.
 // - Excel (.xlsx): the visual's values as numbers with Wizard's formats and shading, its sources (names, data labels,
@@ -13,6 +14,7 @@ import {GridComponent, LegendComponent} from 'echarts/components';
 import {CanvasRenderer} from 'echarts/renderers';
 import {chartOption} from './chartOption';
 import {formatDate, formatValue} from './format';
+import {KOREAN, koreanTable, type KCell} from './koreanTable';
 import type {Column, Visual} from './types';
 import type {SavedExport, SourceRows, VisualEnv, VisualSource} from './visualEnv';
 import {COLORS, HEAD, INK, INK_2, LINE, excelFormat, excelValue, fileName, grid, heatScale, sourceLine, type Cell, type Grid} from './visuals';
@@ -48,9 +50,49 @@ export async function deliver(env: VisualEnv, file: Blob, filename: string): Pro
 
 const escape = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+/** How a copied table and an Excel sheet are laid out: as Wizard shows it, or as a Korean business report. */
+export type TableStyle = 'wizard' | 'korean';
+
+/** An Excel number format as the clipboard's HTML carries it (mso-number-format), escaped the way Excel writes its
+ *  own: a quote as \0022, every other mark behind a backslash, so the style attribute stays whole. */
+export function msoFormat(format: string): string {
+  const chars = [...format];
+  return chars.map((ch, i) => {
+    if (ch === '"') return '\\0022' + (/[0-9a-fA-F ]/.test(chars[i + 1] ?? '') ? ' ' : '');
+    return /[A-Za-z0-9 %]/.test(ch) || ch.charCodeAt(0) > 126 ? ch : '\\' + ch;
+  }).join('');
+}
+
+const SYNTHETIC_NOTE = 'SYNTHETIC test data, not corporate figures';
+
+/** The Korean-report table as HTML: merged cells, the header band, Malgun Gothic, Excel's formats on the numbers. */
+function koreanHtml(visual: Visual, env: Pick<VisualEnv, 'dataMode'>): string {
+  const t = koreanTable(visual);
+  const rows = [...t.header, ...t.body];
+  const width = rows[0].length;
+  const side = (outer: boolean) => outer ? `1pt solid ${KOREAN.medium}` : `.5pt solid ${KOREAN.thin}`;
+  const cellHtml = (c: KCell, r: number, j: number, tag: string) => {
+    const number = typeof c.value === 'number';
+    const style = `border-top:${side(r === 0)};border-bottom:${side(r + c.rowSpan === rows.length || r + c.rowSpan === t.header.length)};` +
+      `border-left:${side(j === 0)};border-right:${side(j + c.colSpan === width)};padding:3px 7px;vertical-align:middle;white-space:nowrap;` +
+      `text-align:${c.align};color:${c.color};background:${c.fill ?? '#FFFFFF'};${c.bold ? 'font-weight:bold;' : ''}` +
+      (number && c.format ? `mso-number-format:'${msoFormat(c.format)}';` : '');
+    return `<${tag}${c.rowSpan > 1 ? ` rowspan="${c.rowSpan}"` : ''}${c.colSpan > 1 ? ` colspan="${c.colSpan}"` : ''} style="${style}"${number ? ` x:num="${c.value}"` : ''}>${escape(c.text)}</${tag}>`;
+  };
+  const line = (cells: KCell[], r: number, tag: string) => '<tr>' + cells.map((c, j) => c.covered ? '' : cellHtml(c, r, j, tag)).join('') + '</tr>';
+  const unit = t.unit ? `<tr><td colspan="${width}" style="padding:2px 4px;text-align:right;font-size:8pt;color:${KOREAN.unit}">${escape(t.unit)}</td></tr>` : '';
+  const synthetic = env.dataMode === 'SYNTHETIC'
+    ? `<tr><td colspan="${width}" style="padding:4px 8px;color:#9a5b00;font-style:italic">${SYNTHETIC_NOTE}</td></tr>` : '';
+  return `<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body>` +
+    `<table style="border-collapse:collapse;font-family:'${KOREAN.font}','맑은 고딕',Arial,sans-serif;font-size:9pt">${unit}` +
+    t.header.map((cells, r) => line(cells, r, 'th')).join('') + t.body.map((cells, i) => line(cells, t.header.length + i, 'td')).join('') +
+    `${synthetic}</table></body></html>`;
+}
+
 /** The table as HTML for the clipboard. Excel reads each number from x:num and shows it with mso-number-format;
  *  PowerPoint and Word show the text, as Wizard does. */
-export function tableHtml(visual: Visual, env: Pick<VisualEnv, 'dataMode'>): string {
+export function tableHtml(visual: Visual, env: Pick<VisualEnv, 'dataMode'>, style: TableStyle = 'wizard'): string {
+  if (style === 'korean') return koreanHtml(visual, env);
   const g = grid(visual);
   const cell = 'border:1px solid #e0e4eb;padding:4px 8px;';
   const formats = g.types.map((t, j) => excelFormat(t, g.units[j], g.rows.map(r => r[j].value)));
@@ -59,11 +101,11 @@ export function tableHtml(visual: Visual, env: Pick<VisualEnv, 'dataMode'>): str
     const value = excelValue(c);
     const number = typeof value === 'number';
     const style = `${cell}text-align:${c.numeric ? 'right' : 'left'};${c.fill ? `background:${c.fill};color:${c.color};` : `color:${INK};`}` +
-      (number && formats[j] ? `mso-number-format:'${formats[j]!.replace(/"/g, '\\"')}';` : '');
+      (number && formats[j] ? `mso-number-format:'${msoFormat(formats[j]!)}';` : '');
     return `<td style="${style}"${number ? ` x:num="${value}"` : ''}>${escape(c.text)}</td>`;
   }).join('') + '</tr>').join('');
   const synthetic = env.dataMode === 'SYNTHETIC'
-    ? `<tr><td colspan="${g.header.length}" style="padding:4px 8px;color:#9a5b00;font-style:italic">SYNTHETIC test data, not corporate figures</td></tr>` : '';
+    ? `<tr><td colspan="${g.header.length}" style="padding:4px 8px;color:#9a5b00;font-style:italic">${SYNTHETIC_NOTE}</td></tr>` : '';
   return `<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body>` +
     `<table style="border-collapse:collapse;font-family:Calibri,Arial,sans-serif;font-size:11pt"><tr>${head}</tr>${body}${synthetic}</table></body></html>`;
 }
@@ -93,8 +135,8 @@ function legacyCopy(html: string): boolean {
   return ok;
 }
 
-export async function copyTable(visual: Visual, env: VisualEnv): Promise<void> {
-  const html = tableHtml(visual, env);
+export async function copyTable(visual: Visual, env: VisualEnv, style: TableStyle = 'wizard'): Promise<void> {
+  const html = tableHtml(visual, env, style);
   const text = tableText(visual);
   if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
     try {
@@ -174,12 +216,12 @@ export async function picture(visual: Visual, env: VisualEnv): Promise<Blob> {
   probe.font = `400 13px ${FONT}`;
   const subtitle = visual.subtitle ? wrap(probe, visual.subtitle, body) : [];
   probe.font = `600 18px ${FONT}`;
-  const title = wrap(probe, visual.title, body);
+  const title = visual.title ? wrap(probe, visual.title, body) : [];
   const chart = g ? null : await chartImage(visual, body);
   const rowH = 30;
   const legendH = visual.kind === 'heatmap' ? 34 : 0;
   const content = g ? rowH * (g.rows.length + 1) + legendH : chart!.height;
-  const top = pad + title.length * 24 + subtitle.length * 18 + 14;
+  const top = pad + title.length * 24 + subtitle.length * 18 + (title.length + subtitle.length ? 14 : 0);
   const height = top + content + 16 + footer.length * 16 + pad;
 
   const canvas = document.createElement('canvas');
@@ -273,20 +315,20 @@ export async function pptx(visual: Visual, env: VisualEnv): Promise<Blob> {
   const deck = new PptxGenJS();
   deck.layout = 'LAYOUT_WIDE';  // 13.33 x 7.5 in, PowerPoint's default 16:9
   deck.author = 'Wizard';
-  deck.title = visual.title;
+  deck.title = visual.title || 'Table from Wizard';
   const face = 'Arial';
   const notes = notesText(visual, env, sources);
   /** A slide with the visual's title, subtitle and source line (every slide of a long table has them). */
   const framed = (part = 0) => {
     const s = deck.addSlide();
-    s.addText(visual.title + (part ? ` (continued, ${part + 1})` : ''), {x: 0.5, y: 0.3, w: 12.33, h: 0.6, fontFace: face, fontSize: 24, bold: true, color: bare(INK), margin: 0});
+    if (visual.title || part) s.addText((visual.title || 'Table') + (part ? ` (continued, ${part + 1})` : ''), {x: 0.5, y: 0.3, w: 12.33, h: 0.6, fontFace: face, fontSize: 24, bold: true, color: bare(INK), margin: 0});
     if (visual.subtitle) s.addText(visual.subtitle, {x: 0.5, y: 0.9, w: 12.33, h: 0.4, fontFace: face, fontSize: 14, color: bare(INK_2), margin: 0});
     s.addText(sourceLine(visual, env.dataMode), {x: 0.5, y: 6.75, w: 12.33, h: 0.5, fontFace: face, fontSize: 10, color: '65728A',
       margin: 0, valign: 'top', fit: 'shrink'});
     s.addNotes(notes);
     return s;
   };
-  const area = {x: 0.5, y: visual.subtitle ? 1.45 : 1.15, w: 12.33, h: visual.subtitle ? 5.15 : 5.45};
+  const area = {x: 0.5, y: visual.subtitle ? 1.45 : 1.15, w: 12.33, h: visual.subtitle ? 5.15 : 5.45};  // an untitled table's later slides say "continued" above it
 
   const keys = visual.columns.map(c => c.key);
   const col = (key: string) => visual.columns.find(c => c.key === key)!;
@@ -372,9 +414,15 @@ async function withBlanks(file: ArrayBuffer): Promise<Blob> {
 
 // ----------------------------------------------------------------------------------------------- Excel
 
-interface XStyle { bold?: boolean; size?: number; color?: string; fill?: string; format?: string | null; align?: 'left' | 'right'; wrap?: boolean; border?: boolean; italic?: boolean }
+type Side = 'thin' | 'medium';
+interface XStyle { bold?: boolean; size?: number; color?: string; fill?: string; format?: string | null; align?: 'left' | 'right' | 'center'; wrap?: boolean; border?: boolean; italic?: boolean;
+  /** The Korean report sheet: its font, cells centred in their row, and each side's line (thin grid, medium outline). */
+  font?: string; middle?: boolean; edges?: {left?: Side; right?: Side; top?: Side; bottom?: Side} }
 interface XCell { value: string | number | null; style?: XStyle }
-interface XSheet { name: string; rows: XCell[][]; widths: number[]; freeze?: number }
+interface XSheet { name: string; rows: XCell[][]; widths: number[]; freeze?: number;
+  /** Columns kept in view beside the frozen rows, merged ranges (B7:B9), row heights in points by row number, and the
+   *  report sheet's view and print set-up (no gridlines, 90 %, one page wide). */
+  freezeColumns?: number; merges?: string[]; heights?: Record<number, number>; report?: boolean }
 
 const xml = (text: string) => text.replace(/[^\u0009\u000a\u000d -퟿-�]/g, '').replace(/&/g, '&amp;')
   .replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -390,6 +438,8 @@ class Styles {
   private fonts = ['<font><sz val="11"/><color rgb="FF18233B"/><name val="Calibri"/><family val="2"/></font>'];
   private fills = ['<fill><patternFill patternType="none"/></fill>', '<fill><patternFill patternType="gray125"/></fill>'];
   private formats: string[] = [];
+  private borders = ['<border><left/><right/><top/><bottom/><diagonal/></border>',
+    `<border>${(['left', 'right', 'top', 'bottom'] as const).map(n => `<${n} style="thin"><color rgb="${argb(LINE)}"/></${n}>`).join('')}<diagonal/></border>`];
   private xfs = ['<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'];
   private known = new Map<string, number>();
 
@@ -398,7 +448,7 @@ class Styles {
     const key = JSON.stringify(style);
     const found = this.known.get(key);
     if (found !== undefined) return found;
-    const font = `<font>${style.bold ? '<b/>' : ''}${style.italic ? '<i/>' : ''}<sz val="${style.size ?? 11}"/><color rgb="${argb(style.color ?? INK)}"/><name val="Calibri"/><family val="2"/></font>`;
+    const font = `<font>${style.bold ? '<b/>' : ''}${style.italic ? '<i/>' : ''}<sz val="${style.size ?? 11}"/><color rgb="${argb(style.color ?? INK)}"/><name val="${xml(style.font ?? 'Calibri')}"/><family val="2"/></font>`;
     let fontId = this.fonts.indexOf(font);
     if (fontId < 0) fontId = this.fonts.push(font) - 1;
     let fillId = 0;
@@ -412,8 +462,16 @@ class Styles {
       const at = this.formats.indexOf(style.format);
       formatId = 164 + (at < 0 ? this.formats.push(style.format) - 1 : at);
     }
-    const align = style.align || style.wrap ? `<alignment${style.align ? ` horizontal="${style.align}"` : ''}${style.wrap ? ' wrapText="1"' : ''} vertical="top"/>` : '';
-    const xf = `<xf numFmtId="${formatId}" fontId="${fontId}" fillId="${fillId}" borderId="${style.border ? 1 : 0}" xfId="0"` +
+    const align = style.align || style.wrap || style.middle ? `<alignment${style.align ? ` horizontal="${style.align}"` : ''}${style.wrap ? ' wrapText="1"' : ''}${style.middle && style.align && style.align !== 'center' ? ' indent="1"' : ''} vertical="${style.middle ? 'center' : 'top'}"/>` : '';
+    let borderId = style.border ? 1 : 0;
+    if (style.edges) {
+      const edge = (name: 'left' | 'right' | 'top' | 'bottom') => style.edges![name]
+        ? `<${name} style="${style.edges![name]}"><color rgb="${argb(style.edges![name] === 'medium' ? KOREAN.medium : KOREAN.thin)}"/></${name}>` : `<${name}/>`;
+      const border = `<border>${edge('left')}${edge('right')}${edge('top')}${edge('bottom')}<diagonal/></border>`;
+      borderId = this.borders.indexOf(border);
+      if (borderId < 0) borderId = this.borders.push(border) - 1;
+    }
+    const xf = `<xf numFmtId="${formatId}" fontId="${fontId}" fillId="${fillId}" borderId="${borderId}" xfId="0"` +
       ` applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"${align ? ' applyAlignment="1">' + align + '</xf>' : '/>'}`;
     const id = this.xfs.push(xf) - 1;
     this.known.set(key, id);
@@ -421,12 +479,10 @@ class Styles {
   }
 
   xml(): string {
-    const border = `<left style="thin"><color rgb="${argb(LINE)}"/></left><right style="thin"><color rgb="${argb(LINE)}"/></right>` +
-      `<top style="thin"><color rgb="${argb(LINE)}"/></top><bottom style="thin"><color rgb="${argb(LINE)}"/></bottom><diagonal/>`;
     return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
       (this.formats.length ? `<numFmts count="${this.formats.length}">${this.formats.map((f, i) => `<numFmt numFmtId="${164 + i}" formatCode="${xml(f)}"/>`).join('')}</numFmts>` : '') +
       `<fonts count="${this.fonts.length}">${this.fonts.join('')}</fonts><fills count="${this.fills.length}">${this.fills.join('')}</fills>` +
-      `<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border>${border}</border></borders>` +
+      `<borders count="${this.borders.length}">${this.borders.join('')}</borders>` +
       '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
       `<cellXfs count="${this.xfs.length}">${this.xfs.join('')}</cellXfs>` +
       '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
@@ -443,13 +499,23 @@ function sheetXml(sheet: XSheet, styles: Styles): string {
       if (cell.value === null || cell.value === '') return s ? `<c r="${ref}"${style}/>` : '';
       return `<c r="${ref}"${style} t="inlineStr"><is><t xml:space="preserve">${xml(String(cell.value)).slice(0, 32_000)}</t></is></c>`;
     }).join('');
-    return `<row r="${r + 1}">${cells}</row>`;
+    const height = sheet.heights?.[r + 1];
+    return `<row r="${r + 1}"${height ? ` ht="${height}" customHeight="1"` : ''}>${cells}</row>`;
   }).join('');
-  const pane = sheet.freeze ? `<sheetViews><sheetView workbookViewId="0"><pane ySplit="${sheet.freeze}" topLeftCell="A${sheet.freeze + 1}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>`
-    : '<sheetViews><sheetView workbookViewId="0"/></sheetViews>';
+  const view = sheet.report ? ' showGridLines="0" zoomScale="90" zoomScaleNormal="90"' : '';
+  const across = sheet.freezeColumns ?? 0;
+  const pane = sheet.freeze && across
+    ? `<pane xSplit="${across}" ySplit="${sheet.freeze}" topLeftCell="${columnName(across)}${sheet.freeze + 1}" activePane="bottomRight" state="frozen"/>`
+    : sheet.freeze ? `<pane ySplit="${sheet.freeze}" topLeftCell="A${sheet.freeze + 1}" activePane="bottomLeft" state="frozen"/>` : '';
+  const views = `<sheetViews><sheetView workbookViewId="0"${view}${pane ? `>${pane}</sheetView>` : '/>'}</sheetViews>`;
   const cols = sheet.widths.length ? `<cols>${sheet.widths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('')}</cols>` : '';
+  const merges = sheet.merges?.length ? `<mergeCells count="${sheet.merges.length}">${sheet.merges.map(m => `<mergeCell ref="${m}"/>`).join('')}</mergeCells>` : '';
+  // A report prints on one page across, landscape when it is wide (A4).
+  const print = sheet.report ? '<pageMargins left="0.35" right="0.35" top="0.45" bottom="0.45" header="0.2" footer="0.2"/>' +
+    `<pageSetup paperSize="9" orientation="${sheet.widths.length >= 9 ? 'landscape' : 'portrait'}" fitToWidth="1" fitToHeight="0"/>` : '';
   return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
-    'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' + pane + cols + `<sheetData>${rows}</sheetData></worksheet>`;
+    'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' + (sheet.report ? '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>' : '') +
+    views + cols + `<sheetData>${rows}</sheetData>${merges}${print}</worksheet>`;
 }
 
 function sheetName(name: string, taken: Set<string>): string {
@@ -515,23 +581,64 @@ function evidenceColumns(columns: Column[]): {label: string; type: string; unit:
   return columns.map(c => ({label: c.label || c.key, type: ['integer', 'number', 'percent', 'currency'].includes(c.type) ? c.type : 'string', unit: c.unit ?? null}));
 }
 
-/** The visual's workbook: its values as on screen, its sources, and (in Wizard) each cited source's rows. */
-export async function xlsx(visual: Visual, env: VisualEnv): Promise<Blob> {
+/** The visual as a Korean report sheet, laid out as Composer lays one out: a margin column, the title in B3, the
+ *  subtitle in B4, the unit line in row 5, the header band from row 6, and the source line under the table. */
+function koreanSheet(visual: Visual, name: string, source: string): XSheet {
+  const t = koreanTable(visual, true);
+  const n = t.widths.length;
+  const base: XStyle = {font: KOREAN.font, size: 9, color: KOREAN.ink, middle: true};
+  const blank = (count: number): XCell[] => Array.from({length: count}, () => ({value: null}));
+  const first = 6;  // the header's first row
+  const lines = [...t.header, ...t.body];
+  const merges = n > 1 ? [3, 4, 5].map(row => `B${row}:${columnName(n)}${row}`) : [];
+  const table = lines.map((cells, r): XCell[] => [{value: null}, ...cells.map((c, j): XCell => {
+    const header = r < t.header.length;
+    // A merged cell's lines are drawn on every cell it covers, so each cell takes the sides it has itself.
+    const edges = {top: r === 0 ? 'medium' as const : 'thin' as const, left: j === 0 ? 'medium' as const : 'thin' as const,
+      bottom: r === lines.length - 1 || r === t.header.length - 1 ? 'medium' as const : 'thin' as const, right: j === n - 1 ? 'medium' as const : 'thin' as const};
+    if (!c.covered && (c.rowSpan > 1 || c.colSpan > 1)) merges.push(`${columnName(j + 1)}${first + r}:${columnName(j + c.colSpan)}${first + r + c.rowSpan - 1}`);
+    let owner = c;
+    if (c.covered) {  // styled as the cell that covers it
+      for (let up = r; up >= 0 && owner.covered; up--) for (let left = j; left >= 0 && owner.covered; left--) {
+        const o = lines[up][left];
+        if (!o.covered && up + o.rowSpan > r && left + o.colSpan > j) owner = o;
+      }
+    }
+    return {value: c.covered ? null : c.value, style: {...base, bold: owner.bold, color: owner.color, fill: owner.fill ?? '#FFFFFF',
+      align: header ? 'center' : owner.align, format: header ? null : c.format, edges}};
+  })]);
+  const rows: XCell[][] = [blank(1), blank(1),
+    [{value: null}, {value: visual.title || 'Table', style: {font: KOREAN.font, size: 16, bold: true, color: KOREAN.title, middle: true}}],
+    [{value: null}, {value: visual.subtitle ?? '', style: {font: KOREAN.font, size: 10, color: KOREAN.subtitle, middle: true}}],
+    [{value: null}, {value: t.unit ?? '', style: {font: KOREAN.font, size: 8, color: KOREAN.unit, align: 'right', middle: true}}],
+    ...table, blank(1),
+    [{value: null}, {value: source, style: {font: KOREAN.font, size: 8, color: KOREAN.unit, italic: true}}]];
+  const heights: Record<number, number> = {3: 27, 4: 19, 5: t.unit ? 16 : 8};
+  lines.forEach((_, r) => { heights[first + r] = 20; });
+  return {name, rows, widths: [2, ...t.widths], merges, heights, report: true, freeze: first + t.header.length - 1,
+    freezeColumns: t.labels > 0 && t.labels < n ? t.labels + 1 : 0};
+}
+
+/** The visual's workbook: its values as on screen (or as a Korean report), its sources, and (in Wizard) each cited
+ *  source's rows. */
+export async function xlsx(visual: Visual, env: VisualEnv, style: TableStyle = 'wizard'): Promise<Blob> {
   const {sources, rows} = await env.sources(visual.evidence_ids);
   const taken = new Set<string>();
   const g = grid(visual, true);
-  const lead: XCell[][] = [[{value: visual.title, style: {bold: true, size: 14}}]];
+  const under = sourceLine(visual, env.dataMode, sources.map(s => `${s.id} ${s.name}`));
+  const lead: XCell[][] = visual.title ? [[{value: visual.title, style: {bold: true, size: 14}}]] : [];
   if (visual.subtitle) lead.push([{value: visual.subtitle, style: {color: INK_2}}]);
-  lead.push([{value: sourceLine(visual, env.dataMode, sources.map(s => `${s.id} ${s.name}`)), style: NOTE}], []);
+  lead.push([{value: under, style: NOTE}], []);
   const table = typedRows(visual.columns, visual.rows, g.rows.map(r => r.map(c => c.fill)), g.rows.map(r => r.map(c => c.color)));
-  const data: XSheet = {name: sheetName(`${visual.id} ${visual.kind === 'table' ? 'table' : visual.kind}`, taken), rows: [...lead, ...table],
+  const name = sheetName(visual.id === 'Table' ? 'Table' : `${visual.id} ${visual.kind === 'table' ? 'table' : visual.kind}`, taken);
+  const data: XSheet = style === 'korean' ? koreanSheet(visual, name, under) : {name, rows: [...lead, ...table],
     widths: g.header.map((h, j) => width([h, ...g.rows.map(r => r[j].text)])), freeze: lead.length + 1};
   const sheets: XSheet[] = [data];
   if (sources.length || visual.evidence_ids.length) {
     const known = new Map(sources.map(s => [s.id, s]));
     const list = visual.evidence_ids.map(id => known.get(id) ?? {id, name: 'Not available here'});
     sheets.push({name: sheetName('Sources', taken), widths: [10, 44, 18, 16, 12, 90], rows: [
-      [{value: `Where ${visual.id}'s values came from`, style: {bold: true, size: 14}}],
+      [{value: visual.id === 'Table' ? "Where the table's values came from" : `Where ${visual.id}'s values came from`, style: {bold: true, size: 14}}],
       [{value: env.rowsBehind ? 'Each source with rows has its own sheet: the rows it returned to Wizard.'
         : 'The rows are not published with a case; each source names the query that read them.', style: NOTE}],
       [],
@@ -540,7 +647,8 @@ export async function xlsx(visual: Visual, env: VisualEnv): Promise<Blob> {
         .map((value, j) => ({value, style: {border: true, wrap: j === 5, format: j === 4 ? '#,##0' : null}}))),
     ]});
   }
-  for (const source of rows as SourceRows[]) {
+  // A source's own rows (the evidence drawer's table) are the first sheet already.
+  for (const source of (visual.from ? [] : rows) as SourceRows[]) {
     const meta = sources.find(s => s.id === source.id);
     const columns = evidenceColumns(source.columns);
     const kept = source.rows.length;
@@ -560,8 +668,8 @@ export async function xlsx(visual: Visual, env: VisualEnv): Promise<Blob> {
 export type ExportKind = 'pptx' | 'xlsx' | 'png';
 
 /** Build one download and hand it over (Downloads on this PC, else the browser). */
-export async function download(kind: ExportKind, visual: Visual, env: VisualEnv): Promise<{saved: SavedExport | null; filename: string}> {
-  const file = kind === 'pptx' ? await pptx(visual, env) : kind === 'xlsx' ? await xlsx(visual, env) : await picture(visual, env);
+export async function download(kind: ExportKind, visual: Visual, env: VisualEnv, style: TableStyle = 'wizard'): Promise<{saved: SavedExport | null; filename: string}> {
+  const file = kind === 'pptx' ? await pptx(visual, env) : kind === 'xlsx' ? await xlsx(visual, env, style) : await picture(visual, env);
   const filename = fileName(visual, kind);
   return {saved: await deliver(env, file, filename), filename};
 }

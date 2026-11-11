@@ -3,7 +3,35 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-09 (latest) — Superset queries run on every Superset version
+## 2026-11-11 (latest) — Every table copies and downloads; the Korean report style
+
+The owner: "All wizard's visuals and tables should be copy pastable to powerpoint, and they should show up nicely there
+... tables should be easily copy pastable to excel too. Can you look at the composer repo and try to get 'korean style'
+excels too?" [Decision](decisions/2026-11-11-table-copies-and-korean-report-style.md).
+- **Tables in an answer** (Markdown) and **a source's rows in the evidence drawer** now have the Copy / download menu
+  every visual has: copy picture, copy table, PowerPoint slide, Excel workbook, picture. `answerTable.ts` reads the
+  answer's table as a table visual (numbers typed for Excel, each cell's wording kept, citation chips as its evidence).
+  The evidence drawer's copy says "Rows E1 returned to Wizard" under that source's own data label.
+- **Korean report style** (`koreanTable.ts`, after Composer's `generic_report.py` and `render/excel.py`): two new menu
+  entries, *Copy table, Korean report style* and *Excel, Korean report style (.xlsx)*. Merged repeated labels, grouped
+  headers, shaded total and subtotal rows, a unit line, red brackets, "-" for zero, ▲▼ on change columns, Malgun
+  Gothic. The workbook writer (`visualExport.ts`) gained merged cells, per-side borders, fonts, row heights, frozen
+  columns and print set-up for it.
+- **Fixed:** a copied table's number format with quoted text (`"$"#,##0`, a unit) ended the cell's style attribute
+  early, so Excel lost the format; formats are now escaped as Excel escapes its own.
+- No tool, API or contract change. The committed `dist/` is rebuilt.
+
+**Tests.** `CI=1 bash scripts/verify_all.sh --allow-blocked=live-parity,postgres`: every layer passed (python-tests
+827 passed, 4 skipped; web-unit 188, with `koreanTable.test.ts`, `answerTable.test.ts`, `AnswerMarkdown.test.tsx` and
+the Korean cases in `visualExport.test.ts`; e2e 32) except postgres and live-parity BLOCKED (allowed) and gemini-cli,
+BLOCKED until the CLI was installed (`npm --prefix .tools install @google/gemini-cli`), then run on its own: 5 passed.
+The Korean workbook was opened with openpyxl (merges, formats, fonts, frozen panes) and rendered with LibreOffice; the
+running app (replay, SYNTHETIC) was driven in Chromium: the menu on an answer's table, *Copy table, Korean report style*
+and *Copy picture* read back from the clipboard, the Korean workbook of a source's rows saved from the evidence drawer,
+no console errors. Driving it found that the menu remounted while an answer streamed; the table component is now one
+stable component. Not run: pasting into PowerPoint and Excel themselves; Malgun Gothic (not on this machine).
+
+## 2026-11-09 — Superset queries run on every Superset version
 
 The owner's work PC: every `W.superset.sql(...)` failed, `SELECT 1` included, with `SQL Lab answered 404:
 {"errors":[{"message":"404 Not Found: The requested URL was not found on the server..."}]}`, while

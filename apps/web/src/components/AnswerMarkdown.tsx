@@ -2,7 +2,8 @@ import {memo, useMemo} from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {prepareAnswer} from '@/citations';
-import {VisualBlock} from './VisualBlock';
+import {tableVisual, type HastNode} from '@/answerTable';
+import {VisualBlock, VisualExport} from './VisualBlock';
 import type {Visual} from '@/types';
 
 interface Props {
@@ -10,6 +11,19 @@ interface Props {
   visuals: Visual[];
   streaming?: boolean;
   onEvidence: (id: string) => void;
+}
+
+/** A table in the answer, with the copies and downloads a visual has (a picture or a table for PowerPoint, cells for
+ *  Excel), built from the table as it is written. */
+function AnswerTable({node, children}: {node?: unknown; children?: React.ReactNode}) {
+  // One component for every render (not a new function each time), so an open menu survives the answer streaming on.
+  const visual = useMemo(() => node ? tableVisual(node as HastNode) : null, [node]);
+  return (
+    <div data-testid="answer-table">
+      {visual && <div className="mb-1.5 flex flex-wrap items-center justify-end gap-2"><VisualExport visual={visual} compact /></div>}
+      <div className="table-wrap"><table>{children}</table></div>
+    </div>
+  );
 }
 
 /** Gemini's Markdown answer with evidence chips and placed visuals. Raw HTML in model output is never rendered. */
@@ -41,7 +55,7 @@ export const AnswerMarkdown = memo(function AnswerMarkdown({text, visuals, strea
           return <code className={className}>{children}</code>;
         },
         pre: ({children}) => <>{children}</>,
-        table: ({children}) => <div className="table-wrap"><table>{children}</table></div>,
+        table: AnswerTable,
         img: ({alt}) => <span className="text-xs text-ink-3">[image omitted: {alt}]</span>,
       }}>{prepared}</ReactMarkdown>
       {streaming && <span className="caret" aria-hidden="true" />}

@@ -2,7 +2,7 @@ import JSZip from 'jszip';
 import {afterEach, describe, expect, it, vi} from 'vitest';
 import type {Visual} from './types';
 import type {VisualEnv} from './visualEnv';
-import {deliver, pptx, tableHtml, tableText, xlsx} from './visualExport';
+import {deliver, msoFormat, pptx, tableHtml, tableText, xlsx} from './visualExport';
 import {excelFormat, fileName, grid, heatScale, sourceLine, textOn} from './visuals';
 
 afterEach(() => vi.restoreAllMocks());
@@ -71,7 +71,7 @@ describe('copying a visual', () => {
     const html = tableHtml(growth, {dataMode: 'LIVE'});
     expect(html).toContain('xmlns:x="urn:schemas-microsoft-com:office:excel"');
     expect(html).toContain('x:num="0.125"');
-    expect(html).toContain("mso-number-format:'0.0%'");
+    expect(html).toContain("mso-number-format:'0\\.0%'");
     expect(html).toContain('background:#0d366b;color:#ffffff');
     expect(html).toContain('>12.5%</td>');
     expect(html).not.toContain('SYNTHETIC');
@@ -154,5 +154,58 @@ describe('downloading a visual', () => {
     expect(click).not.toHaveBeenCalled();
     expect(await deliver(env({save: async () => null}), new Blob(['x']), 'Q3 spend by market.xlsx')).toBeNull();
     expect(click).toHaveBeenCalledTimes(1);
+  });
+});
+
+const plan: Visual = {
+  id: 'V3', kind: 'table', title: 'Sell-out against plan', subtitle: 'October 2026',
+  columns: [{key: 'region', label: 'Region', type: 'string', unit: null}, {key: 'market', label: 'Market', type: 'string', unit: null},
+    {key: 'a', label: '2026 · Actual', type: 'currency', unit: 'USD'}, {key: 'p', label: '2026 · Plan', type: 'currency', unit: 'USD'},
+    {key: 'g', label: 'Growth YoY', type: 'percent', unit: '%'}],
+  rows: [['Gulf', 'UAE', 1200, 1000, 12.5], ['Gulf', 'Saudi Arabia', 800, 900, -4], ['Gulf', 'Subtotal', 2000, 1900, 0],
+    ['North Africa', 'Egypt', -50, null, null], ['Total', null, 1950, 1900, 3.2]],
+  x: null, series: [], evidence_ids: ['E1'], note: null, derived_by: 'model',
+};
+
+describe('the Korean report style', () => {
+  it('writes a number format into the clipboard the way Excel writes its own, so the attribute stays whole', () => {
+    expect(msoFormat('"$"#,##0')).toBe('\\0022\\$\\0022\\#\\,\\#\\#0');
+    expect(msoFormat('[Blue]"▲"0.0%;"-"')).toBe('\\[Blue\\]\\0022▲\\0022 0\\.0%\\;\\0022\\-\\0022');
+    expect(tableHtml(spend, {dataMode: 'LIVE'})).not.toMatch(/style="[^"]*mso-number-format:'[^']*"/);
+  });
+
+  it('copies the table with merged labels, grouped headers, a unit line and Excel formats', () => {
+    const html = tableHtml(plan, {dataMode: 'LIVE'}, 'korean');
+    expect(html).toContain("font-family:'Malgun Gothic'");
+    expect(html).toContain('>(Unit: USD)</td>');
+    expect(html).toMatch(/<th colspan="2"[^>]*>2026<\/th>/);
+    expect(html).toMatch(/<th rowspan="2"[^>]*>Region<\/th>/);
+    expect(html).toMatch(/<td rowspan="3"[^>]*>Gulf<\/td>/);
+    expect(html).toMatch(/x:num="0.125">▲12.5%<\/td>/);
+    expect(html).toMatch(/color:#FF0000[^>]*x:num="-0.04">▼4.0%<\/td>/);
+    expect(html).toMatch(/x:num="-50">\(50\)<\/td>/);
+    expect(html).toMatch(/x:num="0">-<\/td>/);
+    expect(html).not.toContain('SYNTHETIC');
+    expect(tableHtml(plan, {dataMode: 'SYNTHETIC'}, 'korean')).toContain('SYNTHETIC test data, not corporate figures');
+  });
+
+  it('downloads a report sheet: title in B3, merged cells, no gridlines, the sources still with it', async () => {
+    const zip = await parts(await xlsx(plan, env(), 'korean'));
+    const sheet = await zip.file('xl/worksheets/sheet1.xml')!.async('string');
+    expect(sheet).toContain('showGridLines="0"');
+    expect(sheet).toContain('<mergeCell ref="B8:B10"/>');   // Gulf over its three rows
+    expect(sheet).toContain('<mergeCell ref="D6:E6"/>');    // 2026 over Actual and Plan
+    expect(sheet).toContain('<mergeCell ref="B6:B7"/>');    // Region over both header rows
+    expect(sheet).toMatch(/<c r="B3"[^>]*><is><t[^>]*>Sell-out against plan/);
+    expect(sheet).toMatch(/<c r="D8" s="\d+"><v>1200<\/v><\/c>/);
+    expect(sheet).toMatch(/<c r="F8" s="\d+"><v>0.125<\/v><\/c>/);
+    expect(sheet).toContain('Prepared by Gemini in Wizard from E1');
+    expect(sheet).toContain('xSplit="3" ySplit="7"');
+    const styles = await zip.file('xl/styles.xml')!.async('string');
+    expect(styles).toContain('Malgun Gothic');
+    expect(styles).toContain('[Blue]&quot;▲&quot;0.0%;[Red]&quot;▼&quot;0.0%;&quot;-&quot;');
+    expect(styles).toContain('#,##0;[Red](#,##0);&quot;-&quot;');
+    expect(await zip.file('xl/worksheets/sheet2.xml')!.async('string')).toContain('SELECT market, month, growth');
+    expect(zip.file('xl/worksheets/sheet3.xml')).not.toBeNull();
   });
 });

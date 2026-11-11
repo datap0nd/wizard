@@ -215,6 +215,10 @@ export interface Visual {
   evidence_ids: string[];
   note: string | null;
   derived_by: string;
+  /** In the page only (answerTable.ts): the text each cell shows, where a table keeps its own wording. */
+  texts?: (string | null)[][];
+  /** In the page only: what a copy says its values are, where Gemini did not prepare them (a source's own rows). */
+  from?: string;
 }
 
 export interface CheckClaim { label: string; status: 'MATCH' | 'DISCREPANCY' | 'PERIOD_MISMATCH' | 'NOT_VERIFIABLE'; stated_value: number; recomputed_value: number | null; notes: string[] }
