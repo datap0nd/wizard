@@ -1,5 +1,5 @@
 import {useContext, useEffect, useMemo, useRef, useState} from 'react';
-import {Check, Copy, FileSpreadsheet, FolderOpen, Image as ImageIcon, ImageDown, Loader2, Presentation, Table2} from 'lucide-react';
+import {Check, Copy, FileSpreadsheet, FolderOpen, Image as ImageIcon, ImageDown, Loader2, Presentation, Table2, TableProperties} from 'lucide-react';
 import * as echarts from 'echarts/core';
 import {BarChart, LineChart, ScatterChart} from 'echarts/charts';
 import {AriaComponent, GridComponent, LegendComponent, TooltipComponent} from 'echarts/components';
@@ -76,14 +76,14 @@ export function Heatmap({visual}: {visual: Visual}) {
   );
 }
 
-type ExportAction = 'copy-picture' | 'copy-table' | 'pptx' | 'xlsx' | 'png';
+type ExportAction = 'copy-picture' | 'copy-table' | 'copy-table-korean' | 'pptx' | 'xlsx' | 'xlsx-korean' | 'png';
 type ExportState = {step: 'idle'} | {step: 'busy'; action: ExportAction} | {step: 'done'; text: string; saved?: SavedExport} | {step: 'failed'; text: string};
 
 const load = () => import('@/visualExport');
 
 /** Copy and download a visual as it is: a picture or a table for the clipboard, an editable PowerPoint slide, an Excel
  *  workbook of its data (in Wizard, with the rows of the sources it cites) or a picture file. */
-export function VisualExport({visual}: {visual: Visual}) {
+export function VisualExport({visual, compact}: {visual: Visual; compact?: boolean}) {
   const env = useContext(VisualEnvContext);
   const [state, setState] = useState<ExportState>({step: 'idle'});
   const chart = visual.kind === 'bar' || visual.kind === 'line' || visual.kind === 'scatter';
@@ -102,8 +102,11 @@ export function VisualExport({visual}: {visual: Visual}) {
       } else if (action === 'copy-table') {
         await made.copyTable(visual, env);
         setState({step: 'done', text: 'Table copied: paste it into Excel or PowerPoint.'});
+      } else if (action === 'copy-table-korean') {
+        await made.copyTable(visual, env, 'korean');
+        setState({step: 'done', text: 'Table copied in the Korean report style: paste it into Excel or PowerPoint.'});
       } else {
-        const {saved, filename} = await made.download(action, visual, env);
+        const {saved, filename} = action === 'xlsx-korean' ? await made.download('xlsx', visual, env, 'korean') : await made.download(action, visual, env);
         setState(saved ? {step: 'done', text: `Saved in ${saved.folder} as ${saved.filename}.`, saved} : {step: 'done', text: `Downloaded ${filename}.`});
       }
     } catch (e) {
@@ -124,18 +127,21 @@ export function VisualExport({visual}: {visual: Visual}) {
     <>
       <DropdownMenu onOpenChange={opened => { if (opened) void load(); }}>
         <DropdownMenuTrigger asChild>
-          <button type="button" disabled={busy} data-testid="visual-export" aria-label={`Copy or download ${visual.title}`}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line px-2.5 text-[13px] font-medium text-ink-2 hover:bg-surface hover:text-ink disabled:opacity-60">
+          <button type="button" disabled={busy} data-testid="visual-export" aria-label={`Copy or download ${visual.title || 'this table'}`}
+            className={cn('inline-flex items-center gap-1.5 rounded-lg border border-line font-medium text-ink-2 hover:bg-surface hover:text-ink disabled:opacity-60',
+              compact ? 'h-7 px-2 text-xs' : 'h-8 px-2.5 text-[13px]')}>
             {busy ? <Loader2 className="size-4 animate-spin" /> : <Copy className="size-4" />}Copy / download</button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-72">
+        <DropdownMenuContent align="end" className="w-80">
           <DropdownMenuLabel>Copy</DropdownMenuLabel>
           {item('copy-picture', <ImageIcon />, 'Copy picture', 'Paste into PowerPoint, Word or an email')}
           {item('copy-table', <Table2 />, 'Copy table', 'Paste as cells in Excel, or as a table in PowerPoint')}
+          {item('copy-table-korean', <TableProperties />, 'Copy table, Korean report style', 'Merged labels, grouped headers, ▲▼ and a unit line')}
           <DropdownMenuSeparator />
           <DropdownMenuLabel>Download</DropdownMenuLabel>
           {item('pptx', <Presentation />, 'PowerPoint slide (.pptx)', chart ? 'An editable PowerPoint chart, its data in Excel' : 'An editable PowerPoint table')}
           {item('xlsx', <FileSpreadsheet />, 'Excel workbook (.xlsx)', env.rowsBehind ? 'Its values, its sources and the rows behind it' : 'Its values and its sources (a case keeps no rows)')}
+          {item('xlsx-korean', <FileSpreadsheet />, 'Excel, Korean report style (.xlsx)', 'The same values laid out as a Korean report sheet')}
           {item('png', <ImageDown />, 'Picture (.png)', 'The visual with its title and source')}
         </DropdownMenuContent>
       </DropdownMenu>

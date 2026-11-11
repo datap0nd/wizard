@@ -42,7 +42,7 @@ describe('copying and downloading a visual', () => {
   it('offers pictures, a table, a PowerPoint slide and an Excel workbook with the rows behind it', () => {
     show(heat);
     open();
-    for (const action of ['copy-picture', 'copy-table', 'pptx', 'xlsx', 'png']) expect(screen.getByTestId(`visual-export-${action}`)).toBeTruthy();
+    for (const action of ['copy-picture', 'copy-table', 'copy-table-korean', 'pptx', 'xlsx', 'xlsx-korean', 'png']) expect(screen.getByTestId(`visual-export-${action}`)).toBeTruthy();
     expect(screen.getByTestId('visual-export-pptx').textContent).toContain('An editable PowerPoint table');
     expect(screen.getByTestId('visual-export-xlsx').textContent).toContain('the rows behind it');
   });

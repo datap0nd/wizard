@@ -95,20 +95,26 @@ function header(c: Visual['columns'][number]): string {
   return c.label + (c.unit && !['%', 'USD'].includes(c.unit) && c.type !== 'string' ? ` (${c.unit})` : '');
 }
 
+/** The columns a visual shows as a table: a heatmap's row labels and its shaded columns (`all`: every column), any
+ *  other visual every column. */
+export function gridColumns(visual: Visual, all = false): Visual['columns'] {
+  const keys = visual.kind === 'heatmap' && !all ? [visual.x ?? '', ...visual.series] : visual.columns.map(c => c.key);
+  return keys.map(k => visual.columns.find(c => c.key === k)).filter((c): c is Visual['columns'][number] => !!c);
+}
+
 /** The cells a visual shows as a table: a heatmap's row labels and its shaded columns (`all`: every column, the
  *  shaded ones still shaded), any other visual every column. */
 export function grid(visual: Visual, all = false): Grid {
   const heat = visual.kind === 'heatmap';
-  const keys = heat && !all ? [visual.x ?? '', ...visual.series] : visual.columns.map(c => c.key);
-  const columns = keys.map(k => visual.columns.find(c => c.key === k)).filter((c): c is Visual['columns'][number] => !!c);
+  const columns = gridColumns(visual, all);
   const index = columns.map(c => visual.columns.indexOf(c));
   const scale = heat ? heatScale(visual) : null;
   const shaded = new Set(heat ? visual.series : []);
   return {
     header: columns.map(header), types: columns.map(c => c.type), units: columns.map(c => c.unit),
-    rows: visual.rows.map(row => columns.map((c, j) => {
+    rows: visual.rows.map((row, i) => columns.map((c, j) => {
       const value = row[index[j]] ?? null;
-      const cell: GridCell = {value, text: formatValue(value, c.type, c.unit), numeric: c.type !== 'string', type: c.type, unit: c.unit};
+      const cell: GridCell = {value, text: visual.texts?.[i]?.[index[j]] ?? formatValue(value, c.type, c.unit), numeric: c.type !== 'string', type: c.type, unit: c.unit};
       if (scale && shaded.has(c.key)) { cell.fill = scale.fill(value); cell.color = textOn(cell.fill); }
       return cell;
     })),
@@ -135,7 +141,7 @@ export function excelFormat(type: string, unit: string | null, values: Cell[]): 
 
 /** What a copied or downloaded visual says under it: where its values came from and their data label. */
 export function sourceLine(visual: Visual, mode: DataMode | null | undefined, names: string[] = []): string {
-  const from = visual.evidence_ids.length ? `Prepared by Gemini in Wizard from ${visual.evidence_ids.join(', ')}` : 'Prepared by Gemini in Wizard; no cited evidence';
+  const from = visual.from ? visual.from : visual.evidence_ids.length ? `Prepared by Gemini in Wizard from ${visual.evidence_ids.join(', ')}` : 'Prepared by Gemini in Wizard; no cited evidence';
   const label = mode ? (mode === 'SYNTHETIC' ? 'SYNTHETIC test data, not corporate figures' : DATA_MODE_TEXT[mode]?.label) : null;
   return [`${from}${names.length ? ` (${names.join('; ')})` : ''}`, label, visual.note].filter(Boolean).join(' · ');
 }

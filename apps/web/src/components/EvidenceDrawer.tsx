@@ -6,7 +6,10 @@ import {cn} from '@/lib/utils';
 import {distinctLines, evidenceSql, sourceGroups, usesText, type Source, type SourceKind} from '@/sources';
 import {Dialog, DialogContent} from './ui/dialog';
 import {DataModeBadge, StatusPill} from './Badges';
-import type {Evidence, EvidenceSummary, PortalStep} from '@/types';
+import type {Evidence, EvidenceSummary, PortalStep, Visual} from '@/types';
+import {VisualEnvContext} from '@/visualEnv';
+import {wizardVisualEnv} from '@/wizardVisualEnv';
+import {VisualExport} from './VisualBlock';
 
 interface Props {
   conversationId: string | null;
@@ -31,6 +34,15 @@ function EvidenceDetail({conversationId, summary, preloaded}: {conversationId: s
   const dashboard = summary.system === 'dashboards';  // one of the team's HTML dashboards, read as it is
   const sql = evidence?.request.sql;
   const steps = evidence?.request.steps;
+  // The rows as a table to copy or download: the source's own rows, under its own data label.
+  const rowsVisual = useMemo<Visual | null>(() => evidence && evidence.rows.length ? {
+    id: summary.id, kind: 'table', title: summary.report_name, subtitle: `${summary.id} · rows the source returned to Wizard`,
+    columns: evidence.columns.map(c => ({key: c.key, label: c.label || c.key, type: ['integer', 'number', 'percent', 'currency'].includes(c.type) ? c.type : 'string', unit: c.unit ?? null})),
+    rows: evidence.rows, x: null, series: [], evidence_ids: [summary.id], derived_by: 'source',
+    from: `Rows ${summary.id} returned to Wizard`,
+    note: evidence.rows.length < evidence.total_rows ? `${evidence.rows.length.toLocaleString()} of ${evidence.total_rows.toLocaleString()} rows` : null,
+  } : null, [evidence, summary]);
+  const rowsEnv = useMemo(() => evidence ? wizardVisualEnv(conversationId, summary.data_mode, [evidence]) : null, [conversationId, evidence, summary.data_mode]);
   useEffect(() => {
     if (preloaded || !conversationId) return;
     api.evidence(conversationId, summary.id).then(r => setEvidence(r.evidence)).catch((e: unknown) => setError(e instanceof ApiError ? e.message : 'The evidence could not be loaded.'));
@@ -64,7 +76,12 @@ function EvidenceDetail({conversationId, summary, preloaded}: {conversationId: s
       {evidence?.caveats?.map(c => <p key={c} className="mt-2 text-xs text-ink-3">Caveat: {c}</p>)}
       {error && <p className="mt-2 flex items-center gap-1.5 text-xs text-danger"><Lock className="size-3.5" />{error}</p>}
       {evidence && evidence.rows.length > 0 && (
-        <div className="mt-3 max-h-80 overflow-auto rounded-lg border border-line scroll-thin">
+        <div className="mt-3 flex flex-wrap items-center justify-end gap-2" data-testid="evidence-export">
+          <VisualEnvContext.Provider value={rowsEnv!}><VisualExport visual={rowsVisual!} compact /></VisualEnvContext.Provider>
+        </div>
+      )}
+      {evidence && evidence.rows.length > 0 && (
+        <div className="mt-2 max-h-80 overflow-auto rounded-lg border border-line scroll-thin">
           <table className="w-full border-collapse text-[12.5px] tabular">
             <caption className="sr-only">Rows returned for {summary.id}</caption>
             <thead className="sticky top-0"><tr>{evidence.columns.map(c => <th key={c.key} scope="col" className="whitespace-nowrap bg-surface px-2.5 py-1.5 text-left font-medium text-ink-3">{c.label}</th>)}</tr></thead>
