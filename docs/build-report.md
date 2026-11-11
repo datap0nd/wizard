@@ -15,8 +15,12 @@ map (saved on top of it, or what this PC itself committed), and a published map 
   README.
 - Not changed: the Settings → Portals screen (it already says "from the knowledge base" and offers Publish now and
   Start over only for this PC's own map).
-- Checks: see the commit's CI run. Tested with files on disk and a fake writer; the first real sync of a published
-  map over a PC's older file happens on the work PC.
+- Checks (cloud Linux container): spec, secrets, contracts, lint, types, python-tests, portal-browser, evals-schema,
+  web-types, web-unit, web-dist and web-build PASS; e2e 32 passed with Playwright's Chromium (`CI=1`; the container
+  has no Edge, so the script's own Edge run could not start). BLOCKED here: gemini-cli (the CLI is not installed in the
+  container; CI runs it), postgres and live-parity.
+- Tested with files on disk and a fake writer; the first real sync of a published map over a PC's older file happens
+  on the work PC.
 
 ## 2026-11-11 — Every table copies and downloads; the Korean report style
 
