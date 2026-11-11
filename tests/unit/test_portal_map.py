@@ -100,6 +100,60 @@ def test_a_pc_without_its_own_map_starts_from_the_published_one(tmp_path: Path):
     assert maps.status("gscm")["source"] == "this_pc" and maps.status("gscm")["reports"] == 3
 
 
+def test_the_published_map_always_wins_over_this_pcs_own(tmp_path: Path):
+    """Owner, 11 Nov 2026: the repository is the master copy. A PC's file is read only while it continues the published
+    map it has; once the repository's copy is another one, that one is the map, whatever the PC had saved."""
+    published = tmp_path / "kb" / "portal-maps"
+    published.mkdir(parents=True)
+
+    def publish_elsewhere(overview: str) -> None:
+        (published / "gscm.json").write_text(json.dumps({"system": "gscm", "overview": overview, "reports": REPORTS}), "utf-8")
+
+    # A file from before this rule (no record of what it continues) loses to the published map.
+    (tmp_path / "maps").mkdir()
+    (tmp_path / "maps" / "gscm.json").write_text(json.dumps({"system": "gscm", "overview": "Old, this PC.", "reports": []}), "utf-8")
+    publish_elsewhere("Shared.")
+    maps = PortalMaps(tmp_path / "maps", published)
+    assert maps.status("gscm")["source"] == "knowledge_base" and maps.load("gscm")["overview"] == "Shared."
+    assert maps.publish("gscm").outcome == "not_configured"
+    # Work saved on top of the published map is kept while the repository's copy stays the same...
+    maps.save("gscm", overview="Shared, and more.")
+    assert maps.status("gscm")["source"] == "this_pc" and maps.load("gscm")["overview"] == "Shared, and more."
+    # ...and the repository's newer copy replaces it.
+    publish_elsewhere("Newer, from another PC.")
+    assert maps.status("gscm")["source"] == "knowledge_base" and maps.load("gscm")["overview"] == "Newer, from another PC."
+    assert maps.mapped("gscm") == sum(1 for r in REPORTS if r.get("status") in ("mapped", "partial"))
+    # A save now builds on the newer copy, never on what this PC had.
+    maps.save("gscm", note="A note.")
+    assert maps.load("gscm")["overview"] == "Newer, from another PC." and maps.status("gscm")["source"] == "this_pc"
+    # Without a published map, the PC's own file is the map.
+    alone = PortalMaps(tmp_path / "maps")
+    assert alone.status("gscm")["source"] == "this_pc"
+
+
+def test_what_this_pc_published_and_saved_since_survives_the_sync_that_brings_it_back(tmp_path: Path):
+    published = tmp_path / "kb" / "portal-maps"
+    published.mkdir(parents=True)
+    (published / "gscm.json").write_text(json.dumps({"system": "gscm", "overview": "Shared.", "reports": []}), "utf-8")
+    sent: dict[str, bytes] = {}
+
+    def writer(files, message):
+        sent.update(files)
+        return Published("published", "Committed.", "c0ffee")
+
+    maps = PortalMaps(tmp_path / "maps", published, writer)
+    maps.save("gscm", overview="Round one.")
+    assert maps.publish("gscm").outcome == "published"
+    assert b"based_on" not in sent["portal-maps/gscm.json"] and b'"sent"' not in sent["portal-maps/gscm.json"]
+    maps.writer = lambda files, message: Published("failed", "No network.")
+    maps.save("gscm", overview="Round two.")
+    assert maps.publish("gscm").outcome == "failed"
+    (published / "gscm.json").write_bytes(sent["portal-maps/gscm.json"])  # the next sync: round one, as this PC sent it
+    assert maps.status("gscm")["source"] == "this_pc" and maps.load("gscm")["overview"] == "Round two."
+    (published / "gscm.json").write_text(json.dumps({"system": "gscm", "overview": "Another PC.", "reports": []}), "utf-8")
+    assert maps.status("gscm")["source"] == "knowledge_base" and maps.load("gscm")["overview"] == "Another PC."
+
+
 def test_the_knowledge_base_checks_published_maps(tmp_path: Path):
     root = tmp_path / "content"
     (root / "portal-maps").mkdir(parents=True)
