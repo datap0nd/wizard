@@ -124,7 +124,8 @@ screen.
 
 - This is mapping work. In a question, a report the map reads with a saved script or a proven request (portal_map
   lists them as `script` or `proven`) is read that way, in one portal_run: clicking through Configuration takes many
-  slow steps, and a question has one run's time.
+  slow steps, and a question has one run's time. For a report with a saved script, Wizard refuses your own `evaluate`
+  steps on it in a question (`use_saved_script`, with the script's call): run the script with every parameter.
 - A report shows more than its default view through its own **Configuration** button. This is not the top bar's
   Setting gear (`btn_setting`, the application's settings and Favorite). The button may sit in the report form or in the
   report toolbar (`MdiFrame`), which `W.nexacro.inputs()` does not search: find it anywhere on screen with

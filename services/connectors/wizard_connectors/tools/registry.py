@@ -93,6 +93,7 @@ class ToolContext:
     services: Services
     choice: SystemChoice | None = None  # the systems the person chose for this request; None = Auto, every system
     task: dict[str, Any] | None = None  # the task this run does (Settings → Tasks): {id, title, input, path, every_file}
+    kind: str = "ask"  # the run: ask, check, recurring, explore (Settings → Portals → Map) or task
 
 
 @dataclass

@@ -34,6 +34,9 @@ MAX_SAVED = 500
 # Rows of one portal read kept as evidence: enough for a check against a person's own export row by row, and for Check
 # my data. What Gemini sees of them is bounded separately (max_rows, MAX_TABLE_CHARS).
 MAX_EVIDENCE_ROWS = 50_000
+# Portals where a question reads a report that has a saved script only through that script: Gemini's own evaluate
+# steps on it are refused outside a mapping run (owner, 12 Nov 2026: the map's text alone did not hold twice).
+SCRIPT_ONLY = frozenset({"gscm"})
 
 
 class Args(BaseModel):
@@ -347,19 +350,52 @@ def _fill(value: Any, params: dict[str, str]) -> Any:
     return value
 
 
+def _find_script(ctx: ToolContext, system: str, name: str) -> dict[str, Any] | None:
+    """A saved script by name: this PC's own first, then the map's copy."""
+    found = next((s for s in _saved(ctx) if s.get("system") == system and s.get("name") == name), None)
+    if found is None and ctx.services.portal_maps is not None:
+        found = ctx.services.portal_maps.script(system, name)
+    return found
+
+
+def _script_params(script: dict[str, Any]) -> list[dict[str, str]]:
+    """A script's parameters, each with the value it was saved with."""
+    return [{"name": str(p["name"]), "example": str(p.get("example") or "")}
+            for p in script.get("params") or [] if isinstance(p, dict) and p.get("name")]
+
+
+def _script_call(system: str, script: dict[str, Any]) -> str:
+    """The portal_run call that runs a saved script, every parameter filled with the value it was saved with."""
+    params = [{"name": p["name"], "value": p["example"] or "<value>"} for p in _script_params(script)]
+    return (f"portal_run(system={json.dumps(system)}, script={json.dumps(script['name'])}, "
+            f"params={json.dumps(params, ensure_ascii=False)})")
+
+
+def _each_param(params: list[dict[str, str]]) -> str:
+    return ", ".join(p["name"] + (f" (e.g. {p['example']})" if p["example"] else "") for p in params)
+
+
 def _steps(ctx: ToolContext, args: RunArgs, portal: portals.Portal) -> tuple[list[dict[str, Any]], dict[str, str]]:
     params = {p.name: p.value for p in args.params}
     if args.script:
-        found = next((s for s in _saved(ctx) if s.get("system") == portal.id and s.get("name") == args.script), None)
-        if found is None and ctx.services.portal_maps is not None:
-            found = ctx.services.portal_maps.script(portal.id, args.script)
+        found = _find_script(ctx, portal.id, args.script)
         if found is None:
             raise ToolError("script_not_found", f"No saved {portal.name} script named '{args.script}', on this PC or in "
                                                 "the map. Read the report with its request or its open steps from the map "
                                                 "instead, and save the steps that work with portal_save_script.")
-        missing = [p["name"] for p in found.get("params", []) if p["name"] not in params]
+        wanted = _script_params(found)
+        missing = [p for p in wanted if p["name"] not in params]
         if missing:
-            raise ToolError("invalid_arguments", f"The script needs {', '.join(missing)}.")
+            # The owner's review of a Q1 run (12 Nov 2026): Gemini left the script at this error and read the report
+            # itself in 76 steps. The error says every parameter, the value it was saved with and the call to send.
+            names = {p["name"] for p in wanted}
+            unknown = [name for name in params if name not in names]
+            raise ToolError("script_params_missing", (
+                f"The script '{found['name']}' needs every one of its parameters. Missing: {_each_param(missing)}."
+                + (f" It takes no parameter named {', '.join(unknown)}." if unknown else "")
+                + (f" It reads: {found['description']}" if found.get("description") else "")
+                + f" Run it again with all of them, each set to the question's value in the same format as its example: "
+                f"{_script_call(portal.id, found)}. Keep to the script: it is this report's route."))
         raw = found["steps"]
     elif args.steps:
         raw = [s.model_dump(exclude_none=True) for s in args.steps]
@@ -384,9 +420,9 @@ def _cap_value(value: Any) -> Any:
 def _mapped_routes(ctx: ToolContext, system: str, steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """The mapped reports Gemini's own steps name (by menu id or map id) that the map already reads in one call: a saved
     script or a request Wizard proved (owner's question run, 4 Nov 2026: it clicked through DB4009's Configuration for
-    twenty minutes and ran out of time while the map held its script). Not for a task, which may be mapping it."""
+    twenty minutes and ran out of time while the map held its script). Not for a mapping run (a task or Map)."""
     maps = ctx.services.portal_maps
-    if maps is None or ctx.task is not None:
+    if maps is None or _mapping(ctx):
         return []
     text = json.dumps(steps, default=str)
     found = []
@@ -404,6 +440,37 @@ def _mapped_routes(ctx: ToolContext, system: str, steps: list[dict[str, Any]]) -
     return found[:3]
 
 
+def _mapping(ctx: ToolContext) -> bool:
+    """A run that may open and click through any report: a task, or Map in Settings → Portals."""
+    return ctx.task is not None or ctx.kind == "explore"
+
+
+def _refuse_own_reads(ctx: ToolContext, portal: portals.Portal, steps: list[dict[str, Any]],
+                      mapped: list[dict[str, Any]]) -> None:
+    """In a question, Gemini's own evaluate steps on a GSCM report that has a saved script are refused: the script is
+    the report's route. The owner's review of a Q1 run (12 Nov 2026): 76 steps and 23-28 minutes an answer, through
+    the report's screens, while the map named its script: the map's text alone had not held, twice."""
+    scripted = [m for m in mapped if m.get("script")]
+    if portal.id not in SCRIPT_ONLY or not scripted or not any(s.get("action") == "evaluate" for s in steps):
+        return
+    routes = []
+    for report in scripted:
+        script = _find_script(ctx, portal.id, report["script"])
+        if script is None:
+            continue
+        params = _each_param(_script_params(script))
+        routes.append(f"{report['report']} ({report.get('name') or report['report']}): script '{script['name']}'"
+                      + (f", parameters {params}" if params else "") + f". Run it as {_script_call(portal.id, script)}"
+                      + (", or its proven request as one request step (portal_map(report=...) has it)"
+                         if report.get("proven_requests") else "") + ".")
+    if routes:
+        raise ToolError("use_saved_script", (
+            "Refused: in a question, a mapped report with a saved script is read only with that script, never with "
+            "your own evaluate steps (its screens, its Configuration, its datasets). " + " ".join(routes)
+            + " Set each parameter to the question's value, in the same format as its example. If the script fails, "
+            "say what it answered in your answer: changing how a report is read is mapping work, for a task."))
+
+
 MAPPED_NOTE = ("Already mapped: in a question, read these reports with their saved script (portal_run with script and the "
                "filters as params) or their proven request as one request step; portal_map(report=...) has both. "
                "Clicking through their screens or Configuration is mapping work and takes many slow steps.")
@@ -413,13 +480,14 @@ def run(ctx: ToolContext, args: RunArgs) -> dict[str, Any]:
     portal = _portal(ctx, args.system)
     steps, params = _steps(ctx, args, portal)
     mapped = [] if args.script else _mapped_routes(ctx, portal.id, steps)
+    _refuse_own_reads(ctx, portal, steps, mapped)
     browser = ctx.services.portals.for_user(ctx.identity.id)  # type: ignore[union-attr]
     try:
         result = browser.execute(portal, steps, params)
     except PortalError as error:
         hint = (f" {MAPPED_NOTE} " + "; ".join(
             f"{m['report']}: " + (f"script {m['script']}" if m.get("script") else "its proven request") for m in mapped)
-            if mapped else "")
+            if mapped else "") + _script_hint(ctx, portal, args)
         raise ToolError(error.code, portals.scrub(error.message) + hint) from None
     retrieved = ctx.services.now().isoformat()
     evidence_ids: list[str] = []
@@ -464,13 +532,23 @@ def run(ctx: ToolContext, args: RunArgs) -> dict[str, Any]:
         data["evidence_id"] = evidence_ids[0]
         data["evidence_ids"] = evidence_ids
     if "stopped" in result:
-        data["stopped"] = {**result["stopped"], "message": portals.scrub(result["stopped"]["message"])}
+        data["stopped"] = {**result["stopped"], "message": portals.scrub(result["stopped"]["message"])
+                           + _script_hint(ctx, portal, args)}
     if mapped:
         data["mapped_reports"] = mapped
         data["mapped_note"] = MAPPED_NOTE
     data["dialogs"] = [portals.scrub(d) for d in data["dialogs"]]
     data["console_errors"] = [portals.scrub(c) for c in data["console_errors"]]
     return data
+
+
+def _script_hint(ctx: ToolContext, portal: portals.Portal, args: RunArgs) -> str:
+    """For a saved script that failed part-way: its parameters with the values it was saved with, so the next try
+    corrects a value's format rather than leaving the script."""
+    script = _find_script(ctx, portal.id, args.script) if args.script else None
+    params = _each_param(_script_params(script)) if script else ""
+    return (f" The script's parameters, with the values it was saved with: {params}. Check each value you gave has its "
+            "example's format, then run the script again." if params else "")
 
 
 def _record(ctx: ToolContext, portal: portals.Portal, args: RunArgs, steps: list[dict[str, Any]], output: dict[str, Any],
@@ -579,9 +657,7 @@ def read_map(ctx: ToolContext, args: MapArgs) -> dict[str, Any]:
 
 
 def _script_known(ctx: ToolContext, system: str, name: str) -> bool:
-    maps = ctx.services.portal_maps
-    return any(s.get("system") == system and s.get("name") == name for s in _saved(ctx)) or (
-        maps is not None and maps.script(system, name) is not None)
+    return _find_script(ctx, system, name) is not None
 
 
 def _with_scripts(ctx: ToolContext, system: str, reports: list[dict[str, Any]]) -> list[dict[str, Any]]:
