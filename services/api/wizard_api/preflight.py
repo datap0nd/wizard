@@ -99,12 +99,22 @@ def probe_gemini_cli(settings: Settings) -> tuple[bool, str]:
                                    run_token=run_token(probe_settings.session_secret, "run_probe", "u-ceo", 300))
             workdir = user_home / "runs" / "probe"
             workdir.mkdir(parents=True, exist_ok=True)
-            result = subprocess.run(runtime.command(), cwd=workdir, env=runtime.build_env(home, request), input=b"hi\n",
-                                    capture_output=True, timeout=240,
-                                    creationflags=0x08000000 if os.name == "nt" else 0)
+            # The CLI's output goes to a file: Node writes a file synchronously, while output to a pipe still buffered
+            # when the CLI exits is cut at 64 KB, and the request quoted in its result line is longer than that.
+            out = scratch / "cli-stdout.jsonl"
+            with out.open("wb") as stdout:
+                result = subprocess.run(runtime.command(), cwd=workdir, env=runtime.build_env(home, request), input=b"hi\n",
+                                        stdout=stdout, stderr=subprocess.PIPE, timeout=240,
+                                        creationflags=0x08000000 if os.name == "nt" else 0)
         finally:
             server.should_exit = True
-        lines = [json.loads(line) for line in result.stdout.decode("utf-8", "replace").splitlines() if line.startswith("{")]
+        lines = []
+        for line in out.read_text(encoding="utf-8", errors="replace").splitlines():
+            try:
+                lines.append(json.loads(line) if line.startswith("{") else None)
+            except ValueError:
+                continue
+        lines = [line for line in lines if isinstance(line, dict)]
         final = next((e for e in reversed(lines) if e.get("type") == "result"), None)
         if not final or "error" not in final:
             tail = result.stderr.decode("utf-8", "replace")[-600:]

@@ -95,9 +95,13 @@ def sent_to_google(live_server, tmp_path, choice=None):
                            run_token=run_token(settings.session_secret, "run_decl", "u-ceo", 300))
     workdir = user_home / "runs" / "decl"
     workdir.mkdir(parents=True, exist_ok=True)
-    result = subprocess.run(runtime.command(), cwd=workdir, env=runtime.build_env(home, request), input=b"hi\n",
-                            capture_output=True, timeout=180)
-    final = [json.loads(line) for line in result.stdout.decode().splitlines() if '"type":"result"' in line][-1]
+    # The CLI's output goes to a file, not a pipe: Node writes a file synchronously, while output to a pipe that is
+    # still buffered when the CLI exits is cut at 64 KB, and the request quoted in the result line is longer than that.
+    out = tmp_path / "cli-stdout.jsonl"
+    with out.open("wb") as stdout:
+        subprocess.run(runtime.command(), cwd=workdir, env=runtime.build_env(home, request), input=b"hi\n",
+                       stdout=stdout, stderr=subprocess.PIPE, timeout=180)
+    final = [json.loads(line) for line in out.read_text(encoding="utf-8").splitlines() if '"type":"result"' in line][-1]
     message = final["error"]["message"]
     return app, json.loads(message[message.index("{"):message.rindex("}") + 1])
 
@@ -143,4 +147,4 @@ def test_installation_probe_passes_and_ignores_parent_gemini_md(tmp_path):
     settings = load_settings(env={"WIZARD_AGENT_RUNTIME": "gemini-cli"}, home=tmp_path)
     passed, detail = probe_gemini_cli(settings)
     assert passed, detail
-    assert "26 read-only tools" in detail  # 25 + wizard_ask_person (3 Nov 2026); comparing reads is task work
+    assert "27 read-only tools" in detail  # 25 + wizard_ask_person (3 Nov 2026) + wizard_quiz_save (12 Nov); comparing reads is task work

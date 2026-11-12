@@ -23,7 +23,16 @@ and Wizard publishes it only when it is fine-grained and can change no file anyw
   `runs.py`, `kb_tools.py` (`TASK_ONLY`), the tool registry, `CasePage.tsx`, `CaseFlow.tsx` (a note from the editors,
   a rating under each answer), `site.tsx` (`?quiz`, `?admin`), `SettingsDialog.tsx`, contracts (tool catalog, OpenAPI),
   AGENTS.md, README, `tasks/README.md`, `docs/desktop.md`, `docs/threat-model.md`. The committed `dist/` is rebuilt.
-- Checks (cloud Linux container): see below.
+- **Fixed on the way:** the installation probe (`run.py --check`, `preflight.py`) read the Gemini CLI's output from a
+  pipe; Node cuts output still buffered in a pipe at 64 KB when it exits, and with one more tool the request the probe
+  reads passed 64 KB, so the probe would have failed on the work PC. The probe and the CLI tests now read the output from
+  a file, which Node writes in full.
+- Checks (cloud Linux container, `CI=1 scripts/verify_all.sh --allow-blocked=live-parity,postgres`): lock, spec,
+  secrets, contracts, lint, types, python-tests, portal-browser, evals-schema, web-types, web-unit (205), web-dist,
+  web-build and e2e (32, Playwright's Chromium) PASS; gemini-cli, BLOCKED until the pinned CLI was installed
+  (`npm --prefix .tools install @google/gemini-cli@0.62.0`), then 5 passed after the fix above. postgres and live-parity
+  BLOCKED (allowed). The built site was served with a fake GitHub issues API and driven in Chromium at 1280×800 and
+  390×844 (rating, quiz, PIN, the admin pane's tabs, an edit shown on the case), no console errors, no sideways scroll.
 - Not run: the company GitHub itself (CORS from the Pages origin to its API, fine-grained tokens, secret scanning of
   the commit that carries the token); a real quiz task on the owner's knowledge base.
 
