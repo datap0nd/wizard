@@ -49,7 +49,10 @@ around a precomputed result is withdrawn. Its credential, entitlement, DLP and h
 - Add an intent classifier, a scripted tool order (the company's source order is guidance in the prompt with a
   sufficiency test, never code that forces a tool sequence:
   [decision](docs/decisions/2026-11-02-source-order.md)), a mandatory verifier call or a hidden deterministic ranking
-  pipeline. Do not add a rule only to satisfy a test.
+  pipeline. Do not add a rule only to satisfy a test. The one route the code holds, an owner decision
+  ([docs/decisions/2026-11-12-gscm-saved-script-only.md](docs/decisions/2026-11-12-gscm-saved-script-only.md)): in a
+  question, `portal_run` refuses Gemini's own `evaluate` steps on a GSCM report that has a saved script; a task or a
+  Map run may still open it.
 - Run executives under the developer's cached CLI session or any shared Gemini login. Never fall back to another
   user's credentials when a user's own sign-in is missing: fail with a clear "link your account" state.
 - Add write, export, email, shell, arbitrary SQL, arbitrary URL or browser-automation tools for corporate systems.

@@ -3,7 +3,35 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-11 (latest) — The published portal map always wins
+## 2026-11-12 (latest) — In a question, a GSCM report with a saved script is read only through it
+
+The owner's review of a Q1 run on the work PC: 23–28 minutes per answer, 76 steps for Q1, figures that cannot be
+trusted, and the map's text pointing to the report's saved script not holding, for the second time. Owner: "Do 1. It's
+for GSCM only I believe" (hard enforcement in Wizard's code; [decision](decisions/2026-11-12-gscm-saved-script-only.md)).
+
+- **GSCM, in a question:** `portal_run` refuses a call of Gemini's own steps that includes an `evaluate` step and names
+  a mapped report (menu id or map id) whose saved script is kept on this PC or in the map. Nothing reaches the browser.
+  The error, `use_saved_script`, names the script, each parameter with the value it was saved with, the exact call
+  (`portal_run(system="gscm", script="…", params=[…])`) and the report's proven request when it has one. Running the
+  script, a `request` step, a report without a saved script and the other portals are not refused. A task run and a
+  **Map** run (Settings → Portals) are not refused: the tool context now carries the run's kind.
+- **Every portal:** a script run with a parameter left out fails with `script_params_missing`, listing each missing
+  parameter with its saved example, any name the script does not take, what the script reads and the call to send
+  again (it was `invalid_arguments`, "The script needs week."). A script run that stops part-way names its parameters
+  with their examples.
+- Changed: `services/connectors/wizard_connectors/tools/portal_tools.py`, `tools/registry.py` (`ToolContext.kind`),
+  `services/api/wizard_api/runs.py`, the general and GSCM portal guides, `tests/unit/test_precise_maps.py`,
+  `tests/integration/test_portal_browser.py`, AGENTS.md (the one route the code holds), README, eval log.
+- Not caught: a report opened by clicking its menu entry and then read by steps that never name it. A GSCM report whose
+  saved script is broken can no longer be read by a question's own `evaluate` steps until a task or Map run fixes it.
+- Checks (cloud Linux container): lock, spec, secrets, contracts, lint, types, python-tests, portal-browser,
+  evals-schema, web-types, web-unit, web-dist and web-build PASS; e2e 32 passed with Playwright's Chromium (`CI=1`; the
+  container has no Edge, so the script's own Edge run could not start). BLOCKED here: gemini-cli (the CLI is not
+  installed in the container; CI runs it), postgres and live-parity.
+- Tested with a stand-in browser (unit) and a real Chromium against the simulated portal (the missing-parameters
+  error); the first refused question on the real GSCM happens on the work PC.
+
+## 2026-11-11 — The published portal map always wins
 
 Owner: "make the published one always win". A PC's own map file used to hide the map published to the knowledge-base
 repository. Now the published map is the one Wizard reads; a PC's file is used only while it continues that published
