@@ -63,6 +63,9 @@ for GSCM only I believe" (hard enforcement in Wizard's code; [decision](decision
   installed in the container; CI runs it), postgres and live-parity.
 - Tested with a stand-in browser (unit) and a real Chromium against the simulated portal (the missing-parameters
   error); the first refused question on the real GSCM happens on the work PC.
+- Fixed a flaky test that failed CI on the first merge: `test_a_finished_map_is_routed_by_the_next_mapping_before_anything_else`
+  compared each report's `updated` stamp, which a Map round's views save moves, so it failed whenever the setup and
+  that save fell in different seconds. It now compares everything but the stamp.
 
 ## 2026-11-11 — The published portal map always wins
 
