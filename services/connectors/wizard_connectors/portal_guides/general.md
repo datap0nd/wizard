@@ -12,7 +12,9 @@ last page between calls, so you can explore step by step.
    id, how to open it fastest, its filters and their values, its datasets and columns,
    and its data request with the filters as `{{param}}` placeholders, often with a saved script. When a report is
    mapped, read it straight away: run its script with `params`, or one `request` step with the request's url and body
-   and your filter values. Explore only what the map does not know, and add what you learn with `portal_map_save`.
+   and your filter values. A script takes every one of its parameters: an error that one is missing lists each with the
+   value it was saved with and the call to send again; send it with the question's values. Explore only what the map
+   does not know, and add what you learn with `portal_map_save`.
 1. **Look first, cheaply.** `goto` the start page (`start_page` above), then `look`: it lists the controls with a
    selector you can click, the tables, the frames, the visible text, and which technology the page runs
    (`technology.nexacro`, `technology.microstrategy_session`, `technology.superset`).

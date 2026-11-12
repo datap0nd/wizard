@@ -222,3 +222,77 @@ def test_a_question_clicking_through_a_mapped_report_is_told_its_proven_route(tm
     assert _mapped_routes(context, "gscm", steps)[0]["script"] == "db4009-by-account", "a script kept in the map is"
     index = registry.execute("portal_map", {"system": "gscm"}, context).data["reports"]
     assert next(r for r in index if r["id"] == "db4009")["script"] == "db4009-by-account"
+
+
+def test_a_question_reads_a_gscm_report_with_a_saved_script_only_through_it(tmp_path: Path, monkeypatch: Any):
+    # Owner's review of a Q1 run, 12 Nov 2026: 76 steps and 23-28 minutes an answer through the report's own screens
+    # while the map named its script, after the script's "params missing" error. The map's text alone had not held
+    # twice: in a question, Gemini's own evaluate steps on such a GSCM report are refused, and the error names the call.
+    from wizard_connectors.portal_browser import PortalBrowser, PortalBrowsers
+    from wizard_connectors.portal_map import PortalMaps
+    from wizard_connectors.portals import settings_from
+
+    sent: list[list[dict[str, Any]]] = []
+    stop: dict[str, Any] = {}
+
+    def execute(self: Any, portal: Any, steps: list[dict[str, Any]], params: dict[str, Any]) -> dict[str, Any]:
+        sent.append(steps)  # what reached the browser
+        return {"outputs": [], "page": {"url": portal.url, "title": portal.name}, **stop,
+                "log": {"requests": [], "blocked": [], "dialogs": [], "console_errors": []}}
+
+    monkeypatch.setattr(PortalBrowser, "execute", execute)
+    registry, context = tools(tmp_path)
+    settings = settings_from({"WIZARD_PORTAL_GSCM_URL": "https://gscm.corp.example.com/",
+                                "WIZARD_PORTAL_ASAP_URL": "https://asap.corp.example.com/"})
+    assert settings is not None
+    context.services.portals = PortalBrowsers(settings, lambda user_id: tmp_path / user_id)
+    context.services.portal_maps = PortalMaps(tmp_path / "maps", names={"gscm": "GSCM", "asap": "ASAP"})
+    context.identity.entitlements["asap"] = SystemRights(reports=["*"], markets=["*"])
+    for system in ("gscm", "asap"):
+        assert registry.execute("portal_map_save", {"system": system, "reports": [
+            {"id": "db4009", "menu_id": "DB4009", "name": "Daily Sell-out", "status": "partial", "requests": [REQUEST],
+             "script": "db4009-by-account"},
+            {"id": "as470", "menu_id": "AS470", "name": "Actual Sales"}]}, context).ok
+        assert registry.execute("portal_save_script", {
+            "system": system, "name": "db4009-by-account", "description": "Daily sell-out by account and country.",
+            "steps": [{"action": "request", "url": REQUEST["url"], "body": REQUEST["body"]}],
+            "params": [{"name": "day", "value": "20261102"}, {"name": "level", "value": "ORGSALES"}]}, context).ok
+    own = [{"action": "evaluate", "script": "await W.nexacro.open('fn_openMenu', 'DB4009'); return W.nexacro.find(/config/i);"}]
+
+    refused = registry.execute("portal_run", {"system": "gscm", "steps": own}, context)
+    assert not refused.ok and refused.error_code == "use_saved_script" and sent == [], "refused before the browser"
+    message = refused.error_message or ""
+    assert "day (e.g. 20261102), level (e.g. ORGSALES)" in message
+    assert ('portal_run(system="gscm", script="db4009-by-account", params=[{"name": "day", "value": "20261102"}, '
+            '{"name": "level", "value": "ORGSALES"}])') in message
+    clicks = [{"action": "click", "selector": "text=Configuration"}, *own]
+    assert registry.execute("portal_run", {"system": "gscm", "steps": clicks}, context).error_code == "use_saved_script"
+
+    other = registry.execute("portal_run", {"system": "gscm", "steps": [
+        {"action": "evaluate", "script": "return W.nexacro.open('fn_openMenu', 'AS470');"}]}, context)
+    assert other.ok, "a report with no saved script is the question's to read"
+    request = registry.execute("portal_run", {"system": "gscm", "steps": [
+        {"action": "request", "url": REQUEST["url"], "body": "SSV:utf-8\x1emenu:string=DB4009"}]}, context)
+    assert request.ok and request.data["mapped_reports"][0]["script"] == "db4009-by-account", "a request step is no evaluate"
+    assert registry.execute("portal_run", {"system": "asap", "steps": own}, context).ok, "GSCM only"
+    for mapping in (ToolContext(identity=context.identity, run_id="run_t", recorder=MemoryRecorder(),
+                                services=context.services, task={"id": "gscm-db4009-daily-sellout"}, kind="task"),
+                    ToolContext(identity=context.identity, run_id="run_m", recorder=MemoryRecorder(),
+                                services=context.services, kind="explore")):
+        assert registry.execute("portal_run", {"system": "gscm", "steps": own}, mapping).ok, "mapping work opens it"
+    assert len(sent) == 5
+
+    # The script itself, with a parameter left out and one misnamed: every parameter with its example, and the call.
+    missing = registry.execute("portal_run", {"system": "gscm", "script": "db4009-by-account",
+                                              "params": [{"name": "date", "value": "20261111"}]}, context)
+    assert not missing.ok and missing.error_code == "script_params_missing"
+    message = missing.error_message or ""
+    assert "Missing: day (e.g. 20261102), level (e.g. ORGSALES)." in message
+    assert "It takes no parameter named date." in message and "Daily sell-out by account and country." in message
+    assert 'script="db4009-by-account", params=[{"name": "day", "value": "20261102"}' in message
+    params = [{"name": "day", "value": "20261111"}, {"name": "level", "value": "ORGSALES"}]
+    ran = registry.execute("portal_run", {"system": "gscm", "script": "db4009-by-account", "params": params}, context)
+    assert ran.ok and sent[-1][0]["body"].endswith("day:string=20261111\x1forglevel:string=ORGSALES")
+    stop["stopped"] = {"code": "step_failed", "message": "Step 1 (request) failed: the server refused it."}
+    stopped = registry.execute("portal_run", {"system": "gscm", "script": "db4009-by-account", "params": params}, context)
+    assert "day (e.g. 20261102), level (e.g. ORGSALES)" in stopped.data["stopped"]["message"], "fix a value, not the route"

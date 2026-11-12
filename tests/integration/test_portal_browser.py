@@ -584,7 +584,10 @@ def test_a_script_that_worked_is_kept_and_rerun_with_parameters(setup):
     assert rerun.ok, rerun.error_message
     assert rerun.data["outputs"][-1]["rows"][0] == ["AE", "2026W45", 10]
     missing = call(setup, "portal_run", {"system": "gscm", "script": "weekly-units"})
-    assert not missing.ok and "week" in (missing.error_message or "")
+    assert not missing.ok and missing.error_code == "script_params_missing"
+    assert "Missing: week (e.g. 2026W40)." in (missing.error_message or "")
+    assert 'portal_run(system="gscm", script="weekly-units", params=[{"name": "week", "value": "2026W40"}])' in (
+        missing.error_message or ""), "the call to send again, with the value it was saved with"
 
 
 def test_a_portal_the_person_lacks_is_not_available(setup):

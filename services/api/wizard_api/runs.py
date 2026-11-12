@@ -789,7 +789,8 @@ class RunManager:
         outcome = self._bound(run, name, args, spec.category if spec else None)
         if outcome is None:
             context = ToolContext(identity=run.identity, run_id=run.id, recorder=Recorder(self.store, run, self.attachments),
-                                  services=self.services, choice=run.choice, task=run.work if run.kind == "task" else None)
+                                  services=self.services, choice=run.choice, task=run.work if run.kind == "task" else None,
+                                  kind=run.kind)
             outcome = await asyncio.to_thread(self.registry.execute, name, args, context)
         if spec and spec.category == "source":
             self.store.audit(run.identity.id, f"tool:{name}", run_id=run.id,
