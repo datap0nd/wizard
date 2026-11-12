@@ -27,7 +27,7 @@ from ..knowledge import KnowledgeBase
 from ..metronome import MetronomeSettings
 from ..nerp import NerpQuery
 from ..portal_browser import PortalBrowsers
-from ..portal_map import PortalMaps, Writer
+from ..portal_map import PortalMaps, Published, Writer
 from ..postgres_query import PostgresQuery
 from ..task_files import TaskFiles
 from .systems import SystemChoice
@@ -76,6 +76,8 @@ class Services:
     # Commits files to the company knowledge-base repository with this PC's write token (tasks); None = no token here.
     kb_writer: Writer | None = None
     kb_prefix: str = ""  # the knowledge base's folder in that repository (WIZARD_KB_PATH)
+    # Publishes a section of the Cases site's quiz with this PC's write token (quiz_tools.py, tasks only); None = not here.
+    quiz_writer: Callable[[dict[str, Any]], Published] | None = None
     # The folder or file a task run reads (task_files.py), with the converter the API gives it; None = no tasks here.
     task_files: TaskFiles | None = None
     # The team's HTML dashboards folder (dashboards.py), a system of its own; None = no folder set on this PC.

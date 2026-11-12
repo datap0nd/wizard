@@ -145,6 +145,12 @@ class Settings:
     site_repo: str | None = None
     site_branch: str = "gh-pages"
     site_url: str | None = None
+    # Feedback on the Cases site (owner, 12 Nov 2026): ratings, comments and quiz answers people send from the site's
+    # pages, as issues in a repository of their own, with a token that may only open issues there. The token is
+    # published with the site (the page needs it); the PIN opens the site's admin pane. Entered on this PC only.
+    feedback_repo: str | None = None
+    feedback_token: str | None = None
+    feedback_pin: str = "2323"
     # Google accounts allowed to link for Gemini (company domains); empty: any account that matches the user's email rule.
     # Also the only domains a recurring extraction may be emailed to (else the requester's own).
     google_domains: list[str] = field(default_factory=list)
@@ -338,6 +344,19 @@ def load_settings(env: dict[str, str] | None = None, env_file: Path | None = Non
     if site_url and not SITE_URL.match(site_url):
         raise ConfigError("WIZARD_SITE_URL must be the https:// address GitHub shows under Settings → Pages")
     settings.site_url = site_url.rstrip("/") + "/" if site_url else None
+    settings.feedback_token = get("WIZARD_FEEDBACK_TOKEN")
+    feedback_repo = (get("WIZARD_FEEDBACK_REPO", "") or "").strip()
+    if not feedback_repo and settings.feedback_token and settings.site_repo:
+        feedback_repo = f"{settings.site_repo.split('/')[0]}/wizard-feedback"  # beside the site's repository
+    if feedback_repo and not KB_REPO.match(feedback_repo):
+        raise ConfigError("WIZARD_FEEDBACK_REPO must be owner/name, for example acme/wizard-feedback")
+    if feedback_repo and feedback_repo in (settings.kb_repo, settings.site_repo):
+        raise ConfigError("WIZARD_FEEDBACK_REPO must be a repository of its own, never the knowledge base's or the site's: "
+                          "its token is published with the site")
+    settings.feedback_repo = feedback_repo or None
+    settings.feedback_pin = (get("WIZARD_FEEDBACK_PIN", "2323") or "2323").strip()
+    if not re.fullmatch(r"[0-9]{4,12}", settings.feedback_pin):
+        raise ConfigError("WIZARD_FEEDBACK_PIN must be 4 to 12 digits")
     if settings.kb_repo and settings.content_dir:
         raise ConfigError("Set either WIZARD_KB_REPO (synced knowledge base) or WIZARD_CONTENT_DIR (a local folder), not both")
     if settings.kb_repo and settings.runtime == "replay":

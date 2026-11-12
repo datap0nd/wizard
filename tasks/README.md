@@ -82,6 +82,12 @@ Rules:
   `wizard_read_dashboard`) when the PC has a dashboards folder, NERP's view tools (`nerp_list_views`,
   `nerp_view_columns`, `nerp_query`) when NERP is connected, and the task-file tools when it asks for a path. A task
   that needs a tool Wizard does not have needs an update first.
+- A task can publish one section of the Cases site's quiz (owner decision,
+  [docs/decisions/2026-11-12-case-feedback-and-quiz.md](../docs/decisions/2026-11-12-case-feedback-and-quiz.md)):
+  `wizard_quiz_save({"section": "bi" | "business", "intro": "...", "questions": [{"topic", "question", "now",
+  "choices", "notes"}]})`, 5 to 50 questions that replace that section's on the site. People answer them there
+  without signing in; their answers reach the site's admin pane, not the knowledge base. `quiz-1-…` and `quiz-2-…`
+  prepare the two sections.
 - Say what must not change, and what to do with a SIGNED note: Wizard refuses to change one, so usually propose the
   change in the summary.
 - Delete a task's file when it is no longer needed; Wizard drops it from the list.

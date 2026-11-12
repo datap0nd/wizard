@@ -67,7 +67,7 @@ EXPLORE_STALLS = 2
 TASK_ROUND_TOOL_CALLS = 100
 TASK_ROUNDS = 60
 TASK_STALLS = 2
-TASK_WRITES = ("wizard_kb_save_notes", "wizard_kb_note_source", "wizard_task_files_done")  # still allowed to save a round's work
+TASK_WRITES = ("wizard_kb_save_notes", "wizard_kb_note_source", "wizard_task_files_done", "wizard_quiz_save")  # still allowed to save a round's work
 # In a task these read what the task itself changes (the files left, a note it saved), so the same call can answer anew.
 TASK_REREADS = frozenset({"wizard_task_files", "wizard_kb_note_source", "wizard_browse_knowledge"})
 # Why a run could not run at all: a task's rounds stop at once instead of trying the next round.
@@ -422,6 +422,10 @@ def tool_label(name: str, args: dict[str, Any], services: Services) -> str:
         done = ([f"saved {count}"] if count else []) + ([f"moved or renamed {moves}"] if moves else []) + (
             [f"removed {removes}"] if removes else [])
         return f"Changed the company knowledge base: {', '.join(done)} note(s)"
+    if name == "wizard_quiz_save":
+        count = len([q for q in args.get("questions") or [] if isinstance(q, dict)])
+        section = {"bi": "Business intelligence", "business": "Business"}.get(str(args.get("section")), "the quiz")
+        return f"Published {count} quiz question(s) to the Cases site: {section}"
     if name == "wizard_kb_note_source":
         return "Read knowledge notes as files: " + ", ".join(str(i) for i in args.get("ids") or [])
     if name == "wizard_kb_standard":
@@ -865,8 +869,8 @@ class RunManager:
                                "next message.")
         if name in TASK_ONLY and run.kind != "task":
             return ToolOutcome(False, {}, 0, "task_only",
-                               f"{name} changes the company knowledge base, so it runs only in a task from Settings → "
-                               "Tasks. Answer the question without it.")
+                               f"{name} changes the company knowledge base or its site, so it runs only in a task from "
+                               "Settings → Tasks. Answer the question without it.")
         if name in TASK_FILE_NAMES and not (run.kind == "task" and (run.work or {}).get("path")):
             return ToolOutcome(False, {}, 0, "task_only",
                                f"{name} reads the folder or file the person chose for a task in Settings → Tasks; this run "

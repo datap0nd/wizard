@@ -3,7 +3,31 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-11 (latest) — The published portal map always wins
+## 2026-11-12 (latest) — Feedback, a quiz and an admin pane on the Cases site
+
+The owner: rate each answer of a case from 1 to 5 stars with a comment, anonymously; an admin pane behind a PIN (2323)
+at the top right to see everyone's comments and edit the cases; a quiz of 50 questions Gemini prepares in tasks from
+what the knowledge base is unsure of, in a Business intelligence and a Business section, answered anonymously
+([decision](decisions/2026-11-12-case-feedback-and-quiz.md)). The site is static, so its pages open issues in a
+feedback repository of its own with a token published beside them; the owner accepted that every visitor can read it,
+and Wizard publishes it only when it is fine-grained and can change no file anywhere.
+
+- New: `services/api/wizard_api/feedback.py` (the token's checks, the edits issue, `cases/feedback.json`),
+  `services/connectors/wizard_connectors/tools/quiz_tools.py` (`wizard_quiz_save`, task runs only),
+  `tasks/quiz-1-business-intelligence.md`, `tasks/quiz-2-business.md`, `apps/web/src/feedback.ts`,
+  `apps/web/src/components/cases/{RateAnswer,QuizPage,AdminPage,SiteChrome}.tsx`, `tests/unit/test_feedback.py`,
+  `apps/web/src/feedback.test.ts`, `apps/web/src/components/cases/CaseFeedback.test.tsx`.
+- Changed: `site.py` (the feedback file with every publish, `publish_quiz`, `turn_on_feedback`), `config.py` and
+  `settings_pane.py` (`WIZARD_FEEDBACK_REPO`, `WIZARD_FEEDBACK_TOKEN`, `WIZARD_FEEDBACK_PIN`; Settings → Pages site →
+  **Turn feedback on**), `provisioning.py` (the feedback token is chosen on the PC, never in a company file), `app.py`,
+  `runs.py`, `kb_tools.py` (`TASK_ONLY`), the tool registry, `CasePage.tsx`, `CaseFlow.tsx` (a note from the editors,
+  a rating under each answer), `site.tsx` (`?quiz`, `?admin`), `SettingsDialog.tsx`, contracts (tool catalog, OpenAPI),
+  AGENTS.md, README, `tasks/README.md`, `docs/desktop.md`, `docs/threat-model.md`. The committed `dist/` is rebuilt.
+- Checks (cloud Linux container): see below.
+- Not run: the company GitHub itself (CORS from the Pages origin to its API, fine-grained tokens, secret scanning of
+  the commit that carries the token); a real quiz task on the owner's knowledge base.
+
+## 2026-11-11 — The published portal map always wins
 
 Owner: "make the published one always win". A PC's own map file used to hide the map published to the knowledge-base
 repository. Now the published map is the one Wizard reads; a PC's file is used only while it continues that published

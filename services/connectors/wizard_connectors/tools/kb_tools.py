@@ -319,4 +319,5 @@ KB_TOOLS = [
              "checked against the knowledge standard first, a SIGNED note is never changed, moved or removed, and "
              "nothing is saved when anything fails.", SaveArgs, save_notes, "wizard", "present"),
 ]
-TASK_ONLY = frozenset({"wizard_kb_save_notes"})
+# Only a task run writes: the notes, and the Cases site's quiz (quiz_tools.py).
+TASK_ONLY = frozenset({"wizard_kb_save_notes", "wizard_quiz_save"})

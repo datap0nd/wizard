@@ -48,7 +48,8 @@ SECTIONS = [
     ("gemini", "Gemini", "The model answers under your own Google sign-in."),
     ("knowledge", "Knowledge base", "The private GitHub repository Wizard reads its company notes from."),
     ("site", "Pages site", "Brain and Cases, two pages of their own on the company GitHub's Pages, published from this PC "
-                           "with the knowledge base's write token."),
+                           "with the knowledge base's write token. With a feedback token, people rate the answers of the "
+                           "Cases and answer its quiz, anonymously."),
     ("postgres", "Company database", "A read-only PostgreSQL account for Gemini's SQL questions."),
     ("nerp", "NERP", "NERP's views on their own PostgreSQL server: one database, one schema, views only, read with a "
                      "read-only account. Gemini queries only those views; each view's dataset note in the knowledge base "
@@ -88,6 +89,15 @@ FIELDS = [
           "branch, this branch, / (root).", "gh-pages"),
     Field("WIZARD_SITE_URL", "Site address", "site", "The address GitHub shows under Settings → Pages, so Wizard can link "
           "the pages.", "https://pages.github.example.com/acme/wizard-content/"),
+    Field("WIZARD_FEEDBACK_REPO", "Feedback repository", "site", "Where the Cases site keeps the ratings, comments and quiz "
+          "answers people send, one issue each: a private repository of its own, never the knowledge base's. Empty: "
+          "wizard-feedback beside the site's repository.", "acme/wizard-feedback"),
+    Field("WIZARD_FEEDBACK_TOKEN", "Feedback token", "site", "The site's pages send with it, so everyone who can open the "
+          "site can read it: make it a fine-grained token, resource owner the organisation, only the feedback "
+          "repository, Issues \"Read and write\" and nothing else. Wizard refuses a classic token or one that can change "
+          "files. Turn feedback on checks it and puts it on the Cases site.", "github_pat_…"),
+    Field("WIZARD_FEEDBACK_PIN", "Admin PIN", "site", "Opens the admin pane on the Cases site (top right): everyone's "
+          "comments and quiz answers, and edits to the cases. It only hides the pane: it is not a password.", "2323"),
     Field("WIZARD_PG_NAME", "Name people see", "postgres", "Shown in the app and in answers' sources.", "AI Team Database"),
     Field("WIZARD_PG_HOST", "Server", "postgres", "", "db.company.example"),
     Field("WIZARD_PG_PORT", "Port", "postgres", "", "5432"),
@@ -400,6 +410,33 @@ def test_knowledge(settings: Settings, proposed: dict[str, Any],
         return {"ok": result.ok, "message": started + result.message}
     ok, message = kb.check_write(repo, writer, proxy=proxy, client=client())
     return {"ok": ok, "message": f"{started}{result.message} {message}"}
+
+
+def test_site(settings: Settings, proposed: dict[str, Any]) -> dict[str, Any]:
+    """Settings → Pages site → Test connection: the feedback token checked (fine-grained, issues only, never a file in
+    any repository; feedback.py) and, when it passes, feedback turned on on the Cases site: its page's code and the
+    file the pages send with, written with the write token. Without a feedback token there is nothing to test here."""
+    import dataclasses
+
+    from . import feedback
+    from .site import Site, SiteError
+    values = _candidate(settings, proposed)
+    repo, token, pin = feedback.candidate(settings, values)
+    if not token or not repo:
+        return {"ok": False, "message": "Add the feedback token (and the feedback repository, unless it is wizard-feedback "
+                                        "beside the site's) to let people rate answers and answer the quiz."}
+    if repo in (settings.kb_repo, settings.site_repo):
+        return {"ok": False, "message": "The feedback repository must be one of its own, never the knowledge base's or the "
+                                        "site's: its token is published with the site."}
+    if not pin.isdigit() or not 4 <= len(pin) <= 12:
+        return {"ok": False, "message": "The admin PIN is 4 to 12 digits."}
+    trial = dataclasses.replace(settings, feedback_repo=repo, feedback_token=token, feedback_pin=pin)
+    try:
+        outcome = Site(trial).turn_on_feedback()
+    except SiteError as error:
+        return {"ok": False, "message": f"Wizard could not put feedback on the site: {error}"}
+    return {"ok": bool(outcome.feedback), "message": outcome.message, "commit": outcome.commit,
+            "feedback": outcome.feedback}
 
 
 def test_metronome(settings: Settings, proposed: dict[str, Any],

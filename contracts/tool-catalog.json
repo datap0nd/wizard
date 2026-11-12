@@ -1888,6 +1888,82 @@
       }
     },
     {
+      "name": "wizard_quiz_save",
+      "description": "Only in a task run (Settings → Tasks): publish one section of the quiz on the Cases site, the questions people answer to settle what the knowledge base is unsure of. It replaces that section's questions and leaves the other section alone. Each question says what the knowledge base holds now; people answer without signing in.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "section": {
+            "description": "bi: Business intelligence, technical questions (data sources, reports, tables and columns, how a measure is calculated, filters, refresh times, which source to use). business: concepts, terms and acronyms, processes, organisation and strategy.",
+            "enum": [
+              "bi",
+              "business"
+            ],
+            "type": "string"
+          },
+          "intro": {
+            "description": "One or two sentences shown above this section's questions, e.g. what they are about (0-400 characters; default \"\")",
+            "type": "string"
+          },
+          "questions": {
+            "description": "The section's questions, the most useful first. They replace the section's questions on the site.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "topic": {
+                  "description": "A short label people scan by, e.g. 'Sell-out' or 'Fiscal weeks' (2-60 characters)",
+                  "type": "string"
+                },
+                "question": {
+                  "description": "The question as people read it: one thing to answer, in plain words, ending with a question mark (10-300 characters)",
+                  "type": "string"
+                },
+                "now": {
+                  "description": "What the knowledge base says now and why it is unsure (a draft, an UNKNOWN, two notes that disagree, a term with two meanings), in one or two sentences, so people can confirm or correct it (10-600 characters)",
+                  "type": "string"
+                },
+                "choices": {
+                  "description": "Optional: 2 to 6 short answers to pick from (each at most 120 characters) when the plausible answers are known, e.g. from two notes that disagree. People can always write their own answer. Leave empty for an open question.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 6,
+                  "type": "array"
+                },
+                "notes": {
+                  "description": "Ids of the knowledge notes the answer would settle, e.g. ['sell-out'].",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 5,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "topic",
+                "question",
+                "now"
+              ],
+              "type": "object"
+            },
+            "maxItems": 50,
+            "minItems": 5,
+            "type": "array"
+          }
+        },
+        "required": [
+          "section",
+          "questions"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
       "name": "wizard_task_files",
       "description": "Only in a task that asks for a folder or file: list the files in the folder the person chose (PowerPoint, Word, Excel, email, text; subfolders included), each with an id, its path inside the folder, kind, size and date, and how many are done and left.",
       "inputSchema": {

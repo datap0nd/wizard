@@ -19,6 +19,7 @@ from .dashboard_tools import DASHBOARD_TOOLS
 from .kb_tools import KB_TOOLS
 from .nerp_tools import NERP_TOOLS
 from .portal_tools import PORTAL_TOOLS
+from .quiz_tools import QUIZ_TOOLS
 from .registry import Recorder, Services, ToolContext, ToolError, ToolOutcome, ToolRegistry, ToolSpec, flatten_schema
 from .source_tools import make_source_tools
 from .task_tools import TASK_FILE_TOOLS
@@ -77,6 +78,7 @@ def build_registry(services: Services) -> ToolRegistry:
     specs.extend(CORE_TOOLS)
     specs.extend(COMPARE_TOOLS)
     specs.extend(KB_TOOLS)
+    specs.extend(QUIZ_TOOLS)
     specs.extend(TASK_FILE_TOOLS)
     if services.portals is not None:
         specs.extend(PORTAL_TOOLS)

@@ -4,7 +4,9 @@ links to Cases and nothing links back (owner decisions, 30 October and 6 Novembe
 - **Brain** (`brain/`): a snapshot of what the in-app /brain page shows this PC's person: the knowledge graph (titles,
   summaries, links; never a note's text), the systems and the reports mapped in each portal, and the news as it was read.
 - **Cases** (`cases/`): analyses people chose to share, one per chat: each prompt and Wizard's answer with its charts,
-  tables, data labels and the names of its sources, and what Wizard did. Never a source's rows.
+  tables, data labels and the names of its sources, and what Wizard did. Never a source's rows. With feedback on (owner,
+  12 Nov 2026; feedback.py), people rate each answer and answer the quiz there, and the admin pane (a PIN) reads them;
+  the quiz (`cases/quiz.json`) is what a quiz task's Gemini prepared from what the knowledge base is unsure of.
 
 Wizard publishes only at the person's click, from their own PC, with the knowledge base's write token already saved
 there, as one commit to a branch that is not the notes' own (WIZARD_SITE_BRANCH, gh-pages): every PC downloads the notes'
@@ -30,6 +32,7 @@ from wizard_agent.prompting import squeeze
 from wizard_connectors import portals
 from wizard_connectors.content import _secrets
 
+from . import feedback
 from .config import Settings
 from .store import Store, now
 
@@ -50,6 +53,9 @@ PORTAL_STEP_KEYS = ("action", "selector", "role", "name", "text", "value", "fram
 VISUAL_KEYS = ("id", "kind", "title", "subtitle", "columns", "rows", "x", "series", "scale", "evidence_ids", "note",
                "derived_by")
 CITATION = re.compile(r"\[(E\d{1,4})\]")
+FEEDBACK_FILE = "cases/feedback.json"   # what the pages need to send feedback; only with a checked token (feedback.py)
+QUIZ_FILE = "cases/quiz.json"
+QUIZ_SECTIONS = {"bi": "Business intelligence", "business": "Business"}
 STEP_CATEGORIES = ("source", "knowledge", "check", "present")  # every tool call but the person-facing ones
 README = """# Wizard site
 
@@ -218,17 +224,24 @@ class Outcome:
     message: str
     commit: str | None = None
     url: str | None = None
+    feedback: bool | None = None  # the site takes feedback after this write; None: not configured
+
+
+def empty_index() -> dict[str, Any]:
+    return {"format": FORMAT, "updated": now(), "cases": []}
 
 
 class Site:
     def __init__(self, settings: Settings, writer: Writer | None = None,
-                 pages_url: Callable[[], str | None] | None = None):
+                 pages_url: Callable[[], str | None] | None = None,
+                 feedback_client: Callable[[], httpx.Client] | None = None):
         self.settings = settings
         self.repo, self.branch = settings.site_repo, settings.site_branch
         self.dist = settings.web_dist / "site"
         self._writer = writer
         self._pages_url = pages_url
         self._found_url: str | None = None
+        self._feedback_client = feedback_client
 
     # What the app shows ------------------------------------------------------------------------------------------------
     def problem(self) -> str | None:
@@ -307,6 +320,35 @@ class Site:
             files[f"{page}/index.html"] = page_html(template, page)
         return files
 
+    def _feedback(self) -> tuple[dict[str, bytes | None], str | None, bool | None]:
+        """The site's feedback file as this PC's settings make it: (files, a note for the person, whether feedback is on).
+        A token that fails a check is never published, and one already on the site is taken off; when GitHub cannot be
+        reached, the site keeps the file it has."""
+        s = self.settings
+        if not (s.feedback_repo and s.feedback_token):
+            return {FEEDBACK_FILE: None}, None, None
+        if self.problem():  # the write says why
+            return {}, None, None
+        guarded = [r for r in (s.kb_repo, s.site_repo) if r]
+        try:
+            if self._feedback_client is not None:
+                client = self._feedback_client()
+            else:
+                from wizard_documents import kb
+                client = kb._client(s.github_proxy)
+            ready = feedback.prepare(s.feedback_repo, s.feedback_token, guarded, client=client)
+        except feedback.FeedbackError as error:
+            return {FEEDBACK_FILE: None}, f"Feedback is off on the site: {error}", False
+        except httpx.HTTPError as error:
+            from wizard_documents import kb
+            return {}, f"Feedback was not checked: {outbound.explain(error, kb.API, s.github_proxy, windows=True)}", None
+        return ({FEEDBACK_FILE: feedback.site_file(ready.repo, s.feedback_token, s.feedback_pin, ready.edits_issue)},
+                feedback.outcome_text(ready, guarded), True)
+
+    @staticmethod
+    def _said(message: str, note: str | None) -> str:
+        return f"{message} {note}" if note else message
+
     @staticmethod
     def _pages(existing: set[str], *also: str) -> set[str]:
         """The pages the site has: the one being published and those already holding data."""
@@ -314,9 +356,10 @@ class Site:
 
     def publish_case(self, case: dict[str, Any]) -> Outcome:
         cid = case["id"]
+        extra, note, on = self._feedback()
 
         def make(existing: set[str], read: Callable[[str], bytes | None]) -> dict[str, bytes | None]:
-            files = self.app_files(existing, self._pages(existing, "cases"))
+            files = {**self.app_files(existing, self._pages(existing, "cases")), **extra}
             index = _load(read("cases/cases.json"), {"format": FORMAT, "cases": []})
             listed = [e for e in index.get("cases") or [] if isinstance(e, dict)]
             first = next((e.get("published_at") for e in listed if e.get("id") == cid), None)
@@ -329,8 +372,8 @@ class Site:
         base = self.addresses()["cases"]
         url = f"{base}?case={cid}" if base else None
         if commit is None:
-            return Outcome("unchanged", "The site already has this case as it is.", None, url)
-        return Outcome("published", f"Published to {self.repo} ({self.branch}).", commit, url)
+            return Outcome("unchanged", self._said("The site already has this case as it is.", note), None, url, on)
+        return Outcome("published", self._said(f"Published to {self.repo} ({self.branch}).", note), commit, url, on)
 
     def remove_case(self, cid: str) -> Outcome:
         def make(existing: set[str], read: Callable[[str], bytes | None]) -> dict[str, bytes | None]:
@@ -348,8 +391,11 @@ class Site:
         if found:
             raise SiteError(f"Not published: {found[0].message.replace('content files', 'the published graph')}.")
 
+        extra, note, on = self._feedback()
+
         def make(existing: set[str], read: Callable[[str], bytes | None]) -> dict[str, bytes | None]:
-            files = self.app_files(existing, self._pages(existing, "brain"))
+            pages = self._pages(existing, "brain")
+            files = {**self.app_files(existing, pages), **(extra if "cases" in pages else {})}
             files["brain/brain.json"] = (text + "\n").encode("utf-8")
             return files
 
@@ -360,6 +406,59 @@ class Site:
         if commit is None:
             return Outcome("unchanged", "The site already has this graph.", None, url)
         return Outcome("published", f"Published to {self.repo} ({self.branch}).", commit, url)
+
+    def publish_quiz(self, section: dict[str, Any]) -> Outcome:
+        """One section of the quiz, as a quiz task's Gemini prepared it (quiz_tools.py): it replaces that section and
+        leaves the other. The Cases page comes with it, with an empty gallery when no case is published yet."""
+        if section.get("id") not in QUIZ_SECTIONS:
+            raise SiteError(f"The quiz has the sections {', '.join(QUIZ_SECTIONS)}.")
+        found = _secrets(json.dumps(section, ensure_ascii=False), "the quiz")
+        if found:
+            raise SiteError(f"Not published: {found[0].message.replace('content files', 'the quiz')}.")
+        extra, note, on = self._feedback()
+        stamped = {**section, "title": QUIZ_SECTIONS[section["id"]], "prepared_at": now()}
+
+        def make(existing: set[str], read: Callable[[str], bytes | None]) -> dict[str, bytes | None]:
+            files = {**self.app_files(existing, self._pages(existing, "cases")), **extra}
+            if "cases/cases.json" not in existing:
+                files["cases/cases.json"] = _json(empty_index())
+            quiz = _load(read(QUIZ_FILE), {})
+            sections = {s["id"]: s for s in quiz.get("sections") or [] if isinstance(s, dict) and s.get("id") in QUIZ_SECTIONS}
+            sections[stamped["id"]] = stamped
+            files[QUIZ_FILE] = _json({"format": FORMAT, "updated": stamped["prepared_at"],
+                                      "sections": [sections[k] for k in QUIZ_SECTIONS if k in sections]})
+            return files
+
+        commit = self._write(make, f"Wizard: quiz, {QUIZ_SECTIONS[section['id']]} ({len(section.get('questions') or [])} "
+                                   "questions)")
+        base = self.addresses()["cases"]
+        url = f"{base}?quiz={section['id']}" if base else None
+        return Outcome("published" if commit else "unchanged",
+                       self._said(f"Published to {self.repo} ({self.branch})." if commit else "The site already has these "
+                                  "questions.", note), commit, url, on)
+
+    def turn_on_feedback(self) -> Outcome:
+        """Settings → Pages site → Test connection: the feedback token checked, and the Cases page's code and feedback
+        file updated on the site, so people can send feedback without waiting for the next case."""
+        problem = self.problem()
+        if problem:
+            raise SiteError(problem)
+        extra, note, on = self._feedback()
+        if not on:
+            if on is False and extra:  # an unsafe token that an earlier test put on the site comes off
+                self._write(lambda existing, read: extra, "Wizard: feedback off on the Cases site")
+            return Outcome("unchanged", note or "Add the feedback token first.", None, None, on)
+
+        def make(existing: set[str], read: Callable[[str], bytes | None]) -> dict[str, bytes | None]:
+            files = {**self.app_files(existing, self._pages(existing, "cases")), **extra}
+            if "cases/cases.json" not in existing:
+                files["cases/cases.json"] = _json(empty_index())
+            return files
+
+        commit = self._write(make, "Wizard: feedback on the Cases site")
+        return Outcome("published" if commit else "unchanged",
+                       f"{note} Feedback is on: the Cases site takes ratings, comments and quiz answers"
+                       + ("." if commit else " (the site already had this)."), commit, self.addresses()["cases"], on)
 
 
 def brain_snapshot(map_: dict[str, Any], live: dict[str, Any] | None) -> dict[str, Any]:

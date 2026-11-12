@@ -1,21 +1,13 @@
 import {useState} from 'react';
-import {Check, Link2} from 'lucide-react';
-import mark from '@/assets/wizard-mark.svg';
+import {Check, ClipboardList, EyeOff, Link2} from 'lucide-react';
 import {filterCases, systemsOf, type Case, type CaseEntry} from '@/cases';
+import {edited, shownCases} from '@/feedback';
 import {formatDate} from '@/format';
 import {cn} from '@/lib/utils';
 import {DataModeBadge} from '../Badges';
 import {CaseFlow} from './CaseFlow';
-
-/** The top of a Cases page: the mark and the word Cases. Brain is a site of its own, so nothing here leads to it. */
-function Top({home}: {home: string}) {
-  return (
-    <header className="flex items-center gap-3 border-b border-line bg-canvas px-4 py-3 md:px-8">
-      <a href={home} className="flex items-center gap-2.5 text-[17px] font-bold text-ink no-underline"><img src={mark} alt="" className="size-7" />Wizard</a>
-      <span className="text-[15px] font-medium text-ink-2">Cases</span>
-    </header>
-  );
-}
+import {RateAnswer} from './RateAnswer';
+import {SiteTop as Top, useCasesSite} from './SiteChrome';
 
 function Meta({items}: {items: (string | null | false | undefined)[]}) {
   const shown = items.filter(Boolean) as string[];
@@ -24,12 +16,18 @@ function Meta({items}: {items: (string | null | false | undefined)[]}) {
 
 /** One case: its title, who shared it and what it read, then the prompts and answers as a snake. `preview`: shown in
  *  Wizard before it is published, so nothing on it is on the site yet. */
-export function CasePage({item, home, preview = false}: {item: Case; home: string; preview?: boolean}) {
+export function CasePage({item: published, home, preview = false}: {item: Case; home: string; preview?: boolean}) {
+  const site = useCasesSite();
+  const item = site && !preview ? edited(published, site.edits) : published;
+  const edit = site && !preview ? site.edits.cases[item.id] : undefined;
+  const config = !preview ? site?.config ?? null : null;
   const [copied, setCopied] = useState(false);
   const copy = () => { void navigator.clipboard?.writeText(location.href).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }); };
   return (
     <div className="min-h-dvh bg-page text-ink" data-testid="case-page">
-      <Top home={home} />
+      <Top home={home} page="cases" />
+      {edit?.hidden && site?.admin && <p className="border-b border-line bg-surface px-4 py-2 text-center text-[13px] text-ink-2 md:px-8">
+        <EyeOff className="mr-1.5 inline size-4" />Hidden from the gallery (admin pane): people with the link still open it.</p>}
       {preview && <p className="border-b border-warn-line bg-warn-soft px-4 py-2 text-center text-[13px] font-medium text-warn md:px-8" data-testid="case-preview">
         Preview in Wizard: not on the site until you publish it.</p>}
       <main className="mx-auto max-w-[1240px] px-4 pb-20 pt-8 md:px-8">
@@ -52,7 +50,8 @@ export function CasePage({item, home, preview = false}: {item: Case; home: strin
           <span className="inline-flex items-center gap-2"><i aria-hidden="true" className="size-[18px] rounded-[5px] border border-[#c4cad6] bg-canvas" />Wizard's answer</span>
           <span>Follow the arrows: each follow-up continues from the answer above it.</span>
         </div>
-        <CaseFlow turns={item.turns} />
+        <CaseFlow turns={item.turns} noteOf={turn => edit?.notes?.[String(turn.n)]}
+          after={config ? turn => <RateAnswer config={config} caseId={item.id} caseTitle={item.title} turn={turn} /> : undefined} />
         <p className="mt-12 border-t border-line pt-5 text-[13px] text-ink-3">
           Shared from Wizard by the person who asked. Each answer keeps its own data label; the sources are named, their rows are not published.</p>
       </main>
@@ -77,7 +76,10 @@ function Thumb({prompts}: {prompts: number}) {
 }
 
 /** Every case on the site, newest first, with a search and a filter by system. */
-export function CasesGallery({cases, home}: {cases: CaseEntry[]; home: string}) {
+export function CasesGallery({cases: published, home}: {cases: CaseEntry[]; home: string}) {
+  const site = useCasesSite();
+  const cases = site ? shownCases(published, site.edits) : published;
+  const quiz = site?.quiz?.sections.reduce((n, s) => n + s.questions.length, 0) ?? 0;
   const [query, setQuery] = useState('');
   const [system, setSystem] = useState<string | null>(null);
   const systems = systemsOf(cases);
@@ -85,12 +87,21 @@ export function CasesGallery({cases, home}: {cases: CaseEntry[]; home: string}) 
   const chip = (active: boolean) => cn('min-h-11 rounded-full border px-4 text-[14px]', active ? 'border-[#1428a0] bg-[#1428a0] font-semibold text-white' : 'border-line-2 bg-canvas font-medium text-ink hover:bg-surface');
   return (
     <div className="min-h-dvh bg-page text-ink" data-testid="cases-gallery">
-      <Top home={home} />
+      <Top home={home} page="cases" />
       <main className="mx-auto flex max-w-[1240px] flex-col gap-7 px-4 pb-20 pt-10 md:px-8">
         <div className="space-y-2">
           <h1 className="text-[34px] font-bold leading-tight tracking-[-0.01em]">Cases</h1>
-          <p className="max-w-[680px] text-[16px] leading-normal text-ink-2">Analyses people ran with Wizard and chose to share: every prompt, every answer, and the data each answer was built from.</p>
+          <p className="max-w-[680px] text-[16px] leading-normal text-ink-2">Analyses people ran with Wizard and chose to share: every prompt, every answer, and the data each answer was built from.
+            {site?.config ? ' Rate each answer: it tells Wizard\'s team what works.' : ''}</p>
         </div>
+        {quiz > 0 && (
+          <a href={`${home}?quiz`} data-testid="gallery-quiz" className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-accent-line bg-accent-soft px-5 py-4 text-ink no-underline hover:border-accent">
+            <ClipboardList className="size-6 shrink-0 text-[#1428a0]" />
+            <span className="min-w-0 flex-[1_1_260px]"><span className="block text-[16px] font-semibold">Help Wizard get it right</span>
+              <span className="block text-[14px] text-ink-2">{quiz} questions Wizard is unsure about, in business intelligence and business. Answer the ones you know, anonymously.</span></span>
+            <span className="rounded-[10px] bg-[#1428a0] px-4 py-2 text-[14px] font-semibold text-white">Open the quiz</span>
+          </a>
+        )}
         {cases.length > 0 && (
           <div className="flex flex-wrap items-end gap-3">
             <label className="flex max-w-[460px] flex-[1_1_320px] flex-col gap-1.5 text-[13px] text-ink-2">Search cases

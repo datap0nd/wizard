@@ -215,7 +215,7 @@ class SettingsBody(Body):
 
 
 class SettingsTestBody(Body):
-    section: Literal["postgres", "knowledge", "metronome", "dashboards", "nerp"]
+    section: Literal["postgres", "knowledge", "metronome", "dashboards", "nerp", "site"]
     values: dict[str, str | None] = Field(default_factory=dict, max_length=40)
 
 
@@ -1188,6 +1188,22 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
     live_cache = brain.LiveCache()
     site = Site(settings)
 
+    def publish_quiz(section: dict[str, Any]) -> Published:
+        """A quiz task's section of questions, published to the Cases site (quiz_tools.py; tasks run only for the person
+        at this PC, the write token's owner)."""
+        try:
+            result = site.publish_quiz(section)
+        except SiteError as error:
+            store.audit(OWNER_ID, "site:quiz_publish", outcome="failed", detail={"section": section.get("id"),
+                                                                                "error": str(error)[:300]})
+            return Published("failed", str(error))
+        store.audit(OWNER_ID, "site:quiz_publish", detail={"section": section.get("id"), "outcome": result.outcome,
+                                                          "commit": result.commit, "questions": len(section["questions"])})
+        return Published(result.outcome, result.message + (f" Quiz: {result.url}" if result.url else ""), result.commit)
+
+    if settings.kb_write_token and (settings.install_mode or settings.desktop):
+        services.quiz_writer = publish_quiz
+
     def brain_for(identity: Identity) -> dict[str, Any]:
         reports = {s.id: sum(1 for _, r in services.catalog.reports(s.id) if identity.can_see_report(s.id, r.id))
                    for s in services.catalog.systems if identity.can_use_system(s.id)}
@@ -1858,6 +1874,12 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
                                                metronome_transport)
             if body.section == "dashboards":
                 return await asyncio.to_thread(settings_pane.test_dashboards, settings, dict(body.values))
+            if body.section == "site":
+                result = await asyncio.to_thread(settings_pane.test_site, settings, dict(body.values))
+                if result.get("commit") or result.get("feedback") is not None:
+                    store.audit(OWNER_ID, "site:feedback", outcome="ok" if result.get("feedback") else "refused",
+                                detail={"commit": result.get("commit")})
+                return result
             return await asyncio.to_thread(settings_pane.test_knowledge, settings, dict(body.values))
         except settings_pane.PaneError as error:
             return {"ok": False, "message": str(error)}

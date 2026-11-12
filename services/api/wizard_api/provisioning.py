@@ -38,8 +38,9 @@ LOCAL_ONLY = frozenset({
     "WIZARD_KB_PUBLISH_REPO", "WIZARD_KB_PUBLISH_TOKEN", "WIZARD_KB_READ_TOKEN",
 })
 # Chosen on each PC in the settings pane, never handed out in a company file: the knowledge base's write token lets a
-# PC change the company's notes repository (owner, 30 Oct 2026), so only the person who enters it holds it.
-PC_CHOSEN = frozenset({"WIZARD_KB_WRITE_TOKEN"})
+# PC change the company's notes repository (owner, 30 Oct 2026), so only the person who enters it holds it. The Cases
+# site's feedback token too (owner, 12 Nov 2026): only the PC that publishes the site puts it there.
+PC_CHOSEN = frozenset({"WIZARD_KB_WRITE_TOKEN", "WIZARD_FEEDBACK_TOKEN"})
 MAX_BYTES = 64 * 1024
 # The team's dashboards folder: a file made on one PC carries the network path its mapped drive stands for, never the
 # letter (owner, 2 Nov 2026: "Y:\ ... might not be the same in another PC").

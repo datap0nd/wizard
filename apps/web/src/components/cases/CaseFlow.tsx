@@ -1,5 +1,5 @@
-import {Fragment, useMemo, useState} from 'react';
-import {Check, ChevronDown, Copy, Database, ListChecks, User} from 'lucide-react';
+import {Fragment, useMemo, useState, type ReactNode} from 'react';
+import {Check, ChevronDown, Copy, Database, ListChecks, PenLine, User} from 'lucide-react';
 import mark from '@/assets/wizard-mark.svg';
 import {flowRows, type CaseQuery, type CaseSource, type CaseTurn} from '@/cases';
 import {formatDate} from '@/format';
@@ -101,7 +101,7 @@ function count(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-function AnswerWindow({turn, className}: {turn: CaseTurn; className?: string}) {
+function AnswerWindow({turn, className, note, after}: {turn: CaseTurn; className?: string; note?: string; after?: ReactNode}) {
   const [lit, setLit] = useState<string | null>(null);
   const [opened, setOpened] = useState<CaseSource | null>(null);
   // The sources and steps behind an answer are folded away under it (owner, 9 Nov 2026: a case showed every query and
@@ -127,6 +127,11 @@ function AnswerWindow({turn, className}: {turn: CaseTurn; className?: string}) {
           <CheckBadge status={turn.check.status} />
         </span>
       </div>
+      {note && (
+        <p className="flex gap-2 border-b border-warn-line bg-warn-soft px-5 py-2.5 text-[13.5px] leading-normal text-ink lg:px-6" data-testid="case-editor-note">
+          <PenLine className="mt-0.5 size-4 shrink-0 text-warn" /><span><span className="font-semibold text-warn">Note from the editors: </span>
+            <span className="whitespace-pre-wrap">{note}</span></span></p>
+      )}
       <div tabIndex={0} aria-label={`Answer ${turn.n} text`} data-testid="case-answer-body"
         className={cn('max-h-[min(36rem,70vh)] px-5 py-4 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent lg:px-6', SCROLL)}>
         <VisualEnvContext.Provider value={env}>
@@ -174,14 +179,17 @@ function AnswerWindow({turn, className}: {turn: CaseTurn; className?: string}) {
           </div>
         </details>
       )}
+      {after}
       <QueryDialog source={opened} onClose={() => setOpened(null)} />
     </article>
   );
 }
 
 /** A case as the owner drew it: prompt → answer, a follow-up drops down and runs ← the other way, and so on. On a narrow
- *  screen every step stacks with arrows down. Prompts are Samsung Blue; answers are white windows. */
-export function CaseFlow({turns}: {turns: CaseTurn[]}) {
+ *  screen every step stacks with arrows down. Prompts are Samsung Blue; answers are white windows. On the site, `noteOf`
+ *  gives an answer the admin pane's note from the editors and `after` what goes under it (its rating). */
+export function CaseFlow({turns, noteOf, after}: {turns: CaseTurn[]; noteOf?: (turn: CaseTurn) => string | undefined;
+  after?: (turn: CaseTurn) => ReactNode}) {
   return (
     <div className="flex flex-col" data-testid="case-flow">
       {flowRows(turns).map(({turn, reversed, drop}) => (
@@ -193,7 +201,7 @@ export function CaseFlow({turns}: {turns: CaseTurn[]}) {
               {reversed ? <Left className="hidden lg:block" /> : <Right className="hidden lg:block" />}
               <Down className="lg:hidden" />
             </div>
-            <AnswerWindow turn={turn} className={reversed ? 'lg:col-start-1 lg:row-start-1' : undefined} />
+            <AnswerWindow turn={turn} className={reversed ? 'lg:col-start-1 lg:row-start-1' : undefined} note={noteOf?.(turn)} after={after?.(turn)} />
           </div>
           {drop && (
             <div className={cn('flex justify-center py-2', drop === 'right' ? 'lg:justify-end' : 'lg:justify-start')} data-testid="case-drop" data-side={drop}>
