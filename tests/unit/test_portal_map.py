@@ -464,7 +464,9 @@ def test_a_finished_map_is_routed_by_the_next_mapping_before_anything_else(tmp_p
     with mapping_app(tmp_path, runtime) as client:
         maps = client.app.state.manager.services.portal_maps
         maps.save("gscm", overview="A Nexacro client.", reports=MAPPED)
-        before = {r["id"]: without_routing(r) for r in maps.load("gscm")["reports"]}
+        # A report's own time stamp moves when its views are saved; everything else must stay as it was.
+        before = {r["id"]: without_routing({k: v for k, v in r.items() if k != "updated"})
+                  for r in maps.load("gscm")["reports"]}
         login(client, "local-owner")
         assert client.get("/api/v1/portals").json()["maps"]["gscm"]["reports_to_route"] == 2
         assert client.post("/api/v1/portals/gscm/map", headers=HEADERS).status_code == 200
@@ -472,7 +474,7 @@ def test_a_finished_map_is_routed_by_the_next_mapping_before_anything_else(tmp_p
         assert view["mapping"]["state"] == "finished" and view["mapping"]["round"] == 1, view
         assert view["map"]["reports_to_route"] == 0 and "step 5" in runtime.prompts[0]
         assert view["map"]["reports_to_configure"] == 0, "the options of reports mapped before are explored too"
-        assert {r["id"]: without_routing({k: v for k, v in r.items() if k != "views"})
+        assert {r["id"]: without_routing({k: v for k, v in r.items() if k not in ("views", "updated")})
                 for r in maps.load("gscm")["reports"]} == before
 
 
