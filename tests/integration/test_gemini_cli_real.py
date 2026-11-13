@@ -147,4 +147,4 @@ def test_installation_probe_passes_and_ignores_parent_gemini_md(tmp_path):
     settings = load_settings(env={"WIZARD_AGENT_RUNTIME": "gemini-cli"}, home=tmp_path)
     passed, detail = probe_gemini_cli(settings)
     assert passed, detail
-    assert "27 read-only tools" in detail  # 25 + wizard_ask_person (3 Nov 2026) + wizard_quiz_save (12 Nov); comparing reads is task work
+    assert "31 read-only tools" in detail  # 25 + wizard_ask_person (3 Nov 2026) + wizard_quiz_save (12 Nov) + four presentation tools (13 Nov); comparing reads is task work

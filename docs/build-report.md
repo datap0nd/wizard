@@ -32,7 +32,9 @@ about storyline … a question that wizard asks", "the output can be analysis, p
   portal-browser, evals-schema, web-types, web-dist, web-build and e2e (32/32) PASS; web-unit failed once on the
   roadmap test, which counted down as if no step were delivered (the slides step is now done); fixed, and
   `npm --prefix apps/web test` then passed 35 files, 219 tests (`deck.test.ts` 7, `DeckCard.test.tsx` 6). postgres and
-  live-parity BLOCKED (allowed); gemini-cli BLOCKED (Gemini CLI not installed here). A 13-slide sample deck was previewed
+  live-parity BLOCKED (allowed). gemini-cli was BLOCKED here and failed in CI on its tool count (31 with the four
+  presentation tools, not 27); with the pinned Gemini CLI 0.62.0 installed as CI installs it, the layer passed (5 tests,
+  the real CLI accepting all 31 tool schemas). A 13-slide sample deck was previewed
   in Chromium and its .pptx rendered in LibreOffice (cover, agenda, sections, summary with key figures, stacked and 100%
   stacked columns, a line chart, a shaded table, cards, key figures, two panels, Korean text, closing). The first real
   deck in PowerPoint, with the company's tokens, is on the work PC.
