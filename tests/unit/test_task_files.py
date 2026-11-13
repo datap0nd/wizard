@@ -399,6 +399,24 @@ def wait_for(client: TestClient, task_id: str, done: Any, timeout: float = 30) -
     raise AssertionError(f"the task did not get there: {task}")
 
 
+def test_the_tasks_list_shows_progress_without_walking_the_folder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Owner, 13 Nov 2026: "The tasks stay loading". The list shows the progress a run last counted, from Wizard's own
+    data folder: it never walks the person's folder, which on OneDrive or a network share can take minutes."""
+    folder = decks(tmp_path / "Decks").resolve()
+    files = TaskFiles(tmp_path / "data")
+    assert files.kept_counts("digest", folder) is None, "nothing to show before a run listed the folder"
+    listed = files.listing(folder)[0]
+    files.mark_done("digest", folder, listed[:2], None)
+    assert files.counts("digest", folder) == {"total": 3, "done": 2, "left": 1}
+
+    def walked(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("the list walked the folder")
+
+    monkeypatch.setattr(files, "listing", walked)
+    assert files.kept_counts("digest", folder) == {"total": 3, "done": 2, "left": 1}
+    assert TaskFiles(tmp_path / "data").kept_counts("digest", folder) == {"total": 3, "done": 2, "left": 1}, "kept on disk"
+
+
 def test_a_task_goes_through_every_file_of_the_folder_in_rounds(tmp_path: Path):
     folder = decks(tmp_path / "Decks").resolve()
     runtime = Digester()

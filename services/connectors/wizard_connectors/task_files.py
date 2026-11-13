@@ -197,7 +197,31 @@ class TaskFiles:
     def counts(self, task_id: str, root: Path) -> dict[str, int]:
         files = self.listing(root)[0]
         done = len(self.done(task_id, root))
+        self._remember_total(task_id, root, len(files))
         return {"total": len(files), "done": done, "left": len(files) - done}
+
+    def kept_counts(self, task_id: str, root: Path) -> dict[str, int] | None:
+        """The counts as the last listing left them, read from Wizard's own data folder only: the Tasks section shows
+        them without walking the folder, which on OneDrive or a network share can take minutes or hang (owner, 13 Nov
+        2026: "The tasks stay loading"). None before the folder was ever listed."""
+        progress = self._progress(task_id, root)
+        total = progress.get("total")
+        if not isinstance(total, int):
+            return None
+        done = min(total, len(progress.get("files") or {}))
+        return {"total": total, "done": done, "left": total - done}
+
+    def _remember_total(self, task_id: str, root: Path, total: int) -> None:
+        with self._lock:
+            progress = self._progress(task_id, root)
+            if progress.get("total") == total:
+                return
+            progress.update(root=str(root), total=total)
+            target = self._progress_path(task_id, root)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            temporary = target.with_suffix(".tmp")
+            temporary.write_text(json.dumps(progress, indent=1, ensure_ascii=False), encoding="utf-8")
+            temporary.replace(target)
 
     def mark_done(self, task_id: str, root: Path, files: list[TaskFile], note: str | None) -> None:
         with self._lock:

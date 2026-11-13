@@ -1445,13 +1445,11 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         return identity
 
     def task_progress(task_id: str, path: str | None) -> dict[str, int] | None:
-        """How many of the files in the folder last chosen for a task that goes through every file are done."""
-        if not path or services.task_files is None or not Path(path).exists():
+        """How many of the files in the folder last chosen for a task that goes through every file are done, as its last
+        run counted them: the list never walks the folder (a OneDrive or network folder can take minutes)."""
+        if not path or services.task_files is None:
             return None
-        try:
-            return services.task_files.counts(task_id, Path(path))
-        except OSError:
-            return None
+        return services.task_files.kept_counts(task_id, Path(path))
 
     def task_view(identity: Identity) -> dict[str, Any]:
         found = task_board.tasks()
@@ -1504,7 +1502,8 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
             if task.every_file:
                 if body.fresh:
                     services.task_files.reset(task.id, chosen)
-                if services.task_files.counts(task.id, chosen)["left"] == 0:
+                # Off the event loop: a OneDrive or network folder can take long to count, and every other request waits.
+                if (await asyncio.to_thread(services.task_files.counts, task.id, chosen))["left"] == 0:
                     raise HTTPException(400, "Every file there is already done. Press Run again to start over.")
         conversation_id = store.create_conversation(identity.id, f"Task: {task.title}"[:80])
         try:

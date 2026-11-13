@@ -94,9 +94,21 @@ jobs:
           if ($status.runtime -ne 'code-assist') { throw "Unexpected runtime $($status.runtime)" }
           $page = Invoke-WebRequest http://127.0.0.1:8781/quick -UseBasicParsing
           if ($page.Content -notmatch '<div id="root">') { throw 'The web app is not served' }
+          # The tasks come with the app (decision 2026-11-13-tasks-packaged): the packaged service lists them at once,
+          # without the network, or this release is not published.
+          $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+          Invoke-RestMethod http://127.0.0.1:8781/api/v1/session/login -Method Post -WebSession $session -Headers @{ 'X-Wizard-Request' = '1' } -ContentType 'application/json' -Body '{"user_id":"local-owner"}' | Out-Null
+          $watch = [Diagnostics.Stopwatch]::StartNew()
+          $listed = Invoke-RestMethod http://127.0.0.1:8781/api/v1/tasks -WebSession $session -TimeoutSec 20
+          $ids = @($listed.tasks | ForEach-Object { $_.id })
+          $shipped = @(Get-ChildItem artifacts/desktop/payload/app/tasks -Filter *.md | Where-Object { $_.Name -ne 'README.md' } | ForEach-Object { $_.BaseName })
+          if ($listed.source -ne 'app' -or $shipped.Count -eq 0 -or @($shipped | Where-Object { $ids -notcontains $_ }).Count -gt 0) {
+            throw "The packaged app does not list its tasks: listed $($ids -join ', '); shipped $($shipped -join ', ')"
+          }
+          Write-Host "The packaged app lists its $($ids.Count) tasks in $($watch.ElapsedMilliseconds) ms: $($ids -join ', ')"
           Invoke-RestMethod http://127.0.0.1:8781/internal/v1/desktop/stop -Method Post -Headers $headers -ContentType 'application/json' -Body '{}' | Out-Null
           if (-not $service.WaitForExit(30000)) { $service.Kill(); throw 'The service did not stop when asked' }
-          Write-Host "Packaged service started, served /quick and stopped (exit $($service.ExitCode))."
+          Write-Host "Packaged service started, served /quick, listed its tasks and stopped (exit $($service.ExitCode))."
 
       - name: Install Inno Setup
         shell: pwsh

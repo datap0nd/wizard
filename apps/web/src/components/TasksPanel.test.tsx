@@ -1,7 +1,7 @@
 import {afterEach, describe, expect, it, vi} from 'vitest';
-import {cleanup, fireEvent, render, screen, waitFor} from '@testing-library/react';
+import {act, cleanup, fireEvent, render, screen, waitFor} from '@testing-library/react';
 import {api} from '@/api';
-import {TasksPanel} from './TasksPanel';
+import {LIST_MS, TasksPanel} from './TasksPanel';
 import type {QueueItem, TaskItem, TaskQueue, TasksView} from '@/types';
 
 const TASK: TaskItem = {id: 'where-to-get-it', title: 'Add portal reports to Where to get it', summary: 'One line.', added: '2026-10-31',
@@ -30,6 +30,19 @@ describe('Settings → Tasks', () => {
     await waitFor(() => expect(screen.getByRole('link', {name: 'Watch it'}).getAttribute('href')).toBe('?c=c1'));
     expect(run).toHaveBeenCalledWith('where-to-get-it', {});
     expect((screen.getByTestId('run-where-to-get-it') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('says so when the list does not come, instead of loading for ever', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.spyOn(api, 'tasks').mockReturnValue(new Promise(() => undefined));
+      render(<TasksPanel active />);
+      expect(screen.getByText('Loading…')).toBeTruthy();
+      await act(async () => { vi.advanceTimersByTime(LIST_MS + 10); });
+      expect(screen.getByRole('alert').textContent).toContain('did not list its tasks within 20 seconds');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('says the tasks came with this version, and when it cannot save', async () => {

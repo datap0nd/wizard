@@ -132,6 +132,10 @@ function QueuePanel({queue, busy, act}: {queue: TaskQueue; busy: string | null; 
  * may ask for a folder or file on this PC first; one that goes through every file of a folder runs in rounds until
  * each is done, and Continue picks up where it stopped. Run all, Run selected (the ticked tasks) or Add to queue puts
  * tasks in the queue, oldest first; Start runs them one after another, each only when the one before succeeded. */
+/** How long the list may take before the section says so (it is read from the installed app, normally at once). */
+export const LIST_MS = 20_000;
+const LATE = 'Wizard did not list its tasks within 20 seconds. Use Restart Wizard in the tray menu, then open Tasks again.';
+
 export function TasksPanel({active}: {active: boolean}) {
   const [view, setView] = useState<TasksView | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -139,11 +143,16 @@ export function TasksPanel({active}: {active: boolean}) {
   const [paths, setPaths] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
+    // The list is read from the installed app and answers at once; one that hangs is said, never left "Loading…".
+    let timer = 0;
+    const late = new Promise<never>((_, reject) => { timer = window.setTimeout(() => reject(new Error(LATE)), LIST_MS); });
     try {
-      setView(await api.tasks());
+      setView(await Promise.race([api.tasks(), late]));
       setError(null);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Could not read the tasks.');
+      setError(e instanceof ApiError ? e.message : e instanceof Error && e.message === LATE ? LATE : 'Could not read the tasks.');
+    } finally {
+      window.clearTimeout(timer);
     }
   }, []);
 

@@ -21,6 +21,16 @@ does not. The bundled copy was only a fallback, and a list GitHub had given once
   the company knowledge base. A list kept from GitHub on a PC (`tasks/cache.json` in Wizard's data folder) is no longer
   read.
 
+- **The list answers at once, every time** (the owner, after updating: "The tasks stay loading and then it says cant
+  run ... include the tasks on the actual set up of the next version"). Opening Tasks, and its poll while a task runs,
+  counted the files in the folder last chosen for a task that goes through every file, walking it each time; on
+  OneDrive or a network share that takes minutes or hangs. The list now shows the progress the last run counted, kept in
+  Wizard's own data folder, and never walks the person's folder; Run counts it off the service's event loop, so other
+  requests do not wait. When the list does not come within 20 seconds the section says so, with Restart Wizard, instead
+  of "Loading…".
+- **Every release proves it.** The `desktop` workflow starts the packaged service and lists its tasks: each file in
+  the payload's `tasks/` must be listed, from the app (`source: app`), or the release is not published.
+
 **Evidence.** `tests/unit/test_tasks.py` (the list is the installed folder, newest first, without the README or files
 that are not tasks; a task added by an update appears at once; no network connection is made; the payload carries the
 folder); the task, task-file and queue tests run on the installed list; `apps/web/src/components/TasksPanel.test.tsx`
