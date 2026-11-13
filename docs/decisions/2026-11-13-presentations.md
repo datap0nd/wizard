@@ -60,6 +60,13 @@ downloaded as one PowerPoint slide ([decision](2026-11-09-heatmaps-and-visual-ex
   stacked, 100% stacked, bars, lines with markers, scatter), tables native with their shading; speaker notes with what
   to say and the sources. **Download PowerPoint** saves it in Downloads where Wizard runs on the person's PC (then
   **Open**), as other exports do; elsewhere the browser downloads it.
+- **In a shared case** (owner, the same day: "Wizard is not putting the powerpoint in cases"). **Share as case**
+  carries each answer's presentation with it — the newest version of each deck the answer made, as the chat shows it —
+  and the Cases page shows the same card: every slide, and **Download PowerPoint**, drawn in the page from the slides
+  (the browser's own download there). The case keeps the deck's slides, its copies of the answer's charts and tables,
+  its sources' names and its design tokens; where the look came from, its status and problems stay in Wizard. The
+  share dialog names the PowerPoint under its answer, and the gallery and the case say how many a case has. A case
+  published before this has none until it is published again.
 - **What does not change.** A deck writes nothing to a company system and reads nothing new: it is built from the
   evidence and visuals Gemini already has, with the same data labels. No template or company value is committed here.
 
@@ -69,5 +76,7 @@ later prompts, run events and the API); `apps/web/src/deck/deck.test.ts` (every 
 and data label, the agenda's pages, highlights, chart styles, and the .pptx: native stacked chart, table shading, notes,
 the East Asian font, one set of paragraph settings per paragraph, 16:9 and 4:3);
 `apps/web/src/components/DeckCard.test.tsx` (preview, moving between slides, Download and Open, storylines, the Output
-picker). A sample deck was opened in LibreOffice and rendered slide by slide; the first real deck in PowerPoint is on
+picker); `tests/unit/test_site.py::test_a_case_carries_the_powerpoint_its_answer_made` and
+`apps/web/src/components/cases/CaseFlow.test.tsx` (a shared case: the newest version, the look only, the slides on the
+page and the .pptx downloaded there). A sample deck was opened in LibreOffice and rendered slide by slide; the first real deck in PowerPoint is on
 the work PC.

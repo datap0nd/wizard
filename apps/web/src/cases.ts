@@ -1,8 +1,8 @@
 // Cases: analyses people shared from Wizard, as the Pages site shows them (services/api/wizard_api/site.py writes them).
-// A case is one chat: each prompt and Wizard's answer with its charts, tables, data labels and the names of its sources,
-// never their rows. This file holds the shapes and the pure helpers (the snake layout, the gallery's search), tested
+// A case is one chat: each prompt and Wizard's answer with its charts, tables, data labels, the names of its sources and
+// the presentation it made, never the sources' rows. This file holds the shapes and the pure helpers (the snake layout, the gallery's search), tested
 // without a browser.
-import type {CheckStatus, DataMode, Visual} from './types';
+import type {CheckStatus, DataMode, Deck, Visual} from './types';
 
 /** One step of a portal read as a case shows it: what it did, its address without the host, its script. */
 export interface CasePortalStep {
@@ -21,6 +21,9 @@ export interface CaseTurn {
   n: number; kind: 'ask' | 'check'; prompt: string; asked_at: string; answer: string; data_mode: DataMode | null;
   check: {status: CheckStatus; summary: string | null}; visuals: Visual[]; sources: CaseSource[]; steps: CaseStep[];
   model?: string | null; run_id?: string;
+  /** The presentations this answer made (the newest version of each): its slides, and Download PowerPoint on the page.
+   *  A case published before Wizard shared them has none. */
+  decks?: Deck[];
 }
 export interface Case {
   format: number; id: string; title: string; takeaway: string; author: string | null; published_at: string;
@@ -30,6 +33,8 @@ export interface Case {
 export interface CaseEntry {
   id: string; title: string; takeaway: string; author: string | null; published_at: string; updated_at: string;
   prompts: number; systems: string[]; data_modes: DataMode[]; first_prompt: string;
+  /** How many presentations the case carries (none on a case published before they were shared). */
+  presentations?: number;
 }
 export interface CaseIndex { format: number; updated: string; cases: CaseEntry[] }
 

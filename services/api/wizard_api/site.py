@@ -4,7 +4,8 @@ links to Cases and nothing links back (owner decisions, 30 October and 6 Novembe
 - **Brain** (`brain/`): a snapshot of what the in-app /brain page shows this PC's person: the knowledge graph (titles,
   summaries, links; never a note's text), the systems and the reports mapped in each portal, and the news as it was read.
 - **Cases** (`cases/`): analyses people chose to share, one per chat: each prompt and Wizard's answer with its charts,
-  tables, data labels and the names of its sources, and what Wizard did. Never a source's rows. With feedback on (owner,
+  tables, data labels and the names of its sources, the presentation it made (its slides, previewed and downloaded as
+  the PowerPoint in the page), and what Wizard did. Never a source's rows. With feedback on (owner,
   12 Nov 2026; feedback.py), people rate each answer and answer the quiz there, and the admin pane (a PIN) reads them;
   the quiz (`cases/quiz.json`) is what a quiz task's Gemini prepared from what the knowledge base is unsure of.
 
@@ -52,6 +53,11 @@ QUERY_CHARS = 20_000
 PORTAL_STEP_KEYS = ("action", "selector", "role", "name", "text", "value", "frame")
 VISUAL_KEYS = ("id", "kind", "title", "subtitle", "columns", "rows", "x", "series", "scale", "evidence_ids", "note",
                "derived_by")
+# A presentation an answer made (owner, 13 Nov 2026: "Wizard is not putting the powerpoint in cases"): what the page
+# needs to show its slides and make its .pptx, as the chat shows it. Its charts are copies of the answer's visuals and its
+# sources are names only; of its design, only the look (where the note was, its status and problems stay in Wizard).
+DECK_KEYS = ("id", "title", "storyline", "audience", "slides", "revises", "family", "version", "visuals", "sources",
+             "evidence_ids", "data_mode", "created_at")
 CITATION = re.compile(r"\[(E\d{1,4})\]")
 FEEDBACK_FILE = "cases/feedback.json"   # what the pages need to send feedback; only with a checked token (feedback.py)
 QUIZ_FILE = "cases/quiz.json"
@@ -120,6 +126,21 @@ def source_of(evidence: dict[str, Any]) -> dict[str, Any]:
     return {**{k: evidence.get(k) for k in SOURCE_KEYS}, **({"query": query} if query else {})}
 
 
+def deck_of(deck: dict[str, Any]) -> dict[str, Any]:
+    design = deck.get("design") or {}
+    return {**{k: deck.get(k) for k in DECK_KEYS},
+            "design": {"tokens": design.get("tokens"), "source": design.get("source") or "default", "note": None,
+                       "status": None, "problems": [], "about": ""}}
+
+
+def decks_of(decks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The presentations one answer shows: the newest version of each deck it made or changed (as the chat shows them)."""
+    newest: dict[str, dict[str, Any]] = {}
+    for deck in decks:
+        newest[str(deck.get("family") or deck["id"])] = deck
+    return [deck_of(d) for d in newest.values()]
+
+
 def steps(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """What Wizard did for one answer, from the run's own events: each tool call it made, how it ended, its evidence."""
     started = {e["payload"].get("call_id"): e["payload"] for e in events if e["type"] == "tool_started"}
@@ -160,6 +181,7 @@ def turns(store: Store, conversation_id: str) -> list[dict[str, Any]]:
             "check": {"status": check.get("status") or run.get("check_status") or "NOT_CHECKED", "summary": check.get("summary")},
             "visuals": [{k: v.get(k) for k in VISUAL_KEYS} for v in visuals],
             "sources": [source_of(e) for e in evidence],
+            "decks": decks_of(store.decks(conversation_id, run["id"])),
             "steps": steps(store.events(run["id"])), "model": run.get("runtime_label"),
         })
     return out[:MAX_TURNS]
@@ -192,6 +214,7 @@ def entry(case: dict[str, Any], first_published: str | None) -> dict[str, Any]:
     return {"id": case["id"], "title": case["title"], "takeaway": case["takeaway"], "author": case["author"],
             "published_at": first_published or case["published_at"], "updated_at": case["published_at"],
             "prompts": len(case["turns"]), "systems": case["systems"], "data_modes": case["data_modes"],
+            "presentations": sum(len(t.get("decks") or []) for t in case["turns"]),
             "first_prompt": squeeze(case["turns"][0]["prompt"], 280)}
 
 

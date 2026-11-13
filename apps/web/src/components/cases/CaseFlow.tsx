@@ -6,6 +6,7 @@ import {formatDate} from '@/format';
 import {cn} from '@/lib/utils';
 import {VisualEnvContext, type VisualEnv} from '@/visualEnv';
 import {AnswerMarkdown} from '../AnswerMarkdown';
+import {DeckCard} from '../DeckCard';
 import {CheckBadge, DataModeBadge} from '../Badges';
 import {Dialog, DialogContent} from '../ui/dialog';
 
@@ -138,6 +139,12 @@ function AnswerWindow({turn, className, note, after}: {turn: CaseTurn; className
           <AnswerMarkdown text={turn.answer} visuals={turn.visuals} onEvidence={show} />
         </VisualEnvContext.Provider>
       </div>
+      {turn.decks?.length ? (
+        // The presentation the answer made, as Wizard showed it: every slide, and the PowerPoint drawn here in the page.
+        <div className="space-y-3 border-t border-line px-5 py-4 lg:px-6" data-testid="case-decks">
+          <VisualEnvContext.Provider value={env}>{turn.decks.map(deck => <DeckCard key={deck.id} deck={deck} shared />)}</VisualEnvContext.Provider>
+        </div>
+      ) : null}
       {parts.length > 0 && (
         <details open={behind} onToggle={e => setBehind(e.currentTarget.open)} className="group border-t border-line px-5 py-3 text-[13px] text-ink-3 lg:px-6" data-testid="case-behind">
           <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 font-medium text-accent hover:underline" data-testid="case-behind-toggle">

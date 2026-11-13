@@ -9,6 +9,11 @@ import {CaseFlow} from './CaseFlow';
 import {RateAnswer} from './RateAnswer';
 import {SiteTop as Top, useCasesSite} from './SiteChrome';
 
+/** "1 PowerPoint", "2 PowerPoints", or nothing. */
+function presentations(n: number): string | null {
+  return n ? `${n} PowerPoint${n === 1 ? '' : 's'}` : null;
+}
+
 function Meta({items}: {items: (string | null | false | undefined)[]}) {
   const shown = items.filter(Boolean) as string[];
   return <>{shown.map((item, i) => <span key={item} className="contents">{i > 0 && <span aria-hidden="true">·</span>}<span>{item}</span></span>)}</>;
@@ -36,8 +41,8 @@ export function CasePage({item: published, home, preview = false}: {item: Case; 
           <div className="min-w-0 space-y-3">
             <h1 className="text-[28px] font-bold leading-tight tracking-[-0.01em] md:text-[34px]" data-testid="case-title">{item.title}</h1>
             <p className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[14px] text-ink-2">
-              <Meta items={[`${item.turns.length} ${item.turns.length === 1 ? 'prompt' : 'prompts'}`, item.systems.join(', '),
-                item.author ? `Shared by ${item.author}` : null, `published ${formatDate(item.published_at)}`]} />
+              <Meta items={[`${item.turns.length} ${item.turns.length === 1 ? 'prompt' : 'prompts'}`, presentations(item.turns.reduce((n, t) => n + (t.decks?.length ?? 0), 0)),
+                item.systems.join(', '), item.author ? `Shared by ${item.author}` : null, `published ${formatDate(item.published_at)}`]} />
               {item.data_modes.map(mode => <DataModeBadge key={mode} mode={mode} />)}
             </p>
             {item.takeaway && <p className="max-w-[760px] text-[16px] leading-relaxed text-ink" data-testid="case-takeaway">{item.takeaway}</p>}
@@ -125,7 +130,7 @@ export function CasesGallery({cases: published, home}: {cases: CaseEntry[]; home
                 <h2 className="text-[18px] font-semibold leading-snug">{item.title}</h2>
                 <p className="line-clamp-3 text-[14px] leading-normal text-ink-2">{item.takeaway || item.first_prompt}</p>
                 <p className="mt-auto flex flex-wrap items-center gap-x-2.5 gap-y-1 pt-2 text-[12.5px] text-ink-3">
-                  <Meta items={[`${item.prompts} ${item.prompts === 1 ? 'prompt' : 'prompts'}`, item.systems.join(', '), formatDate(item.published_at)]} />
+                  <Meta items={[`${item.prompts} ${item.prompts === 1 ? 'prompt' : 'prompts'}`, presentations(item.presentations ?? 0), item.systems.join(', '), formatDate(item.published_at)]} />
                   {item.data_modes.map(mode => <DataModeBadge key={mode} mode={mode} />)}
                 </p>
               </div>

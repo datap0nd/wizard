@@ -89,6 +89,7 @@ export function ShareCaseDialog({conversationId, open, onClose}: {conversationId
                       <span className="mt-1 flex flex-wrap items-center gap-1.5 text-[12px] text-ink-3">
                         <DataModeBadge mode={turn.data_mode} />
                         {turn.sources.length} {turn.sources.length === 1 ? 'source' : 'sources'}{turn.visuals.length ? ` · ${turn.visuals.length} ${turn.visuals.length === 1 ? 'chart or table' : 'charts and tables'}` : ''}
+                        {turn.decks?.map(deck => <span key={deck.id} data-testid="case-turn-deck"> · PowerPoint “{deck.title}” ({deck.slides.length} slides)</span>)}
                       </span>
                     </span>
                   </label>
@@ -96,7 +97,7 @@ export function ShareCaseDialog({conversationId, open, onClose}: {conversationId
               </fieldset>
               <p className="rounded-lg border border-line bg-surface p-3 text-[13px] leading-relaxed text-ink-2">
                 Everyone who can open the Pages site will see these prompts and answers, with their charts, tables, data labels, the
-                names of their sources and the queries that read them (the SQL, or the portal steps without their addresses' hosts).
+                PowerPoint presentations they made (to preview and download), the names of their sources and the queries that read them (the SQL, or the portal steps without their addresses' hosts).
                 The sources' rows are never published. Figures read with your own rights are shown as you saw them: share only what
                 they may see.</p>
               <div className="flex flex-wrap items-center gap-2">

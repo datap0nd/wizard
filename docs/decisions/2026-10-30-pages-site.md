@@ -38,7 +38,8 @@ this was built: "I'm mapping ASAP and I mapped like 120 reports. I see that /bra
   opens a panel: the title (Gemini's name for the chat to start with), an optional takeaway, the answers to share (all
   at first), a **Preview** in Wizard (`/case/<chat>`, the page as it would be published) and **Publish**, later
   **Update the case** and **Remove from the site**. It says before the click what everyone who can open the site will see:
-  the prompts and answers, their charts and tables, data labels and the names of their sources, never the sources' rows
+  the prompts and answers, their charts and tables, the presentations they made (added 13 Nov 2026,
+  [decision](2026-11-13-presentations.md)), data labels and the names of their sources, never the sources' rows
   (each source keeps only its id, system, report name, data mode, as-of date and row count), and that figures read with
   the person's own rights are shown as they saw them. A chat keeps one case address however often it is published;
   `cases/cases.json` lists the cases, newest first. A case that looks like it holds a credential is refused.
