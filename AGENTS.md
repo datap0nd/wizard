@@ -42,7 +42,8 @@ around a precomputed result is withdrawn. Its credential, entitlement, DLP and h
   token on the publishing PC (never in a provisioning file), and send nothing about the visitor. Company settings and credentials reach a
   PC only in the provisioning file (`wizard.provision`), stored with DPAPI on import; **Export settings…** in the tray
   writes one from a PC's own settings at the person's click, never with the write token
-  ([decision](docs/decisions/2026-10-30-settings-export.md)). See
+  ([decision](docs/decisions/2026-10-30-settings-export.md)); Quick setup at the top of Settings imports one the person
+  chooses, checked before anything is stored ([decision](docs/decisions/2026-11-13-quick-setup.md)). See
   [docs/decisions/2026-10-20-desktop-app.md](docs/decisions/2026-10-20-desktop-app.md) and [docs/desktop.md](docs/desktop.md).
 - Ship every change (owner): merge it into `main`, push, and confirm the `desktop-continuous` release was published
   for that commit. Steps in [CLAUDE.md](CLAUDE.md).
@@ -107,22 +108,12 @@ around a precomputed result is withdrawn. Its credential, entitlement, DLP and h
   [docs/decisions/2026-11-01-folder-tasks.md](docs/decisions/2026-11-01-folder-tasks.md)): Gemini reads it only with the
   task-file tools, only inside that path, only in that task's run, and never changes a file (its content is
   `USER_PROVIDED` data); a task that goes through every file runs in rounds until each is marked done.
-  Access requests in the Big Data Portal's information catalog (owner decisions,
-  [docs/decisions/2026-10-28-bdp-access-requests.md](docs/decisions/2026-10-28-bdp-access-requests.md),
-  [docs/decisions/2026-11-01-bdp-dataset-access.md](docs/decisions/2026-11-01-bdp-dataset-access.md),
-  [docs/decisions/2026-11-01-bdp-access-sending.md](docs/decisions/2026-11-01-bdp-access-sending.md)):
-  `portal_request_access` only proposes one and adds it to the person's prepared requests; nothing opens or is sent
-  without the person's click. In a visible window of their Wizard browser, Wizard reaches the table's page with the
-  steps Gemini proved (navigation only, Gemini's click refusals), presses the control that opens the request form once
-  with the portal's writes stopped, and fills their saved answers into the form's empty fields on that portal's own
-  pages; in the form its only clicks open a drop-down that matched a saved answer and choose the matching option, and
-  it presses no key. The person submits the first request themselves; once they say in Settings that it worked, Wizard
-  submits the requests they approve (Send request, or Send in the prepared list) the way that one went: only the
-  control they pressed, only the request it sent (same method, host and path; every other change stopped), a complete
-  form, the same success answer, stopping at the first that differs. Gemini has no tool that sends. Keep the permission
-  click, the proof from the person's own submission, the visible window, empty-fields-only, the guarded presses, the
-  proven-request-only submit with its answer check and stop-on-failure; Gemini's own steps still refuse every access
-  request.
+  Wizard never requests access in the Big Data Portal (owner decision,
+  [docs/decisions/2026-11-13-bdp-access-self-service.md](docs/decisions/2026-11-13-bdp-access-self-service.md), which
+  supersedes the access-request decisions of 28 October and 1 November 2026): when an answer needs tables the person
+  cannot query, Gemini names them and tells the person to request access themselves in the information catalog.
+  Wizard has no tool or button that prepares, opens, fills or sends a request, and Gemini's own steps still refuse
+  every access request.
 - Change a file the person attached in place. `wizard_edit_attachment` writes an edited copy the person downloads
   ([decision](docs/decisions/2026-10-23-edited-attachments.md)); the original is opened read-only. On the person's own
   PC, Download saves the copy into their Downloads folder (Excel writes it; never over an existing file).

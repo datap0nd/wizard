@@ -45,3 +45,4 @@ Evidence**. A decision that changes repository rules also updates [AGENTS.md](..
 - [2026-11-12 In a question, a GSCM report with a saved script is read only through it](2026-11-12-gscm-saved-script-only.md)
 - [2026-11-12 Feedback, a quiz and an admin pane on the Cases site](2026-11-12-case-feedback-and-quiz.md)
 - [2026-11-13 Wizard names the Big Data Portal tables the person needs; the person requests access](2026-11-13-bdp-access-self-service.md)
+- [2026-11-13 Quick setup: a new person's first steps, at the top of Settings](2026-11-13-quick-setup.md)

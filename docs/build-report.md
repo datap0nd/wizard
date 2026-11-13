@@ -3,7 +3,61 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-12 (latest) — Feedback, a quiz and an admin pane on the Cases site
+## 2026-11-13 (latest) — Quick setup at the top of Settings
+
+The owner: "When someone downloads wizard, there should be a 'quick setup' in settings at the top button. This will
+take them through Wizard, how it works, through the gemini sign in, through importing a settings file, etc."
+([decision](decisions/2026-11-13-quick-setup.md)).
+
+- **Quick setup** (`apps/web/src/components/QuickSetup.tsx`) is the first thing in Settings and opens in the same pane:
+  Welcome, How it works, Settings file, Gemini, Portals, Check, Done. Each step can be skipped or reached from the step
+  list; Done lists what is set up and what is left. It opens by itself once, the first time Wizard starts on a PC whose
+  person has not linked Gemini (`wizard-quick-setup` in the page's storage). WizardBar's tray menu has **Quick setup…**
+  (`open-settings` with `setup: true`).
+- **Settings file in the page:** `POST /api/v1/settings/import` (the person at their own install only) checks the text
+  with `provisioning.parse`, stores it as the company file through `provisioning.import_text` (secrets with DPAPI),
+  audits the setting names and restarts as Save does. An invalid file or a per-PC key stores nothing and says why.
+- **Gemini** reuses Account's sign-in, now `GeminiLink.tsx` (Account shows it as before). **Portals** opens the same
+  sign-in window. **Check** runs the Settings test of each connection this PC has a value for, with its saved values.
+- Checks (cloud Linux container): `tests/unit/test_settings_pane.py` and `tests/unit/test_desktop.py` 92 passed;
+  `QuickSetup.test.tsx` 7 and `SettingsDialog.test.tsx` 3 passed; walked through every step in Chromium against a local
+  install (import, restart request, connection tests, Done). WizardBar's menu item is built by the `desktop` workflow
+  (no .NET SDK here).
+- Full run, both changes together (`bash scripts/verify_all.sh --allow-blocked=live-parity,postgres`): lock, spec,
+  secrets, contracts, lint, types, python-tests, portal-browser, evals-schema, web-types, web-unit, web-dist and
+  web-build PASS; postgres and live-parity BLOCKED (allowed); gemini-cli BLOCKED (Gemini CLI not installed in this
+  container); e2e failed only because the local default browser is Edge, absent here, and passed 32/32 on Playwright's
+  Chromium as CI runs it (`CI=1 npm --prefix apps/web run e2e`).
+
+## 2026-11-13 — Wizard no longer requests access in the Big Data Portal
+
+The owner: "Wizard is not requesting access for people anymore in BDP. remove that functionality. It will say: these
+tables are the ones you need, please request access. That's it, people then request themselves."
+([decision](decisions/2026-11-13-bdp-access-self-service.md), which supersedes the access-request decisions of 28 October
+and 1 November.) When an answer needs tables the person cannot query, Gemini now lists them (as the catalog names them,
+with each one's catalog page when it has it) and tells the person to request access in the information catalog.
+
+- Removed: the `portal_request_access` tool; `services/connectors/wizard_connectors/access_requests.py`,
+  `portal_fill.js`, `portal_pick.js`, `portal_clicks.js`; the access request window in `portal_browser.py` (opening,
+  filling, drop-down picks, Next request, sending and its proof, the write guard and the window's audits); the
+  `/api/v1/portals/{system}/access-form`, `access-request`, `access-sending`, `access-send`, `access-send/stop` and
+  `access-queue/remove` endpoints; the `access_request_proposed` event; `AccessRequestCard.tsx`,
+  `AccessRequestForm.tsx` and their tests; Settings → Portals → Access request form and Prepared requests;
+  `tests/unit/test_access_requests.py` and the request-window tests in `tests/integration/test_portal_browser.py`.
+- Changed: the system prompt and `portal_guides/bdp.md` (name the tables, the person requests), `portal_tools.py`
+  (the guide no longer carries `access_request_form`), `tools/systems.py`, `runs.py`, `app.py`, `PortalSignIn.tsx`,
+  `RunCard.tsx`, `runState.ts`, `stage.ts`, `types.ts`, `api.ts`, `roadmap.ts` (the capability is now "Finds the
+  tables you need"), contracts (tool catalog, OpenAPI, run-event schema), AGENTS.md, README, `docs/desktop.md`,
+  `docs/platforms.md`, `docs/threat-model.md`, the three superseded decisions and the decisions index.
+- Kept on purpose: Gemini's own steps still refuse Request clicks, `request` routes, access-request POSTs, Superset's
+  `request_access` and GraphQL mutations (`portals.py`, unchanged). An `access-requests.json` left on a PC is no longer
+  read.
+- Checks (cloud Linux container): `uv run python -m pytest tests` 877 passed, 32 skipped (BLOCKED: no PostgreSQL test
+  server, no live parity, no PowerShell; the portal browser tests ran in Chromium), with the Quick setup's import test
+  deselected while it was being written in the same tree; `ruff check` and `mypy` clean; `verify_spec.py` passed;
+  `npm --prefix apps/web run typecheck` clean and `npm --prefix apps/web test` 205 passed.
+
+## 2026-11-12 — Feedback, a quiz and an admin pane on the Cases site
 
 The owner: rate each answer of a case from 1 to 5 stars with a comment, anonymously; an admin pane behind a PIN (2323)
 at the top right to see everyone's comments and edit the cases; a quiz of 50 questions Gemini prepares in tasks from
