@@ -32,6 +32,30 @@ about storyline … a question that wizard asks", "the output can be analysis, p
   `DeckCard.test.tsx` 6, all 36 web test files passed, typecheck clean. A 13-slide sample deck was previewed in Chromium
   and its .pptx rendered in LibreOffice (cover, agenda, sections, summary with key figures, stacked and 100% stacked
   columns, a line chart, a shaded table, cards, key figures, two panels, Korean text, closing).
+## 2026-11-13 — Every setting in Settings; a run may take up to 10 hours
+
+The owner: "Wizard should have all its configuration settings in the settings pane. stuff like max time total (Its 30m,
+should be able to go up to 10h)" ([decision](decisions/2026-11-13-every-setting-in-settings.md)).
+
+- **Settings → Runs** (`settings_pane.py`): time limit per run in minutes (1 to 600; stored in seconds as
+  `WIZARD_RUN_TIMEOUT_S`, which `config.py` now accepts up to 36,000), tool calls per run (up to 2,000, was 500), runs
+  at the same time, days answer reports are kept. A pane field can now be a number with a unit and bounds (shown in the
+  unit, stored as Wizard reads it, refused on Save when out of range) and a choice with words people read.
+- **Also added:** Gemini → Thinking; Company database → the Brain page's news table and database; **Attached files**
+  (folders From this PC lists, largest file, time limit per file, with or without Office); **Diagnostics**. The folders
+  are this PC's own (`provisioning.PC_CHOSEN`): never in a company file or an export. A test now fails when Wizard reads
+  a setting that is neither in Settings nor on the list of install, server and test settings left out, with why.
+- **Long runs:** the Code Assist route renews the Google access token before a step that would start with it nearly
+  expired (tokens last about an hour, so a run past an hour failed before), and its step backstop is the tool-call limit
+  plus 50 (at least 200). The time-limit failure names the limit in minutes and Settings → Runs.
+- **Desktop start-up** no longer adds back a `.env` default (diagnostics off) that the person changed in Settings.
+- Checks (cloud Linux container), `bash scripts/verify_all.sh --allow-blocked=live-parity,postgres`: lock, spec, secrets,
+  contracts, lint, types, python-tests, portal-browser, evals-schema, web-types, web-unit and web-build PASS; postgres
+  and live-parity BLOCKED (allowed); gemini-cli BLOCKED (Gemini CLI not installed here); web-dist failed only because the
+  committed web app predated the change, and passes after web-build (`npm --prefix apps/web run verify-dist`); e2e
+  failed only because the local default browser is Edge, absent here, and passed 32/32 on Playwright's Chromium as CI
+  runs it (`CI=1 npm --prefix apps/web run e2e`). In Chromium against a local install: Settings → Runs saved 600
+  minutes (stored as 36000) and refused 900 with "must be between 1 and 600 minutes".
 
 ## 2026-11-13 — Quick setup at the top of Settings
 
