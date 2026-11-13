@@ -20,7 +20,13 @@ should be able to go up to 10h)" ([decision](decisions/2026-11-13-every-setting-
   expired (tokens last about an hour, so a run past an hour failed before), and its step backstop is the tool-call limit
   plus 50 (at least 200). The time-limit failure names the limit in minutes and Settings → Runs.
 - **Desktop start-up** no longer adds back a `.env` default (diagnostics off) that the person changed in Settings.
-- Checks: see below.
+- Checks (cloud Linux container), `bash scripts/verify_all.sh --allow-blocked=live-parity,postgres`: lock, spec, secrets,
+  contracts, lint, types, python-tests, portal-browser, evals-schema, web-types, web-unit and web-build PASS; postgres
+  and live-parity BLOCKED (allowed); gemini-cli BLOCKED (Gemini CLI not installed here); web-dist failed only because the
+  committed web app predated the change, and passes after web-build (`npm --prefix apps/web run verify-dist`); e2e
+  failed only because the local default browser is Edge, absent here, and passed 32/32 on Playwright's Chromium as CI
+  runs it (`CI=1 npm --prefix apps/web run e2e`). In Chromium against a local install: Settings → Runs saved 600
+  minutes (stored as 36000) and refused 900 with "must be between 1 and 600 minutes".
 
 ## 2026-11-13 — Quick setup at the top of Settings
 
