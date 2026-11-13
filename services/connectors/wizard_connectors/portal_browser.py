@@ -141,7 +141,8 @@ class PortalBrowser:
         self._session: list[dict[str, Any]] = self._load_session()
         self._seen: list[dict[str, Any]] | None = None  # the sign-in window's cookies, the last time Wizard looked
         # Whether each application is signed in, as Wizard last found it (a check, or Gemini's own read): page id ->
-        # {state, at (time.monotonic()), checked_at, title, host, error}. Replaced whole, never changed in place.
+        # {state, at (time.monotonic()), checked_at, title, host, error, stale (found before the person last signed
+        # in)}. Replaced whole, never changed in place.
         self._signed: dict[str, dict[str, Any]] = {}
         self._pending: dict[str, int] = {}  # page id -> sign-in checks of it queued or running
         self._pending_lock = threading.Lock()
@@ -449,7 +450,7 @@ class PortalBrowser:
         self._headed, self._window = False, None
         # What Wizard found before the person signed in no longer holds: each portal is checked again at once, so the
         # page (and the button at the top of the screen) shows whether the sign-in worked.
-        self._signed = {page_id: {**result, "at": 0.0} for page_id, result in self._signed.items()}
+        self._signed = {page_id: {**result, "stale": True} for page_id, result in self._signed.items()}
         self._queue_check()
 
     def status_now(self) -> dict[str, Any]:
@@ -496,7 +497,7 @@ class PortalBrowser:
                 continue
             for page_id, _, _ in portal.pages:
                 result = self._signed.get(page_id)
-                fresh = result is not None and result.get("at", 0) > 0 and (
+                fresh = result is not None and not result.get("stale") and (
                     result.get("state") == "signed_out" or now - result["at"] < SIGN_IN_FRESH_S)
                 if not fresh:
                     due.append(portal.id)
