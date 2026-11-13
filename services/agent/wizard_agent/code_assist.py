@@ -331,8 +331,9 @@ class CodeAssistRuntime:
 
     def __init__(self, model: str, secret_box: SecretBox, project: str | None = None, thinking: str = "high",
                  api_base: str = API_BASE, transport: httpx.AsyncBaseTransport | None = None, proxy: str | None = None,
-                 fallback_model: str | None = None):
+                 fallback_model: str | None = None, max_steps: int = MAX_STEPS):
         self.model = model
+        self.max_steps = max(MAX_STEPS, max_steps)  # a run allowed more tool calls (Settings → Runs) gets the steps for them
         self.fallback_model = fallback_model
         self._resting: dict[str, tuple[float, Limit]] = {}  # model -> (until, why): later runs start on the fallback
         self._quota_seen: dict[str, tuple[float, dict[str, Any]]] = {}  # project -> (when, retrieveUserQuota's answer)
@@ -362,15 +363,15 @@ class CodeAssistRuntime:
             return httpx.AsyncClient(timeout=timeout, transport=self.transport)
         return outbound.client(self.api_base, override=self.proxy, timeout=timeout)
 
-    async def _access_token(self, http: httpx.AsyncClient, request: AgentRequest) -> str:
-        return await self._access_token_for(http, request.user_home)
-
     async def _access_token_for(self, http: httpx.AsyncClient, user_home: Path) -> str:
+        return (await self._tokens_for(http, user_home)).access_token
+
+    async def _tokens_for(self, http: httpx.AsyncClient, user_home: Path) -> google_oauth.Tokens:
         refresh_token = self.secret_box.read(self.token_path(user_home))
         if not refresh_token:
             raise AgentFailure("gemini_signin_required", "Link your own Gemini account before asking questions.")
         try:
-            return (await google_oauth.refresh(http, refresh_token)).access_token
+            return await google_oauth.refresh(http, refresh_token)
         except google_oauth.OAuthError as error:
             raise AgentFailure("gemini_signin_required", error.message) from None
 
@@ -623,7 +624,10 @@ class CodeAssistRuntime:
 
     async def _run(self, request: AgentRequest, emit: Emit, tools: ToolBridge, cancelled: Any) -> None:
         async with self._http() as http:
-            token = await self._access_token(http, request)
+            # Google's access token lasts about an hour and a run may take up to ten (Settings → Runs): a fresh one is
+            # taken under the person's own sign-in before a step that would start with it nearly expired.
+            tokens = await self._tokens_for(http, request.user_home)
+            token = tokens.access_token
             project = await self.resolve_project(http, token, request.user_id)
             chosen = self.model  # the model picker may change self.model; a run keeps the one it started with
             model, rested = self._start_model()
@@ -633,9 +637,12 @@ class CodeAssistRuntime:
             run = _Models(self, request, project, chosen, self.fallback_model, model, declarations(tools))
             contents: list[dict[str, Any]] = [{"role": "user", "parts": [{"text": request.prompt}]}]
             totals = {"tool_calls": 0, "input_tokens": 0, "output_tokens": 0}
-            for step in range(1, MAX_STEPS + 1):
+            for step in range(1, self.max_steps + 1):
                 if cancelled():
                     raise AgentFailure("cancelled", "The run was cancelled.")
+                if not tokens.fresh():
+                    tokens = await self._tokens_for(http, request.user_home)
+                    token = tokens.access_token
                 # The person's notes join the turn Gemini reads next (after the tool results), and a system they switched
                 # on mid-run brings its tools. Tools are never taken away mid-run: a switched-off system's tools refuse.
                 contents[-1]["parts"].extend({"text": note} for note in await tools.take_steers())
@@ -684,7 +691,7 @@ class CodeAssistRuntime:
                     responses.append({"functionResponse": {"name": call.get("name"),
                                                            "response": payload if ok else {"error": payload.get("error")}}})
                 contents.append({"role": "user", "parts": responses})
-            raise AgentFailure("too_many_steps", f"Gemini used more than {MAX_STEPS} steps without finishing.")
+            raise AgentFailure("too_many_steps", f"Gemini used more than {self.max_steps} steps without finishing.")
 
     async def _again(self, http: httpx.AsyncClient, token: str, run: _Models, contents: list[dict[str, Any]], emit: Emit,
                      reply: Reply, tries: list[str], step: int, totals: dict[str, int], cancelled: Any) -> Reply:

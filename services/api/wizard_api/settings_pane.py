@@ -1,6 +1,8 @@
-"""The settings pane: the company settings a person may change on their own PC (Gemini model and project, the knowledge
-base, the read-only database, the dashboards folder, Metronome, the portals, the source order, the proxy), where each
-value comes from, saving, and connection tests.
+"""The settings pane: the settings a person may change on their own PC (Gemini, the run limits, the knowledge base, the
+read-only database, the dashboards folder, Metronome, the portals, the source order, attached files, the proxy,
+diagnostics), where each value comes from, saving, and connection tests. Every setting Wizard reads that is not about
+the install itself (its folders, port and sign-in mode, set by the installer) or a developer's test is here (owner, 13 Nov
+2026: "Wizard should have all its configuration settings in the settings pane").
 
 Values are saved to this PC's store (provisioning.update_local; secrets through the SecretBox). A key that the PC's .env
 also sets is removed from .env on save, so the new value applies and no password stays there in plain text. A key set
@@ -26,7 +28,7 @@ from wizard_connectors.pg import PgError, PgSettings
 from wizard_connectors.pg import settings_from as pg_settings
 
 from . import knowledge_sync, provisioning, source_order
-from .config import PICKER_KEYS, ConfigError, Settings, load_settings, read_env_file
+from .config import MAX_RUN_TIMEOUT_S, MAX_TOOL_CALLS, PICKER_KEYS, ConfigError, Settings, load_settings, read_env_file
 from .metronome_client import MetronomeClient
 
 
@@ -38,14 +40,46 @@ class Field:
     help: str = ""
     placeholder: str = ""
     choices: tuple[str, ...] = ()
+    labels: tuple[str, ...] = ()  # what the person sees for each choice, when not the stored word itself
+    # A number between low and high, in `unit`. The pane shows it in that unit and stores it times `scale` (a time limit
+    # in minutes, stored in seconds as Wizard reads it).
+    low: int | None = None
+    high: int | None = None
+    scale: int = 1
+    unit: str = ""
 
     @property
     def secret(self) -> bool:
         return provisioning.is_secret(self.key)
 
+    def shown(self, stored: str | None) -> str | None:
+        """A stored number in the unit the pane shows (1800 seconds: "30" minutes)."""
+        if not stored or self.scale == 1:
+            return stored
+        try:
+            return f"{round(float(stored) / self.scale, 2):g}"
+        except ValueError:
+            return stored
+
+    def stored(self, text: str) -> str:
+        """A number typed in the pane, checked against its bounds, as Wizard stores it."""
+        try:
+            number = float(text.replace(" ", ""))
+        except ValueError:
+            raise PaneError(f"{self.label} must be a number") from None
+        if self.scale == 1 and not number.is_integer():
+            raise PaneError(f"{self.label} must be a whole number")
+        if not (self.low or 0) <= number <= (self.high or 0):
+            raise PaneError(f"{self.label} must be between {self.low:,} and {self.high:,} {self.unit}".rstrip())
+        return str(round(number * self.scale))
+
 
 SECTIONS = [
     ("gemini", "Gemini", "The model answers under your own Google sign-in."),
+    ("runs", "Runs", "How long one answer may take and how many tool calls it may make: backstops for a run that goes "
+                     "astray, not budgets. Before the time limit Gemini is told to stop gathering data and answer, so a "
+                     "long run still ends with an answer. Each question, queued prompt and round of a task or a portal "
+                     "map has its own."),
     ("knowledge", "Knowledge base", "The private GitHub repository Wizard reads its company notes from."),
     ("site", "Pages site", "Brain and Cases, two pages of their own on the company GitHub's Pages, published from this PC "
                            "with the knowledge base's write token. With a feedback token, people rate the answers of the "
@@ -66,12 +100,29 @@ SECTIONS = [
                                 "which it uses only when asked. Gemini starts with the first source that holds what is "
                                 "asked and goes further only for what it lacks. One order for the whole company: Export "
                                 "settings… carries it."),
+    ("attachments", "Attached files", "PowerPoint, Excel, Word, email and CSV files attached to a question, read on this "
+                                      "PC (through Office when it is installed)."),
     ("network", "Network", "Only if Wizard cannot reach Google or GitHub on its own."),
+    ("diagnostics", "Diagnostics", "For finding out why an answer failed."),
 ]
 FIELDS = [
     Field("GOOGLE_CLOUD_PROJECT", "Google Cloud project", "gemini", "Your organisation's Gemini project, if it has one."),
     Field("WIZARD_GOOGLE_DOMAINS", "Company Google domains", "gemini", "Only these accounts may link, e.g. company.com.",
           "company.com"),
+    Field("WIZARD_GEMINI_THINKING", "Thinking", "gemini", "How much Gemini thinks before each step: high gives the best "
+          "answers, low is faster. Model default sends no setting.", "high", ("high", "low", "none"),
+          ("High", "Low", "Model default")),
+    Field("WIZARD_RUN_TIMEOUT_S", "Time limit per run", "runs", f"Up to {MAX_RUN_TIMEOUT_S // 60} minutes "
+          f"({MAX_RUN_TIMEOUT_S // 3600} hours). In its last minutes Gemini stops gathering data and writes its answer "
+          "with what it has.", "30", low=1, high=MAX_RUN_TIMEOUT_S // 60, scale=60, unit="minutes"),
+    Field("WIZARD_MAX_TOOL_CALLS", "Tool calls per run", "runs", f"Up to {MAX_TOOL_CALLS:,}. A run ends at whichever "
+          "limit comes first, so a longer time limit may need more tool calls too. A round of a task that goes through "
+          "every file makes at most 100, a round of a portal map 80.", "150", low=1, high=MAX_TOOL_CALLS, unit="calls"),
+    Field("WIZARD_MAX_CONCURRENT_RUNS", "Runs at the same time", "runs", "A question, the prompt queue, a task and a "
+          "portal map can run side by side (one of each); beyond this number the others wait for a free place.", "8",
+          low=1, high=64, unit="runs"),
+    Field("WIZARD_REPORT_RETENTION_DAYS", "Keep answer reports for", "runs", "The dated report behind an answer's link; "
+          "after this its link says the report expired.", "30", low=1, high=3650, unit="days"),
     Field("WIZARD_KB_REPO", "Repository", "knowledge", "owner/name of the private repository.", "acme/wizard-content"),
     Field("WIZARD_KB_TOKEN", "Read-only token", "knowledge", "Fine-grained token: that repository only, Contents read.",
           "github_pat_…"),
@@ -110,6 +161,9 @@ FIELDS = [
           "Separated by commas. Gemini's queries may read only these schemas (and pg_catalog and information_schema for "
           "metadata); a query that reads any other, also through a view, is refused. Empty: every schema the account can "
           "read.", "reporting"),
+    Field("WIZARD_NEWS_TABLE", "News table (Brain page)", "postgres", "schema.name of the table an automation fills with "
+          "news, when it is not the readable table or view called news.", "public.news"),
+    Field("WIZARD_NEWS_DATABASE", "News database", "postgres", "Empty: the database above.", ""),
     Field("WIZARD_NERP_NAME", "Name people see", "nerp", "Shown in the app and in answers' sources.", "NERP"),
     Field("WIZARD_NERP_HOST", "Server", "nerp", "Its host name, host:port, or a postgresql:// address (a database in it "
           "fills Database; never a password).", "nerp-db.company.example"),
@@ -147,10 +201,22 @@ FIELDS = [
     Field(source_order.KEY, "Order", "sources", "Move a source up or down, put it on the same level as the one above, "
           "say in a line what it is for, or keep it for when someone asks. A source not listed (a portal set up later) "
           "comes last."),
+    Field("WIZARD_ATTACHMENT_FOLDERS", "Folders under From this PC", "attachments", "Separated by ;. Wizard lists their "
+          "recent files and reads each where it is, which protected files need. Empty: your Downloads, Desktop and "
+          "Documents; none turns From this PC off. This PC's own: a settings file never carries it.",
+          "C:\\Users\\you\\Downloads;C:\\Users\\you\\Documents"),
+    Field("WIZARD_MAX_ATTACHMENT_MB", "Largest file", "attachments", "Up to 500 MB.", "50", low=1, high=500, unit="MB"),
+    Field("WIZARD_ATTACHMENT_TIMEOUT_S", "Time limit per file", "attachments", "How long reading one file may take, so a "
+          "password prompt left open in Office does not hold up the question.", "180", low=10, high=3600,
+          unit="seconds"),
+    Field("WIZARD_ATTACHMENT_OFFICE", "Read Office files", "attachments", "Without Office, Wizard reads only plain .docx, "
+          ".pptx and .xlsx files.", "auto", ("auto", "never"), ("With Office when it is installed", "Without Office")),
     Field("WIZARD_PROXY", "Proxy", "network", "For Google (Gemini) and the app's updates: http://host:port, or direct. "
           "Empty: the proxy in your Gemini CLI settings, else the Windows proxy settings.", ""),
     Field("WIZARD_GITHUB_PROXY", "Company GitHub proxy", "network", "For the company GitHub (the knowledge base and the "
           "portal maps): http://host:port, or direct. Empty: the route Windows and Edge take to it.", ""),
+    Field("WIZARD_DIAGNOSTICS", "Diagnostics in the app", "diagnostics", "Every run's full diagnostics and the server log "
+          "(Log), for whoever looks after Wizard on this PC.", "true", ("true", "false"), ("Shown", "Hidden")),
 ]
 BY_KEY = {f.key: f for f in FIELDS}
 DASHBOARDS = "WIZARD_HTML_REPORTS_DIR"
@@ -190,10 +256,12 @@ def describe(settings: Settings) -> dict[str, Any]:
         source, value = next(((name, values[f.key]) for name, values in layers if f.key in values), ("default", ""))
         from_company = next((values.get(f.key) for name, values in layers if name == "company"), None)
         fields.append({"key": f.key, "label": f.label, "section": f.section, "help": f.help, "placeholder": f.placeholder,
-                       "choices": list(f.choices), "secret": f.secret, "source": source,
-                       "value": None if f.secret else value, "set": bool(value),
-                       "company_value": bool(from_company) if f.secret else from_company,
-                       "editable": source != "environment"})
+                       "choices": list(f.choices), "choice_labels": list(f.labels), "secret": f.secret, "source": source,
+                       "value": None if f.secret else f.shown(value), "set": bool(value),
+                       "company_value": bool(from_company) if f.secret else f.shown(from_company),
+                       "editable": source != "environment",
+                       **({"number": {"low": f.low, "high": f.high, "unit": f.unit, "whole": f.scale == 1}}
+                          if f.low is not None else {})})
     company_file = provisioning.status(settings.data_dir)
     return {"sections": [{"id": i, "title": t, "about": a} for i, t, a in SECTIONS], "fields": fields,
             "company_file": {"name": company_file.get("name"), "imported_at": company_file.get("imported_at")}
@@ -215,6 +283,8 @@ def _clean(changes: dict[str, Any]) -> dict[str, str | None]:
         field = BY_KEY[key]
         if text and field.choices and text not in field.choices:
             raise PaneError(f"{field.label} must be one of {', '.join(field.choices)}")
+        if text and field.low is not None:
+            text = field.stored(text)
         if text and key == source_order.KEY:
             try:  # stored as Wizard writes it: compact, validated
                 text = source_order.render(source_order.parse(text) or ())
@@ -292,7 +362,7 @@ def export(settings: Settings) -> dict[str, Any]:
     text = provisioning.render(kept, f"{name} (exported)")
     return {"text": text, "settings": sorted(k for k in kept if not provisioning.is_secret(k)),
             "secrets": sorted(k for k in kept if provisioning.is_secret(k)),
-            "left_out": sorted(k for k in provisioning.PC_CHOSEN if values.get(k))}
+            "left_out": sorted(k for k in provisioning.PC_CHOSEN if values.get(k) and provisioning.is_secret(k))}
 
 
 def _candidate(settings: Settings, proposed: dict[str, Any]) -> dict[str, str]:

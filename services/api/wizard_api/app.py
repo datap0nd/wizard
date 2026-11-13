@@ -249,7 +249,8 @@ def build_runtime(settings: Settings, secret_box: SecretBox, scopes: list[str]) 
             shim_command=[str(ROOT / "wizard_mcp_shim.py")], proxy=settings.proxy, diagnostics=settings.diagnostics))
     if settings.runtime == "code-assist":
         return CodeAssistRuntime(settings.model, secret_box, gemini_project(settings), settings.thinking,
-                                 proxy=settings.proxy, fallback_model=settings.fallback_model)
+                                 proxy=settings.proxy, fallback_model=settings.fallback_model,
+                                 max_steps=settings.max_tool_calls + 50)
     return ReplayRuntime(settings.transcripts_dir, settings.replay_delay_s)
 
 

@@ -197,6 +197,54 @@ def test_a_busy_gemini_is_retried(tmp_path, monkeypatch):
     assert "status" not in events, "people see Wizard working, not Gemini being busy (owner, 23 Oct)"
 
 
+class ExpiringTokens(FakeGoogle):
+    """Google's access tokens last an hour; each model step here takes 50 minutes of the run's clock."""
+
+    def __init__(self, turns, clock: list[float]):
+        super().__init__(turns)
+        self.clock, self.issued, self.used = clock, [], []
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if url.startswith(google_oauth.TOKEN_ENDPOINT):
+            self.issued.append(f"ya29.token-{len(self.issued) + 1}")
+            return httpx.Response(200, json={"access_token": self.issued[-1], "expires_in": 3600})
+        if ":streamGenerateContent" in url:
+            self.used.append(request.headers["authorization"].removeprefix("Bearer "))
+            self.clock[0] += 50 * 60
+        request.headers["authorization"] = "Bearer ya29.access"
+        return super().__call__(request)
+
+
+def test_a_run_longer_than_googles_access_token_takes_a_fresh_one(tmp_path, monkeypatch):
+    """Owner, 13 Nov 2026: a run may take up to 10 hours (Settings → Runs). The token taken at its start expires after
+    about one, so the step that would start with it nearly expired takes a fresh one under the person's own sign-in."""
+    clock = [1_000_000.0]
+    monkeypatch.setattr(google_oauth, "time", type("Clock", (), {"time": staticmethod(lambda: clock[0])}))
+    call = {"functionCall": {"name": "nerp_run_report", "args": {"report_id": "a"}}}
+    fake = ExpiringTokens([[call], [{**call, "functionCall": {**call["functionCall"], "args": {"report_id": "b"}}}],
+                           [{"text": "EG spent $1.5M [E1]."}]], clock)
+    rt, req = make(tmp_path, fake)
+
+    async def emit(*_):
+        return None
+
+    asyncio.run(rt.run(req, emit, Bridge(), lambda: False))
+    assert fake.used == ["ya29.token-1", "ya29.token-1", "ya29.token-2"], "renewed only once the first had expired"
+    assert len(fake.requests) == 3
+
+
+def test_a_run_allowed_more_tool_calls_gets_the_steps_for_them(tmp_path):
+    box = SecretBox(force_plain=True)
+    assert CodeAssistRuntime("gemini-3.8-flash", box).max_steps == code_assist.MAX_STEPS
+    assert CodeAssistRuntime("gemini-3.8-flash", box, max_steps=20).max_steps == code_assist.MAX_STEPS, "never fewer"
+    from wizard_api.app import build_runtime
+    settings = load_settings(env={"WIZARD_AGENT_RUNTIME": "code-assist", "WIZARD_MAX_TOOL_CALLS": "2000",
+                                  "WIZARD_RUN_TIMEOUT_S": "36000", "WIZARD_DATA_DIR": str(tmp_path / "data")})
+    runtime = build_runtime(settings, box, [])
+    assert isinstance(runtime, CodeAssistRuntime) and runtime.max_steps == 2050 and settings.run_timeout_s == 36000
+
+
 def test_missing_sign_in_is_a_clear_failure(tmp_path):
     rt = CodeAssistRuntime("gemini-3.8-flash", SecretBox(force_plain=True))
     req = AgentRequest(run_id="r", user_id="u", user_email="e", user_home=tmp_path, prompt="p", question="q", kind="ask")
