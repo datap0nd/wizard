@@ -14,7 +14,7 @@ from typing import Any
 import httpx
 from fastapi.testclient import TestClient
 from tests.helpers import HEADERS, login, make_settings
-from tests.unit.test_tasks import NOTE, github
+from tests.unit.test_tasks import NOTE
 
 from wizard_agent.prompting import compose, left_to_do
 from wizard_agent.runtime import AgentFailure
@@ -93,7 +93,7 @@ def queue_app(tmp_path: Path, runtime: Scripted, tasks: dict[str, str], install:
     for name, text in tasks.items():
         (bundled / f"{name}.md").write_text(text, encoding="utf-8")
     board: TaskBoard = app.state.task_board
-    board.bundled, board.transport = bundled, github({}, [], fail=True)
+    board.bundled = bundled
     app.state.manager.services.kb_writer = lambda files, message: Published("published", "ok", "c1")
     return TestClient(app)
 

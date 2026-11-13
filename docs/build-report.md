@@ -3,7 +3,23 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-13 (latest) — Presentations: dense slides, no empty space
+## 2026-11-13 (latest) — The tasks come packaged with the app
+
+The owner: "can you package the tasks in the app? I cant read the tasks ... Checking for updates work, but checking for
+tasks doesnt" ([decision](decisions/2026-11-13-tasks-packaged.md)). The task list read api.github.com with Wizard's own
+connection and had no other route; the update check has three, one through Windows' proxy sign-in.
+
+- `services/api/wizard_api/tasks.py`: `TaskBoard.tasks()` lists the installed version's `tasks/` folder (newest first,
+  without the README, unreadable files or files that are not tasks); the GitHub listing, its cache and the five-minute
+  refresh are gone. `GET /api/v1/tasks` answers `source: "app"` and the installed version; `refresh` is accepted and
+  changes nothing. The queue reads the same list.
+- `TasksPanel.tsx`: "The tasks that came with Wizard <version>. New tasks arrive with Wizard's updates"; no Check for
+  new tasks button.
+- Checks: `tests/unit/test_tasks.py`, `test_task_files.py`, `test_task_queue.py` 73 passed (a new test makes any network
+  connection fail the list, and checks the desktop payload carries `tasks/`); `TasksPanel.test.tsx` 12 passed. Full run
+  below.
+
+## 2026-11-13 — Presentations: dense slides, no empty space
 
 The owner, on the first sample deck: "Those sample decks are so minimalistic and have so much empty space. samsung is
 against empty space" ([decision](decisions/2026-11-13-presentations.md), "Dense slides").

@@ -1,9 +1,10 @@
 # Tasks
 
-Instructions the Wizard team writes for Gemini, run by the person at their PC from **Settings → Tasks**. Wizard reads
-this folder from GitHub (`main`) when the Tasks section opens, so a task pushed here appears without an update; with
-no network it shows the copy that came with the installed version. What a task produces goes to the company's
-knowledge-base repository (`wizard_kb_save_notes`), never here.
+Instructions the Wizard team writes for Gemini, run by the person at their PC from **Settings → Tasks**. The tasks come
+packaged with the app ([decision](../docs/decisions/2026-11-13-tasks-packaged.md)): Settings → Tasks lists this folder
+as the installed version holds it and reads nothing from the network, and a task pushed to `main` reaches each PC with
+the update that push releases. What a task produces goes to the company's knowledge-base repository
+(`wizard_kb_save_notes`), never here.
 
 One Markdown file per task, named after its id:
 

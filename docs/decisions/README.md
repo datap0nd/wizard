@@ -48,3 +48,4 @@ Evidence**. A decision that changes repository rules also updates [AGENTS.md](..
 - [2026-11-13 Quick setup: a new person's first steps, at the top of Settings](2026-11-13-quick-setup.md)
 - [2026-11-13 Every setting in Settings; a run may take up to 10 hours](2026-11-13-every-setting-in-settings.md)
 - [2026-11-13 Wizard makes presentations: the person chooses the story, Wizard makes the deck](2026-11-13-presentations.md)
+- [2026-11-13 The tasks come packaged with the app](2026-11-13-tasks-packaged.md)

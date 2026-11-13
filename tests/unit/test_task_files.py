@@ -384,8 +384,7 @@ def folder_app(tmp_path: Path, runtime: Digester) -> TestClient:
     (bundled / "digest-decks.md").write_text(DIGEST, encoding="utf-8")
     (bundled / "deck-guide.md").write_text(GUIDE, encoding="utf-8")
     board: TaskBoard = app.state.task_board
-    from tests.unit.test_tasks import github
-    board.bundled, board.transport = bundled, github({}, [], fail=True)
+    board.bundled = bundled
     app.state.manager.services.task_files.documents = FakeDocuments()
     return TestClient(app)
 

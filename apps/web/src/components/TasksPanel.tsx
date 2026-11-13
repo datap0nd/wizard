@@ -1,5 +1,5 @@
 import {useCallback, useEffect, useState} from 'react';
-import {ArrowDown, ArrowUp, ListChecks, ListOrdered, ListPlus, Loader2, Play, RefreshCw, Square, X} from 'lucide-react';
+import {ArrowDown, ArrowUp, ListChecks, ListOrdered, ListPlus, Loader2, Play, Square, X} from 'lucide-react';
 import {api, ApiError} from '@/api';
 import {formatDate} from '@/format';
 import {Button} from './ui/button';
@@ -21,10 +21,9 @@ const ITEM_LINKS: Record<QueueItem['state'], string> = {
   interrupted: 'See how far it got',
 };
 
+/** Where the list comes from: the installed version (owner, 13 Nov 2026: "package the tasks in the app"). */
 function where(view: TasksView): string {
-  const failed = view.message ? ` GitHub did not answer (${view.message}), so this is the last list Wizard read.` : '';
-  if (view.source === 'bundled') return `The tasks that came with this version.${view.message ? ` GitHub did not answer (${view.message}).` : ''}`;
-  return `From GitHub${view.checked ? `, checked ${formatDate(new Date(view.checked * 1000).toISOString(), true)}` : ''}.${failed}`;
+  return `The tasks that came with ${view.version ? `Wizard ${view.version}` : 'this version'}. New tasks arrive with Wizard's updates (Version and updates, in Settings).`;
 }
 
 function files(task: TaskItem): string {
@@ -139,9 +138,9 @@ export function TasksPanel({active}: {active: boolean}) {
   const [error, setError] = useState<string | null>(null);
   const [paths, setPaths] = useState<Record<string, string>>({});
 
-  const load = useCallback(async (refresh: boolean) => {
+  const load = useCallback(async () => {
     try {
-      setView(await api.tasks(refresh));
+      setView(await api.tasks());
       setError(null);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Could not read the tasks.');
@@ -149,7 +148,7 @@ export function TasksPanel({active}: {active: boolean}) {
   }, []);
 
   useEffect(() => {
-    if (active) void load(true);
+    if (active) void load();
   }, [active, load]);
 
   const queue = view?.queue ?? null;
@@ -157,7 +156,7 @@ export function TasksPanel({active}: {active: boolean}) {
   const running = (view?.tasks.some(t => t.state === 'running') ?? false) || queueRunning;
   useEffect(() => {
     if (!active || !running) return undefined;
-    const timer = window.setInterval(() => void load(false), POLL_MS);
+    const timer = window.setInterval(() => void load(), POLL_MS);
     return () => window.clearInterval(timer);
   }, [active, running, load]);
 
@@ -204,11 +203,7 @@ export function TasksPanel({active}: {active: boolean}) {
     .map(i => [i.id, queue!.items.indexOf(i) + 1]));
   return (
     <div className="space-y-3" data-testid="tasks-panel">
-      <div className="flex items-center gap-2">
-        <p className="min-w-0 flex-1 text-[11.5px] text-ink-3">{where(view)}</p>
-        <Button size="xs" variant="ghost" onClick={() => { setBusy('refresh'); void load(true).finally(() => setBusy(null)); }} disabled={busy !== null}>
-          {busy === 'refresh' ? <Loader2 className="animate-spin" /> : <RefreshCw />}Check for new tasks</Button>
-      </div>
+      <p className="text-[11.5px] text-ink-3" data-testid="tasks-source">{where(view)}</p>
       {!view.can_save && <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">Add the knowledge base's write token
         (Knowledge base, above) so a task can save what it produces.</p>}
       {error && <p className="text-xs text-danger" role="alert">{error}</p>}

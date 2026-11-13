@@ -344,7 +344,7 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
             log.info("report catalogs retired, read through their portal maps: %s", ", ".join(sorted(retired)))
     if settings.kb_repo and settings.kb_write_token:  # what a task produces is committed there (kb_tools.py)
         services.kb_writer, services.kb_prefix = map_writer(settings, "these notes"), settings.kb_path
-    task_board = TaskBoard(settings.data_dir, ROOT / "tasks", settings.proxy)
+    task_board = TaskBoard(settings.data_dir, ROOT / "tasks")  # the tasks come with the installed version
     services.task_files = TaskFiles(settings.data_dir, Documents(settings))  # what a task that asks for a folder reads
     if settings.html_reports_dir:  # the Dashboards system; a folder this PC cannot reach is said by its tools, not here
         services.dashboards = Dashboards(settings.html_reports_dir, settings.data_dir / "dashboards", settings.dashboards_name)
@@ -1453,8 +1453,8 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         except OSError:
             return None
 
-    def task_view(identity: Identity, cache: dict[str, Any] | None = None) -> dict[str, Any]:
-        found, source = task_board.tasks(cache)
+    def task_view(identity: Identity) -> dict[str, Any]:
+        found = task_board.tasks()
         runs = task_board.runs()
         rounds = manager.task_rounds.get(identity.id)
         listed = []
@@ -1476,15 +1476,13 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
                            "round": last.get("round") if (task.every_file or task.repeat) and row else None,
                            "max_runs": task.max_runs if task.repeat else None,
                            "progress": task_progress(task.id, path) if task.every_file else None})
-        cached = cache or {}
-        return {"tasks": listed, "source": source, "checked": cached.get("checked"), "message": cached.get("message"),
+        return {"tasks": listed, "source": "app", "version": settings_pane.installed_build().get("version"),
                 "can_save": services.kb_writer is not None, "queue": task_queues.view(identity.id)}
 
     @app.get("/api/v1/tasks")
-    async def list_tasks(request: Request, refresh: bool = False) -> dict[str, Any]:
-        identity = task_owner(request)
-        cache = await asyncio.to_thread(task_board.refresh, refresh)
-        return task_view(identity, cache)
+    def list_tasks(request: Request, refresh: bool = False) -> dict[str, Any]:
+        """The tasks that came with this version (refresh is accepted from older pages and changes nothing)."""
+        return task_view(task_owner(request))
 
     @app.post("/api/v1/tasks/{task_id}/run")
     async def run_task(request: Request, task_id: str, body: TaskRunBody | None = None) -> dict[str, Any]:

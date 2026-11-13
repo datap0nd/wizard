@@ -1,5 +1,5 @@
-"""Tasks (owner, 31 Oct 2026): instructions read from the Wizard repository's tasks/ folder at runtime, run from
-Settings → Tasks as Gemini runs that save notes to the company knowledge base, and nowhere else."""
+"""Tasks (owner, 31 Oct 2026): instructions in the Wizard repository's tasks/ folder, packaged with the app (13 Nov 2026),
+run from Settings → Tasks as Gemini runs that save notes to the company knowledge base, and nowhere else."""
 from __future__ import annotations
 
 import asyncio
@@ -7,14 +7,13 @@ import time
 from pathlib import Path
 from typing import Any
 
-import httpx
 import pytest
 from fastapi.testclient import TestClient
 from tests.helpers import HEADERS, MemoryRecorder, login, make_settings
 
 from wizard_agent.prompting import compose
 from wizard_api.app import create_app
-from wizard_api.tasks import LISTING, TaskBoard, parse
+from wizard_api.tasks import TaskBoard, parse
 from wizard_connectors.content import validate_knowledge
 from wizard_connectors.entitlements import Identity, SystemRights
 from wizard_connectors.paths import ROOT
@@ -50,62 +49,39 @@ def test_every_task_in_the_repository_is_well_formed():
     assert not (ROOT / "workpc" / "tasks").exists(), "the numbered Gemini CLI tasks are retired"
 
 
-def github(files: dict[str, str], calls: list[str], fail: bool = False) -> httpx.MockTransport:
-    def handler(request: httpx.Request) -> httpx.Response:
-        calls.append(str(request.url))
-        if fail:
-            raise httpx.ConnectError("no route", request=request)
-        if str(request.url) == LISTING:
-            if request.headers.get("if-none-match") == '"v1"':
-                return httpx.Response(304)
-            return httpx.Response(200, headers={"etag": '"v1"'}, json=[
-                {"type": "file", "name": name, "sha": f"sha-{name}", "url": f"https://api.github.com/x/{name}"}
-                for name in [*files, "README.md"]])
-        return httpx.Response(200, text=files[str(request.url).rsplit("/", 1)[1]])
-    return httpx.MockTransport(handler)
+def test_the_tasks_come_with_the_installed_version_and_nothing_is_fetched(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Owner, 13 Nov 2026: "can you package the tasks in the app? ... Checking for updates work, but checking for tasks
+    doesnt". The list is the installed version's tasks/ folder: no network, and a new task arrives with an update."""
+    import socket
 
+    def no_network(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("the task list reached for the network")
 
-def test_tasks_come_from_github_and_fall_back_to_the_bundled_copy(tmp_path: Path):
+    monkeypatch.setattr(socket, "create_connection", no_network)
     bundled = tmp_path / "bundled"
     bundled.mkdir()
-    (bundled / "old-task.md").write_text(TASK.replace("tidy-notes", "old-task"), encoding="utf-8")
-    calls: list[str] = []
-    board = TaskBoard(tmp_path / "data", bundled, transport=github({}, calls, fail=True))
-    cache = board.refresh(force=True)
-    assert [t.id for t in board.tasks(cache)[0]] == ["old-task"] and board.tasks(cache)[1] == "bundled"
-    assert "no route" in cache["message"], "says why GitHub was not read"
-    board.transport = github({"tidy-notes.md": TASK}, calls)
-    cache = board.refresh(force=True)
-    assert [t.id for t in board.tasks(cache)[0]] == ["tidy-notes"], "GitHub's list replaces the bundled one"
-    assert not any(c.endswith("README.md") for c in calls), "the folder's README is not a task"
-    calls.clear()
-    board.refresh(force=True)
-    assert calls == [LISTING], "an unchanged folder costs one conditional request"
-    assert board.refresh()["checked"] and calls == [LISTING], "and is not asked again within minutes"
-    board.transport = github({}, calls, fail=True)
-    assert [t.id for t in board.tasks(board.refresh(force=True))[0]] == ["tidy-notes"], "the last good list stays"
+    (bundled / "tidy-notes.md").write_text(TASK, encoding="utf-8")
+    (bundled / "older.md").write_text(TASK.replace("tidy-notes", "older").replace("2026-10-31", "2026-10-01"), encoding="utf-8")
+    (bundled / "README.md").write_text("Not a task.", encoding="utf-8")
+    (bundled / "broken.md").write_text("no front matter", encoding="utf-8")
+    (bundled / "binary.md").write_bytes(b"\xff\xfe\x00bad")
+    board = TaskBoard(tmp_path / "data", bundled)
+    assert [t.id for t in board.tasks()] == ["tidy-notes", "older"], "newest first; the README and broken files are not tasks"
+    assert board.task("older") is not None and board.task("gone") is None
+    (bundled / "new-task.md").write_text(TASK.replace("tidy-notes", "new-task").replace("2026-10-31", "2026-11-13"), encoding="utf-8")
+    assert board.tasks()[0].id == "new-task", "an update that brings a task shows it at once"
+    assert TaskBoard(tmp_path / "data", tmp_path / "missing").tasks() == []
 
 
-def test_an_update_brings_its_tasks_while_github_does_not_answer(tmp_path: Path):
-    """The list GitHub gave this morning stays while GitHub does not answer, unless an update installed since brings
-    its own, newer copy; once GitHub answers again, its list is used."""
-    import os
-    import time as clock
-
-    bundled = tmp_path / "bundled"
-    bundled.mkdir()
-    calls: list[str] = []
-    board = TaskBoard(tmp_path / "data", bundled, transport=github({"tidy-notes.md": TASK}, calls))
-    board.refresh(force=True)
-    (bundled / "new-task.md").write_text(TASK.replace("tidy-notes", "new-task"), encoding="utf-8")
-    later = clock.time() + 60
-    os.utime(bundled / "new-task.md", (later, later))
-    assert [t.id for t in board.tasks()[0]] == ["tidy-notes"], "GitHub answered last time: its list"
-    board.transport = github({}, calls, fail=True)
-    cache = board.refresh(force=True)
-    assert board.tasks(cache)[1] == "bundled" and [t.id for t in board.tasks(cache)[0]] == ["new-task"]
-    board.transport = github({"tidy-notes.md": TASK}, calls)
-    assert board.tasks(board.refresh(force=True))[1] == "github", "GitHub's list again once it answers"
+def test_the_installed_app_carries_the_tasks_folder():
+    """The desktop payload is every tracked file but tests, docs and sources (build_desktop_payload.py): tasks/ is in it."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("payload", ROOT / "scripts" / "build_desktop_payload.py")
+    assert spec and spec.loader
+    payload = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(payload)
+    shipped = payload.source_files()
+    assert "tasks/presentation-guide.md" in shipped and "tasks/digest-presentations.md" in shipped
 
 
 def test_the_task_request_carries_the_instructions():
@@ -438,7 +414,7 @@ def task_app(tmp_path: Path, runtime: Worker, install: bool = True) -> TestClien
     bundled.mkdir()
     (bundled / "tidy-notes.md").write_text(TASK, encoding="utf-8")
     board: TaskBoard = app.state.task_board
-    board.bundled, board.transport = bundled, github({}, [], fail=True)
+    board.bundled = bundled
     return TestClient(app)
 
 
@@ -460,7 +436,7 @@ def test_a_task_runs_from_settings_and_only_a_task_may_save_to_the_knowledge_bas
         services.kb_writer = lambda files, message: (saved.append((files, message)), Published("published", "ok", "c1"))[1]
         login(client, "local-owner")
         listed = client.get("/api/v1/tasks?refresh=true").json()
-        assert listed["source"] == "bundled" and listed["can_save"] is True
+        assert listed["source"] == "app" and listed["can_save"] is True
         assert [(t["id"], t["state"]) for t in listed["tasks"]] == [("tidy-notes", "todo")]
         started = client.post("/api/v1/tasks/tidy-notes/run", headers=HEADERS)
         assert started.status_code == 200, started.text

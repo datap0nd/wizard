@@ -30,9 +30,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import httpx
-
-from wizard_agent import outbound
 from wizard_connectors.knowledge import front_matter, unquote
 from wizard_connectors.paths import ROOT
 from wizard_connectors.task_files import input_kind
@@ -40,11 +37,9 @@ from wizard_connectors.task_files import input_kind
 from .attachments import OFFICE
 from .config import Settings
 
-LISTING = "https://api.github.com/repos/datap0nd/wizard/contents/tasks?ref=main"
 TASK_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,80}$")
 MAX_RUNS = 5  # a task that repeats until done runs at most this many times, unless it says otherwise ...
 MAX_RUNS_CAP = 50  # ... and never more than this
-REFRESH_SECONDS = 300  # GitHub allows 60 unauthenticated requests an hour; an unchanged folder answers 304 for free
 
 
 @dataclass(frozen=True)
@@ -151,14 +146,11 @@ def run_order(tasks: list[Task]) -> list[Task]:
 
 
 class TaskBoard:
-    """The tasks and, per task, the last run started from this PC."""
+    """The tasks that came with the installed version and, per task, the last run started from this PC."""
 
-    def __init__(self, data_dir: Path, bundled: Path, proxy: str | None = None,
-                 transport: httpx.BaseTransport | None = None):
+    def __init__(self, data_dir: Path, bundled: Path):
         self.folder = data_dir / "tasks"
         self.bundled = bundled
-        self.proxy = proxy
-        self.transport = transport
         self._lock = threading.Lock()
 
     # The list ----------------------------------------------------------------------------------------------------------
@@ -175,74 +167,23 @@ class TaskBoard:
         temporary.write_text(json.dumps(value, indent=1, ensure_ascii=False), encoding="utf-8")
         temporary.replace(self.folder / name)
 
-    def _client(self, url: str) -> httpx.Client:
-        if self.transport is not None:
-            return httpx.Client(transport=self.transport, timeout=30)
-        route, _ = outbound.proxy_for(url, self.proxy)
-        return httpx.Client(timeout=httpx.Timeout(30, connect=10), verify=outbound.ssl_context(), proxy=route,
-                            trust_env=False)
-
-    def refresh(self, force: bool = False) -> dict[str, Any]:
-        """Read the tasks folder from GitHub when it changed; keep the last good copy when GitHub does not answer."""
-        with self._lock:
-            cache = self._read("cache.json")
-            if not force and time.time() - float(cache.get("checked") or 0) < REFRESH_SECONDS:
-                return cache
-            files: dict[str, Any] = cache.get("files") or {}
+    def tasks(self) -> list[Task]:
+        """Every task in the installed version's tasks/ folder, newest first. A file that cannot be read or is not a task
+        (no id, no instructions) is left out."""
+        found = []
+        for path in sorted(self.bundled.glob("*.md")) if self.bundled.is_dir() else []:
+            if path.name == "README.md":
+                continue
             try:
-                with self._client(LISTING) as client:
-                    headers = {"User-Agent": "Wizard", "Accept": "application/vnd.github+json",
-                               **({"If-None-Match": cache["etag"]} if cache.get("etag") else {})}
-                    listing = client.get(LISTING, headers=headers)
-                    if listing.status_code != 304:
-                        listing.raise_for_status()
-                        items = [i for i in listing.json() if isinstance(i, dict) and i.get("type") == "file"
-                                 and str(i.get("name", "")).endswith(".md") and i.get("name") != "README.md"]
-                        fresh = {}
-                        for item in items:
-                            name, sha = str(item["name"]), str(item.get("sha"))
-                            if (files.get(name) or {}).get("sha") == sha:
-                                fresh[name] = files[name]
-                                continue
-                            raw = client.get(str(item["url"]), headers={"User-Agent": "Wizard",
-                                                                       "Accept": "application/vnd.github.raw+json"})
-                            raw.raise_for_status()
-                            fresh[name] = {"sha": sha, "text": raw.text}
-                        files = fresh
-                        cache["etag"] = listing.headers.get("etag")
-                cache.update(files=files, checked=time.time(), fetched=time.time(), source="github", message=None)
-            except httpx.HTTPStatusError as error:
-                status = error.response.status_code
-                cache.update(checked=time.time(), message="the Wizard repository has no tasks folder" if status == 404
-                             else f"GitHub answered {status}")
-            except (httpx.HTTPError, ValueError, KeyError, TypeError) as error:
-                cache.update(checked=time.time(), message=(outbound.explain(error, LISTING, self.proxy, windows=True)
-                                                           if isinstance(error, httpx.TransportError) else str(error)))
-            self._write("cache.json", cache)
-            return cache
-
-    def _bundled_since(self, moment: float) -> bool:
-        """Whether the copy that came with the installed version changed after `moment` (an update installed since)."""
-        try:
-            return any(p.stat().st_mtime > moment for p in self.bundled.glob("*.md") if p.name != "README.md")
-        except OSError:
-            return False
-
-    def tasks(self, cache: dict[str, Any] | None = None) -> tuple[list[Task], str]:
-        """GitHub's list when it has ever answered (a task removed there is gone), else the bundled one. While GitHub does
-        not answer, an update installed after GitHub last answered brings a newer list than the one kept, so its copy is
-        shown (2 Nov 2026: a work PC kept this morning's list after its network stopped reaching GitHub)."""
-        cache = self._read("cache.json") if cache is None else cache
-        stale = bool(cache.get("message")) and self._bundled_since(float(cache.get("fetched") or 0))
-        if cache.get("source") == "github" and not stale:
-            found = [parse(str(f.get("text") or "")) for f in (cache.get("files") or {}).values() if isinstance(f, dict)]
-            return _sorted([t for t in found if t]), "github"
-        texts = [p.read_text(encoding="utf-8") for p in sorted(self.bundled.glob("*.md")) if p.name != "README.md"] \
-            if self.bundled.is_dir() else []
-        return _sorted([t for t in (parse(text) for text in texts) if t]), "bundled"
+                task = parse(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError):
+                continue
+            if task:
+                found.append(task)
+        return _sorted(found)
 
     def task(self, task_id: str) -> Task | None:
-        return next((t for t in self.tasks()[0] if t.id == task_id), None)
+        return next((t for t in self.tasks() if t.id == task_id), None)
 
     # Runs ----------------------------------------------------------------------------------------------------------------
     def started(self, task_id: str, run_id: str, conversation_id: str, path: str | None = None, round_number: int = 1) -> None:

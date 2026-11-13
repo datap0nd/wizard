@@ -158,7 +158,7 @@ class TaskQueues:
             raise QueueError("The queue is running. Stop it first, or add a task to it.", 409)
         if ids is not None and not ids:
             raise QueueError("Tick the tasks to run first.")
-        tasks = run_order([t for t in self.board.tasks()[0] if ids is None or t.id in ids])
+        tasks = run_order([t for t in self.board.tasks() if ids is None or t.id in ids])
         if not tasks:
             raise QueueError("There are no tasks to queue." if ids is None else "None of the ticked tasks is in the list now.")
         chosen: list[tuple[Task, Path | None]] = []

@@ -592,10 +592,10 @@ export type PromptSeparator = 'semicolon' | 'newline' | 'blank_line' | 'pipe' | 
 
 export interface TasksView {
   tasks: TaskItem[];
-  /** github: read from GitHub just now or earlier; bundled: the copy that came with this version. */
-  source: 'github' | 'bundled';
-  checked: number | null;
-  message: string | null;
+  /** app: the tasks come packaged with the installed version; a new task arrives with an update. */
+  source: 'app';
+  /** The installed version (none where Wizard was not installed from a release). */
+  version?: string | null;
   /** This PC has the knowledge base's write token, so a task can save what it produces. */
   can_save: boolean;
   queue?: TaskQueue | null;

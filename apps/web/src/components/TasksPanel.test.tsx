@@ -6,7 +6,7 @@ import type {QueueItem, TaskItem, TaskQueue, TasksView} from '@/types';
 
 const TASK: TaskItem = {id: 'where-to-get-it', title: 'Add portal reports to Where to get it', summary: 'One line.', added: '2026-10-31',
   state: 'todo', conversation_id: null, at: null, message: null};
-const VIEW: TasksView = {tasks: [TASK], source: 'github', checked: 1793400000, message: null, can_save: true};
+const VIEW: TasksView = {tasks: [TASK], source: 'app', version: '1.0.222.0', can_save: true};
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
@@ -17,7 +17,7 @@ describe('Settings → Tasks', () => {
     expect(list).not.toHaveBeenCalled();
     rerender(<TasksPanel active />);
     await screen.findByTestId('task-where-to-get-it');
-    expect(list).toHaveBeenCalledWith(true);
+    expect(list).toHaveBeenCalled();
     expect(screen.getByTestId('run-where-to-get-it').textContent).toBe('Run');
   });
 
@@ -32,11 +32,12 @@ describe('Settings → Tasks', () => {
     expect((screen.getByTestId('run-where-to-get-it') as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('says when it cannot save and when GitHub did not answer', async () => {
-    vi.spyOn(api, 'tasks').mockResolvedValue({...VIEW, source: 'bundled', message: 'timed out', can_save: false});
+  it('says the tasks came with this version, and when it cannot save', async () => {
+    vi.spyOn(api, 'tasks').mockResolvedValue({...VIEW, can_save: false});
     render(<TasksPanel active />);
-    expect((await screen.findByTestId('tasks-panel')).textContent).toContain('came with this version');
-    expect(screen.getByTestId('tasks-panel').textContent).toContain('GitHub did not answer (timed out)');
+    expect((await screen.findByTestId('tasks-source')).textContent).toBe(
+      "The tasks that came with Wizard 1.0.222.0. New tasks arrive with Wizard's updates (Version and updates, in Settings).");
+    expect(screen.queryByText('Check for new tasks')).toBeNull();
     expect(screen.getByTestId('tasks-panel').textContent).toContain('write token');
   });
 

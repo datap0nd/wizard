@@ -2155,6 +2155,7 @@
     "/api/v1/tasks": {
       "get": {
         "summary": "List Tasks",
+        "description": "The tasks that came with this version (refresh is accepted from older pages and changes nothing).",
         "operationId": "list_tasks_api_v1_tasks_get",
         "parameters": [
           {
