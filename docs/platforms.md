@@ -77,8 +77,8 @@ with `wizard_query_postgresql`
 The Big Data Portal (BDP) follows the PostgreSQL route, not the report-catalog one. It is two applications: the
 **information catalog**, where people search for tables and request access to them, and **Superset**, where they query
 the tables with SQL. Wizard reads both under each person's own sign-in, in the Wizard browser: Gemini finds tables in
-the catalog and queries them through Superset (`W.superset.sql`, one SELECT at a time). Requesting access stays the
-person's own step: Wizard opens the request form in a visible window and fills the answers they saved in Settings →
-Portals → Access request form; they check it and submit it
-([decision](decisions/2026-10-28-bdp-access-requests.md); how BDP was explored:
+the catalog and queries them through Superset (`W.superset.sql`, one SELECT at a time). Requesting access is the
+person's own step: when an answer needs tables they cannot query, Gemini names them and the person requests access in
+the catalog themselves; Wizard opens, fills and sends nothing
+([decision](decisions/2026-11-13-bdp-access-self-service.md); how BDP was explored:
 [decision](decisions/2026-10-12-bdp-superset.md), [two applications](decisions/2026-10-28-bdp-information-catalog.md)).

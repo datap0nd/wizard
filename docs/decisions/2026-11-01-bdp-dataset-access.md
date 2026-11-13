@@ -1,5 +1,7 @@
 # 2026-11-01 — Access to the Big Data Portal's datasets: the form's own fields, drop-downs, and prepared requests
 
+> **Superseded** on 13 November 2026 by [Wizard names the Big Data Portal tables the person needs; the person requests access](2026-11-13-bdp-access-self-service.md): Wizard no longer prepares, opens, fills or sends access requests. Kept as the record of what was built.
+
 **Owner:** project owner. **Status:** decided (1 November 2026); updated the same day (reaching the table and opening its form, below). Amends
 [the access request decision](2026-10-28-bdp-access-requests.md); builds on [tasks](2026-10-31-tasks.md).
 

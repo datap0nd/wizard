@@ -27,7 +27,7 @@ from wizard_agent.prompting import correction_question, recurring_question
 from wizard_agent.replay import ReplayRuntime
 from wizard_agent.runtime import AgentFailure, AgentRuntime
 from wizard_agent.secret_box import SecretBox
-from wizard_connectors import access_requests, metronome
+from wizard_connectors import metronome
 from wizard_connectors.content import errors, validate_content
 from wizard_connectors.dashboards import Dashboards
 from wizard_connectors.entitlements import Identity, IdentityDirectory, SystemRights
@@ -99,7 +99,7 @@ def capture_logs() -> None:
 PUBLIC_PATHS = {"/api/v1/health", "/api/v1/ready", "/api/v1/bootstrap", "/api/v1/session/login",
                 "/api/v1/session/logout", "/api/v1/session/identities"}
 TIMELINE_EVENTS = {"run_started", "status", "agent_session", "note", "tool_started", "tool_finished", "visual_added",
-                   "check_result", "schedule_proposed", "access_request_proposed", "file_made", "warning", "run_failed",
+                   "check_result", "schedule_proposed", "file_made", "warning", "run_failed",
                    "run_finished", "steer", "steer_read", "systems_changed", "system_requested", "person_asked"}
 TERMINAL = {"run_finished", "run_failed"}
 SUGGESTIONS = [
@@ -214,6 +214,11 @@ class SettingsBody(Body):
     values: dict[str, str | None] = Field(max_length=40)
 
 
+class SettingsImportBody(Body):
+    # The company settings file (wizard.provision) the person chose in Quick setup, as text. Checked before it is stored.
+    text: str = Field(min_length=2, max_length=provisioning.MAX_BYTES)
+
+
 class SettingsTestBody(Body):
     section: Literal["postgres", "knowledge", "metronome", "dashboards", "nerp", "site"]
     values: dict[str, str | None] = Field(default_factory=dict, max_length=40)
@@ -222,48 +227,6 @@ class SettingsTestBody(Body):
 class LinkCompleteBody(Body):
     state: str = Field(pattern=r"^[0-9a-f]{64}$")
     code: str = Field(min_length=4, max_length=1024)
-
-
-class AnswerBody(Body):
-    label: str = Field(max_length=200)
-    value: str = Field(default="", max_length=2000)
-    # The box the field sits in (DPA / DSA) and how it is answered: typed text, or an option chosen in a drop-down.
-    section: str = Field(default="", max_length=200)
-    kind: Literal["text", "choice"] | None = None
-
-
-class AccessFormBody(Body):
-    # The request page (optional) and the answers given on every access request.
-    page: str = Field(default="", max_length=2000)
-    fields: list[AnswerBody] = Field(default_factory=list, max_length=40)
-
-
-class AccessRequestBody(Body):
-    # Empty: the saved request page, else the catalog's start page, with the saved answers only.
-    address: str | None = Field(default=None, max_length=2000)
-    tables: list[str] = Field(default_factory=list, max_length=20)
-    answers: list[AnswerBody] = Field(default_factory=list, max_length=20)
-    # A prepared request (its id), or "next": the first one not opened yet. Its own page, tables and answers are used;
-    # a card's request no longer on the list opens with the fields given here.
-    queued: str | None = Field(default=None, pattern=r"^(next|AR-[0-9a-f]{10})$")
-    # The way to the table's request form: steps from address to the table's page, and the control that opens the form.
-    open_steps: list[dict[str, Any]] = Field(default_factory=list, max_length=12)
-    form_button: str = Field(default="", max_length=80)
-
-
-class AccessSendingBody(Body):
-    enabled: bool  # on: from the request the person submitted themselves; off: Wizard only fills again
-
-
-class AccessSendBody(Body):
-    # The prepared requests the person approves Wizard sending: the ones named, or every one not sent yet.
-    ids: list[str] = Field(default_factory=list, max_length=100)
-    waiting: bool = False
-
-
-class AccessQueueRemoveBody(Body):
-    ids: list[str] = Field(default_factory=list, max_length=200)
-    opened: bool = False  # also every prepared request already opened
 
 
 class InternalCall(Body):
@@ -385,8 +348,6 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
     registry = build_registry(services)
     identities = IdentityDirectory.load(settings.identities_file)
     store = Store(settings.data_dir / "wizard.sqlite3")
-    if services.portals is not None:  # the person's own windows (the access request window's Next) are audited too
-        services.portals.audit = lambda user_id, action, **detail: store.audit(user_id, action, **detail)
     if settings.install_mode or settings.local_user_email:
         # The person at this PC, with every platform right. Their email is the Google account they link (so `whoami
         # /upn` returning nothing, or a different domain, never blocks them); until then the configured one, if any.
@@ -1698,123 +1659,6 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
     async def portals_check(request: Request) -> dict[str, Any]:
         return await portal_action(request, "check")
 
-    def request_portal(request: Request, system: str) -> tuple[Identity, PortalBrowser, Any]:
-        identity, browser = portal_browser(request)
-        portal = browser.settings.portal(system)
-        if portal is None or portal.id not in access_requests.REQUEST_PORTALS or not identity.can_use_system(system):
-            raise HTTPException(404, "Access requests are made in the Big Data Portal's information catalog; it is not "
-                                     "configured here (Settings → Portals).")
-        return identity, browser, portal
-
-    @app.get("/api/v1/portals/{system}/access-form")
-    async def access_form(request: Request, system: str) -> dict[str, Any]:
-        """The answers this person gives on every access request, kept on this PC."""
-        _, browser, portal = request_portal(request, system)
-        return access_requests.form(browser.root, portal)
-
-    @app.post("/api/v1/portals/{system}/access-form")
-    async def save_access_form(request: Request, system: str, body: AccessFormBody) -> dict[str, Any]:
-        identity, browser, portal = request_portal(request, system)
-        try:
-            saved = access_requests.save(browser.root, portal, body.page, [f.model_dump() for f in body.fields])
-        except access_requests.AccessFormError as error:
-            raise HTTPException(400, str(error)) from None
-        store.audit(identity.id, "portals:access_form", system=portal.id)
-        return saved
-
-    @app.post("/api/v1/portals/{system}/access-request")
-    async def open_access_request(request: Request, system: str, body: AccessRequestBody) -> dict[str, Any]:
-        """Opens the request page in a visible window of Wizard's browser on this PC and fills the saved answers and
-        this request's into the form's empty fields. The person checks them and submits; Wizard never submits."""
-        identity, browser, portal = request_portal(request, system)
-        saved = access_requests.form(browser.root, portal)
-        queued: str | None = None
-        item = None
-        try:
-            if body.queued:
-                item = (access_requests.next_waiting(browser.root, portal.id) if body.queued == "next"
-                        else next((i for i in saved["queue"] if i["id"] == body.queued), None))
-                if item is None and (body.queued == "next" or not body.address):
-                    raise HTTPException(404, "Every prepared request has been opened." if body.queued == "next"
-                                        else "That prepared request is no longer in the list.")
-            if item is not None:
-                address = access_requests.check_address(portal, str(item["address"]))
-                extra, tables, queued = item.get("answers") or [], item.get("tables") or [], str(item["id"])
-                route = {"open_steps": access_requests.clean_steps(item.get("open_steps")),
-                         "form_button": access_requests.clean_button(item.get("form_button"))}
-            else:
-                address = access_requests.check_address(portal, body.address or saved["page"] or saved["default_page"])
-                extra = access_requests.clean_fields([a.model_dump() for a in body.answers if a.value.strip()])
-                tables = [" ".join(t.split())[:200] for t in body.tables if t.strip()]
-                route = {"open_steps": access_requests.clean_steps(body.open_steps),
-                         "form_button": access_requests.clean_button(body.form_button)}
-                # A card Gemini put under an answer is the same request as its place in the prepared list.
-                same = access_requests.request_id(portal.id, address, tables, extra, route)
-                queued = same if any(i["id"] == same for i in saved["queue"]) else None
-        except access_requests.AccessFormError as error:
-            raise HTTPException(400, str(error)) from None
-        answers = access_requests.answers(saved["fields"], extra, tables)
-        try:
-            status = await asyncio.to_thread(browser.open_access_request, portal, address, answers, queued,
-                                             {"tables": tables, **route})
-        except PortalError as error:
-            raise HTTPException(409, error.message) from None
-        if queued:
-            access_requests.mark_opened(browser.root, portal.id, queued)
-            status = await asyncio.to_thread(browser.status_now)
-        store.audit(identity.id, "portals:access_request", system=portal.id,
-                    detail={"tables": tables, **({"queued": queued} if queued else {})})
-        return status
-
-    @app.post("/api/v1/portals/{system}/access-sending")
-    async def access_sending(request: Request, system: str, body: AccessSendingBody) -> dict[str, Any]:
-        """Turn sending on (the person says the request they submitted themselves worked) or off. Only the person, here."""
-        identity, browser, portal = request_portal(request, system)
-        try:
-            state = access_requests.set_sending(browser.root, portal.id, body.enabled)
-        except access_requests.AccessFormError as error:
-            raise HTTPException(400, str(error)) from None
-        proof = state["proof"] or {}
-        store.audit(identity.id, "portals:access_sending", system=portal.id,
-                    detail={"enabled": body.enabled, **({"button": proof.get("button"), "method": proof.get("method"),
-                                                         "path": proof.get("path")} if body.enabled else {})})
-        return access_requests.form(browser.root, portal)
-
-    @app.post("/api/v1/portals/{system}/access-send")
-    async def send_access_requests(request: Request, system: str, body: AccessSendBody) -> dict[str, Any]:
-        """The person's permission: Wizard sends these prepared requests in its visible window, the way their proven one
-        went. Gemini cannot call this; only the person's click in Wizard does."""
-        identity, browser, portal = request_portal(request, system)
-        if not access_requests.sending(browser.root, portal.id)["enabled"]:
-            raise HTTPException(409, "Sending is off. Submit one request yourself first, then turn sending on in "
-                                     "Settings → Portals.")
-        items = access_requests.to_send(browser.root, portal.id, None if body.waiting else body.ids)
-        if not items:
-            raise HTTPException(404, "Nothing to send: these requests are sent or no longer prepared.")
-        try:
-            status = await asyncio.to_thread(browser.send_requests, portal, [i["id"] for i in items])
-        except PortalError as error:
-            raise HTTPException(409, error.message) from None
-        store.audit(identity.id, "portals:access_send", system=portal.id,
-                    detail={"approved": len(items), "tables": [t for i in items for t in i.get("tables") or []][:100]})
-        return status
-
-    @app.post("/api/v1/portals/{system}/access-send/stop")
-    async def stop_sending_access_requests(request: Request, system: str) -> dict[str, Any]:
-        identity, browser, portal = request_portal(request, system)
-        status = await asyncio.to_thread(browser.stop_sending)
-        store.audit(identity.id, "portals:access_send", system=portal.id, outcome="stopped")
-        return status
-
-    @app.post("/api/v1/portals/{system}/access-queue/remove")
-    async def remove_queued_requests(request: Request, system: str, body: AccessQueueRemoveBody) -> dict[str, Any]:
-        """Take prepared requests off this person's list (the ones named, and every opened one when asked)."""
-        identity, browser, portal = request_portal(request, system)
-        access_requests.remove(browser.root, portal.id, body.ids, opened=body.opened)
-        store.audit(identity.id, "portals:access_queue", system=portal.id,
-                    detail={"removed": body.ids[:50], "opened": body.opened})
-        return access_requests.form(browser.root, portal)
-
     # Settings pane, model picker and updates (a person's own install only) ----------------------------------------------
     def settings_owner(request: Request) -> Identity:
         identity = me(request)
@@ -1860,6 +1704,24 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         changed = result["changed"]
         store.audit(identity.id, "settings:update", detail={"keys": changed})
         return {**settings_view(identity), "changed": changed, "apply": schedule_restart() if changed else "none"}
+
+    @app.post("/api/v1/settings/import")
+    async def import_settings(request: Request, body: SettingsImportBody) -> dict[str, Any]:
+        """Quick setup's settings file: the person chose it on this PC, the page sends its text. Stored as the tray's
+        Import a settings file… stores it (secrets through DPAPI), then Wizard restarts to apply it. The person deletes
+        the file they chose; Wizard never sees where it is."""
+        identity = settings_owner(request)
+        try:
+            provision = await asyncio.to_thread(provisioning.import_text, body.text, settings.data_dir)
+        except provisioning.ProvisionError as error:
+            store.audit(identity.id, "settings:import", outcome="refused")
+            raise HTTPException(400, f"Wizard cannot import this file: {error}.") from None
+        log.info("settings file imported from Quick setup %r: %d setting(s), %d secret(s)", provision.name,
+                 len(provision.settings), len(provision.secrets))
+        store.audit(identity.id, "settings:import", detail={"name": provision.name, "settings": sorted(provision.settings),
+                                                            "secrets": sorted(provision.secrets)})
+        return {"name": provision.name, "settings": len(provision.settings), "secrets": len(provision.secrets),
+                "apply": schedule_restart()}
 
     @app.post("/api/v1/settings/test")
     async def test_settings(request: Request, body: SettingsTestBody) -> dict[str, Any]:

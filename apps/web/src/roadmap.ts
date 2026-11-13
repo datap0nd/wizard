@@ -31,7 +31,7 @@ export const CAPABILITIES: Capability[] = [
   {icon: 'knowledge', title: 'Knows the business', body: 'A company knowledge base of metrics, datasets and platforms, each note marked draft, expert-checked or signed.'},
   {icon: 'files', title: 'Works with your files', body: 'Reads Excel, PowerPoint, Word, email and CSV, totals every row of a sheet, and edits a copy of a workbook for you.'},
   {icon: 'brief', title: 'Recurring briefs', body: 'Turns an analysis into a newsletter email that Metronome sends on a schedule.'},
-  {icon: 'access', title: 'Access requests', body: 'Prepares a Big Data Portal access request and fills in your usual answers; you check it and submit it.'},
+  {icon: 'access', title: 'Finds the tables you need', body: 'Searches the Big Data Portal\'s catalog and names the tables an analysis needs; you request access to them yourself.'},
   {icon: 'evidence', title: 'Shows its work', body: 'Every step Wizard took, the sources it cites, and Check my data to recompute an answer.'},
   {icon: 'desktop', title: 'One click away', body: 'The Ask Wizard tab at the top of the screen, Ctrl+Alt+W from any app, files dropped on it; it updates itself.'},
 ];

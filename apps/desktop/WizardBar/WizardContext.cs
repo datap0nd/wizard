@@ -90,6 +90,7 @@ namespace WizardBar
                 showButton,
                 startWithWindows,
                 new ToolStripSeparator(),
+                new ToolStripMenuItem("Quick setup…", null, (s, e) => { ShowPanel(); panel.OpenSettings(setup: true); }),
                 new ToolStripMenuItem("Settings…", null, (s, e) => { ShowPanel(); panel.OpenSettings(); }),
                 new ToolStripMenuItem("Import a settings file…", null, (s, e) => ImportProvision()),
                 new ToolStripMenuItem("Export settings…", null, async (s, e) => await ExportProvision()),

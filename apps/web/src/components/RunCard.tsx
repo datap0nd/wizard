@@ -12,7 +12,6 @@ import {CheckBadge, DataModeBadge, RuntimeBadge} from './Badges';
 import {Diagnostics} from './Diagnostics';
 import {MadeFiles} from './Attachments';
 import {RecurringCard} from './RecurringCard';
-import {AccessRequestCard} from './AccessRequestCard';
 import {PersonQuestions, SteerNotes, SystemRequests} from './Steering';
 import {SystemsContext, SystemsStage} from './SystemsStage';
 import {onlyNames} from '@/systems';
@@ -151,7 +150,6 @@ export const RunCard = memo(function RunCard({run, onEvidence, onCheck, onCancel
         <MadeFiles files={run.attachments} />
         {run.schedules.map(schedule => <RecurringCard key={schedule.id} schedule={schedule}
           onCreate={s => onSchedule?.(run, s, 'create')} onDismiss={s => onSchedule?.(run, s, 'dismiss')} />)}
-        {run.accessRequests.map(request => <AccessRequestCard key={request.id} request={request} />)}
         <SystemRequests run={run} />
         <PersonQuestions run={run} latest={latest} />
         <CheckPanel run={run} />

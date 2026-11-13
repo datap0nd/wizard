@@ -23,9 +23,8 @@ import pytest
 from tests.helpers import TEST_TMP, MemoryRecorder
 
 from wizard_agent.secret_box import SecretBox
-from wizard_connectors import access_requests
 from wizard_connectors.entitlements import Identity, SystemRights
-from wizard_connectors.portal_browser import FILL_EVERY_S, OPEN_GUARD_S, PortalBrowser, PortalBrowsers
+from wizard_connectors.portal_browser import PortalBrowser, PortalBrowsers
 from wizard_connectors.portals import settings_from
 from wizard_connectors.tools import ToolContext, build_registry, build_services
 
@@ -88,110 +87,6 @@ CATALOG_PAGE = """<!doctype html><html><head><title>Information catalog</title><
 <tr><td>sales_daily</td><td>Daily sell-out by market</td><td>No</td></tr></table>
 <button id="ask" onclick="fetch('/api/v1/access-requests', {method: 'POST', body: '{}'})">Request access</button>
 </body></html>"""
-
-# A catalog table page whose request form appears when the person presses Request access.
-TABLE_PAGE = """<!doctype html><html><head><title>sales_daily</title></head><body>
-<label>Search <input id="search" type="search"></label><h1>sales_daily</h1><p>Daily sell-out by market</p>
-<button id="ask" onclick="document.getElementById('dialog').style.display = 'block'">Request access</button>
-<div id="dialog" class="modal" style="display:none"><form id="request" method="post" action="/api/requestAccess">
-<label for="purpose">Purpose *</label><input id="purpose" name="purpose">
-<div class="form-item"><label>Manager</label><input name="mgr"></div>
-<div class="form-item"><label>Department</label><input name="dept" value="Finance"></div>
-<label>Duration <select name="duration"><option value="">Choose</option><option value="3m">3 months</option>
-<option value="6m">6 months</option></select></label>
-<table><tr><td>Table name</td><td><input name="tbl"></td></tr></table>
-<textarea aria-label="Justification" name="why"></textarea>
-<label>Password <input type="password" name="pw"></label>
-<button id="send" type="submit">Send request</button></form></div></body></html>"""
-
-# A catalog table page like the Big Data Portal's (owner, 1 November 2026): a free-text purpose, then the DPA / DSA box
-# with the requester and email already filled, a Purpose drop-down whose list opens outside the form (as UI libraries
-# draw it), a subsidiary combobox that lists matches only as one types (and matches the code, not the full name), the
-# subsidiary's address, and a Submit button. The option texts and companies are made up.
-DIS_TABLE = """<!doctype html><html><head><title>{name}</title><style>
-.el-select-dropdown { position: absolute; background: #fff; border: 1px solid #ccc; display: none; z-index: 10 }
-.el-select-dropdown li, #sub-list li { padding: 4px 8px; list-style: none; cursor: pointer }
-#sub-list { position: absolute; background: #fff; border: 1px solid #ccc; display: none; margin: 0; padding: 0; z-index: 10 }
-.el-select, .combo { width: 360px; border: 1px solid #999; padding: 2px }
-</style></head><body>
-<nav><ul><li>Home</li><li>Catalog</li></ul></nav><h1>{name}</h1>
-<button id="ask" type="button" onclick="document.getElementById('dialog').style.display = 'block'">Request access</button>
-<div id="dialog" class="modal" style="display:none"><form id="request" method="post" action="/api/requestAccess">
-<div class="row"><p class="tit">Purpose</p><textarea name="purpose"></textarea></div>
-<div class="dpa"><div class="tit">DPA / DSA <em>*</em></div>
-<div class="row"><span class="tit">Requester</span><input name="requester" value="Test Person" readonly></div>
-<div class="row"><span class="tit">Email</span><input name="email" value="person@example.com" readonly></div>
-<div class="row"><p class="tit">Purpose</p><div class="el-select" id="purpose"><div class="el-input">
-<input class="el-input__inner" name="dpa_purpose" readonly placeholder="Select Purpose"></div></div></div>
-<div class="row"><p class="tit">Subsidiary Name(Full Legal Name)</p><div class="combo">
-<input id="sub" name="subsidiary" role="combobox" aria-controls="sub-list" aria-expanded="false" autocomplete="off"><span>&#128269;</span></div></div>
-<div class="row"><p class="tit">Subsidiary Address(Full Legal Address)</p><input name="address"></div>
-</div><button id="send" type="submit" style="background:#5b5bd6;color:#fff">Submit</button></form></div>
-<div class="el-select-dropdown el-popper" id="purpose-pop"><ul>
-<li class="el-select-dropdown__item"><span>1. Joint work with headquarters (Service improvement)</span></li>
-<li class="el-select-dropdown__item"><span>2. Joint work with headquarters (New services)</span></li>
-<li class="el-select-dropdown__item"><span>3. Joint work with headquarters (Data analysis)</span></li>
-<li class="el-select-dropdown__item"><span>4. Use by the subsidiary (Marketing analysis)</span></li>
-<li class="el-select-dropdown__item"><span>5. Use by the subsidiary (Local devices and services)</span></li></ul></div>
-<ul id="sub-list" role="listbox"></ul>
-<script>
-const pop = document.getElementById('purpose-pop'), box = document.getElementById('purpose'), field = box.querySelector('input');
-box.addEventListener('click', () => {
-  const r = box.getBoundingClientRect();
-  pop.style.left = r.left + 'px'; pop.style.top = (r.bottom + window.scrollY) + 'px';
-  pop.style.display = pop.style.display === 'block' ? 'none' : 'block';
-});
-pop.addEventListener('click', e => { const li = e.target.closest('li'); if (li) { field.value = li.innerText.trim(); pop.style.display = 'none'; } });
-const SUBS = ['(ABC) Example Electronics Co., Ltd.', '(ABD) Example Display Ltd.', '(ACE) Another Company Ltd.'];
-const sub = document.getElementById('sub'), list = document.getElementById('sub-list');
-sub.addEventListener('input', () => {
-  const q = sub.value.trim().toLowerCase();
-  const found = q.length < 2 ? [] : SUBS.filter(s => s.slice(1, 4).toLowerCase().startsWith(q) || s.slice(6).toLowerCase().includes(q));
-  list.replaceChildren(...found.map(s => { const li = document.createElement('li'); li.textContent = s; li.setAttribute('role', 'option'); return li; }));
-  const r = sub.getBoundingClientRect();
-  list.style.left = r.left + 'px'; list.style.top = (r.bottom + window.scrollY) + 'px';
-  list.style.display = found.length ? 'block' : 'none';
-  sub.setAttribute('aria-expanded', String(found.length > 0));
-});
-list.addEventListener('click', e => { const li = e.target.closest('[role=option]'); if (li) { sub.value = li.textContent; list.style.display = 'none'; } });
-</script></body></html>"""
-
-# A catalog that shows every table at one address, as a single-page application may (the address does not change when
-# a table opens): search, Enter, a result, the table's details with Request access, then the same form as above.
-SPA_CATALOG = DIS_TABLE.replace("{name}", "Data catalog").replace(
-    """<h1>Data catalog</h1>
-<button id="ask" type="button" onclick="document.getElementById('dialog').style.display = 'block'">Request access</button>""",
-    """<h1>Data catalog</h1><input id="q" type="search" placeholder="Search tables"><ul id="results"></ul>
-<section id="detail" style="display:none"><h2 id="dname"></h2><p>Rows by day and market</p>
-<button id="ask" type="button" onclick="document.getElementById('dialog').style.display = 'block'">Request access</button></section>
-<script>
-document.getElementById('q').addEventListener('keydown', e => {
-  if (e.key !== 'Enter') return;
-  const q = e.target.value.trim();
-  document.getElementById('results').replaceChildren(...['t3', 't30'].filter(n => n.startsWith(q)).map(n => {
-    const a = document.createElement('a'); a.href = '#'; a.textContent = n;
-    a.addEventListener('click', ev => { ev.preventDefault(); document.getElementById('detail').style.display = 'block';
-      document.getElementById('dname').textContent = n; });
-    const li = document.createElement('li'); li.append(a); return li;
-  }));
-});
-</script>""")
-
-# The same form whose Submit asks "Do you want to submit the request?", sends the request as JSON to the catalog's API
-# (the id in its path), then clears a draft, and shows the catalog's answer.
-SEND_TABLE = DIS_TABLE.replace(
-    '<button id="send" type="submit" style="background:#5b5bd6;color:#fff">Submit</button>',
-    '<button id="send" type="button" style="background:#5b5bd6;color:#fff" onclick="sendRequest()">Submit</button>'
-).replace("</script></body>", """function sendRequest() {
-  if (!confirm('Do you want to submit the request?')) return;
-  const data = Object.fromEntries(new FormData(document.getElementById('request')));
-  fetch('/dis-api/requests/{id}', {method: 'POST', headers: {'content-type': 'application/json'},
-                                   body: JSON.stringify({table: document.title, ...data})})
-    .then(r => r.json()).then(j => { const p = document.createElement('p'); p.id = 'done';
-      p.textContent = j.success ? 'Request submitted' : 'Request failed'; document.body.append(p); });
-  fetch('/dis-api/deleteDraft/{id}', {method: 'POST', body: '{}'});
-}
-</script></body>""")
 
 MENU = {"ROOT": [{"id": "S", "name": "01.Sales"}, {"id": "F", "name": "02.Finance"}],
         "S": {"id": "S", "name": "01.Sales", "children": [{"id": "G", "name": "Sell-out", "child": [{"id": "R1", "name": "Weekly Sell-out"}]}]},
@@ -295,11 +190,7 @@ class Portal(SimpleHTTPRequestHandler):
                  "/help": "<title>Help</title><p>Trouble with single sign-on? Call the desk.</p><input type=text>",
                  "/report": "<title>Report</title><table><tr><th>A</th></tr><tr><td>1</td></tr></table>",
                  "/superset": "<title>Superset</title><div id=app data-bootstrap='{}'>SQL Lab</div>",
-                 "/catalog": CATALOG_PAGE, "/catalog/table/sales_daily": TABLE_PAGE,
-                 "/catalog/dis/t1": DIS_TABLE.replace("{name}", "t1"), "/catalog/dis/t2": DIS_TABLE.replace("{name}", "t2"),
-                 "/catalog/spa": SPA_CATALOG, "/catalog/oneclick": CATALOG_PAGE,
-                 **{f"/catalog/send/{name}": SEND_TABLE.replace("{name}", name).replace("{id}", str(n))
-                    for n, name in ((5, "t5"), (6, "t6"), (7, "tfail"), (8, "t8"))}}
+                 "/catalog": CATALOG_PAGE}
         self.reply(pages.get(self.path.split("?")[0], "<title>Not found</title>"), status=200 if self.path.split("?")[0] in pages else 404)
 
     def do_POST(self) -> None:  # noqa: N802
@@ -317,11 +208,6 @@ class Portal(SimpleHTTPRequestHandler):
             week = body.split("week:string=")[1].split("\x1f")[0]
             self.reply(f"SSV:utf-8\x1eErrorCode:int=0\x1fErrorMsg:string=OK\x1eDataset:ds_out\x1e_RowType_\x1fMARKET:STRING(8)"
                        f"\x1fWEEK:STRING(8)\x1fQTY:INT(4)\x1eN\x1fAE\x1f{week}\x1f10\x1eN\x1fSA\x1f{week}\x1f\x03\x1e\x1e", "text/plain")
-        elif self.path.startswith("/dis-api/requests/"):  # the catalog's answer: success, unless the table is "tfail"
-            failed = '"table": "tfail"' in body or '"table":"tfail"' in body
-            self.hits.append(f"BODY {body}")
-            self.reply(json.dumps({"success": not failed, "code": "E01" if failed else "0000", "id": self.path[-1]}),
-                       "application/json")
         else:
             self.reply("ok", "text/plain")
 
@@ -603,6 +489,7 @@ def test_the_big_data_portal_reads_its_information_catalog_and_superset_but_neve
         {"part": "superset", "name": "Superset", "address": portal_url + "superset"},
         {"part": "catalog", "name": "information catalog", "address": catalog}]
     assert "information catalog" in guide.data["guide"] and "W.superset.sql" in guide.data["guide"]
+    assert "access_request_form" not in guide.data, "Wizard requests no access: the person does (owner, 13 Nov 2026)"
     found = call(setup, "portal_run", {"system": "bdp", "title": "Tables about sell-out", "steps": [
         {"action": "goto", "url": catalog}, {"action": "read_table", "selector": "#found"},
         {"action": "goto", "url": "/report"}]}, systems=("bdp",))
@@ -620,63 +507,6 @@ def test_the_big_data_portal_reads_its_information_catalog_and_superset_but_neve
     checked = setup[0].portals.for_user("owner").check()["portals"]
     assert [(c["id"], c["name"], c["signed_in"]) for c in checked if c["id"].startswith("bdp")] == [
         ("bdp-superset", "Big Data Portal: Superset", True), ("bdp-catalog", "Big Data Portal: information catalog", True)]
-
-
-def wait_until(condition: Any, seconds: float = 10) -> None:
-    deadline = time.monotonic() + seconds
-    while not condition() and time.monotonic() < deadline:
-        time.sleep(0.25)
-
-
-def test_the_access_request_form_is_filled_from_saved_answers_and_only_the_person_submits_it(setup, portal_url):
-    services = setup[0]
-    browser = services.portals.for_user("owner")
-    browser.show_windows = False  # the person's window, headless on a test machine
-    portal = services.portals.settings.portal("bdp")
-    access_requests.save(browser.root, portal, "", [
-        {"label": "Purpose", "value": "Weekly sales reporting"}, {"label": "Manager", "value": "Head of Sales"},
-        {"label": "Department", "value": "Sales"}, {"label": "Duration", "value": "6 months"},
-        {"label": "Password", "value": "never-typed"}])
-    proposal = call(setup, "portal_request_access", {"system": "bdp", "address": catalog_address(portal_url) + "/table/sales_daily",
-                                                     "tables": ["sales_daily"],
-                                                     "answers": [{"label": "Justification", "value": "GCC sell-out review"}]},
-                    systems=("bdp",))
-    assert proposal.ok, proposal.error_message
-    request = proposal.data["access_request"]
-    Portal.hits.clear()
-    saved = access_requests.form(browser.root, portal)["fields"]
-    status = browser.open_access_request(portal, request["address"],
-                                         access_requests.answers(saved, request["answers"], request["tables"]))
-    assert status["window"] == "access_request" and status["access_request"]["filled"] == [], "the form is not shown yet"
-    busy = call(setup, "portal_run", {"system": "bdp", "steps": [{"action": "look"}]}, systems=("bdp",))
-    assert not busy.ok and busy.error_code == "signing_in" and "access request" in (busy.error_message or "")
-
-    def page() -> Any:
-        return browser._context.pages[0]
-    browser.run(lambda: page().click("#ask"))  # the person presses Request access; Wizard fills the form as it appears
-    wait_until(lambda: len(browser.status()["access_request"]["filled"]) >= 5)
-    status = browser.status()["access_request"]
-    assert sorted(status["filled"]) == ["Duration", "Justification", "Manager", "Purpose", "Table"]
-    assert status["missing"] == ["Password"], "a password field is never filled"
-    values = browser.run(lambda: page().evaluate(
-        "() => Object.fromEntries([...document.querySelectorAll('#request [name], #search')].map(e => [e.name || e.id, e.value]))"))
-    assert values == {"purpose": "Weekly sales reporting", "mgr": "Head of Sales", "dept": "Finance", "duration": "6m",
-                      "tbl": "sales_daily", "why": "GCC sell-out review", "pw": "", "search": ""}, "only empty fields, only the form"
-    assert "submit the request yourself" in browser.run(lambda: page().inner_text("#wizard-access-banner"))
-    browser.run(lambda: page().fill("#purpose", ""))  # the person clears a field Wizard filled: it stays as they left it
-    time.sleep(2 * FILL_EVERY_S + 0.5)
-    assert browser.run(lambda: page().input_value("#purpose")) == ""
-    assert not any("requestAccess" in hit for hit in Portal.hits), "Wizard never submits the request"
-    browser.run(lambda: page().click("#send"))  # the person submits: their own window does not refuse it
-    wait_until(lambda: any(hit.startswith("POST /api/requestAccess") for hit in Portal.hits))
-    assert any(hit.startswith("POST /api/requestAccess") for hit in Portal.hits)
-    assert browser.finish_sign_in()["window"] is None
-    seen = access_requests.form(browser.root, portal)["seen"]
-    assert {"Purpose", "Manager", "Department", "Duration", "Table name", "Justification"} <= set(seen)
-    assert "Password" not in seen and "Search" not in seen
-    after = call(setup, "portal_run", {"system": "bdp", "steps": [{"action": "goto", "url": catalog_address(portal_url)}]},
-                 systems=("bdp",))
-    assert after.ok, "Gemini reads again once the window is closed"
 
 
 class SessionPortal(BaseHTTPRequestHandler):
@@ -752,223 +582,6 @@ def test_the_sign_in_outlives_its_window_and_a_restart():
         again.shutdown()
         server.shutdown()
         shutil.rmtree(root.parent, ignore_errors=True)
-
-
-def test_the_portals_own_drop_downs_are_chosen_and_the_window_walks_through_the_prepared_requests(setup, portal_url):
-    services = setup[0]
-    browser = services.portals.for_user("owner")
-    browser.show_windows = False  # the person's window, headless on a test machine
-    audits: list[tuple[str, dict[str, Any]]] = []
-    browser.audit = lambda action, **detail: audits.append((action, detail))
-    portal = services.portals.settings.portal("bdp")
-    access_requests.remove(browser.root, "bdp", [i["id"] for i in access_requests.queue(browser.root, "bdp")])
-    access_requests.save(browser.root, portal, "", [
-        {"label": "Purpose", "value": "Will be used for analytics in the MENA region", "kind": "text"},
-        {"label": "Purpose", "section": "DPA / DSA", "value": "5", "kind": "choice"},
-        {"label": "Subsidiary Name (Full Legal Name)", "section": "DPA / DSA", "value": "(ABC) Example Electronics Co., Ltd.",
-         "kind": "choice"},
-        {"label": "Subsidiary Address", "section": "DPA / DSA", "value": "1 Example Street, Example City", "kind": "text"}])
-    ids = []
-    for table in ("t1", "t2"):  # Gemini prepares two requests (a task's run): nothing opens
-        outcome = call(setup, "portal_request_access", {"system": "bdp", "address": catalog_address(portal_url) + f"/dis/{table}",
-                                                        "tables": [table]}, systems=("bdp",))
-        assert outcome.ok, outcome.error_message
-        ids.append(outcome.data["access_request"]["id"])
-    assert browser.status()["window"] is None
-    Portal.hits.clear()
-    first = access_requests.next_waiting(browser.root, "bdp")
-    assert first["id"] == ids[0]
-    saved = access_requests.form(browser.root, portal)["fields"]
-    access_requests.mark_opened(browser.root, "bdp", first["id"])  # as the API does: Open the next request
-    browser.open_access_request(portal, first["address"], access_requests.answers(saved, first["answers"], first["tables"]),
-                                queued=first["id"])
-
-    def page() -> Any:
-        return browser._context.pages[0]
-
-    def banner() -> str:  # read without waiting: the browser's own thread draws the note between jobs
-        return browser.run(lambda: page().evaluate("() => document.getElementById('wizard-access-banner')?.innerText || ''"))
-
-    def values() -> dict[str, str]:
-        return browser.run(lambda: page().evaluate(
-            "() => Object.fromEntries([...document.querySelectorAll('#request [name]')].map(e => [e.name, e.value]))"))
-
-    assert browser.status()["access_request"]["queued"] == {"id": ids[0], "position": 1, "total": 2, "waiting": 1}
-    assert "Prepared request 1 of 2: t1" in banner()
-    browser.run(lambda: page().click("#ask"))  # the person presses Request access; the form appears
-    wait_until(lambda: len(browser.status()["access_request"]["filled"]) >= 4, seconds=20)
-    status = browser.status()["access_request"]
-    assert sorted(status["filled"]) == ["DPA / DSA › Purpose", "DPA / DSA › Subsidiary Address",
-                                        "DPA / DSA › Subsidiary Name (Full Legal Name)", "Purpose"]
-    assert status["missing"] == ["Table"], "the table is the page's own: no field asks for it"
-    assert values() == {"purpose": "Will be used for analytics in the MENA region", "requester": "Test Person",
-                        "email": "person@example.com",
-                        "dpa_purpose": "5. Use by the subsidiary (Local devices and services)",
-                        "subsidiary": "(ABC) Example Electronics Co., Ltd.", "address": "1 Example Street, Example City"}, \
-        "the free text and the drop-down of the same label each got their own answer; the form's own values stayed"
-    assert browser.run(lambda: page().evaluate(
-        "() => [...document.querySelectorAll('#purpose-pop, #sub-list')].every(e => getComputedStyle(e).display === 'none')")), \
-        "the lists Wizard opened are closed"
-    wait_until(lambda: "filled 4 fields" in banner())
-    assert not any("requestAccess" in hit for hit in Portal.hits), "Wizard never submits the request"
-    browser.run(lambda: page().click("#send"))  # the person submits
-    wait_until(lambda: any(hit.startswith("POST /api/requestAccess") for hit in Portal.hits))
-    posted = next(hit for hit in Portal.hits if hit.startswith("POST /api/requestAccess"))
-    assert "purpose=Will+be+used+for+analytics" in posted, "the person sent what Wizard filled"
-
-    # The person's subsidiary changes before the next one, to an option the list does not have: Wizard leaves it.
-    access_requests.save(browser.root, portal, "", [{**f, "value": "(XYZ) Nowhere Ltd."} if "Subsidiary Name" in f["label"] else f
-                                                    for f in access_requests.form(browser.root, portal)["fields"]])
-    browser.run(lambda: page().goto(catalog_address(portal_url) + "/dis/t1"))  # the submitted form's page, reloaded
-    wait_until(lambda: "Next request" in banner())
-    browser.run(lambda: page().get_by_role("button", name="Next request (1 to go)").click())  # the person, in Wizard's note
-    wait_until(lambda: (browser.status()["access_request"].get("queued") or {}).get("position") == 2)
-    assert browser.run(lambda: page().url).endswith("/dis/t2")
-    assert ("portals:access_request", {"system": "bdp", "detail": {"tables": ["t2"], "queued": ids[1], "by": "next"}}) in audits
-    assert all(i["opened"] for i in access_requests.queue(browser.root, "bdp"))
-    wait_until(lambda: "last prepared request" in banner())
-    browser.run(lambda: page().click("#ask"))
-    wait_until(lambda: "DPA / DSA › Subsidiary Name (Full Legal Name)" in browser.status()["access_request"]["missing"],
-               seconds=20)
-    wait_until(lambda: len(browser.status()["access_request"]["filled"]) >= 3)
-    after = values()
-    assert after["subsidiary"] == "" and after["dpa_purpose"].startswith("5."), "no guess: what Wizard typed is cleared"
-    assert browser.run(lambda: page().evaluate("() => getComputedStyle(document.getElementById('sub-list')).display")) == "none"
-    assert browser.finish_sign_in()["window"] is None
-
-
-def test_a_table_without_its_own_address_is_reached_and_its_request_form_opened_but_never_filed(setup, portal_url):
-    services = setup[0]
-    browser = services.portals.for_user("owner")
-    browser.show_windows = False  # the person's window, headless on a test machine
-    portal = services.portals.settings.portal("bdp")
-    access_requests.remove(browser.root, "bdp", [i["id"] for i in access_requests.queue(browser.root, "bdp")])
-    access_requests.save(browser.root, portal, "", [
-        {"label": "Purpose", "value": "Will be used for analytics in the MENA region", "kind": "text"},
-        {"label": "Purpose", "section": "DPA / DSA", "value": "5", "kind": "choice"},
-        {"label": "Subsidiary Name (Full Legal Name)", "section": "DPA / DSA", "value": "ABC", "kind": "choice"},
-        {"label": "Subsidiary Address", "section": "DPA / DSA", "value": "1 Example Street", "kind": "text"}])
-    spa = catalog_address(portal_url) + "/spa"
-    steps = [{"action": "fill", "selector": "#q", "value": "t3"}, {"action": "press", "value": "Enter"},
-             {"action": "click", "role": "link", "name": "t3"}]
-    proved = call(setup, "portal_run", {"system": "bdp", "steps": [{"action": "goto", "url": spa}, *steps,
-                                                                   {"action": "wait", "selector": "#ask"}]}, systems=("bdp",))
-    assert proved.ok and not proved.data.get("stopped"), "Gemini proves the steps in the background first"
-    proposal = call(setup, "portal_request_access", {"system": "bdp", "address": spa, "tables": ["t3"], "open_steps": steps,
-                                                     "form_button": "Request access"}, systems=("bdp",))
-    assert proposal.ok, proposal.error_message
-    item = access_requests.queue(browser.root, "bdp")[0]
-    Portal.hits.clear()
-    saved = access_requests.form(browser.root, portal)["fields"]
-    browser.open_access_request(portal, item["address"], access_requests.answers(saved, [], item["tables"]), queued=item["id"],
-                                route=item)
-
-    def page() -> Any:
-        return browser._context.pages[0]
-
-    wait_until(lambda: len(browser.status()["access_request"]["filled"]) >= 4, seconds=20)
-    status = browser.status()["access_request"]
-    assert status["note"] == "Wizard pressed Request access to open the request form."
-    assert sorted(status["filled"]) == ["DPA / DSA › Purpose", "DPA / DSA › Subsidiary Address",
-                                        "DPA / DSA › Subsidiary Name (Full Legal Name)", "Purpose"]
-    values = browser.run(lambda: page().evaluate(
-        "() => Object.fromEntries([...document.querySelectorAll('#request [name]')].map(e => [e.name, e.value]))"))
-    assert values["subsidiary"] == "(ABC) Example Electronics Co., Ltd." and values["dpa_purpose"].startswith("5.")
-    assert browser.run(lambda: page().evaluate("() => document.getElementById('dname').textContent")) == "t3"
-    assert not any(hit.startswith("POST") for hit in Portal.hits), "reaching the table and opening its form sent nothing"
-    assert access_requests.pages_seen(browser.root, "bdp")[0]["tables"] == ["t3"], "where the form appeared, for Gemini"
-    assert browser.finish_sign_in()["window"] is None
-
-    # A request prepared earlier with only the catalog's start page says so instead of pressing anything there.
-    browser.open_access_request(portal, catalog_address(portal_url), [], route={"tables": ["old_table"]})
-    assert (browser.status()["access_request"].get("note") or "").startswith("This request opens only the catalog's start page")
-    assert browser.finish_sign_in()["window"] is None
-
-    # A Request access that files the request itself in one click: what it sends is stopped, and the person is told.
-    oneclick = call(setup, "portal_request_access", {"system": "bdp", "address": catalog_address(portal_url) + "/oneclick",
-                                                     "tables": ["sales_daily"]}, systems=("bdp",))
-    assert oneclick.ok, oneclick.error_message
-    browser.open_access_request(portal, oneclick.data["access_request"]["address"], [], route={"tables": ["sales_daily"]})
-    note = browser.status()["access_request"].get("note") or ""
-    assert note.startswith("Wizard pressed Request access and stopped what the page sent then (POST /api/v1/access-requests)")
-    assert not any("access-requests" in hit for hit in Portal.hits), "the request was never filed by Wizard's press"
-    time.sleep(OPEN_GUARD_S + 2 * FILL_EVERY_S)  # later the person presses it themselves: it goes through
-    browser.run(lambda: page().click("#ask"))
-    wait_until(lambda: any(hit.startswith("POST /api/v1/access-requests") for hit in Portal.hits))
-    assert any(hit.startswith("POST /api/v1/access-requests") for hit in Portal.hits)
-    assert browser.finish_sign_in()["window"] is None
-
-
-def test_the_person_submits_one_request_then_wizard_sends_the_ones_they_approve_the_same_way(setup, portal_url):
-    services = setup[0]
-    browser = services.portals.for_user("owner")
-    browser.show_windows = False  # the person's window, headless on a test machine
-    audits: list[tuple[str, dict[str, Any]]] = []
-    browser.audit = lambda action, **detail: audits.append((action, detail))
-    portal = services.portals.settings.portal("bdp")
-    root = browser.root
-    access_requests.remove(root, "bdp", [i["id"] for i in access_requests.queue(root, "bdp")])
-    access_requests.set_sending(root, "bdp", False)
-    access_requests.remember_submission(root, "bdp", {})  # an earlier test's Submit
-    access_requests.save(root, portal, "", [
-        {"label": "Purpose", "value": "Will be used for analytics in the MENA region", "kind": "text"},
-        {"label": "Purpose", "section": "DPA / DSA", "value": "5", "kind": "choice"},
-        {"label": "Subsidiary Name (Full Legal Name)", "section": "DPA / DSA", "value": "ABC", "kind": "choice"},
-        {"label": "Subsidiary Address", "section": "DPA / DSA", "value": "1 Example Street", "kind": "text"}])
-    ids = {}
-    for name in ("t5", "t6", "tfail", "t8"):
-        proposal = call(setup, "portal_request_access", {"system": "bdp", "address": catalog_address(portal_url) + f"/send/{name}",
-                                                         "tables": [name]}, systems=("bdp",))
-        assert proposal.ok and proposal.data["access_request"]["can_send"] is False
-        ids[name] = proposal.data["access_request"]["id"]
-
-    def page() -> Any:
-        return browser._context.pages[0]
-
-    def state(name: str) -> dict[str, Any]:
-        return next(i for i in access_requests.queue(root, "bdp") if i["id"] == ids[name])
-
-    # 1. The person's own test: Wizard opens the form and fills it; they press Submit and OK the page's question.
-    Portal.hits.clear()
-    item = state("t5")
-    access_requests.mark_opened(root, "bdp", item["id"])
-    saved = access_requests.form(root, portal)["fields"]
-    browser.open_access_request(portal, item["address"], access_requests.answers(saved, [], item["tables"]),
-                                queued=item["id"], route=item)
-    wait_until(lambda: len(browser.status()["access_request"]["filled"]) >= 4, seconds=20)
-    assert not any(hit.startswith("POST /dis-api") for hit in Portal.hits), "nothing sent before the person's Submit"
-    browser.run(lambda: page().click("#send"))
-    wait_until(lambda: (access_requests.sending(root, "bdp")["last_submission"] or {}).get("path") == "/dis-api/requests/5")
-    seen = access_requests.sending(root, "bdp")["last_submission"]
-    assert {k: seen[k] for k in ("button", "method", "match", "path", "status", "expect", "dialog", "tables")} == {
-        "button": "Submit", "method": "POST", "match": {"host": "localhost", "path": "/dis-api/requests/*"},
-        "path": "/dis-api/requests/5", "status": 200, "expect": {"success": True, "code": "0000"},
-        "dialog": "Do you want to submit the request?", "tables": ["t5"]}, "the Submit's own request, not the draft cleared after"
-    assert state("t5")["sent"]["by"] == "you" and access_requests.sending(root, "bdp")["enabled"] is False
-    wait_until(lambda: "Wizard saw this request go out" in (browser.status()["access_request"].get("note") or ""))
-    assert "Request submitted" in browser.run(lambda: page().inner_text("body")), "the page's question was answered OK"
-
-    # 2. The person says it worked; then approves the other three. Wizard sends them until one does not go through.
-    access_requests.set_sending(root, "bdp", True)
-    sends_before = sum(1 for hit in Portal.hits if hit.startswith("POST /dis-api/requests/"))
-    drafts_before = sum(1 for hit in Portal.hits if hit.startswith("POST /dis-api/deleteDraft"))
-    browser.send_requests(portal, [ids["t6"], ids["tfail"], ids["t8"]])
-    wait_until(lambda: state("tfail").get("failed") is not None, seconds=60)
-    assert state("t6")["sent"]["by"] == "wizard" and state("t6")["sent"]["status"] == 200
-    assert "success = False where your own request had True" in state("tfail")["failed"]["reason"]
-    assert not state("t8").get("sent") and not state("t8").get("opened"), "sending stopped at the first that failed"
-    posted = [hit for hit in Portal.hits if hit.startswith("POST /dis-api/requests/")]
-    assert len(posted) - sends_before == 2 and posted[-2].startswith("POST /dis-api/requests/6")
-    assert any('"table": "t6"' in hit or '"table":"t6"' in hit for hit in Portal.hits if hit.startswith("BODY"))
-    assert any("Will be used for analytics" in hit for hit in Portal.hits if hit.startswith("BODY") and "t6" in hit)
-    assert sum(1 for hit in Portal.hits if hit.startswith("POST /dis-api/deleteDraft")) == drafts_before, \
-        "while Wizard submits, only the proven request goes through: the draft change was stopped"
-    note = browser.status()["access_request"].get("note") or ""
-    assert note.startswith("Wizard stopped sending") and "1 other approved request(s) were not sent" in note
-    sent_by_wizard = [d for a, d in audits if a == "portals:access_submitted" and d.get("detail", {}).get("by") == "wizard"]
-    assert [d["detail"]["tables"] for d in sent_by_wizard] == [["t6"], ["tfail"]]
-    assert browser.finish_sign_in()["window"] is None
-    access_requests.set_sending(root, "bdp", False)
 
 
 def test_a_running_gscm_client_is_kept_and_a_report_opens_with_its_form_as_this(setup):

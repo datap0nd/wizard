@@ -10,7 +10,8 @@ export type ToHost =
 /** A file dropped on the button (or on this page, through dropToHost): WizardBar has allowed Wizard to read it where
  * it is, and the page attaches it like "From this PC". `error` says why a file cannot be attached. */
 export interface DroppedFile { path: string; name: string; error?: string }
-export type FromHost = {type: 'focus'} | {type: 'open-settings'} | {type: 'attach'; files: DroppedFile[]};
+/** open-settings: the tray menu's Settings…, or with `setup` its Quick setup… (Settings opened on Quick setup). */
+export type FromHost = {type: 'focus'} | {type: 'open-settings'; setup?: boolean} | {type: 'attach'; files: DroppedFile[]};
 
 interface WebViewBridge {
   postMessage(message: unknown): void;
@@ -56,8 +57,9 @@ export function onHost(listener: (message: FromHost) => void): () => void {
   const host = bridge();
   if (!host) return () => undefined;
   const handler = (event: MessageEvent) => {
-    const data = event.data as {type?: unknown; files?: unknown} | null;
-    if (data && (data.type === 'focus' || data.type === 'open-settings')) listener({type: data.type});
+    const data = event.data as {type?: unknown; files?: unknown; setup?: unknown} | null;
+    if (data?.type === 'focus') listener({type: 'focus'});
+    if (data?.type === 'open-settings') listener({type: 'open-settings', setup: data.setup === true});
     if (data?.type === 'attach') listener({type: 'attach', files: dropped(data.files)});
   };
   host.addEventListener('message', handler);

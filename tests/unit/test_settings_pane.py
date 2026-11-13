@@ -319,3 +319,41 @@ def test_export_writes_this_pcs_settings_as_a_provisioning_file_for_another_pc(t
     assert provisioning.load(other).values() == found.values() and not offered.exists()
     with pytest.raises(settings_pane.PaneError, match="no settings to export"):
         settings_pane.export(install(tmp_path / "empty"))
+
+
+def test_quick_setup_imports_the_settings_file_the_person_chose_and_restarts(tmp_path):
+    """Owner, 13 Nov 2026: Quick setup in Settings takes a new person "through importing a settings file". The page sends
+    the file's text; Wizard checks it, stores it as the company file (secrets encrypted) and restarts to apply it."""
+    settings = install(tmp_path)
+    settings.desktop = True
+    app = create_app(settings)
+    asked: list[str] = []
+    app.state.request_restart = lambda: asked.append("restart")
+    text = "﻿" + provisioning.render({"WIZARD_PG_HOST": "db.corp", "WIZARD_PG_USER": "ro", "WIZARD_PG_PASSWORD": PASSWORD},
+                                          "ACME Wizard")
+    with TestClient(app) as client:
+        assert client.post("/api/v1/settings/import", json={"text": text}, headers=HEADERS).status_code == 401
+        client.post("/api/v1/session/login", json={"user_id": "u-ceo"}, headers=HEADERS)
+        assert client.post("/api/v1/settings/import", json={"text": text}, headers=HEADERS).status_code in (401, 404), \
+            "the person at the PC only"
+        assert provisioning.load(settings.data_dir) is None
+        owner(client)
+        bad = client.post("/api/v1/settings/import", json={"text": json.dumps({"settings": {"WIZARD_PG_HOST": "x"}})},
+                          headers=HEADERS)
+        assert bad.status_code == 400 and "not a Wizard provisioning file" in bad.json()["error"]
+        assert provisioning.load(settings.data_dir) is None, "nothing is stored from a file that is not valid"
+        local = client.post("/api/v1/settings/import", headers=HEADERS, json={"text": provisioning.render(
+            {"WIZARD_PG_HOST": "db.corp"}, "x").replace('"WIZARD_PG_HOST"', '"WIZARD_DATA_DIR"')})
+        assert local.status_code == 400 and "set on each PC" in local.json()["error"]
+        done = client.post("/api/v1/settings/import", json={"text": text}, headers=HEADERS)
+        assert done.status_code == 200, done.text
+        assert done.json() == {"name": "ACME Wizard", "settings": 2, "secrets": 1, "apply": "now"}
+        assert PASSWORD not in done.text
+        deadline = time.time() + 5
+        while not asked and time.time() < deadline:
+            time.sleep(0.1)
+    assert asked == ["restart"]
+    assert PASSWORD not in (settings.data_dir / "provision" / "settings.json").read_text(encoding="utf-8")
+    reloaded = load_settings(env={}, home=tmp_path)
+    assert reloaded.postgres and (reloaded.postgres.host, reloaded.postgres.password) == ("db.corp", PASSWORD)
+    assert reloaded.provision["name"] == "ACME Wizard"

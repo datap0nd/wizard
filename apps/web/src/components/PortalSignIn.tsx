@@ -4,7 +4,6 @@ import {api, ApiError} from '@/api';
 import {formatDate} from '@/format';
 import {cn} from '@/lib/utils';
 import {Button} from './ui/button';
-import {AccessRequestForm} from './AccessRequestForm';
 import {PortalMaps} from './PortalMaps';
 import type {PortalCheck, PortalStatus} from '@/types';
 
@@ -17,21 +16,6 @@ export function portalLabel(portal: PortalStatus['portals'][number]): string {
 function landed(p: PortalCheck['portals'][number]): string {
   const where = [p.title, p.host].filter(Boolean).join(' · ');
   return where ? ` (${where})` : '';
-}
-
-/** What the open access request window shows: which prepared request, what Wizard filled, and what is left. */
-function requestLine(request: PortalStatus['access_request']): string {
-  const place = request?.queued;
-  if (request?.sending) {
-    return `Wizard is sending the requests you approved in its browser window on this PC: ${request.sending.sent} sent, `
-      + `${request.sending.left} to go.${request?.note ? ` ${request.note}` : ''} Close the window or press Done to stop.`;
-  }
-  const what = place ? `Prepared request ${place.position} of ${place.total} is open` : 'An access request form is open';
-  const filled = request?.filled.length ? `; Wizard filled ${request.filled.join(', ')}` : '';
-  const left = (request?.note ? ` ${request.note}` : '') + (request?.missing.length ? ` Fill in yourself: ${request.missing.join(', ')}.` : '');
-  const then = place && place.waiting > 0 ? 'press Next request on the page for the next one, or close the window or press Done'
-    : 'close the window or press Done';
-  return `${what} in Wizard's browser window on this PC${filled}. Check every field, submit it there yourself, then ${then}.${left}`;
 }
 
 /** Signing in to the company portals in Wizard's own browser: a visible window opens on this PC with one tab per
@@ -72,9 +56,7 @@ export function PortalSignIn({compact = false}: {compact?: boolean}) {
       )}
       {status.signing_in ? (
         <div className="flex flex-wrap items-center gap-2">
-          <p className="flex-1 text-xs text-ink-2" role="status">{status.window === 'access_request'
-            ? requestLine(status.access_request)
-            : 'A Wizard browser window is open on this PC. Sign in to each portal there, then close the window or press Done.'}</p>
+          <p className="flex-1 text-xs text-ink-2" role="status">A Wizard browser window is open on this PC. Sign in to each portal there, then close the window or press Done.</p>
           <Button size="xs" variant="accent" onClick={() => void act('done')} disabled={busy !== null} data-testid="portal-done">
             {busy === 'done' ? <Loader2 className="animate-spin" /> : <CheckCircle2 />}Done</Button>
         </div>
@@ -101,6 +83,5 @@ export function PortalSignIn({compact = false}: {compact?: boolean}) {
       {error && <p className="text-xs text-danger" role="alert">{error}</p>}
     </div>
     {!compact && <PortalMaps status={status} onChange={setStatus} />}
-    {!compact && status.portals.filter(p => p.access_requests).map(p => <AccessRequestForm key={p.id} system={p.id} name={p.name} />)}
   </>);
 }

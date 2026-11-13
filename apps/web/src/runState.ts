@@ -1,4 +1,4 @@
-import type {AccessRequest, Attachment, PersonQuestion, RunEvent, RunKind, RunRecord, RunView, Schedule, Steer, SystemRequest, TimelineItem} from './types';
+import type {Attachment, PersonQuestion, RunEvent, RunKind, RunRecord, RunView, Schedule, Steer, SystemRequest, TimelineItem} from './types';
 
 const REASON_WORDS: Record<string, string> = {table: 'Wrong table', filter: 'Wrong filter', period: 'Wrong period', other: 'Not this'};
 
@@ -13,7 +13,7 @@ export const TERMINAL = new Set(['run_finished', 'run_failed']);
 export function emptyRun(id: string, conversationId: string, question: string, kind: RunKind = 'ask'): RunView {
   return {id, conversationId, kind, question, status: 'queued', runtime: 'replay', runtimeLabel: '', model: '', timeline: [],
     streamText: '', answer: null, visuals: [], evidence: [], check: null, checkStatus: 'NOT_CHECKED', checkSummary: null,
-    dataMode: null, reportId: null, error: null, warnings: [], lastSeq: 0, attachments: [], schedules: [], accessRequests: [],
+    dataMode: null, reportId: null, error: null, warnings: [], lastSeq: 0, attachments: [], schedules: [],
     systems: null, steers: [], systemRequests: [], questions: [],
     createdAt: new Date().toISOString(),
     startedAt: null, finishedAt: null, parentRunId: null, diagnostics: []};
@@ -49,8 +49,6 @@ export function applyEvent(run: RunView, event: RunEvent): RunView {
       return {...next, visuals: [...next.visuals.filter(v => v.id !== p.visual.id), p.visual]};
     case 'schedule_proposed':
       return withSchedule(next, p.schedule as Schedule);
-    case 'access_request_proposed':
-      return {...next, accessRequests: [...next.accessRequests.filter(r => r.id !== p.request.id), p.request as AccessRequest]};
     case 'steer': {
       const steer = p.steer as Steer;
       return {...next, steers: [...next.steers.filter(s => s.id !== steer.id), steer],

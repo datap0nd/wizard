@@ -1,5 +1,7 @@
 # 2026-11-01 — Wizard sends the access requests the person approves, the way their own one went
 
+> **Superseded** on 13 November 2026 by [Wizard names the Big Data Portal tables the person needs; the person requests access](2026-11-13-bdp-access-self-service.md): Wizard no longer prepares, opens, fills or sends access requests. Kept as the record of what was built.
+
 **Owner:** project owner. **Status:** decided (1 November 2026). Changes the submit rule of
 [2026-10-28](2026-10-28-bdp-access-requests.md) and [2026-11-01](2026-11-01-bdp-dataset-access.md) (until now the
 person always pressed Submit).

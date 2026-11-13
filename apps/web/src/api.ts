@@ -1,7 +1,7 @@
 import type {BrainLive, BrainMap} from './brain';
 import type {CasePreview, CasePublished, SiteStatus} from './cases';
 import type {SavedExport} from './visualEnv';
-import type {AccessForm, Answer, Attachment, Bootstrap, Cadence, ConversationSummary, Evidence, GeminiAccount, GeminiQuota, LocalFile, Memory, OpenStep, PortalCheck, PortalMapView, PortalStatus, PromptQueue, PromptSeparator, RecurringList, Report, RunRecord, SavedFile, Schedule, SettingsSaved, SettingsTest, SettingsTestResult, SettingsView, SourceCatalog, SourceSummary, Steer, SteerReason, TasksView, UpdateInfo} from './types';
+import type {Attachment, Bootstrap, Cadence, ConversationSummary, Evidence, GeminiAccount, GeminiQuota, LocalFile, Memory, PortalCheck, PortalMapView, PortalStatus, PromptQueue, PromptSeparator, RecurringList, Report, RunRecord, SavedFile, Schedule, SettingsImported, SettingsSaved, SettingsTest, SettingsTestResult, SettingsView, SourceCatalog, SourceSummary, Steer, SteerReason, TasksView, UpdateInfo} from './types';
 
 /** What a note to Wizard did: reached the running answer (steer), or became the next question (follow_up). */
 export interface SteerResult {
@@ -120,25 +120,13 @@ export const api = {
   saveSettings: (values: Record<string, string | null>) => request<SettingsSaved>('/api/v1/settings', {method: 'PUT', body: {values}}),
   testSettings: (section: SettingsTest, values: Record<string, string | null>) =>
     request<SettingsTestResult>('/api/v1/settings/test', {body: {section, values}}),
+  /** Quick setup: the company settings file (wizard.provision) the person chose, as text. Wizard restarts to apply it. */
+  importSettings: (text: string) => request<SettingsImported>('/api/v1/settings/import', {body: {text}}),
   updates: (refresh = false) => request<UpdateInfo>(`/api/v1/updates${refresh ? '?refresh=true' : ''}`),
   portals: () => request<PortalStatus>('/api/v1/portals'),
   portalSignIn: () => request<PortalStatus>('/api/v1/portals/sign-in', {body: {}}),
   portalSignedIn: () => request<PortalStatus>('/api/v1/portals/sign-in/done', {body: {}}),
   portalCheck: () => request<PortalCheck>('/api/v1/portals/check', {body: {}}),
-  accessForm: (system: string) => request<AccessForm>(`/api/v1/portals/${encodeURIComponent(system)}/access-form`),
-  saveAccessForm: (system: string, form: {page: string; fields: Answer[]}) =>
-    request<AccessForm>(`/api/v1/portals/${encodeURIComponent(system)}/access-form`, {body: form}),
-  openAccessRequest: (system: string, request_: {address?: string; tables?: string[]; answers?: Answer[]; queued?: string;
-                                                  open_steps?: OpenStep[]; form_button?: string} = {}) =>
-    request<PortalStatus>(`/api/v1/portals/${encodeURIComponent(system)}/access-request`, {body: request_}),
-  setAccessSending: (system: string, enabled: boolean) =>
-    request<AccessForm>(`/api/v1/portals/${encodeURIComponent(system)}/access-sending`, {body: {enabled}}),
-  sendAccessRequests: (system: string, body: {ids?: string[]; waiting?: boolean}) =>
-    request<PortalStatus>(`/api/v1/portals/${encodeURIComponent(system)}/access-send`, {body}),
-  stopSendingAccessRequests: (system: string) =>
-    request<PortalStatus>(`/api/v1/portals/${encodeURIComponent(system)}/access-send/stop`, {body: {}}),
-  removeQueuedRequests: (system: string, body: {ids?: string[]; opened?: boolean}) =>
-    request<AccessForm>(`/api/v1/portals/${encodeURIComponent(system)}/access-queue/remove`, {body}),
   mapPortal: (system: string) => request<PortalMapView>(`/api/v1/portals/${encodeURIComponent(system)}/map`, {body: {}}),
   stopMapping: (system: string) => request<PortalMapView>(`/api/v1/portals/${encodeURIComponent(system)}/map/stop`, {body: {}}),
   publishMap: (system: string) => request<PortalMapView>(`/api/v1/portals/${encodeURIComponent(system)}/map/publish`, {body: {}}),

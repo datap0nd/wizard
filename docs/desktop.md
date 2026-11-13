@@ -181,7 +181,8 @@ he hops. While a long answer streams, a slim bar pinned to the top of the panel 
 ## Settings, model and updates in the app
 
 The ⚙ button in the panel (or **Settings…** in the tray menu, or Settings in the full app's sidebar) opens the settings
-of Wizard on this PC:
+of Wizard on this PC. **Quick setup** sits at its top: a new person's walk through Wizard, the settings file, the
+Gemini sign-in, the portals and a connection check ([decision](decisions/2026-11-13-quick-setup.md)).
 
 | Section | Settings | Test |
 |---|---|---|
@@ -190,7 +191,7 @@ of Wizard on this PC:
 | Pages site | Repository (empty: the knowledge base's), branch (`gh-pages`, never the notes' branch), site address (the one GitHub shows under Settings → Pages); feedback repository (empty: `wizard-feedback` beside the site's), feedback token, admin PIN (2323) | **Turn feedback on** checks the feedback token and puts feedback on the Cases site (the first **Publish** says what else is missing). Brain and Cases are two pages of their own on the company GitHub's Pages, published from this PC with the write token above: **Publish** on the Brain page, **Share as case** in a chat ([decision](decisions/2026-10-30-pages-site.md)). Feedback ([decision](decisions/2026-11-12-case-feedback-and-quiz.md)): create a private repository (`wizard-feedback`) with Issues on, then a fine-grained token: resource owner the organisation, only that repository, Repository permissions → Issues "Read and write" and nothing else. Everyone who can open the site can read that token, so Wizard refuses a classic token or one that can change files |
 | Company database | Name people see (default "AI Team Database"), server, port, database, read-only user, password, SSL, schemas Wizard may query (separated by commas; empty: every schema the account can read) | **Test connection**: connects read-only and reports the user. With schemas listed, Gemini's queries may read only those (and `pg_catalog` and `information_schema`): Wizard plans each query first and refuses one that reads another schema, also through a view ([decision](decisions/2026-11-02-source-order.md)) |
 | Dashboards | The folder of the team's HTML dashboards (paste the path; quotes from Copy as path are fine), name people see (default "Dashboards") | **Find dashboards**: says how many dashboards (`.html`, `.htm`, subfolders included) this PC finds there, or that it cannot reach the folder. A mapped drive (`Y:\Dashboards`) is saved as the network path it stands for (`\\fileserver\team\Dashboards`), so the company file and **Export settings…** carry a path every PC can use. A PC that cannot reach the share still starts: Gemini is told the dashboards cannot be read, and the person asks for access to the share ([decision](decisions/2026-11-02-html-dashboards.md)) |
-| Portals | ASAP and GSCM addresses, the Big Data Portal's two (information catalog and Superset), browser (Chrome or Edge), other hosts the portals need; the **Access request form**: your usual answers on every Big Data Portal access request (field and answer) and an optional request page | **Sign in to the portals** opens Wizard's own browser visibly, one tab per portal (two for the Big Data Portal): sign in, then close it (or **Done**). The sign-in lasts as long as the portals' own sessions, across restarts too: Wizard keeps its browser's session cookies (DPAPI), never a password. **Check sign-in** opens each in the background and says whether it is signed in, or which page asked for a sign-in. **Open the request page** opens the catalog's request page with your answers filled in; you check it and submit it |
+| Portals | ASAP and GSCM addresses, the Big Data Portal's two (information catalog and Superset), browser (Chrome or Edge), other hosts the portals need | **Sign in to the portals** opens Wizard's own browser visibly, one tab per portal (two for the Big Data Portal): sign in, then close it (or **Done**). The sign-in lasts as long as the portals' own sessions, across restarts too: Wizard keeps its browser's session cookies (DPAPI), never a password. **Check sign-in** opens each in the background and says whether it is signed in, or which page asked for a sign-in. Wizard requests no access: when an answer needs Big Data Portal tables you cannot query, it names them and you request access in the information catalog yourself ([decision](decisions/2026-11-13-bdp-access-self-service.md)) |
 | Source order | The data sources this PC has, in the company's order: move one up or down, put it on the same level as the one above, write what it is for (a line, up to 200 characters), keep it for when someone asks. Default: Dashboards; the database; ASAP and GSCM on one level; NERP; the Big Data Portal; then any other. A source the order names that this PC does not have shows as "not on this PC" and stays in the order for the others | — Gemini starts each question with the first source that holds what is asked and goes further only for what it lacks or when it is stale, saying why. A source kept for when asked is left out on Auto; Gemini asks for it and a button switches it on. One order for the company: **Export settings…** carries it ([decision](decisions/2026-11-02-source-order.md)) |
 | Network | Proxy (for Google and the app's updates; empty: Gemini CLI's proxy, else Windows'), Company GitHub proxy (for the knowledge base and the portal maps; empty: the route Windows and Edge take, read in-process with WinHTTP, PAC included) | — |
 | Version and updates | The installed version | **Check for updates** / **Update to 1.0.N** |
@@ -275,10 +276,13 @@ never on a server behind SSO.
 2. Put `WizardSetup.exe` and `wizard.provision` in one folder: a shared drive, or a zip sent internally.
 3. They run `WizardSetup.exe`. SmartScreen may warn about an unsigned app ("More info → Run anyway"), as with Scribble.
    Setup copies `wizard.provision` along, and Wizard starts.
-4. The tab appears at the top of the screen. The first click shows **"First, link your Gemini account"**. They sign in
-   with their company Google account in the browser and paste the code.
+4. The tab appears at the top of the screen. The first click shows **Quick setup**
+   ([decision](decisions/2026-11-13-quick-setup.md)): what Wizard is and how it works, the settings file (if Setup did
+   not bring one, they choose it there), their Gemini sign-in (company Google account in the browser, code pasted
+   back), the portals' sign-in, and a check of every connection. Each step can be skipped and done later.
 
-Someone who already has Wizard can import a new file from the tray menu: **Import a settings file…**.
+Quick setup stays at the top of Settings and in the tray menu (**Quick setup…**). Someone who already has Wizard can
+import a new file there, or from the tray menu: **Import a settings file…**.
 
 ### Moving to another PC
 
