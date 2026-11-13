@@ -31,13 +31,22 @@ downloaded as one PowerPoint slide ([decision](2026-11-09-heatmaps-and-visual-ex
   never offered where nobody waits (a task, a mapping round, Check my data, the prompt queue: there Gemini chooses and
   says so). A deck from an analysis already in the conversation proposes its storylines from that analysis, without new
   reads.
-- **The deck** (`wizard_make_presentation`) is slides of eleven kinds — cover, agenda, section, executive summary, key
-  figures, numbered cards, chart, table, two panels, text, closing — that show the conversation's visuals by id and
+- **The deck** (`wizard_make_presentation`) is slides of twelve kinds — cover, agenda, section, executive summary, key
+  figures, numbered cards, chart, table, two panels, a grid of two to four panels, text, closing — that show the conversation's visuals by id and
   cite its evidence. The tool refuses what the page cannot draw (an unknown visual, a table shown as a chart, a stacked
   chart of one series, highlights on cells that do not exist, empty slides) and warns about what the company's slides
   avoid (long titles, too many bullets, too many shaded cells, figures without evidence). A deck keeps copies of the
   visuals it shows and the names of the sources it cites, so every slide states its unit and its source line, and a
   SYNTHETIC deck says so on every slide. The agenda lists the section slides with their pages by itself.
+- **Dense slides, no empty space** (owner, the same day, on the first sample: "so minimalistic and have so much empty
+  space … against empty space"). Points with a bold lead-in become a grid of rows (the lead in a label column, the
+  detail beside it, rules between rows) that fills the slide down to the footer, and the text grows up to 30% where
+  room is left; a chart or table with points gets a full-height **Key takeaways** column; cards and tables reach the
+  bottom; figures sit above their analysis; a **grid** slide puts two to four panels (a chart and/or points each) on one
+  slide. The tool warns about every thin slide — a chart or table with fewer than three takeaways, a text or closing
+  slide under four points, a summary under three, figures without analysis, cards under three bullets, a panel under
+  three points, a section divider in a deck of twelve slides or fewer — and the prompt tells Gemini to fix them and to
+  prefer fewer, fuller slides.
 - **Changes in the chat.** `wizard_change_presentation` updates, inserts, deletes or moves slides, or retitles the deck,
   and keeps the result as a new version (D2 revises D1); `wizard_read_presentation` returns slides in full. Each later
   request lists the conversation's decks slide by slide, so "make slide 4 a table" finds its slide.

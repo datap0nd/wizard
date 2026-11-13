@@ -4,7 +4,7 @@
 // inches on the slide, sizes are points.
 import {formatDate} from '../format';
 import {grid} from '../visuals';
-import type {ChartStyle, Deck, DeckPoint, DeckSlide, DesignTokens, SlideKind, Visual} from '../types';
+import type {ChartStyle, Deck, DeckPanel, DeckPoint, DeckSlide, DesignTokens, SlideKind, Visual} from '../types';
 
 export interface Run { text: string; bold?: boolean; color?: string }
 export interface Para {
@@ -71,14 +71,14 @@ export function textHeight(paras: Para[], width: number): number {
 
 /** The paragraphs at the largest size, down to `least` of it, that fits the box (a long title is drawn smaller, never
  *  cut). */
-export function fit(paras: Para[], box: {w: number; h: number}, least = 0.6, inset = 0): Para[] {
+export function fit(paras: Para[], box: {w: number; h: number}, least = 0.6, inset = 0): Para[] {  // never larger
   return scaled(paras, fitScale(paras, box, least, inset));
 }
 
 /** The largest scale, down to `least`, at which the paragraphs fit the box. */
-export function fitScale(paras: Para[], box: {w: number; h: number}, least = 0.6, inset = 0): number {
+export function fitScale(paras: Para[], box: {w: number; h: number}, least = 0.6, inset = 0, most = 1): number {
   const w = box.w - inset * 2, h = box.h - inset * 2;
-  for (let scale = 1; scale >= least - 1e-9; scale -= 0.04) {
+  for (let scale = most; scale >= least - 1e-9; scale -= 0.04) {
     if (textHeight(scaled(paras, scale), w) <= h) return scale;
   }
   return least;
@@ -165,18 +165,6 @@ export function tableCells(visual: Visual, highlights: DeckSlide['highlights'], 
 
 interface Frame { W: number; H: number; M: number; sx: number; sy: number; t: DesignTokens }
 
-function bullets(points: DeckPoint[] | undefined, t: DesignTokens, size: number, color = t.colors.text): Para[] {
-  const out: Para[] = [];
-  for (const point of points ?? []) {
-    const text = typeof point === 'string' ? point : point.text;
-    out.push({runs: runs(text), size, color, font: t.fonts.body, bullet: true, level: 0, gap: size * 0.55});
-    for (const sub of typeof point === 'string' ? [] : point.sub ?? []) {
-      out.push({runs: runs(sub), size: Math.max(7, size - 1), color: t.colors.secondary, font: t.fonts.body, bullet: true, level: 1, gap: size * 0.25});
-    }
-  }
-  return out;
-}
-
 function text(box: Box, paras: Para[], valign: 'top' | 'middle' | 'bottom' = 'top', least = 0.6, inset = 0.04): Element {
   return {type: 'text', ...box, paras: fit(paras, box, least, inset), valign, inset};
 }
@@ -197,38 +185,102 @@ function header(f: Frame, slide: DeckSlide, elements: Element[], fallback = ''):
   return y + 0.22 * sy;
 }
 
-/** Bullets in a box; on a panel (the card color behind them) the panel is as tall as its bullets need. */
-function points(f: Frame, box: Box, list: DeckPoint[] | undefined, size: number, panel = false): Element[] {
-  if (!panel) return [text(box, bullets(list, f.t, size), 'top', 0.62)];
-  const pad = 0.2;
-  const inner = {x: box.x + pad, y: box.y + pad, w: box.w - 2 * pad, h: box.h - 2 * pad};
-  const paras = fit(bullets(list, f.t, size), inner, 0.62, 0.04);
-  const h = Math.min(box.h, textHeight(paras, inner.w - 0.08) + 2 * pad + 0.12);
-  return [{type: 'rect', ...box, h, fill: f.t.colors.card}, {type: 'text', ...inner, h: h - 2 * pad, paras, valign: 'top', inset: 0.04}];
+/** A point's bold lead-in and the rest: "**Flagship:** +18% vs plan" is ["Flagship", "+18% vs plan"]. */
+export function lead(text: string): [string, string] | null {
+  const m = text.match(/^\s*\*\*([^*]+?)\*\*\s*[:：–-]?\s*([\s\S]*)$/);
+  return m ? [m[1].trim().replace(/[:：]$/, ''), m[2].trim()] : null;
 }
 
-function kpiTiles(f: Frame, box: Box, kpis: NonNullable<DeckSlide['kpis']>): Element[] {
+const sum = (values: number[]) => values.reduce((a, b) => a + b, 0);
+
+/** Points as a grid of rows that fills its box (owner, 13 Nov 2026: "so much empty space ... against empty space"):
+ *  each point is a row, with its bold lead in a label column when the box is wide and most points have one, the detail
+ *  beside it, and a rule between rows. The rows share out the box's height, up to `maxRow` each; text shrinks when
+ *  the points do not fit. */
+function rowGrid(f: Frame, box: Box, list: DeckPoint[] | undefined, size: number, opts: {labels?: boolean; maxRow?: number} = {}): Element[] {
+  const {t} = f;
+  const items = (list ?? []).map(p => typeof p === 'string' ? {text: p, sub: [] as string[]} : {text: p.text, sub: p.sub ?? []});
+  if (!items.length || box.h <= 0.1) return [];
+  const leads = items.map(i => lead(i.text));
+  const labelled = (opts.labels ?? true) && box.w >= 6 && leads.filter(Boolean).length * 2 >= items.length;
+  const labelW = labelled ? Math.min(2.7, Math.max(1.6, box.w * 0.22)) : 0;
+  const padX = labelled ? 0.14 : 0.06, padY = 0.07;
+  const bodyX = box.x + labelW + padX, bodyW = box.w - labelW - 2 * padX;
+  // Without a label column each row is a bullet (a native one in PowerPoint), its sub-points a level below.
+  const body = (i: number, s: number): Para[] => [
+    {runs: runs(labelled && leads[i] ? leads[i]![1] : items[i].text), size: s, color: t.colors.text, font: t.fonts.body, bullet: !labelled, level: 0},
+    ...items[i].sub.map(sub => ({runs: runs(sub), size: Math.max(6, s - 1), color: t.colors.secondary, font: t.fonts.body, bullet: true,
+      level: labelled ? 0 : 1, gap: s * 0.3}))];
+  const label = (i: number, s: number): Para[] => leads[i] ? [{runs: [{text: leads[i]![0]}], size: s, color: t.colors.title, font: t.fonts.title, bold: true}] : [];
+  const need = (s: number) => items.map((_, i) => Math.max(textHeight(body(i, s), bodyW - 0.08),
+    labelled ? textHeight(label(i, s), labelW - 2 * padX - 0.08) : 0) + 2 * padY);
+  let s = size;
+  while (s > Math.max(6, size * 0.6) && sum(need(s)) > box.h) s = Math.round((s - 0.5) * 2) / 2;
+  // Room to spare: the text grows, up to 30%, before the rows spread out.
+  while (s < size * 1.3 && sum(need(s + 0.5)) <= box.h * 0.8) s += 0.5;
+  const needs = need(s);
+  const spare = Math.max(0, box.h - sum(needs)) / items.length;
+  const heights = needs.map(n => Math.max(n, Math.min(n + spare, opts.maxRow ?? 1.5)));
+  const out: Element[] = [];
+  let y = box.y;
+  items.forEach((_, i) => {
+    const h = heights[i];
+    if (labelled) {
+      out.push({type: 'rect', x: box.x, y, w: labelW, h, fill: t.colors.card});
+      if (leads[i]) out.push({type: 'text', x: box.x + padX, y: y + padY, w: labelW - 2 * padX, h: h - 2 * padY, paras: label(i, s), valign: 'middle', inset: 0.04});
+    }
+    out.push({type: 'text', x: bodyX, y: y + padY, w: bodyW, h: h - 2 * padY, paras: body(i, s), valign: 'middle', inset: 0.04});
+    out.push({type: 'rect', x: box.x, y: y + h - 0.006, w: box.w, h: 0.012, fill: t.colors.line});
+    y += h;
+  });
+  return out;
+}
+
+/** The analysis beside a chart or table: a column as tall as the visual, headed "Key takeaways", its points in rows. */
+function takeaways(f: Frame, box: Box, list: DeckPoint[] | undefined, size: number, heading = 'Key takeaways'): Element[] {
+  const {t} = f;
+  const headH = Math.max(0.34, t.sizes.heading * 2.2 / 72);
+  return [
+    {type: 'rect', x: box.x, y: box.y, w: box.w, h: headH, fill: t.colors.brand},
+    text({x: box.x + 0.12, y: box.y, w: box.w - 0.24, h: headH}, [{runs: [{text: heading}], size: t.sizes.heading, color: '#FFFFFF', font: t.fonts.title, bold: true}], 'middle', 0.7, 0.02),
+    {type: 'rect', x: box.x, y: box.y + headH, w: box.w, h: box.h - headH, fill: t.colors.card},
+    ...rowGrid(f, {x: box.x + 0.04, y: box.y + headH + 0.06, w: box.w - 0.08, h: box.h - headH - 0.12}, list, size, {labels: false, maxRow: 2.4}),
+  ];
+}
+
+/** A panel's heading: bold, on the card color, over its content. Returns the height it takes. */
+function panelHeading(f: Frame, box: Box, heading: string, out: Element[]): number {
+  const {t} = f;
+  const h = Math.max(0.34, t.sizes.heading * 2.2 / 72);
+  out.push({type: 'rect', x: box.x, y: box.y, w: box.w, h, fill: t.colors.card});
+  out.push({type: 'rect', x: box.x, y: box.y, w: 0.06, h, fill: t.colors.brand});
+  out.push(text({x: box.x + 0.16, y: box.y, w: box.w - 0.24, h}, [{runs: [{text: heading}], size: t.sizes.heading, color: t.colors.title, font: t.fonts.title, bold: true}], 'middle', 0.7, 0.02));
+  return h + 0.1;
+}
+
+function kpiTiles(f: Frame, box: Box, kpis: NonNullable<DeckSlide['kpis']>, grow = false): Element[] {
   const {t} = f;
   const perRow = kpis.length <= 4 ? kpis.length : 3;
   const rows = Math.ceil(kpis.length / perRow);
-  const gap = 0.22;
+  const gap = 0.18;
   const w = (box.w - gap * (perRow - 1)) / perRow;
   const h = (box.h - gap * (rows - 1)) / rows;
   const tiles = kpis.map(k => {
     const tone = k.tone === 'good' ? t.colors.positive : k.tone === 'bad' ? t.colors.negative : t.colors.secondary;
     const paras: Para[] = [{runs: [{text: k.value}], size: t.sizes.kpi, color: t.colors.brand, font: t.fonts.title, bold: true},
-      {runs: [{text: k.label}], size: t.sizes.body, color: t.colors.text, font: t.fonts.body, gap: 4}];
+      {runs: [{text: k.label}], size: t.sizes.body + 1, color: t.colors.text, font: t.fonts.body, bold: true, gap: 4}];
     if (k.change) paras.push({runs: [{text: k.change}], size: t.sizes.body, color: tone, font: t.fonts.body, bold: true, gap: 3});
     return paras;
   });
-  // One scale for every tile, so their figures and labels match.
+  // One scale for every tile, so their figures and labels match; tiles that fill a slide grow their figures.
   const inner = {w: w - 0.32, h: h - 0.24};
-  const scale = Math.min(...tiles.map(paras => fitScale(paras, inner, 0.5, 0.04)));
+  const scale = Math.min(...tiles.map(paras => fitScale(paras, inner, 0.5, 0.04, grow ? 2 : 1)));
   const out: Element[] = [];
   tiles.forEach((paras, i) => {
     const x = box.x + (i % perRow) * (w + gap), y = box.y + Math.floor(i / perRow) * (h + gap);
     out.push({type: 'rect', x, y, w, h, fill: t.colors.card});
-    out.push({type: 'text', x: x + 0.16, y: y + 0.12, ...inner, paras: scaled(paras, scale), valign: 'top', inset: 0.04});
+    out.push({type: 'rect', x, y, w, h: 0.05, fill: t.colors.brand});
+    out.push({type: 'text', x: x + 0.16, y: y + 0.12, ...inner, paras: scaled(paras, scale), valign: grow ? 'middle' : 'top', inset: 0.04});
   });
   return out;
 }
@@ -267,13 +319,18 @@ function table(f: Frame, area: Box, visual: Visual, highlights: DeckSlide['highl
   const total = weights.reduce((a, b) => a + b, 0);
   // As wide as its area (a table of two or three short columns a little narrower), columns as wide as their text.
   const width = cells[0].length >= 4 ? area.w : Math.min(area.w, Math.max(area.w * 0.6, total * size * 0.75 / 72 + cells[0].length * 0.4));
-  return [{type: 'table', x: area.x, y: area.y, w: width, h: rowH(size) * shown.length, cells: shown, colW: weights.map(w => width * w / total),
-    rowH: rowH(size), size, font: t.fonts.body, line: t.colors.line}];
+  // Rows grow to fill the area (up to half again their height), so a short table does not leave the slide empty.
+  const tall = Math.min(rowH(size) * 1.6, area.h / shown.length);
+  const h = Math.max(rowH(size), tall);
+  return [{type: 'table', x: area.x, y: area.y, w: width, h: h * shown.length, cells: shown, colW: weights.map(w => width * w / total),
+    rowH: h, size, font: t.fonts.body, line: t.colors.line}];
 }
 
 function sourceText(deck: Deck, slide: DeckSlide, notes: string[]): string {
   const ids = [...(slide.evidence_ids ?? []), ...(slide.kpis ?? []).flatMap(k => k.evidence_ids ?? [])];
-  for (const v of [slide.visual, slide.left?.visual, slide.right?.visual]) if (v && deck.visuals[v]) ids.push(...deck.visuals[v].evidence_ids);
+  for (const v of [slide.visual, slide.left?.visual, slide.right?.visual, ...(slide.panels ?? []).map(p => p.visual)]) {
+    if (v && deck.visuals[v]) ids.push(...deck.visuals[v].evidence_ids);
+  }
   const names = new Map<string, string>();
   for (const id of new Set(ids)) {
     const s = deck.sources[id];
@@ -350,81 +407,93 @@ function slidePage(deck: Deck, slide: DeckSlide, index: number): Page {
       const top = header(f, slide, elements, 'Agenda');
       const found = sections(deck.slides);
       const items = slide.items?.length ? slide.items.map(title => ({title, from: 0, to: 0})) : found;
-      const paras: Para[] = items.map((item, i) => ({runs: [{text: `${String(i + 1).padStart(2, '0')}   `, color: t.colors.brand, bold: true},
-        {text: item.title, bold: true}, ...(item.from ? [{text: `  (${item.from === item.to ? item.from : `${item.from}–${item.to}`})`, color: t.colors.muted}] : [])],
-        size: t.sizes.agenda, color: t.colors.title, font: t.fonts.title, gap: t.sizes.agenda * 0.9}));
-      elements.push(text({x: M + 0.3 * f.sx, y: top + 0.2, w: W - 2 * M - 0.6 * f.sx, h: bottom - top - 0.2},
-        paras.length ? paras : [{runs: [{text: 'Add section slides or agenda items.'}], size: t.sizes.body, color: t.colors.muted, font: t.fonts.body}], 'top', 0.55));
+      if (!items.length) {
+        elements.push(text({x: M, y: top, w: W - 2 * M, h: 0.5}, [{runs: [{text: 'Add section slides or agenda items.'}], size: t.sizes.body, color: t.colors.muted, font: t.fonts.body}]));
+        break;
+      }
+      const rowH = Math.min((bottom - top) / items.length, 1.05 * sy);
+      items.forEach((item, i) => {
+        const y = top + i * rowH;
+        elements.push({type: 'rect', x: M, y, w: 1.1 * f.sx, h: rowH - 0.08, fill: t.colors.card});
+        elements.push(text({x: M, y, w: 1.1 * f.sx, h: rowH - 0.08}, [{runs: [{text: String(i + 1).padStart(2, '0')}], size: t.sizes.agenda, color: t.colors.brand, font: t.fonts.title, bold: true, align: 'center'}], 'middle', 0.6));
+        elements.push(text({x: M + 1.3 * f.sx, y, w: W - 2 * M - 2.9 * f.sx, h: rowH - 0.08}, [{runs: [{text: item.title}], size: t.sizes.agenda, color: t.colors.title, font: t.fonts.title, bold: true}], 'middle', 0.55));
+        if (item.from) elements.push(text({x: W - M - 1.5 * f.sx, y, w: 1.5 * f.sx, h: rowH - 0.08}, [{runs: [{text: `(${item.from === item.to ? item.from : `${item.from}–${item.to}`})`}], size: t.sizes.agenda * 0.8, color: t.colors.muted, font: t.fonts.title, align: 'right'}], 'middle', 0.6));
+        elements.push({type: 'rect', x: M, y: y + rowH - 0.05, w: W - 2 * M, h: 0.012, fill: t.colors.line});
+      });
       break;
     }
     case 'summary': {
       const top = header(f, slide, elements);
       let y = top;
       if (slide.kpis?.length) {
-        const h = 1.45 * sy;
-        elements.push(...kpiTiles(f, {x: M, y, w: W - 2 * M, h}, slide.kpis));
-        y += h + 0.25 * sy;
+        const h = (slide.points?.length ? 1.45 : bottom - top) * (slide.points?.length ? sy : 1);
+        elements.push(...kpiTiles(f, {x: M, y, w: W - 2 * M, h}, slide.kpis, !slide.points?.length));
+        y += h + 0.18 * sy;
       }
-      if (slide.points?.length) elements.push(...points(f, {x: M, y, w: W - 2 * M, h: bottom - y}, slide.points, t.sizes.body + 1));
+      if (slide.points?.length) elements.push(...rowGrid(f, {x: M, y, w: W - 2 * M, h: bottom - y}, slide.points, t.sizes.body + 1));
       break;
     }
     case 'kpis': {
       const top = header(f, slide, elements);
       const kpis = slide.kpis ?? [];
       const rows = kpis.length <= 4 ? 1 : 2;
-      const room = Math.min(slide.points?.length ? (bottom - top) * 0.6 : bottom - top, rows * 1.75 * sy + (rows - 1) * 0.22);
-      elements.push(...kpiTiles(f, {x: M, y: top + 0.1, w: W - 2 * M, h: room}, kpis));
-      if (slide.points?.length) elements.push(...points(f, {x: M, y: top + room + 0.4 * sy, w: W - 2 * M, h: bottom - top - room - 0.4 * sy}, slide.points, t.sizes.body + 1));
+      const room = slide.points?.length ? Math.min((bottom - top) * 0.45, rows * 1.6 * sy + (rows - 1) * 0.18) : bottom - top;
+      elements.push(...kpiTiles(f, {x: M, y: top, w: W - 2 * M, h: room}, kpis, !slide.points?.length));
+      if (slide.points?.length) elements.push(...rowGrid(f, {x: M, y: top + room + 0.18 * sy, w: W - 2 * M, h: bottom - top - room - 0.18 * sy}, slide.points, t.sizes.body + 1));
       break;
     }
     case 'cards': {
       const top = header(f, slide, elements);
       const cards = slide.cards ?? [];
-      const gap = 0.25 * f.sx;
+      const gap = 0.2 * f.sx;
       const w = (W - 2 * M - gap * (cards.length - 1)) / Math.max(1, cards.length);
-      const d = 0.5 * f.sy;
-      const need = (card: (typeof cards)[number]) => 0.55 + d + textHeight([{runs: [{text: card.heading}], size: t.sizes.heading, color: '', font: '', bold: true},
-        ...(card.value ? [{runs: [{text: card.value}], size: t.sizes.kpi * 0.75, color: '', font: '', bold: true, gap: 4}] : [])], w - 0.4) + 0.3
-        + textHeight(bullets(card.points, t, t.sizes.body), w - 0.4) + 0.3;
-      const h = Math.min(bottom - top, Math.max((bottom - top) * 0.55, ...cards.map(need)));
+      const h = bottom - top;
+      const d = 0.46 * f.sy;
       cards.forEach((card, i) => {
         const x = M + i * (w + gap);
         elements.push({type: 'rect', x, y: top, w, h, fill: t.colors.card});
-        elements.push({type: 'badge', x: x + 0.2, y: top + 0.2, w: d, h: d, fill: t.colors.brand, text: String(i + 1), color: '#FFFFFF', size: t.sizes.heading + 2, font: t.fonts.title});
-        const head: Para[] = [{runs: [{text: card.heading}], size: t.sizes.heading, color: t.colors.title, font: t.fonts.title, bold: true}];
-        if (card.value) head.push({runs: [{text: card.value}], size: t.sizes.kpi * 0.75, color: t.colors.brand, font: t.fonts.title, bold: true, gap: 4});
-        const headH = Math.min(1.3 * sy, textHeight(head, w - 0.4) + 0.12);
-        elements.push(text({x: x + 0.2, y: top + 0.25 + d, w: w - 0.4, h: headH}, head, 'top', 0.6));
-        elements.push(text({x: x + 0.2, y: top + 0.35 + d + headH, w: w - 0.4, h: h - 0.55 - d - headH}, bullets(card.points, t, t.sizes.body), 'top', 0.6));
+        elements.push({type: 'rect', x, y: top, w, h: 0.05, fill: t.colors.brand});
+        elements.push({type: 'badge', x: x + 0.16, y: top + 0.18, w: d, h: d, fill: t.colors.brand, text: String(i + 1), color: '#FFFFFF', size: t.sizes.heading + 2, font: t.fonts.title});
+        const heading: Para[] = [{runs: [{text: card.heading}], size: t.sizes.heading + 1, color: t.colors.title, font: t.fonts.title, bold: true}];
+        const headH = Math.max(d, Math.min(1.0 * sy, textHeight(heading, w - d - 0.5) + 0.1));
+        elements.push(text({x: x + d + 0.28, y: top + 0.18, w: w - d - 0.4, h: headH}, heading, 'middle', 0.6));
+        let y = top + 0.18 + headH + 0.1;
+        if (card.value) {
+          elements.push(text({x: x + 0.16, y, w: w - 0.32, h: 0.6 * sy}, [{runs: [{text: card.value}], size: t.sizes.kpi * 0.85, color: t.colors.brand, font: t.fonts.title, bold: true}], 'middle', 0.6));
+          y += 0.62 * sy;
+        }
+        elements.push({type: 'rect', x: x + 0.16, y, w: w - 0.32, h: 0.012, fill: t.colors.line});
+        elements.push(...rowGrid(f, {x: x + 0.06, y: y + 0.04, w: w - 0.12, h: top + h - y - 0.12}, card.points, t.sizes.body, {labels: false, maxRow: 1.6}));
       });
       break;
     }
     case 'chart':
     case 'table': {
       const top = header(f, slide, elements);
-      const side = slide.points?.length ? (W - 2 * M) * 0.32 : 0;
-      const gap = side ? 0.3 * f.sx : 0;
+      const side = slide.points?.length ? (W - 2 * M) * 0.33 : 0;
+      const gap = side ? 0.22 * f.sx : 0;
       elements.push(...visualBox(f, {x: M, y: top, w: W - 2 * M - side - gap, h: bottom - top}, visual(slide.visual), slide.chart, slide, notes));
-      if (side) elements.push(...points(f, {x: W - M - side, y: top + 0.3, w: side, h: bottom - top - 0.3}, slide.points, t.sizes.body, true));
+      if (side) elements.push(...takeaways(f, {x: W - M - side, y: top, w: side, h: bottom - top}, slide.points, t.sizes.body));
       break;
     }
-    case 'split': {
+    case 'split':
+    case 'grid': {
       const top = header(f, slide, elements);
-      const gap = 0.4 * f.sx;
-      const w = (W - 2 * M - gap) / 2;
-      [slide.left, slide.right].forEach((panel, i) => {
-        if (!panel) return;
-        const x = M + i * (w + gap);
-        let y = top;
-        if (panel.heading) {
-          elements.push(text({x, y, w, h: 0.42 * sy}, [{runs: [{text: panel.heading}], size: t.sizes.heading, color: t.colors.title, font: t.fonts.title, bold: true}], 'bottom', 0.7));
-          elements.push({type: 'rect', x, y: y + 0.46 * sy, w, h: 0.02, fill: t.colors.line});
-          y += 0.58 * sy;
-        }
+      const panels = slide.kind === 'split' ? [slide.left, slide.right].filter((p): p is DeckPanel => !!p) : slide.panels ?? [];
+      const cols = panels.length === 4 ? 2 : Math.max(1, panels.length);
+      const rows = Math.ceil(panels.length / cols);
+      const gap = 0.22 * f.sx;
+      const w = (W - 2 * M - gap * (cols - 1)) / cols, h = (bottom - top - gap * (rows - 1)) / rows;
+      panels.forEach((panel, i) => {
+        const x = M + (i % cols) * (w + gap);
+        let y = top + Math.floor(i / cols) * (h + gap);
+        const end = y + h;
+        if (panel.heading) y += panelHeading(f, {x, y, w, h}, panel.heading, elements);
         const own = visual(panel.visual);
-        const pointsH = panel.visual && panel.points?.length ? (bottom - y) * 0.3 : 0;
-        if (panel.visual) elements.push(...visualBox(f, {x, y, w, h: bottom - y - pointsH}, own, panel.chart, null, notes));
-        if (panel.points?.length) elements.push(...points(f, {x, y: panel.visual ? bottom - pointsH + 0.1 : y, w, h: panel.visual ? pointsH - 0.1 : bottom - y}, panel.points, t.sizes.body));
+        const pointsH = panel.visual && panel.points?.length ? Math.min((end - y) * 0.42, 0.3 + panel.points.length * 0.42) : 0;
+        if (panel.visual) elements.push(...visualBox(f, {x, y, w, h: end - y - pointsH}, own, panel.chart, null, notes));
+        if (panel.points?.length) elements.push(...rowGrid(f, {x, y: panel.visual ? end - pointsH + 0.06 : y, w, h: panel.visual ? pointsH - 0.06 : end - y},
+          panel.points, t.sizes.body, {labels: w >= 6, maxRow: 1.6}));
       });
       break;
     }
@@ -437,12 +506,12 @@ function slidePage(deck: Deck, slide: DeckSlide, index: number): Page {
         break;
       }
       const top = header(f, slide, elements);
-      elements.push(...points(f, {x: M, y: top, w: W - 2 * M, h: bottom - top}, slide.points, t.sizes.body + 2, true));
+      elements.push(...rowGrid(f, {x: M, y: top, w: W - 2 * M, h: bottom - top}, slide.points, t.sizes.body + 2));
       break;
     }
     default: {
       const top = header(f, slide, elements);
-      elements.push(...points(f, {x: M, y: top, w: W - 2 * M, h: bottom - top}, slide.points, t.sizes.body + 1));
+      elements.push(...rowGrid(f, {x: M, y: top, w: W - 2 * M, h: bottom - top}, slide.points, t.sizes.body + 1));
     }
   }
   if (slide.kind !== 'cover') footer(f, deck, slide, number, notes, elements, dark);

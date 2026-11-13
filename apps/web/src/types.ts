@@ -355,7 +355,7 @@ export type Output = 'analysis' | 'presentation';
 export interface Storyline { title: string; arc: string[]; best_for: string | null }
 export interface StorylineQuestion { question: string; storylines: Storyline[]; why: string | null }
 
-export type SlideKind = 'cover' | 'agenda' | 'section' | 'summary' | 'kpis' | 'cards' | 'chart' | 'table' | 'split' | 'text' | 'closing';
+export type SlideKind = 'cover' | 'agenda' | 'section' | 'summary' | 'kpis' | 'cards' | 'chart' | 'table' | 'split' | 'grid' | 'text' | 'closing';
 export type ChartStyle = 'auto' | 'column' | 'stacked' | 'percent' | 'bar' | 'stacked_bar' | 'line';
 export type DeckPoint = string | {text: string; sub?: string[]};
 export interface DeckKpi { value: string; label: string; change?: string; tone?: 'good' | 'bad' | 'neutral'; evidence_ids?: string[] }
@@ -376,6 +376,8 @@ export interface DeckSlide {
   highlights?: DeckHighlight[];
   left?: DeckPanel;
   right?: DeckPanel;
+  /** grid: two to four panels, side by side (2 or 3) or two by two (4). */
+  panels?: DeckPanel[];
   items?: string[];
   evidence_ids?: string[];
   footnote?: string;

@@ -1,6 +1,6 @@
 import JSZip from 'jszip';
 import {describe, expect, it} from 'vitest';
-import {deckFileName, drawnChart, fit, layoutDeck, runs, sections, tableCells, textWidth, unitLabel, type Para} from './layout';
+import {deckFileName, drawnChart, fit, layoutDeck, lead, runs, sections, tableCells, textWidth, unitLabel, type Element, type Para} from './layout';
 import {deckPptx, tidyParagraphs} from './pptx';
 import type {Deck, DesignTokens, Visual} from '../types';
 
@@ -68,9 +68,32 @@ describe('deck layout', () => {
     expect(texts(4)).toContain('(units)');
     expect(texts(0).some(t => t.includes('Source'))).toBe(false);
     // The agenda lists the sections with their pages.
-    expect(texts(1).join('\n')).toContain('Where we stand  (3–5)');
-    expect(texts(1).join('\n')).toContain('What we do next  (6–12)');
+    expect(texts(1).join('\n')).toContain('Where we stand\n(3–5)');
+    expect(texts(1).join('\n')).toContain('What we do next\n(6–12)');
     expect(pages[4].notes).toContain('Source: AI Team Database');
+  });
+
+  it('fills the slide: led points become a grid of rows down to the footer, a chart has its takeaways column beside it', () => {
+    const t = deck({slides: [
+      {kind: 'text', title: 'Four points', points: ['**Flagship:** +18%', '**Mass:** -15%', '**Eco:** +9%', '**Q4:** three moves']},
+      {kind: 'chart', title: 'A chart', visual: 'V1', points: ['One', 'Two', 'Three']},
+      {kind: 'grid', title: 'Three panels', panels: [{heading: 'A', visual: 'V1'}, {heading: 'B', visual: 'V1'}, {heading: 'C', points: ['x', 'y', 'z']}]},
+      {kind: 'cards', title: 'Cards', cards: [{heading: 'One', points: ['a', 'b', 'c']}, {heading: 'Two', points: ['d', 'e', 'f']}]},
+    ]});
+    const [text, chart, grid, cards] = layoutDeck(t);
+    const bottom = (els: Element[]) => Math.max(...els.filter(e => e.type === 'rect' && e.h < 0.05 && e.w > 1).map(e => e.y));
+    expect(bottom(text.elements)).toBeGreaterThan(6.4);  // the last row's rule sits just above the footer
+    const labels = text.elements.filter(e => e.type === 'text' && e.paras[0]?.runs[0]?.text === 'Flagship');
+    expect(labels).toHaveLength(1);
+    expect(text.elements.some(e => e.type === 'rect' && e.fill === TOKENS.colors.card && e.w > 1.5 && e.w < 3)).toBe(true);
+    const column = chart.elements.find(e => e.type === 'text' && e.paras[0]?.runs[0]?.text === 'Key takeaways');
+    expect(column).toBeDefined();
+    const panel = chart.elements.find(e => e.type === 'rect' && e.fill === TOKENS.colors.card)!;
+    expect(panel.y + panel.h).toBeGreaterThan(6.5);
+    expect(grid.elements.filter(e => e.type === 'chart')).toHaveLength(2);
+    expect(Math.max(...cards.elements.filter(e => e.type === 'rect' && e.fill === TOKENS.colors.card).map(e => e.y + e.h))).toBeGreaterThan(6.5);
+    expect(lead('**Flagship:** +18% vs plan')).toEqual(['Flagship', '+18% vs plan']);
+    expect(lead('No lead here')).toBeNull();
   });
 
   it('shades the highlighted cells and keeps a heatmap or table as a native table', () => {

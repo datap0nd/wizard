@@ -1735,7 +1735,7 @@
     },
     {
       "name": "wizard_make_presentation",
-      "description": "Make a PowerPoint presentation from your analysis: the person gets every slide to see, download and open in PowerPoint, with editable charts and tables, in the company's design (from the knowledge base). Use it once the person has chosen the storyline (wizard_propose_storylines) or said the story themselves; render the charts and tables first with wizard_render_visual and show them by id. Every slide's title is a full-sentence takeaway that advances the storyline; the subtitle gives the scope (market, period, unit). Slide kinds and their fields: cover (title, subtitle, meta: region and date); agenda (items, or empty to list the section slides); section (title, subtitle: a divider); summary (the executive summary: points, up to 4 kpis); kpis (2-6 kpis: big figures with label, change and tone); cards (2-4 cards: numbered columns with heading, points, optional value: strategy, options, initiatives); chart (visual, chart style, up to 4 points beside it as the 'so what'); table (a table or heatmap visual, highlights: the few cells to shade good or bad, points); split (left and right panels, each a visual or points, with a heading: comparisons); text (points); closing (title: next steps or the ask, points). Any slide takes evidence_ids, a footnote and speaker notes; sources and units are written on each slide from the evidence and the visuals. Returns the deck id (D1...) to place in your answer, the outline and warnings.",
+      "description": "Make a PowerPoint presentation from your analysis: the person gets every slide to see, download and open in PowerPoint, with editable charts and tables, in the company's design (from the knowledge base). Use it once the person has chosen the storyline (wizard_propose_storylines) or said the story themselves; render the charts and tables first with wizard_render_visual and show them by id. Every slide's title is a full-sentence takeaway that advances the storyline; the subtitle gives the scope (market, period, unit). The company's slides are dense, never minimal: every content slide carries its analysis on the slide, with no empty space: a chart or table with 3-5 takeaways beside it, 4-6 points per text slide, each with a bold lead-in (**Topic:** detail with figures; Wizard sets the leads in a label column), cards with 3-5 bullets, figures with the analysis under them, and a grid for several markets or measures on one slide; section dividers only in long decks. Slide kinds and their fields: cover (title, subtitle, meta: region and date); agenda (items, or empty to list the section slides); section (title, subtitle: a divider); summary (the executive summary: points, up to 4 kpis); kpis (2-6 kpis: big figures with label, change and tone); cards (2-4 cards: numbered columns with heading, points, optional value: strategy, options, initiatives); chart (visual, chart style, up to 4 points beside it as the 'so what'); table (a table or heatmap visual, highlights: the few cells to shade good or bad, points); split (left and right panels, each a visual or points, with a heading: comparisons); grid (2-4 panels, each a heading with a visual and/or points: several markets, segments or measures side by side); text (points); closing (title: the decisions, next steps or the ask, with points: what, who, when). Any slide takes evidence_ids, a footnote and speaker notes; sources and units are written on each slide from the evidence and the visuals. Returns the deck id (D1...) to place in your answer, the outline and warnings.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2068,6 +2068,70 @@
                   },
                   "type": "object"
                 },
+                "panels": {
+                  "description": "grid: 2 to 4 panels (2 or 3 side by side, 4 two by two), each a heading with a visual and/or points: several markets, segments or measures analysed on one slide.",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "description": "(0-80 characters)"
+                      },
+                      "visual": {
+                        "description": "A visual id from wizard_render_visual, e.g. 'V2' (pattern ^V[0-9]{1,4}$)",
+                        "type": "string"
+                      },
+                      "chart": {
+                        "enum": [
+                          "auto",
+                          "column",
+                          "stacked",
+                          "percent",
+                          "bar",
+                          "stacked_bar",
+                          "line"
+                        ],
+                        "type": "string",
+                        "description": "(default \"auto\")"
+                      },
+                      "points": {
+                        "items": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "text": {
+                                  "description": "The bullet; **bold** marks a lead-in, e.g. '**Flagship:** +18% vs plan' (1-300 characters)",
+                                  "type": "string"
+                                },
+                                "sub": {
+                                  "description": "Optional second-level bullets, at most 200 characters each.",
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "maxItems": 4,
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "text"
+                              ],
+                              "type": "object"
+                            }
+                          ]
+                        },
+                        "maxItems": 6,
+                        "type": "array"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "maxItems": 4,
+                  "type": "array"
+                },
                 "items": {
                   "description": "agenda: the topics; leave empty to list the deck's section slides with their pages.",
                   "items": {
@@ -2104,6 +2168,7 @@
                     "chart",
                     "table",
                     "split",
+                    "grid",
                     "text",
                     "closing"
                   ],
@@ -2487,6 +2552,70 @@
                       },
                       "type": "object"
                     },
+                    "panels": {
+                      "description": "grid: 2 to 4 panels (2 or 3 side by side, 4 two by two), each a heading with a visual and/or points: several markets, segments or measures analysed on one slide.",
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "heading": {
+                            "type": "string",
+                            "description": "(0-80 characters)"
+                          },
+                          "visual": {
+                            "description": "A visual id from wizard_render_visual, e.g. 'V2' (pattern ^V[0-9]{1,4}$)",
+                            "type": "string"
+                          },
+                          "chart": {
+                            "enum": [
+                              "auto",
+                              "column",
+                              "stacked",
+                              "percent",
+                              "bar",
+                              "stacked_bar",
+                              "line"
+                            ],
+                            "type": "string",
+                            "description": "(default \"auto\")"
+                          },
+                          "points": {
+                            "items": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "text": {
+                                      "description": "The bullet; **bold** marks a lead-in, e.g. '**Flagship:** +18% vs plan' (1-300 characters)",
+                                      "type": "string"
+                                    },
+                                    "sub": {
+                                      "description": "Optional second-level bullets, at most 200 characters each.",
+                                      "items": {
+                                        "type": "string"
+                                      },
+                                      "maxItems": 4,
+                                      "type": "array"
+                                    }
+                                  },
+                                  "required": [
+                                    "text"
+                                  ],
+                                  "type": "object"
+                                }
+                              ]
+                            },
+                            "maxItems": 6,
+                            "type": "array"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "maxItems": 4,
+                      "type": "array"
+                    },
                     "items": {
                       "description": "agenda: the topics; leave empty to list the deck's section slides with their pages.",
                       "items": {
@@ -2522,6 +2651,7 @@
                         "chart",
                         "table",
                         "split",
+                        "grid",
                         "text",
                         "closing"
                       ],

@@ -62,12 +62,14 @@ COVER = {"kind": "cover", "title": "Q3 review", "meta": "MENA · November 2026"}
 
 def test_a_deck_keeps_its_slides_visuals_sources_and_the_design_it_was_made_in(tools):
     visuals(tools)
+    three = ["**Flagship:** +18%", "**Mass:** -7%", "**Eco:** flat"]
     ok, made = call(tools, "wizard_make_presentation", deck([
-        COVER, {"kind": "summary", "title": "Flagship carried Q3", "points": ["**Flagship:** +18%", {"text": "Mass fell", "sub": ["C-brands"]}],
-                "evidence_ids": ["E1"]},
-        {"kind": "chart", "title": "Flagship grew while Mass fell", "visual": "V1", "chart": "column", "points": ["So what"]},
-        {"kind": "table", "title": "Mass is the gap", "visual": "V2", "highlights": [{"row": "Mass", "column": "Q3", "tone": "bad"}]},
-        {"kind": "closing", "title": "Shift spend to the A-series"}]))
+        COVER, {"kind": "summary", "title": "Flagship carried Q3", "points": ["**Flagship:** +18%", {"text": "Mass fell", "sub": ["C-brands"]},
+                                                                            "**Eco:** flat"], "evidence_ids": ["E1"]},
+        {"kind": "chart", "title": "Flagship grew while Mass fell", "visual": "V1", "chart": "column", "points": three},
+        {"kind": "table", "title": "Mass is the gap", "visual": "V2", "highlights": [{"row": "Mass", "column": "Q3", "tone": "bad"}],
+         "points": three},
+        {"kind": "closing", "title": "Shift spend to the A-series", "points": [*three, "**Owner:** marketing"]}]))
     assert ok, made
     assert made["deck_id"] == "D1" and made["cite_as"] == "[D1]" and made["slides"] == 5 and made["version"] == 1
     assert made["outline"][0] == "1. Cover: Q3 review" and made["outline"][3] == "4. Table: Mass is the gap"
@@ -76,7 +78,7 @@ def test_a_deck_keeps_its_slides_visuals_sources_and_the_design_it_was_made_in(t
     assert set(kept["visuals"]) == {"V1", "V2"} and kept["evidence_ids"] == ["E1"]
     assert kept["sources"]["E1"] == {"name": "AI Team Database · Sell-out by segment", "as_of": "2026-11-10", "data_mode": "SYNTHETIC"}
     assert kept["data_mode"] == "SYNTHETIC" and kept["design"]["tokens"] == DEFAULT
-    assert kept["slides"][1]["points"] == ["**Flagship:** +18%", {"text": "Mass fell", "sub": ["C-brands"]}]
+    assert kept["slides"][1]["points"][:2] == ["**Flagship:** +18%", {"text": "Mass fell", "sub": ["C-brands"]}]
     assert "subtitle" not in kept["slides"][0], "a slide keeps only the fields it has"
 
 
@@ -115,6 +117,28 @@ def test_a_stacked_chart_needs_two_series_and_warnings_name_what_to_fix(tools):
     assert any("Slide 2 has 8 bullets" in w for w in made["warnings"])
     assert any("Slide 3 states figures but cites no evidence" in w for w in made["warnings"])
     assert any("first slide is not a cover" in w for w in made["warnings"])
+
+
+def test_thin_slides_are_named_so_the_deck_has_no_empty_space(tools):
+    visuals(tools)
+    ok, made = call(tools, "wizard_make_presentation", deck([
+        COVER, {"kind": "section", "title": "Where we stand"},
+        {"kind": "chart", "title": "A chart alone", "visual": "V1"},
+        {"kind": "text", "title": "Two points", "points": ["a", "b"]},
+        {"kind": "cards", "title": "Thin cards", "cards": [{"heading": "One", "points": ["a"]}, {"heading": "Two", "points": ["b", "c", "d"]}]},
+        {"kind": "kpis", "title": "Figures alone", "kpis": [{"value": "1", "label": "a", "evidence_ids": ["E1"]}, {"value": "2", "label": "b"}]},
+        {"kind": "grid", "title": "Three panels", "panels": [{"heading": "A", "visual": "V1"}, {"heading": "B", "points": ["x"]}]},
+        {"kind": "closing", "title": "Thank you"}]))
+    assert ok, made
+    warned = " ".join(made["warnings"])
+    for slide, words in ((2, "section divider in a 8-slide deck"), (3, "shows its chart with no takeaway"), (4, "has 2 point(s)"),
+                         (5, "give every card 3 to 5 bullets"), (6, "shows figures without analysis"), (7, "a panel with fewer than 3 points"),
+                         (8, "has no point(s)")):
+        assert f"Slide {slide}" in warned and words in warned, words
+    ok, refused = call(tools, "wizard_make_presentation", deck([{"kind": "grid", "title": "One panel", "panels": [{"heading": "A"}]},
+                                                               {"kind": "text", "title": "Panels", "points": ["a"], "panels": [{"points": ["x"]}, {"points": ["y"]}]}]))
+    assert not ok and "Slide 1 (grid) needs 2 to 4 panels" in refused["message"] and "panel 1 needs a visual or points" in refused["message"]
+    assert "Slide 2: panels belong to a grid slide" in refused["message"]
 
 
 def test_changes_make_a_new_version_and_reading_returns_every_slide(tools):

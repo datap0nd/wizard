@@ -3,7 +3,26 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-13 (latest) — Wizard makes presentations
+## 2026-11-13 (latest) — Presentations: dense slides, no empty space
+
+The owner, on the first sample deck: "Those sample decks are so minimalistic and have so much empty space. samsung is
+against empty space" ([decision](decisions/2026-11-13-presentations.md), "Dense slides").
+
+- **Layout** (`apps/web/src/deck/layout.ts`): `rowGrid` turns points into rows that fill their box — the bold lead-in in
+  a label column on wide boxes, the detail beside it, a rule between rows, text up to 30% larger where room is left,
+  native bullets in narrow columns; `takeaways` puts a full-height **Key takeaways** column beside a chart or table;
+  cards, tables (rows up to 1.6× taller) and key figures reach the bottom; the agenda is a grid of numbered rows.
+  A **grid** slide kind (2–4 panels; 4 as two by two) on the page and in `deck_tools.py`.
+- **Tool** (`deck_tools.py`, `_sparse`): a warning for every thin slide (a chart or table under three takeaways, text or
+  closing under four points, a summary under three, figures without analysis, cards under three bullets, a thin panel,
+  a section divider in a deck of twelve slides or fewer). The tool description and the system prompt ask for dense
+  slides and fewer, fuller ones.
+- Checks: `tests/unit/test_presentations.py` 11 passed (a new test names each thin slide and refuses a bad grid);
+  `deck.test.ts` 8 and `DeckCard.test.tsx` 6 passed (a new test: rows reach the footer, the takeaways column runs the
+  chart's height, a grid of three panels, cards to the bottom). A 9-slide dense sample was previewed in Chromium and its
+  .pptx rendered in LibreOffice. Full run below.
+
+## 2026-11-13 — Wizard makes presentations
 
 The owner: "Wizard should be able to make complete powerpoint presentations, start to finish", "powerpoints are all
 about storyline … a question that wizard asks", "the output can be analysis, powerpoint … something they can toggle",

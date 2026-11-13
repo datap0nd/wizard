@@ -129,6 +129,11 @@ Presentations
   four short bullets; close with the recommendation, next steps or the ask. Usually 6 to 12 slides. Every figure comes
   from evidence: visuals carry theirs; cite evidence_ids for figures written in text. Shade only the few table cells
   that carry the message.
+- The company's slides are dense, never minimal: no empty space. Every content slide carries its analysis: a chart or
+  table with three to five takeaways beside it, text slides with four to six points that each start with a bold
+  lead-in (**Topic:** the detail, with figures), cards with three to five bullets, figures with the analysis under
+  them, and a grid slide for several markets or measures at once. Prefer fewer, fuller slides to many thin ones; a
+  section divider only in a long deck. The tool's warnings name thin slides: fix them before you answer.
 - In your answer, put the deck's id (e.g. [D1]) on its own line with two to four lines on what it argues. Do not repeat
   the deck as a written analysis.
 - The person asks for changes in the chat ("shorter titles", "slide 4 as a table", "add a slide on Egypt"): make them

@@ -30,10 +30,11 @@ EVIDENCE_ID = r"^E[0-9]{1,4}$"
 VISUAL_ID = r"^V[0-9]{1,4}$"
 DECK_ID = r"^D[0-9]{1,4}$"
 MAX_SLIDES = 40
-KINDS = ("cover", "agenda", "section", "summary", "kpis", "cards", "chart", "table", "split", "text", "closing")
+KINDS = ("cover", "agenda", "section", "summary", "kpis", "cards", "chart", "table", "split", "grid", "text", "closing")
 CHART_STYLES = ("auto", "column", "stacked", "percent", "bar", "stacked_bar", "line")
 KIND_WORDS = {"cover": "Cover", "agenda": "Agenda", "section": "Section", "summary": "Executive summary", "kpis": "Key figures",
-              "cards": "Cards", "chart": "Chart", "table": "Table", "split": "Two panels", "text": "Text", "closing": "Closing"}
+              "cards": "Cards", "chart": "Chart", "table": "Table", "split": "Two panels", "grid": "Grid", "text": "Text",
+              "closing": "Closing"}
 FIGURE = re.compile(r"\d")
 LONG_TITLE = 110
 MAX_TABLE_ROWS = 16  # rows a table slide shows at a readable size (apps/web/src/deck/layout.ts shrinks, then cuts)
@@ -147,6 +148,9 @@ class SlideFields(Args):
         "table: the few cells to shade, good (green) or bad (yellow); a handful per slide, never a whole column."))
     left: Panel | None = Field(default=None, description="split: the left panel (a visual or bullets, with a heading).")
     right: Panel | None = Field(default=None, description="split: the right panel.")
+    panels: list[Panel] | None = Field(default=None, max_length=4, description=(
+        "grid: 2 to 4 panels (2 or 3 side by side, 4 two by two), each a heading with a visual and/or points: several "
+        "markets, segments or measures analysed on one slide."))
     items: list[str] | None = Field(default=None, max_length=10, description="agenda: the topics; leave empty to list the deck's section slides with their pages.")
     evidence_ids: list[str] | None = Field(default=None, max_length=20, description="Evidence behind figures in the slide's text (a visual's evidence is added by itself).")
     footnote: str | None = Field(default=None, max_length=300, description="An extra footnote: a definition, a caveat, how a figure was derived.")
@@ -154,12 +158,12 @@ class SlideFields(Args):
 
 
 class Slide(SlideFields):
-    kind: Literal["cover", "agenda", "section", "summary", "kpis", "cards", "chart", "table", "split", "text", "closing"] = Field(
+    kind: Literal["cover", "agenda", "section", "summary", "kpis", "cards", "chart", "table", "split", "grid", "text", "closing"] = Field(
         description="The slide's kind; see the tool description for what each holds.")
 
 
 class SlidePatch(SlideFields):
-    kind: Literal["cover", "agenda", "section", "summary", "kpis", "cards", "chart", "table", "split", "text", "closing"] | None = None
+    kind: Literal["cover", "agenda", "section", "summary", "kpis", "cards", "chart", "table", "split", "grid", "text", "closing"] | None = None
 
 
 class DeckArgs(Args):
@@ -218,6 +222,8 @@ def _clean(slide: dict[str, Any]) -> dict[str, Any]:
             value = [{**{k: v for k, v in c.items() if v not in (None, [], "")}, "points": _points(c.get("points"))} for c in value]
         if key in ("left", "right") and isinstance(value, dict):
             value = {k: (_points(v) if k == "points" else v) for k, v in value.items() if v not in (None, [], "")}
+        if key == "panels":
+            value = [{k: (_points(v) if k == "points" else v) for k, v in p.items() if v not in (None, [], "")} for p in value]
         out[key] = value
     return out
 
@@ -305,6 +311,18 @@ def _check(slides: list[dict[str, Any]], visuals: dict[str, dict[str, Any]], kno
                     problems.append(f"Slide {n} (split) needs a {side} panel with a visual or points.")
                 elif panel.get("visual"):
                     visual(n, panel["visual"], "panel", panel.get("chart"))
+        if kind == "grid":
+            panels = slide.get("panels") or []
+            if not 2 <= len(panels) <= 4:
+                problems.append(f"Slide {n} (grid) needs 2 to 4 panels.")
+            for number, panel in enumerate(panels, 1):
+                if not (panel.get("visual") or panel.get("points")):
+                    problems.append(f"Slide {n} (grid): panel {number} needs a visual or points.")
+                elif panel.get("visual"):
+                    visual(n, panel["visual"], "panel", panel.get("chart"))
+        if kind != "grid" and slide.get("panels"):
+            problems.append(f"Slide {n}: panels belong to a grid slide.")
+        warnings.extend(_sparse(n, slide, len(slides)))
         if kind not in ("chart", "table") and slide.get("visual"):
             problems.append(f"Slide {n}: a {kind} slide shows no visual; use a chart, table or split slide.")
         cited = list(slide.get("evidence_ids") or []) + [e for k in slide.get("kpis") or [] for e in k.get("evidence_ids") or []]
@@ -318,6 +336,35 @@ def _check(slides: list[dict[str, Any]], visuals: dict[str, dict[str, Any]], kno
     return problems, warnings
 
 
+DENSE = ("the company's slides carry their analysis on the slide, with no empty space")
+
+
+def _sparse(n: int, slide: dict[str, Any], total: int) -> list[str]:
+    """What would leave a slide mostly empty (owner, 13 Nov 2026: "so much empty space ... against empty space")."""
+    kind, points = slide["kind"], slide.get("points") or []
+    if kind in ("chart", "table") and len(points) < 3:
+        return [f"Slide {n} shows its {kind} with {len(points) or 'no'} takeaway(s): add 3 to 5 points beside it (what "
+                f"the figures show, the drivers, what to do); {DENSE}."]
+    if kind in ("text", "closing") and len(points) < 4:
+        return [f"Slide {n} has {len(points) or 'no'} point(s): give it 4 to 6, each with a bold lead-in (**Topic:** "
+                f"detail with figures), or merge it into another slide; {DENSE}."]
+    if kind == "summary" and len(points) < 3:
+        return [f"Slide {n}, the executive summary, has {len(points)} point(s): give it 3 to 6 with bold lead-ins; {DENSE}."]
+    if kind == "kpis" and len(points) < 2:
+        return [f"Slide {n} shows figures without analysis: add 2 to 4 points under them on what drives them; {DENSE}."]
+    if kind == "cards" and any(len(c.get("points") or []) < 3 for c in slide.get("cards") or []):
+        return [f"Slide {n}: give every card 3 to 5 bullets (actions, owners, figures, timing); {DENSE}."]
+    if kind == "section" and total <= 12:
+        return [f"Slide {n} is a section divider in a {total}-slide deck: a divider is an empty slide; let the agenda "
+                "and the titles carry the structure."]
+    if kind in ("split", "grid"):
+        thin = [p for p in ([slide.get("left"), slide.get("right")] if kind == "split" else slide.get("panels") or [])
+                if p and not p.get("visual") and len(p.get("points") or []) < 3]
+        if thin:
+            return [f"Slide {n} has a panel with fewer than 3 points and no visual: fill it; {DENSE}."]
+    return []
+
+
 def _has_figures(slide: dict[str, Any]) -> bool:
     texts = [str(slide.get("title") or "")] + [p if isinstance(p, str) else p["text"] for p in slide.get("points") or []]
     texts += [k["value"] for k in slide.get("kpis") or []] + [c.get("value") or "" for c in slide.get("cards") or []]
@@ -326,7 +373,8 @@ def _has_figures(slide: dict[str, Any]) -> bool:
 
 def _evidence_of(slide: dict[str, Any], visuals: dict[str, dict[str, Any]]) -> list[str]:
     ids = list(slide.get("evidence_ids") or []) + [e for k in slide.get("kpis") or [] for e in k.get("evidence_ids") or []]
-    for vid in (slide.get("visual"), (slide.get("left") or {}).get("visual"), (slide.get("right") or {}).get("visual")):
+    for vid in (slide.get("visual"), (slide.get("left") or {}).get("visual"), (slide.get("right") or {}).get("visual"),
+                *[p.get("visual") for p in slide.get("panels") or []]):
         if vid and vid in visuals:
             ids += visuals[vid].get("evidence_ids") or []
     return list(dict.fromkeys(ids))
@@ -350,7 +398,8 @@ def _store(ctx: ToolContext, head: dict[str, Any], slides: list[dict[str, Any]],
     if problems:
         raise ToolError("invalid_presentation", " ".join(problems[:12]) + " Fix these and call the tool again.")
     shown = {vid for s in slides for vid in (s.get("visual"), (s.get("left") or {}).get("visual"),
-                                            (s.get("right") or {}).get("visual")) if vid}
+                                            (s.get("right") or {}).get("visual"),
+                                            *[p.get("visual") for p in s.get("panels") or []]) if vid}
     cited = list(dict.fromkeys(e for s in slides for e in _evidence_of(s, visuals)))
     modes = sorted({str(evidence[e].get("data_mode")) for e in cited if evidence[e].get("data_mode")})
     payload = {**head, "slides": slides, "design": design, "revises": revises["id"] if revises else None,
@@ -449,13 +498,19 @@ MAKE_DESCRIPTION = (
     "PowerPoint, with editable charts and tables, in the company's design (from the knowledge base). Use it once the "
     "person has chosen the storyline (wizard_propose_storylines) or said the story themselves; render the charts and "
     "tables first with wizard_render_visual and show them by id. Every slide's title is a full-sentence takeaway that "
-    "advances the storyline; the subtitle gives the scope (market, period, unit). Slide kinds and their fields: "
+    "advances the storyline; the subtitle gives the scope (market, period, unit). The company's slides are dense, never "
+    "minimal: every content slide carries its analysis on the slide, with no empty space: a chart or table with 3-5 "
+    "takeaways beside it, 4-6 points per text slide, each with a bold lead-in (**Topic:** detail with figures; Wizard sets "
+    "the leads in a label column), cards with 3-5 bullets, figures with the analysis under them, and a grid for several "
+    "markets or measures on one slide; section dividers only in long decks. Slide kinds and their fields: "
     "cover (title, subtitle, meta: region and date); agenda (items, or empty to list the section slides); section "
     "(title, subtitle: a divider); summary (the executive summary: points, up to 4 kpis); kpis (2-6 kpis: big figures "
     "with label, change and tone); cards (2-4 cards: numbered columns with heading, points, optional value: strategy, "
     "options, initiatives); chart (visual, chart style, up to 4 points beside it as the 'so what'); table (a table or "
     "heatmap visual, highlights: the few cells to shade good or bad, points); split (left and right panels, each a "
-    "visual or points, with a heading: comparisons); text (points); closing (title: next steps or the ask, points). "
+    "visual or points, with a heading: comparisons); grid (2-4 panels, each a heading with a visual and/or points: "
+    "several markets, segments or measures side by side); text (points); closing (title: the decisions, next steps or "
+    "the ask, with points: what, who, when). "
     "Any slide takes evidence_ids, a footnote and speaker notes; sources and units are written on each slide from the "
     "evidence and the visuals. Returns the deck id (D1...) to place in your answer, the outline and warnings.")
 

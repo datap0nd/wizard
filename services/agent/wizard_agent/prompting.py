@@ -366,7 +366,8 @@ def decks_block(decks: list[dict[str, Any]]) -> str:
                      f"{squeeze(str(deck.get('storyline') or ''), 300)}")
         for number, slide in enumerate(deck.get("slides") or [], 1):
             shown = [x for x in (slide.get("visual"), (slide.get("left") or {}).get("visual"),
-                                 (slide.get("right") or {}).get("visual")) if x]
+                                 (slide.get("right") or {}).get("visual"),
+                                 *[p.get("visual") for p in slide.get("panels") or []]) if x]
             style = f" {slide['chart']}" if slide.get("chart") and slide.get("chart") != "auto" else ""
             lines.append(f"  {number}. {slide.get('kind')}: {squeeze(str(slide.get('title') or ''), 140)}"
                          + (f" [{', '.join(shown)}{style}]" if shown else ""))
