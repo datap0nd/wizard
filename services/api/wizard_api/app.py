@@ -101,7 +101,7 @@ PUBLIC_PATHS = {"/api/v1/health", "/api/v1/ready", "/api/v1/bootstrap", "/api/v1
 TIMELINE_EVENTS = {"run_started", "status", "agent_session", "note", "tool_started", "tool_finished", "visual_added",
                    "check_result", "schedule_proposed", "file_made", "warning", "run_failed",
                    "run_finished", "steer", "steer_read", "systems_changed", "system_requested", "person_asked",
-                   "storylines_proposed", "deck_added"}
+                   "storylines_proposed", "deck_added", "portal_sign_in"}
 TERMINAL = {"run_finished", "run_failed"}
 SUGGESTIONS = [
     {"story": "Executive", "question": "Which market gave us the best return on marketing investment last quarter — tie NERP "

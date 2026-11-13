@@ -26,7 +26,7 @@ from tests.helpers import TEST_TMP, MemoryRecorder
 
 from wizard_agent.secret_box import SecretBox
 from wizard_connectors.entitlements import Identity, SystemRights
-from wizard_connectors.portal_browser import PortalBrowser, PortalBrowsers
+from wizard_connectors.portal_browser import PortalBrowser, PortalBrowsers, PortalError
 from wizard_connectors.portals import settings_from
 from wizard_connectors.tools import ToolContext, build_registry, build_services
 
@@ -583,6 +583,59 @@ def test_the_sign_in_outlives_its_window_and_a_restart():
     finally:
         again.shutdown()
         server.shutdown()
+        shutil.rmtree(root.parent, ignore_errors=True)
+
+
+def test_the_sign_in_check_before_a_question_is_code_in_a_tab_of_its_own(portal_url):
+    """Owner, 13 Nov 2026: before each answer Wizard checks in code (no model) whether the person is still signed in to
+    each portal, so it can ask them to sign in again. The check opens a tab of its own (the page Gemini works on stays
+    where it is), a portal read or found signed in a moment ago is not opened again, one found signed out stays signed
+    out until the person signs in, and closing the sign-in window checks every portal again."""
+    from wizard_connectors.portal_browser import SIGN_IN_AGAIN, SIGN_IN_FRESH_S
+    root = Path(tempfile.mkdtemp(prefix="portal-check-", dir=TEST_TMP)) / "portal-browser"
+    # GSCM and ASAP are signed in; the Big Data Portal's Superset shows its sign-in page.
+    settings = settings_from({"WIZARD_PORTAL_GSCM_URL": portal_url, "WIZARD_PORTAL_ASAP_URL": portal_url + "asap",
+                              "WIZARD_PORTAL_BDP_URL": portal_url + "login", "WIZARD_BROWSER_EXECUTABLE": BROWSER})
+    assert settings is not None
+    browser = PortalBrowser(settings, root, Headless, SecretBox(force_plain=True))
+    states = lambda state: {p["id"]: p["state"] for p in state["portals"]}  # noqa: E731
+    try:
+        first = browser.sign_in_state()
+        assert states(first) == {"asap": "unknown", "gscm": "unknown", "bdp-superset": "unknown"}
+        assert first["checking"] is False and first["why"] == SIGN_IN_AGAIN and "every now and then" in SIGN_IN_AGAIN
+        gscm = settings.portal("gscm")
+        assert gscm is not None
+        browser.execute(gscm, [{"action": "goto", "url": "/report"}], {})  # Gemini's own read, earlier
+        assert states(browser.sign_in_state(["gscm"])) == {"gscm": "signed_in"}, "a read that ended on the portal"
+        assert browser.sign_in_due(["gscm", "asap", "bdp"]) == ["asap", "bdp"]
+        before = list(Portal.hits)
+        state = browser.check_for_question(["gscm", "asap", "bdp"])
+        assert states(state) == {"asap": "signed_in", "gscm": "signed_in", "bdp-superset": "signed_out"}
+        assert state["checked_at"] and not state["checking"] and not state["signing_in"]
+        opened = Portal.hits[len(before):]
+        assert "GET /asap" in opened and "GET /login" in opened and "GET /" not in opened, opened
+        assert browser.run(lambda: browser._page.url).endswith("/report"), "the page Gemini works on is left as it was"
+        assert browser.run(lambda: len(browser._context.pages)) == 1, "the check's tab is closed again"
+        assert browser.sign_in_due(["gscm", "asap", "bdp"]) == [], "fresh, and signed out until the person signs in"
+        browser._signed = {k: {**v, "at": v["at"] - SIGN_IN_FRESH_S - 1} for k, v in browser._signed.items()}
+        assert browser.sign_in_due(["gscm", "asap", "bdp"]) == ["asap", "gscm"]
+        # A read that meets a sign-in page marks the portal signed out at once.
+        with pytest.raises(PortalError) as refused:
+            browser.execute(gscm, [{"action": "goto", "url": "/login"}], {})
+        assert refused.value.code == "sign_in_required" and "yellow bar at the top" in refused.value.message
+        assert states(browser.sign_in_state(["gscm"])) == {"gscm": "signed_out"}
+        # The person signs in: nothing is checked while the window is open, and closing it checks every portal again.
+        browser.begin_sign_in()
+        waiting = browser.check_for_question(["gscm"])
+        assert waiting["signing_in"] is True and states(waiting) == {"gscm": "signed_out"}
+        browser.finish_sign_in()
+        deadline = time.monotonic() + 60
+        while browser.sign_in_state()["checking"] and time.monotonic() < deadline:
+            time.sleep(0.2)
+        assert states(browser.sign_in_state()) == {"asap": "signed_in", "gscm": "signed_in", "bdp-superset": "signed_out"}
+        assert browser.sign_in_due(["gscm", "asap", "bdp"]) == []
+    finally:
+        browser.shutdown()
         shutil.rmtree(root.parent, ignore_errors=True)
 
 

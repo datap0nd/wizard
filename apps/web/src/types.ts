@@ -467,6 +467,7 @@ export interface PortalStatus {
   /** What Wizard learned exploring each portal, and the portal being mapped now (one per person). */
   maps?: Record<string, PortalMapStatus>;
   mapping?: PortalMapping | null;
+  sign_in?: PortalSignInState;
 }
 
 /** A portal's map: Gemini's exploration of it, kept on this PC and published to the knowledge base when it can. */
@@ -602,7 +603,36 @@ export interface TasksView {
 }
 
 export interface PortalCheck {
-  portals: {id: string; name: string; signed_in: boolean; title?: string; host?: string; error?: string}[];
+  portals: {id: string; name: string; signed_in: boolean; portal?: string; state?: PortalSignInState['portals'][number]['state'];
+    title?: string; host?: string; error?: string}[];
+}
+
+/** Whether the person is still signed in to each portal (each application of one that has several), as Wizard's
+ * check in code found it (owner, 13 Nov 2026: docs/decisions/2026-11-13-portal-sign-in-check.md). Each question checks
+ * the portals it may read; GET /api/v1/portals says how all of them stand. */
+export interface PortalSignInState {
+  portals: {
+    /** The application: "gscm", or "bdp-superset" for one part of the Big Data Portal. */
+    id: string;
+    /** The portal it belongs to: the system id on the stage. */
+    portal: string;
+    name: string;
+    /** signed_out: the portal showed its sign-in page. unreachable: it did not load (off the VPN, the portal down),
+     * which signing in does not fix. unknown: not checked since Wizard started. */
+    state: 'signed_in' | 'signed_out' | 'unreachable' | 'unknown';
+    signed_in: boolean;
+    /** A check of it is queued or running; `state` is what Wizard found before. */
+    checking?: boolean;
+    checked_at?: string;
+    error?: string;
+  }[];
+  /** A check is queued or running (after a question, or after the sign-in window closed). */
+  checking: boolean;
+  /** The person's sign-in window is open. */
+  signing_in: boolean;
+  checked_at: string | null;
+  /** Why the person signs in again now and then, in Wizard's words. */
+  why: string;
 }
 
 export interface RunView {
@@ -647,6 +677,8 @@ export interface RunView {
   /** Presentations made in this answer, in order (a change adds a newer version). */
   decks: Deck[];
   output: Output;
+  /** The portals' sign-in check that ran beside this answer: the stage shows a portal that ended it with Sign in. */
+  signIn: PortalSignInState | null;
   createdAt: string;
   /** Server time the agent started (run_started), the zero point for each step's start time. */
   startedAt: string | null;

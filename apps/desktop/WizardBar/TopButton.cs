@@ -15,7 +15,9 @@ namespace WizardBar
     /// <summary>The always-on button: a tab hanging from the top edge of the main screen with the pixel wizard in it. He
     /// rests (and twinkles his staff now and then), drops down and waves when the pointer is on the tab, casts when it is
     /// clicked, acts out what Wizard is doing while a question runs (the page tells: reading, searching, writing...), hops
-    /// when the answer is ready and fizzles when the service stopped. A file dragged onto the tab is attached to the
+    /// when the answer is ready and fizzles when the service stopped. The tab turns yellow while a company portal has ended
+    /// the person's sign-in (the page tells, from Wizard's check before each answer) until they sign in again. A file
+    /// dragged onto the tab is attached to the
     /// conversation. It stays above other windows, never takes the keyboard focus, steps aside for full-screen apps and
     /// slide shows, and can be dragged along the top edge.</summary>
     internal sealed class TopButton : Form
@@ -23,6 +25,11 @@ namespace WizardBar
         private static readonly Color Blue = Color.FromArgb(255, 20, 40, 160);       // Samsung Blue, as the wizard's robe
         private static readonly Color BlueLight = Color.FromArgb(255, 58, 92, 214);
         private static readonly Color Green = Color.FromArgb(255, 52, 199, 89);
+        // A portal ended the sign-in: the tab is yellow, its words dark amber (the page's warning colours).
+        private static readonly Color AmberTop = Color.FromArgb(255, 255, 243, 196);
+        private static readonly Color AmberBottom = Color.FromArgb(255, 253, 224, 128);
+        private static readonly Color AmberLine = Color.FromArgb(255, 226, 168, 20);
+        private static readonly Color AmberInk = Color.FromArgb(255, 146, 64, 14);
         private const double IdleEvery = 9;  // seconds between the resting wizard's staff twinkles
         private readonly BarSettings settings;
         private readonly Timer keeper = new Timer { Interval = 1000 };
@@ -30,6 +37,7 @@ namespace WizardBar
         private readonly Stopwatch clock = Stopwatch.StartNew();
         private ButtonLook look = ButtonLook.Starting;
         private string activity;
+        private string signIn;  // the portals whose sign-in has ended, as words ("GSCM and ASAP"); null when none
         private bool hover, pressed, dragging, fileOver, hiddenForFullScreen;
         private Point pressAt;
         private int pressLeft;
@@ -112,7 +120,22 @@ namespace WizardBar
             }
         }
 
-        private string Caption => fileOver ? "Drop to attach" : look switch
+        /// <summary>The portals whose sign-in has ended ("GSCM and ASAP"), or null: the tab is yellow while there are any.</summary>
+        public string SignIn
+        {
+            set
+            {
+                var next = string.IsNullOrWhiteSpace(value) ? null : value;
+                if (signIn == next) return;
+                signIn = next;
+                Tick();
+            }
+        }
+
+        /// <summary>Yellow: a portal ended the sign-in, and the service is running (when it is not, nothing is known).</summary>
+        private bool NeedsSignIn => signIn != null && look != ButtonLook.Starting && look != ButtonLook.Failed;
+
+        private string Caption => fileOver ? "Drop to attach" : NeedsSignIn && look == ButtonLook.Ready ? "Sign in again" : look switch
         {
             ButtonLook.Starting => "Starting Wizard…",
             ButtonLook.Working => "Wizard is working…",
@@ -122,7 +145,7 @@ namespace WizardBar
         };
 
         /// <summary>The second line, shown while the tab is dropped down.</summary>
-        private string Hint => fileOver ? "Wizard reads it with your question" : look switch
+        private string Hint => fileOver ? "Wizard reads it with your question" : NeedsSignIn && look == ButtonLook.Ready ? SignInHint(signIn) : look switch
         {
             ButtonLook.Starting => "One moment",
             ButtonLook.Working => "Click to watch",
@@ -130,6 +153,13 @@ namespace WizardBar
             ButtonLook.Failed => "Click for the reason",
             _ => "Click, Ctrl+Alt+W, or drop a file",
         };
+
+        /// <summary>The second line while a portal has ended the sign-in: which ones, kept short.</summary>
+        internal static string SignInHint(string portals)
+        {
+            var text = "Click to sign in to " + portals;
+            return text.Length <= 48 ? text : text.Substring(0, 47) + "…";
+        }
 
         private double Now => clock.Elapsed.TotalSeconds;
 
@@ -212,7 +242,7 @@ namespace WizardBar
             var pose = new Pose
             {
                 Look = look, Animation = playing, Frame = Frame(now), Caption = Caption, Hint = Hint, Lift = lift, Grow = grow,
-                Pressed = pressed, FileOver = fileOver, Scale = scale,
+                Pressed = pressed, FileOver = fileOver, Scale = scale, SignIn = NeedsSignIn,
                 Shimmer = look == ButtonLook.Working ? now % 1.4 / 1.4 : -1,
                 Pulse = look == ButtonLook.Answered ? (int)(now * 8) % 16 : -1,
             };
@@ -238,11 +268,11 @@ namespace WizardBar
             public string Animation, Caption, Hint;
             public int Frame, Pulse;
             public double Lift, Grow, Shimmer;
-            public bool Pressed, FileOver;
+            public bool Pressed, FileOver, SignIn;
             public float Scale;
 
             public string Key => string.Join("|", Look, Animation, Frame, Caption, Hint, (int)(Lift * 24), (int)(Grow * 24),
-                Pressed, FileOver, Shimmer < 0 ? -1 : (int)(Shimmer * 48), Pulse, Scale);
+                Pressed, FileOver, Shimmer < 0 ? -1 : (int)(Shimmer * 48), Pulse, Scale, SignIn);
         }
 
         /// <summary>The button as a picture with per-pixel transparency: the tab, its shadow or glow, the wizard, the words.</summary>
@@ -275,15 +305,17 @@ namespace WizardBar
                     for (var i = shadow; i > 0; i--)
                     {
                         using (var path = Tab(new RectangleF(shadow - i, -1, width + 2 * i, height + i), radius + i))
-                        using (var brush = new SolidBrush(p.Lift > 0
+                        using (var brush = new SolidBrush(p.SignIn
+                            ? Color.FromArgb((int)(Math.Max(1, 30 - 4 * i) * (1 + 1.2 * p.Lift)), 214, 150, 0)
+                            : p.Lift > 0
                             ? Color.FromArgb((int)(Math.Max(1, 26 - 3.5 * i) * (1 + 1.4 * p.Lift)), 58, 92, 214)
                             : Color.FromArgb(Math.Max(1, 24 - 3 * i), 8, 14, 60)))
                             g.FillPath(brush, path);
                     }
                     using (var path = Tab(body, radius))
                     {
-                        var top = p.Pressed ? Color.FromArgb(255, 232, 237, 251) : p.FileOver ? Color.FromArgb(255, 238, 243, 255) : Color.White;
-                        var bottom = p.Pressed ? Color.FromArgb(255, 220, 228, 250) : Color.FromArgb(255, 236, 241, 252);
+                        var top = p.Pressed ? Color.FromArgb(255, 232, 237, 251) : p.FileOver ? Color.FromArgb(255, 238, 243, 255) : p.SignIn ? AmberTop : Color.White;
+                        var bottom = p.Pressed ? Color.FromArgb(255, 220, 228, 250) : p.SignIn && !p.FileOver ? AmberBottom : Color.FromArgb(255, 236, 241, 252);
                         using (var brush = new LinearGradientBrush(new RectangleF(body.X, body.Y, body.Width, body.Height + 1), top, bottom, LinearGradientMode.Vertical))
                             g.FillPath(brush, path);
                         var state = g.Save();
@@ -309,6 +341,8 @@ namespace WizardBar
                         g.Restore(state);
                         using (var pen = p.FileOver
                             ? new Pen(BlueLight, 1.8f * scale) { DashStyle = DashStyle.Dash }
+                            : p.SignIn
+                            ? new Pen(AmberLine, (1.2f + 0.5f * (float)p.Lift) * scale)
                             : new Pen(p.Lift > 0 ? Color.FromArgb((int)(90 + 140 * p.Lift), BlueLight) : Color.FromArgb(255, 201, 211, 238), (1f + 0.5f * (float)p.Lift) * scale))
                             g.DrawPath(pen, path);
                     }
@@ -316,7 +350,7 @@ namespace WizardBar
                     var lineOne = font.GetHeight(g);
                     var lineTwo = small.GetHeight(g) * (float)show;
                     var textY = (height - 1 - lineOne - lineTwo) / 2f - 1;
-                    var captionColor = p.Look == ButtonLook.Failed ? Color.FromArgb(255, 190, 30, 30) : Blue;
+                    var captionColor = p.Look == ButtonLook.Failed ? Color.FromArgb(255, 190, 30, 30) : p.SignIn ? AmberInk : Blue;
                     if (p.Pulse >= 0)
                     {
                         // An answer is waiting: a green dot after the caption, gently pulsing.
@@ -332,7 +366,7 @@ namespace WizardBar
                     {
                         g.DrawString(p.Caption, font, text, textX, textY, format);
                         if (show > 0.05)
-                            using (var faint = new SolidBrush(Color.FromArgb((int)(220 * show), 74, 82, 110)))
+                            using (var faint = new SolidBrush(p.SignIn ? Color.FromArgb((int)(230 * show), 120, 72, 10) : Color.FromArgb((int)(220 * show), 74, 82, 110)))
                                 g.DrawString(p.Hint, small, faint, textX + 0.5f * scale, textY + lineOne, format);
                     }
                 }
@@ -345,16 +379,19 @@ namespace WizardBar
         public static bool Snapshot(string folder)
         {
             if (!SpriteSheet.Available) return false;
-            var poses = new (string name, ButtonLook look, string animation, int frame, string caption, string hint, double lift, double grow, bool pressed, bool fileOver, double shimmer, int pulse)[]
+            var poses = new (string name, ButtonLook look, string animation, int frame, string caption, string hint, double lift, double grow, bool pressed, bool fileOver, double shimmer, int pulse, bool signIn)[]
             {
-                ("rest", ButtonLook.Ready, "idle", 0, "Ask Wizard", "Click, Ctrl+Alt+W, or drop a file", 0, 0, false, false, -1, -1),
-                ("hover", ButtonLook.Ready, "wave", 2, "Ask Wizard", "Click, Ctrl+Alt+W, or drop a file", 1, 0, false, false, -1, -1),
-                ("click", ButtonLook.Ready, "cast", 3, "Ask Wizard", "Click, Ctrl+Alt+W, or drop a file", 1, 0, true, false, -1, -1),
-                ("file", ButtonLook.Ready, "read", 2, "Drop to attach", "Wizard reads it with your question", 1, 1, false, true, -1, -1),
-                ("starting", ButtonLook.Starting, "think", 3, "Starting Wizard…", "One moment", 0, 0, false, false, -1, -1),
-                ("working", ButtonLook.Working, "read", 1, "Wizard is working…", "Click to watch", 0, 0, false, false, 0.45, -1),
-                ("answered", ButtonLook.Answered, "success", 7, "Wizard answered", "Click to read it", 0, 0, false, false, -1, 4),
-                ("failed", ButtonLook.Failed, "fail", 5, "Wizard stopped", "Click for the reason", 0, 0, false, false, -1, -1),
+                ("rest", ButtonLook.Ready, "idle", 0, "Ask Wizard", "Click, Ctrl+Alt+W, or drop a file", 0, 0, false, false, -1, -1, false),
+                ("hover", ButtonLook.Ready, "wave", 2, "Ask Wizard", "Click, Ctrl+Alt+W, or drop a file", 1, 0, false, false, -1, -1, false),
+                ("click", ButtonLook.Ready, "cast", 3, "Ask Wizard", "Click, Ctrl+Alt+W, or drop a file", 1, 0, true, false, -1, -1, false),
+                ("file", ButtonLook.Ready, "read", 2, "Drop to attach", "Wizard reads it with your question", 1, 1, false, true, -1, -1, false),
+                ("starting", ButtonLook.Starting, "think", 3, "Starting Wizard…", "One moment", 0, 0, false, false, -1, -1, false),
+                ("working", ButtonLook.Working, "read", 1, "Wizard is working…", "Click to watch", 0, 0, false, false, 0.45, -1, false),
+                ("answered", ButtonLook.Answered, "success", 7, "Wizard answered", "Click to read it", 0, 0, false, false, -1, 4, false),
+                ("failed", ButtonLook.Failed, "fail", 5, "Wizard stopped", "Click for the reason", 0, 0, false, false, -1, -1, false),
+                ("sign-in", ButtonLook.Ready, "idle", 0, "Sign in again", SignInHint("GSCM"), 0, 0, false, false, -1, -1, true),
+                ("sign-in-hover", ButtonLook.Ready, "wave", 2, "Sign in again", SignInHint("GSCM and Big Data Portal: Superset"), 1, 0, false, false, -1, -1, true),
+                ("sign-in-working", ButtonLook.Working, "read", 1, "Wizard is working…", "Click to watch", 0, 0, false, false, 0.45, -1, true),
             };
             Directory.CreateDirectory(folder);
             foreach (var scale in new[] { 1f, 2f })
@@ -364,7 +401,7 @@ namespace WizardBar
                     pictures.Add(Picture(new Pose
                     {
                         Look = q.look, Animation = q.animation, Frame = q.frame, Caption = q.caption, Hint = q.hint, Lift = q.lift, Grow = q.grow,
-                        Pressed = q.pressed, FileOver = q.fileOver, Shimmer = q.shimmer, Pulse = q.pulse, Scale = scale,
+                        Pressed = q.pressed, FileOver = q.fileOver, Shimmer = q.shimmer, Pulse = q.pulse, Scale = scale, SignIn = q.signIn,
                     }));
                 var cell = new Size(pictures.Max(b => b.Width) + (int)(16 * scale), pictures.Max(b => b.Height) + (int)(12 * scale));
                 using (var sheet = new Bitmap(cell.Width * 2, cell.Height * pictures.Count, PixelFormat.Format32bppArgb))

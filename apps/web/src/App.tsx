@@ -18,14 +18,16 @@ import {LoginScreen} from './components/LoginScreen';
 import {QuickEmpty, QuickHeader, QuickHistory} from './components/QuickPanel';
 import {SettingsDialog} from './components/SettingsDialog';
 import {SteerContext, type SteerActions} from './components/Steering';
+import {SignInBar, useSignInWatch} from './components/SignInBar';
 import {SystemsContext} from './components/SystemsStage';
 import {Sidebar} from './components/Sidebar';
 import {WizardSprite} from './components/WizardSprite';
 import {dropToHost, onHost, toHost, type DroppedFile} from './host';
 import {cn} from './lib/utils';
+import {setSignIn} from './portalSignIn';
 import {autoSystems, choosable, conversationChoice, conversationOutput, withFiles} from './systems';
 import {wizardAnimation} from './wizard';
-import type {Attachment, Bootstrap, Cadence, ConversationSummary, EvidenceSummary, GeminiAccount, LocalFile, Output, RunEvent, RunView, Schedule, SteerReason,
+import type {Attachment, Bootstrap, Cadence, ConversationSummary, EvidenceSummary, GeminiAccount, LocalFile, Output, PortalSignInState, RunEvent, RunView, Schedule, SteerReason,
   SystemRequest, TimelineItem} from './types';
 
 /** Make a PowerPoint under an analysis: the follow-up that turns it into a presentation (Gemini asks the storyline first). */
@@ -75,6 +77,7 @@ export function App({compact = false}: {compact?: boolean}) {
   const streams = useRef(new Map<string, EventSource>());
   const refollows = useRef(new Map<string, number>());
   const [focusTick, setFocusTick] = useState(0);
+  const [answersEnded, setAnswersEnded] = useState(0);  // the portals' sign-in is read again after each answer
   const [entering, setEntering] = useState(false);
   const questions = useRef(new Map<string, string>());
   const reopen = useRef<() => void>(() => undefined);
@@ -129,8 +132,11 @@ export function App({compact = false}: {compact?: boolean}) {
     source.onmessage = message => {
       const event = JSON.parse(message.data) as RunEvent;
       setRuns(prev => prev.map(r => (r.id === runId ? applyEvent(r, event) : r)));
+      // The check before this answer: the yellow bar at the top and the stage show which portals ended the sign-in.
+      if (event.type === 'portal_sign_in') setSignIn(event.payload as PortalSignInState);
       if (TERMINAL.has(event.type)) {
         source.close(); streams.current.delete(runId);
+        setAnswersEnded(n => n + 1);
         if (!parentId) toHost({type: 'finished', runId, question: questions.current.get(runId) ?? '', ok: event.type === 'run_finished'});
         void refreshConversations();
         if (parentId) void api.run(parentId).then(record => setRuns(prev => prev.map(r => (r.id === parentId ? {...fromRecord(record), timeline: r.timeline, check: r.check} : r)))).catch(() => undefined);
@@ -232,6 +238,7 @@ export function App({compact = false}: {compact?: boolean}) {
     return () => window.removeEventListener('keydown', keydown);
   }, [compact, dialogOpen, historyOver]);
   const available = useMemo(() => choosable(boot?.systems ?? []), [boot?.systems]);
+  useSignInWatch(!!boot?.identity && (boot.systems ?? []).some(s => s.kind === 'portal'), answersEnded + focusTick);
   const ask = useCallback(async (question: string, systems: string[] | null = chosen, wanted: Output = output) => {
     moved.current++;
     setNotice(null);
@@ -410,6 +417,7 @@ export function App({compact = false}: {compact?: boolean}) {
     <div className={cn('flex h-dvh w-screen flex-col overflow-hidden bg-page', entering && 'panel-enter')} data-testid="quick">
       <QuickHeader boot={boot} title={title} conversationId={currentId} synthetic={synthetic} history={historyOpen} onHistory={toggleHistory}
         onNew={newChat} onAccount={() => setAccountOpen(true)} onSettings={boot.settings_editable ? () => setSettingsOpen(true) : undefined} />
+      <SignInBar compact />
       <div className="relative flex min-h-0 flex-1">
         {historyOpen && <QuickHistory conversations={conversations} currentId={currentId} overlay={!wide} onRename={rename} onDelete={remove}
           onSelect={id => { setHistoryOver(false); void loadConversation(id); }} onClose={() => setHistoryOver(false)} />}
@@ -438,6 +446,7 @@ export function App({compact = false}: {compact?: boolean}) {
             <Button variant="outline" size="xs" className="ml-auto" onClick={() => setSharing(true)} data-testid="share-case-open"><Share2 />Share as case</Button>
           )}
         </div>
+        <SignInBar />
         {conversation(<EmptyState suggestions={boot.suggestions} synthetic={synthetic} onPick={q => { if (!blocked) void ask(q); else setDraft(q); }} />)}
         {composer}
       </main>

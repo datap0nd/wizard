@@ -1,10 +1,12 @@
 import {createContext, useContext, useEffect, useMemo, useRef, useState} from 'react';
-import {CheckCircle2, ChevronDown, Hourglass, Loader2, MessageSquareText, Sparkles, Trophy, X, XCircle} from 'lucide-react';
+import {CheckCircle2, ChevronDown, Hourglass, KeyRound, Loader2, LogIn, MessageSquareText, Sparkles, Trophy, X, XCircle} from 'lucide-react';
 import {spoken} from '@/format';
 import {cn} from '@/lib/utils';
+import {standing, useSignIn, type PortalStanding} from '@/portalSignIn';
 import {badges, detailOf, stageModel, verbOf, WIZARD, type ModuleStats, type StageModel} from '@/stage';
 import {toolAnimation, wizardAnimation, wizardCaption} from '@/wizard';
 import type {WizardAnimation} from '@/wizardSheet';
+import {openSignIn} from './SignInBar';
 import {NotThis} from './Steering';
 import {brand, SystemLogo} from './SystemLogo';
 import {WizardSprite} from './WizardSprite';
@@ -138,9 +140,20 @@ function switchedOff(run: RunView, m: SystemInfo & {stats: ModuleStats}): boolea
   return !!run.systems && m.kind !== 'schedules' && !run.systems.includes(m.id) && !m.stats.calls.length;
 }
 
-function statLine(m: SystemInfo & {stats: ModuleStats}, off = false): string {
+/** How a portal on the stage stands with the person's sign-in (Wizard's check before the answer, in code): what the
+ *  page knows now, else what this run's check found. */
+function useStanding(run: RunView): (m: SystemInfo) => PortalStanding | null {
+  const live = useSignIn();
+  return m => (m.kind === 'portal' ? standing(live, m.id) ?? standing(run.signIn, m.id) : null);
+}
+
+const SIGN_IN_WORDS: Partial<Record<PortalStanding, string>> = {checking: 'checking sign-in…', signed_out: 'signed out',
+  unreachable: "can't be reached", signed_in: 'signed in'};
+
+function statLine(m: SystemInfo & {stats: ModuleStats}, off = false, sign: PortalStanding | null = null): string {
   const s = m.stats;
   if (off) return 'switched off';
+  if (!s.calls.length && sign && SIGN_IN_WORDS[sign]) return SIGN_IN_WORDS[sign]!;
   if (!s.calls.length) return m.kind === 'knowledge' && m.notes ? `${plural(m.notes, 'note')} ready` : 'ready';
   const parts = [plural(s.calls.length, m.kind === 'database' ? 'query' : m.kind === 'knowledge' ? 'lookup'
     : m.kind === 'schedules' ? 'schedule' : m.kind === 'dashboards' ? 'read' : 'call')
@@ -160,16 +173,36 @@ function Detail({item, className, onlyNew = false}: {item: TimelineItem; classNa
     : <span className={cn('text-[12.5px] text-ink-2', className)}>{detail.text}</span>;
 }
 
+/** Sign in, where the stage would say "ready": opens Wizard's browser window for the person to sign in again. */
+function SignInPill({name, className}: {name: string; className?: string}) {
+  const signingIn = !!useSignIn()?.signing_in;
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <button type="button" disabled={busy || signingIn} title={error ?? `Your sign-in to ${name} has ended: sign in again`}
+      onClick={async () => { setBusy(true); setError(await openSignIn()); setBusy(false); }}
+      className={cn('inline-flex items-center gap-1 rounded-full border border-amber-500 bg-amber-300 px-2 py-px text-[11px] font-semibold leading-[16px] text-amber-950 shadow-sm hover:bg-amber-200 disabled:opacity-70', className)}
+      data-testid="stage-sign-in">
+      {busy ? <Loader2 className="size-3 animate-spin" /> : <LogIn className="size-3" />}{signingIn ? 'Signing in…' : error ? 'Try again' : 'Sign in'}
+    </button>
+  );
+}
+
 function Calls({run, module, onEvidence, onClose}: {run: RunView; module: SystemInfo & {stats: ModuleStats}; onEvidence: (id: string) => void; onClose: () => void}) {
+  const sign = useStanding(run)(module);
   return (
     <div className="stage-pop rounded-xl border border-line bg-canvas p-3 shadow-sm" data-testid="stage-calls">
       <div className="mb-2 flex items-center gap-2">
         <SystemLogo id={module.id} name={module.name} size={22} />
         <p className="text-[13px] font-semibold">{module.name}</p>
-        <span className="text-[12px] text-ink-3">{statLine(module, switchedOff(run, module))}</span>
+        <span className="text-[12px] text-ink-3">{statLine(module, switchedOff(run, module), sign)}</span>
         <button type="button" onClick={onClose} aria-label="Close" className="ml-auto rounded p-1 text-ink-3 hover:bg-surface"><X className="size-3.5" /></button>
       </div>
-      {!module.stats.calls.length && <p className="text-[12.5px] text-ink-3">{switchedOff(run, module) ? 'Switched off for this answer: pick it in Systems, next to the question box, to use it.' : 'Not used for this answer.'}</p>}
+      {!module.stats.calls.length && <p className="text-[12.5px] text-ink-3">{switchedOff(run, module) ? 'Switched off for this answer: pick it in Systems, next to the question box, to use it.'
+        : sign === 'signed_out' ? `Your sign-in to ${module.name} has ended, so Wizard cannot read it. Portals end the sign-in after a while: sign in again every now and then.`
+        : sign === 'unreachable' ? `Wizard could not load ${module.name} from this PC (off the company network or VPN, or the portal is down). Signing in does not fix this.`
+        : 'Not used for this answer.'}</p>}
+      {sign === 'signed_out' && <SignInPill name={module.name} className="mt-2" />}
       <ol className="space-y-2">
         {module.stats.calls.map(call => (
           <li key={call.key} className="text-[12.5px]">
@@ -259,6 +292,7 @@ function Stage({run, model, onEvidence, finale}: {run: RunView; model: StageMode
   const last = run.timeline[run.timeline.length - 1];
   const waiting = running && !model.active && (last?.kind === 'status' || last?.kind === 'warning') ? last : undefined;
   const chosen = model.modules.find(m => m.id === selected);
+  const standingOf = useStanding(run);
   // The wizard acts out the step in progress, or the one that just finished while its module is still lit.
   const animation: WizardAnimation = finale ?? (!running ? 'idle' : active ? toolAnimation(active.name ?? '') : wizardAnimation(run));
   const verb = finale === 'success' ? 'Answer ready' : finale === 'fail' ? 'Could not finish' : wizardCaption(run, animation).verb;
@@ -313,27 +347,34 @@ function Stage({run, model, onEvidence, finale}: {run: RunView; model: StageMode
           const node = l.nodes[i];
           if (!node) return null;
           const s = m.stats, c = brand(m.id, m.name).color, on = lit.has(m.id), off = switchedOff(run, m);
-          const state = on ? 'active' : off ? 'off' : s.state;
+          // A portal that ended the person's sign-in stands out in yellow, with Sign in where it would say "ready".
+          const sign = off ? null : standingOf(m), signIn = sign === 'signed_out';
+          const state = on ? 'active' : off ? 'off' : signIn && !s.calls.length ? 'sign-in' : s.state;
           const last = s.calls[s.calls.length - 1];
           return (
-            <button key={m.id} type="button" onClick={() => setSelected(selected === m.id ? null : m.id)}
-              aria-label={`${m.name}: ${statLine(m, off)}. Show what Wizard did here`} aria-pressed={selected === m.id}
-              className={cn('absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1 rounded-xl px-1 py-1.5 transition-all duration-300 hover:-translate-y-[calc(50%+2px)] hover:bg-surface/80',
+            <div key={m.id} className="absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center" style={{left: node.x, top: node.y, width: l.nodeWidth}}>
+            <button type="button" onClick={() => setSelected(selected === m.id ? null : m.id)}
+              aria-label={`${m.name}: ${statLine(m, off, sign)}. Show what Wizard did here`} aria-pressed={selected === m.id}
+              className={cn('flex w-full flex-col items-center gap-1 rounded-xl px-1 py-1.5 transition-all duration-300 hover:-translate-y-0.5 hover:bg-surface/80',
                 state === 'idle' && 'opacity-55 grayscale-[40%] hover:opacity-90', state === 'off' && 'opacity-30 grayscale hover:opacity-60',
+                state === 'sign-in' && 'bg-warn-soft/80 ring-1 ring-warn-line',
                 state === 'active' && 'scale-[1.08]', selected === m.id && 'bg-surface')}
-              style={{left: node.x, top: node.y, width: l.nodeWidth}} data-testid="stage-node" data-system={m.id} data-state={state}>
+              data-testid="stage-node" data-system={m.id} data-state={state} data-sign-in={sign ?? undefined}>
               <span key={on && last ? last.key : 'rest'} className={cn('relative', on && 'stage-hop')}>
                 {state === 'active' && <span className="stage-ping absolute -inset-1.5 rounded-[32%]" style={{boxShadow: `0 0 0 2px ${c}`}} />}
                 {state === 'active' && <span className="stage-glow absolute inset-0 rounded-[28%]" style={{['--glow' as string]: c}} />}
                 <SystemLogo id={m.id} name={m.name} size={TILE} className={cn(state === 'active' && 'stage-breathe')} />
                 {state === 'done' && <CheckCircle2 className="stage-pop absolute -bottom-1 -right-1 size-5 rounded-full bg-canvas text-ok" />}
                 {state === 'error' && <XCircle className="stage-pop absolute -bottom-1 -right-1 size-5 rounded-full bg-canvas text-danger" />}
+                {signIn && <KeyRound className="stage-pop absolute -bottom-1 -right-1 size-5 rounded-full bg-amber-300 p-0.5 text-amber-950 ring-2 ring-canvas" />}
                 {s.calls.length > 0 && <span className="stage-pop absolute -right-2 -top-2 min-w-[22px] rounded-full px-1.5 text-center text-[11.5px] font-bold leading-[22px] text-white shadow"
                   style={{background: c}}><CountUp value={s.calls.length} /></span>}
               </span>
               <span className="max-w-full truncate text-[12.5px] font-medium leading-tight text-ink">{m.name}</span>
-              <span className="max-w-full truncate text-[11px] leading-tight text-ink-3">{statLine(m, off)}</span>
+              {!signIn && <span className={cn('max-w-full truncate text-[11px] leading-tight text-ink-3', sign === 'unreachable' && 'text-warn')}>{statLine(m, off, sign)}</span>}
             </button>
+            {signIn && <SignInPill name={m.name} className="-mt-1" />}
+            </div>
           );
         })}
       </div>

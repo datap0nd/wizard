@@ -1,4 +1,4 @@
-import type {Attachment, Deck, PersonQuestion, RunEvent, RunKind, RunRecord, RunView, Schedule, Steer, StorylineQuestion, SystemRequest, TimelineItem} from './types';
+import type {Attachment, Deck, PersonQuestion, PortalSignInState, RunEvent, RunKind, RunRecord, RunView, Schedule, Steer, StorylineQuestion, SystemRequest, TimelineItem} from './types';
 
 const REASON_WORDS: Record<string, string> = {table: 'Wrong table', filter: 'Wrong filter', period: 'Wrong period', other: 'Not this'};
 
@@ -14,7 +14,7 @@ export function emptyRun(id: string, conversationId: string, question: string, k
   return {id, conversationId, kind, question, status: 'queued', runtime: 'replay', runtimeLabel: '', model: '', timeline: [],
     streamText: '', answer: null, visuals: [], evidence: [], check: null, checkStatus: 'NOT_CHECKED', checkSummary: null,
     dataMode: null, reportId: null, error: null, warnings: [], lastSeq: 0, attachments: [], schedules: [],
-    systems: null, steers: [], systemRequests: [], questions: [], storylines: [], decks: [], output: 'analysis',
+    systems: null, steers: [], systemRequests: [], questions: [], storylines: [], decks: [], output: 'analysis', signIn: null,
     createdAt: new Date().toISOString(),
     startedAt: null, finishedAt: null, parentRunId: null, diagnostics: []};
 }
@@ -72,6 +72,8 @@ export function applyEvent(run: RunView, event: RunEvent): RunView {
       return {...next, decks: [...next.decks.filter(d => d.id !== p.deck.id), p.deck as Deck]};
     case 'file_made':
       return {...next, attachments: [...next.attachments.filter(a => a.id !== p.attachment.id), p.attachment as Attachment]};
+    case 'portal_sign_in':
+      return {...next, signIn: p as PortalSignInState};
     case 'check_result':
       return {...next, check: {overall: p.overall, summary: p.summary, claims: p.claims ?? [], replays: p.replays ?? []}};
     case 'warning':
