@@ -3,7 +3,22 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-13 (latest) — A shared case carries the PowerPoint its answer made
+## 2026-11-13 (latest) — Tasks: the list answers at once, and every release proves it ships them
+
+The owner, after updating: "The tasks stay loading and then it says cant run ... include the tasks on the actual set up
+of the next version" ([decision](decisions/2026-11-13-tasks-packaged.md)).
+
+- `task_files.py` `kept_counts`: the progress the last run counted, kept in Wizard's data folder (`counts` now records
+  the folder's total there). `GET /api/v1/tasks` shows it and never walks the person's folder (it did on every open and
+  poll, which on OneDrive or a network share takes minutes); Run counts the folder off the event loop.
+- `TasksPanel.tsx`: after 20 seconds without a list, "Wizard did not list its tasks within 20 seconds. Use Restart Wizard
+  in the tray menu, then open Tasks again." instead of Loading….
+- `.github/workflows/desktop.yml`: the Windows smoke test signs in to the packaged service and lists its tasks; every
+  task file in the payload must be listed, from the app, or the release stops.
+- Checks: the packaged-style service (`run.py --desktop`) listed its 4 tasks in 29 ms; task tests 74 passed (a new one
+  makes any folder walk fail the list); `TasksPanel.test.tsx` 13 passed. Full run: see the commit's CI.
+
+## 2026-11-13 — A shared case carries the PowerPoint its answer made
 
 The owner: "Wizard is not putting the powerpoint in cases." Share as case published each answer's text, charts,
 sources and steps; a presentation (a deck, drawn in the page from its slides) was left out, so the case had the answer
