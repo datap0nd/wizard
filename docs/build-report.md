@@ -38,6 +38,11 @@ sign in again. [Decision](decisions/2026-11-13-portal-sign-in-check.md).
   apps/desktop/WizardBar/WizardBar.csproj -c Release` 0 warnings, 0 errors (built on Linux with the .NET 8 SDK; CI
   builds, snapshots and smoke-tests it on Windows). The scratch run of the real app in replay mode with a simulated
   GSCM sign-in page showed the yellow bar and GSCM's Sign in on the stage while ASAP said "signed in".
+- First `ci` run on main (`05b6514`) failed one test: on a runner booted under three minutes earlier, the test's
+  aged `time.monotonic()` stamps fell below zero, and the browser used `at > 0` to mean "not found before the person
+  last signed in". That mark is now an explicit `stale` flag (set when the sign-in window closes), so the age of the
+  PC's clock no longer matters; the browser layer passes again (43). The release from `05b6514` already behaved
+  correctly on PCs (a monotonic clock there is never below zero), and the fix is released after it.
 
 ## 2026-11-13 — A tool's failure never ends the answer
 
