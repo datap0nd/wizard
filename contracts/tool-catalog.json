@@ -1675,6 +1675,934 @@
       }
     },
     {
+      "name": "wizard_propose_storylines",
+      "description": "Ask the person which story the presentation should tell, before you make it: two to four storylines the evidence supports, each with its message and its arc (the beats, in order). They become a card under your answer; the one clicked, or a story the person writes, is their next message. Use it when the person wants a presentation and has not said its story; skip it when they did. Then end your turn; it counts as your one question for this request.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "question": {
+            "description": "The question as the person reads it, in their language (5-200 characters; default \"What story should the presentation tell?\")",
+            "type": "string"
+          },
+          "storylines": {
+            "description": "Two to four different stories the evidence supports (not the same story reworded), the one you would choose first. The person picks one or writes their own.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "title": {
+                  "description": "The story's message in one line, as the deck would argue it, from what the analysis found, e.g. 'Flagship carried Q3 while Mass lost share: shift spend to the A-series' (5-140 characters)",
+                  "type": "string"
+                },
+                "arc": {
+                  "description": "The beats in order, each a slide or a section, e.g. ['Q3 beat plan by 6%', 'Flagship drove it', 'Mass lost 2 pp to C-brands', 'Three moves for Q4']. At most 120 characters each.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 7,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                "best_for": {
+                  "description": "Optional: the audience or moment it suits, e.g. 'a board update' or 'a planning workshop' (0-120 characters)",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "title",
+                "arc"
+              ],
+              "type": "object"
+            },
+            "maxItems": 4,
+            "minItems": 2,
+            "type": "array"
+          },
+          "why": {
+            "description": "Optional: one short sentence on what the choice changes in the deck (0-300 characters)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "storylines"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "wizard_make_presentation",
+      "description": "Make a PowerPoint presentation from your analysis: the person gets every slide to see, download and open in PowerPoint, with editable charts and tables, in the company's design (from the knowledge base). Use it once the person has chosen the storyline (wizard_propose_storylines) or said the story themselves; render the charts and tables first with wizard_render_visual and show them by id. Every slide's title is a full-sentence takeaway that advances the storyline; the subtitle gives the scope (market, period, unit). Slide kinds and their fields: cover (title, subtitle, meta: region and date); agenda (items, or empty to list the section slides); section (title, subtitle: a divider); summary (the executive summary: points, up to 4 kpis); kpis (2-6 kpis: big figures with label, change and tone); cards (2-4 cards: numbered columns with heading, points, optional value: strategy, options, initiatives); chart (visual, chart style, up to 4 points beside it as the 'so what'); table (a table or heatmap visual, highlights: the few cells to shade good or bad, points); split (left and right panels, each a visual or points, with a heading: comparisons); text (points); closing (title: next steps or the ask, points). Any slide takes evidence_ids, a footnote and speaker notes; sources and units are written on each slide from the evidence and the visuals. Returns the deck id (D1...) to place in your answer, the outline and warnings.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "description": "The deck's title (its file name too) (1-160 characters)",
+            "type": "string"
+          },
+          "storyline": {
+            "description": "The story the deck tells, in one or two sentences: the storyline the person chose or wrote, which every slide title advances (10-600 characters)",
+            "type": "string"
+          },
+          "audience": {
+            "description": "Optional: who it is for, e.g. 'the CEO's monthly review' (0-120 characters)",
+            "type": "string"
+          },
+          "slides": {
+            "description": "The slides in order, the cover first.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "title": {
+                  "description": "The slide's message as a full sentence (a takeaway, not a topic), e.g. 'Flagship carried Q3: +18% vs plan'. The cover's title is the deck's title; an agenda's defaults to 'Agenda' (0-160 characters)",
+                  "type": "string"
+                },
+                "subtitle": {
+                  "description": "The scope under the title: market, period, unit, e.g. 'MENA · Q3 2026 · sell-out, units' (0-200 characters)",
+                  "type": "string"
+                },
+                "meta": {
+                  "description": "cover: the line with the region and date, e.g. 'MENA · November 2026' (0-120 characters)",
+                  "type": "string"
+                },
+                "points": {
+                  "description": "Bullets (summary, text, closing, beside a chart or table).",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "text": {
+                            "description": "The bullet; **bold** marks a lead-in, e.g. '**Flagship:** +18% vs plan' (1-300 characters)",
+                            "type": "string"
+                          },
+                          "sub": {
+                            "description": "Optional second-level bullets, at most 200 characters each.",
+                            "items": {
+                              "type": "string"
+                            },
+                            "maxItems": 4,
+                            "type": "array"
+                          }
+                        },
+                        "required": [
+                          "text"
+                        ],
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "maxItems": 8,
+                  "type": "array"
+                },
+                "kpis": {
+                  "description": "kpis (2-6) or a summary's key figures (up to 4).",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "value": {
+                        "description": "The figure as shown, e.g. '$12.4M', '+18%', '2.1 pp' (1-24 characters)",
+                        "type": "string"
+                      },
+                      "label": {
+                        "description": "What it is, with its period and scope, e.g. 'Q3 sell-out, MENA' (1-80 characters)",
+                        "type": "string"
+                      },
+                      "change": {
+                        "description": "Optional comparison, e.g. '▲ 6% vs plan' or '▼ 1.2 pp YoY' (0-40 characters)",
+                        "type": "string"
+                      },
+                      "tone": {
+                        "description": "good or bad colours the change; neutral leaves it plain (default \"neutral\")",
+                        "enum": [
+                          "good",
+                          "bad",
+                          "neutral"
+                        ],
+                        "type": "string"
+                      },
+                      "evidence_ids": {
+                        "description": "Evidence the figure comes from, e.g. ['E2'].",
+                        "items": {
+                          "type": "string"
+                        },
+                        "maxItems": 6,
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "label"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 6,
+                  "type": "array"
+                },
+                "cards": {
+                  "description": "cards: 2-4 columns, each numbered.",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "description": "The card's title, e.g. 'Win the mid-tier' (1-80 characters)",
+                        "type": "string"
+                      },
+                      "points": {
+                        "items": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "text": {
+                                  "description": "The bullet; **bold** marks a lead-in, e.g. '**Flagship:** +18% vs plan' (1-300 characters)",
+                                  "type": "string"
+                                },
+                                "sub": {
+                                  "description": "Optional second-level bullets, at most 200 characters each.",
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "maxItems": 4,
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "text"
+                              ],
+                              "type": "object"
+                            }
+                          ]
+                        },
+                        "maxItems": 6,
+                        "type": "array"
+                      },
+                      "value": {
+                        "description": "Optional big figure at the top of the card (0-24 characters)",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "heading"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 4,
+                  "type": "array"
+                },
+                "visual": {
+                  "description": "chart or table: the visual's id, e.g. 'V1' (pattern ^V[0-9]{1,4}$)",
+                  "type": "string"
+                },
+                "chart": {
+                  "description": "chart: how a bar visual is drawn: column (vertical bars; time or few categories), stacked (stacked columns: a total split by channel or segment over time), percent (100% stacked columns: mix and share splits), bar (horizontal bars: rankings, long names), stacked_bar, or line (trends with markers). auto chooses.",
+                  "enum": [
+                    "auto",
+                    "column",
+                    "stacked",
+                    "percent",
+                    "bar",
+                    "stacked_bar",
+                    "line"
+                  ],
+                  "type": "string"
+                },
+                "highlights": {
+                  "description": "table: the few cells to shade, good (green) or bad (yellow); a handful per slide, never a whole column.",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "row": {
+                        "description": "The row's label, as in the visual's first column (its x) (1-120 characters)",
+                        "type": "string"
+                      },
+                      "column": {
+                        "description": "The column's key or label (1-80 characters)",
+                        "type": "string"
+                      },
+                      "tone": {
+                        "description": "good: the light green fill (target met, growth); bad: the light yellow fill (gap, decline).",
+                        "enum": [
+                          "good",
+                          "bad"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "row",
+                      "column",
+                      "tone"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 16,
+                  "type": "array"
+                },
+                "left": {
+                  "description": "split: the left panel (a visual or bullets, with a heading).",
+                  "additionalProperties": false,
+                  "properties": {
+                    "heading": {
+                      "type": "string",
+                      "description": "(0-80 characters)"
+                    },
+                    "visual": {
+                      "description": "A visual id from wizard_render_visual, e.g. 'V2' (pattern ^V[0-9]{1,4}$)",
+                      "type": "string"
+                    },
+                    "chart": {
+                      "enum": [
+                        "auto",
+                        "column",
+                        "stacked",
+                        "percent",
+                        "bar",
+                        "stacked_bar",
+                        "line"
+                      ],
+                      "type": "string",
+                      "description": "(default \"auto\")"
+                    },
+                    "points": {
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "text": {
+                                "description": "The bullet; **bold** marks a lead-in, e.g. '**Flagship:** +18% vs plan' (1-300 characters)",
+                                "type": "string"
+                              },
+                              "sub": {
+                                "description": "Optional second-level bullets, at most 200 characters each.",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "maxItems": 4,
+                                "type": "array"
+                              }
+                            },
+                            "required": [
+                              "text"
+                            ],
+                            "type": "object"
+                          }
+                        ]
+                      },
+                      "maxItems": 6,
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                },
+                "right": {
+                  "description": "split: the right panel.",
+                  "additionalProperties": false,
+                  "properties": {
+                    "heading": {
+                      "type": "string",
+                      "description": "(0-80 characters)"
+                    },
+                    "visual": {
+                      "description": "A visual id from wizard_render_visual, e.g. 'V2' (pattern ^V[0-9]{1,4}$)",
+                      "type": "string"
+                    },
+                    "chart": {
+                      "enum": [
+                        "auto",
+                        "column",
+                        "stacked",
+                        "percent",
+                        "bar",
+                        "stacked_bar",
+                        "line"
+                      ],
+                      "type": "string",
+                      "description": "(default \"auto\")"
+                    },
+                    "points": {
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "text": {
+                                "description": "The bullet; **bold** marks a lead-in, e.g. '**Flagship:** +18% vs plan' (1-300 characters)",
+                                "type": "string"
+                              },
+                              "sub": {
+                                "description": "Optional second-level bullets, at most 200 characters each.",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "maxItems": 4,
+                                "type": "array"
+                              }
+                            },
+                            "required": [
+                              "text"
+                            ],
+                            "type": "object"
+                          }
+                        ]
+                      },
+                      "maxItems": 6,
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                },
+                "items": {
+                  "description": "agenda: the topics; leave empty to list the deck's section slides with their pages.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 10,
+                  "type": "array"
+                },
+                "evidence_ids": {
+                  "description": "Evidence behind figures in the slide's text (a visual's evidence is added by itself).",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 20,
+                  "type": "array"
+                },
+                "footnote": {
+                  "description": "An extra footnote: a definition, a caveat, how a figure was derived (0-300 characters)",
+                  "type": "string"
+                },
+                "notes": {
+                  "description": "Speaker notes: what to say on this slide (0-2000 characters)",
+                  "type": "string"
+                },
+                "kind": {
+                  "description": "The slide's kind; see the tool description for what each holds.",
+                  "enum": [
+                    "cover",
+                    "agenda",
+                    "section",
+                    "summary",
+                    "kpis",
+                    "cards",
+                    "chart",
+                    "table",
+                    "split",
+                    "text",
+                    "closing"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            "maxItems": 40,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "title",
+          "storyline",
+          "slides"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "wizard_change_presentation",
+      "description": "Change a presentation you made, as the person asks in the chat (a title, a slide's kind or chart style, cells to highlight, a slide added, removed or moved, the storyline): the changes make a new version the person sees in place of the old one. Read the slides first with wizard_read_presentation when you need their full content.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "description": "The deck to change, e.g. 'D1' (its latest version is what the person sees) (pattern ^D[0-9]{1,4}$)",
+            "type": "string"
+          },
+          "changes": {
+            "description": "Applied in order.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "description": "update: change fields of slide `at` (only the fields given in `slide`; a field set to null is removed); insert: add `slide` (a whole slide with its kind) after slide `at` (0 puts it first); delete: remove slide `at`; move: put slide `at` at number `to`; deck: change the deck's title, storyline or audience (`deck`).",
+                  "enum": [
+                    "update",
+                    "insert",
+                    "delete",
+                    "move",
+                    "deck"
+                  ],
+                  "type": "string"
+                },
+                "at": {
+                  "description": "The slide number, as the deck stands after the changes before this one.",
+                  "maximum": 40,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "to": {
+                  "description": "move: the slide's new number.",
+                  "maximum": 40,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "slide": {
+                  "description": "update: the fields that change, e.g. {\"title\": \"...\"} or {\"kind\": \"table\", \"highlights\": [...]}; insert: the whole new slide, with its kind.",
+                  "additionalProperties": false,
+                  "properties": {
+                    "title": {
+                      "description": "The slide's message as a full sentence (a takeaway, not a topic), e.g. 'Flagship carried Q3: +18% vs plan'. The cover's title is the deck's title; an agenda's defaults to 'Agenda' (0-160 characters)",
+                      "type": "string"
+                    },
+                    "subtitle": {
+                      "description": "The scope under the title: market, period, unit, e.g. 'MENA · Q3 2026 · sell-out, units' (0-200 characters)",
+                      "type": "string"
+                    },
+                    "meta": {
+                      "description": "cover: the line with the region and date, e.g. 'MENA · November 2026' (0-120 characters)",
+                      "type": "string"
+                    },
+                    "points": {
+                      "description": "Bullets (summary, text, closing, beside a chart or table).",
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "text": {
+                                "description": "The bullet; **bold** marks a lead-in, e.g. '**Flagship:** +18% vs plan' (1-300 characters)",
+                                "type": "string"
+                              },
+                              "sub": {
+                                "description": "Optional second-level bullets, at most 200 characters each.",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "maxItems": 4,
+                                "type": "array"
+                              }
+                            },
+                            "required": [
+                              "text"
+                            ],
+                            "type": "object"
+                          }
+                        ]
+                      },
+                      "maxItems": 8,
+                      "type": "array"
+                    },
+                    "kpis": {
+                      "description": "kpis (2-6) or a summary's key figures (up to 4).",
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "value": {
+                            "description": "The figure as shown, e.g. '$12.4M', '+18%', '2.1 pp' (1-24 characters)",
+                            "type": "string"
+                          },
+                          "label": {
+                            "description": "What it is, with its period and scope, e.g. 'Q3 sell-out, MENA' (1-80 characters)",
+                            "type": "string"
+                          },
+                          "change": {
+                            "description": "Optional comparison, e.g. '▲ 6% vs plan' or '▼ 1.2 pp YoY' (0-40 characters)",
+                            "type": "string"
+                          },
+                          "tone": {
+                            "description": "good or bad colours the change; neutral leaves it plain (default \"neutral\")",
+                            "enum": [
+                              "good",
+                              "bad",
+                              "neutral"
+                            ],
+                            "type": "string"
+                          },
+                          "evidence_ids": {
+                            "description": "Evidence the figure comes from, e.g. ['E2'].",
+                            "items": {
+                              "type": "string"
+                            },
+                            "maxItems": 6,
+                            "type": "array"
+                          }
+                        },
+                        "required": [
+                          "value",
+                          "label"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 6,
+                      "type": "array"
+                    },
+                    "cards": {
+                      "description": "cards: 2-4 columns, each numbered.",
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "heading": {
+                            "description": "The card's title, e.g. 'Win the mid-tier' (1-80 characters)",
+                            "type": "string"
+                          },
+                          "points": {
+                            "items": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "text": {
+                                      "description": "The bullet; **bold** marks a lead-in, e.g. '**Flagship:** +18% vs plan' (1-300 characters)",
+                                      "type": "string"
+                                    },
+                                    "sub": {
+                                      "description": "Optional second-level bullets, at most 200 characters each.",
+                                      "items": {
+                                        "type": "string"
+                                      },
+                                      "maxItems": 4,
+                                      "type": "array"
+                                    }
+                                  },
+                                  "required": [
+                                    "text"
+                                  ],
+                                  "type": "object"
+                                }
+                              ]
+                            },
+                            "maxItems": 6,
+                            "type": "array"
+                          },
+                          "value": {
+                            "description": "Optional big figure at the top of the card (0-24 characters)",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "heading"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 4,
+                      "type": "array"
+                    },
+                    "visual": {
+                      "description": "chart or table: the visual's id, e.g. 'V1' (pattern ^V[0-9]{1,4}$)",
+                      "type": "string"
+                    },
+                    "chart": {
+                      "description": "chart: how a bar visual is drawn: column (vertical bars; time or few categories), stacked (stacked columns: a total split by channel or segment over time), percent (100% stacked columns: mix and share splits), bar (horizontal bars: rankings, long names), stacked_bar, or line (trends with markers). auto chooses.",
+                      "enum": [
+                        "auto",
+                        "column",
+                        "stacked",
+                        "percent",
+                        "bar",
+                        "stacked_bar",
+                        "line"
+                      ],
+                      "type": "string"
+                    },
+                    "highlights": {
+                      "description": "table: the few cells to shade, good (green) or bad (yellow); a handful per slide, never a whole column.",
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "row": {
+                            "description": "The row's label, as in the visual's first column (its x) (1-120 characters)",
+                            "type": "string"
+                          },
+                          "column": {
+                            "description": "The column's key or label (1-80 characters)",
+                            "type": "string"
+                          },
+                          "tone": {
+                            "description": "good: the light green fill (target met, growth); bad: the light yellow fill (gap, decline).",
+                            "enum": [
+                              "good",
+                              "bad"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "row",
+                          "column",
+                          "tone"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 16,
+                      "type": "array"
+                    },
+                    "left": {
+                      "description": "split: the left panel (a visual or bullets, with a heading).",
+                      "additionalProperties": false,
+                      "properties": {
+                        "heading": {
+                          "type": "string",
+                          "description": "(0-80 characters)"
+                        },
+                        "visual": {
+                          "description": "A visual id from wizard_render_visual, e.g. 'V2' (pattern ^V[0-9]{1,4}$)",
+                          "type": "string"
+                        },
+                        "chart": {
+                          "enum": [
+                            "auto",
+                            "column",
+                            "stacked",
+                            "percent",
+                            "bar",
+                            "stacked_bar",
+                            "line"
+                          ],
+                          "type": "string",
+                          "description": "(default \"auto\")"
+                        },
+                        "points": {
+                          "items": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "text": {
+                                    "description": "The bullet; **bold** marks a lead-in, e.g. '**Flagship:** +18% vs plan' (1-300 characters)",
+                                    "type": "string"
+                                  },
+                                  "sub": {
+                                    "description": "Optional second-level bullets, at most 200 characters each.",
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "maxItems": 4,
+                                    "type": "array"
+                                  }
+                                },
+                                "required": [
+                                  "text"
+                                ],
+                                "type": "object"
+                              }
+                            ]
+                          },
+                          "maxItems": 6,
+                          "type": "array"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "right": {
+                      "description": "split: the right panel.",
+                      "additionalProperties": false,
+                      "properties": {
+                        "heading": {
+                          "type": "string",
+                          "description": "(0-80 characters)"
+                        },
+                        "visual": {
+                          "description": "A visual id from wizard_render_visual, e.g. 'V2' (pattern ^V[0-9]{1,4}$)",
+                          "type": "string"
+                        },
+                        "chart": {
+                          "enum": [
+                            "auto",
+                            "column",
+                            "stacked",
+                            "percent",
+                            "bar",
+                            "stacked_bar",
+                            "line"
+                          ],
+                          "type": "string",
+                          "description": "(default \"auto\")"
+                        },
+                        "points": {
+                          "items": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "text": {
+                                    "description": "The bullet; **bold** marks a lead-in, e.g. '**Flagship:** +18% vs plan' (1-300 characters)",
+                                    "type": "string"
+                                  },
+                                  "sub": {
+                                    "description": "Optional second-level bullets, at most 200 characters each.",
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "maxItems": 4,
+                                    "type": "array"
+                                  }
+                                },
+                                "required": [
+                                  "text"
+                                ],
+                                "type": "object"
+                              }
+                            ]
+                          },
+                          "maxItems": 6,
+                          "type": "array"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "items": {
+                      "description": "agenda: the topics; leave empty to list the deck's section slides with their pages.",
+                      "items": {
+                        "type": "string"
+                      },
+                      "maxItems": 10,
+                      "type": "array"
+                    },
+                    "evidence_ids": {
+                      "description": "Evidence behind figures in the slide's text (a visual's evidence is added by itself).",
+                      "items": {
+                        "type": "string"
+                      },
+                      "maxItems": 20,
+                      "type": "array"
+                    },
+                    "footnote": {
+                      "description": "An extra footnote: a definition, a caveat, how a figure was derived (0-300 characters)",
+                      "type": "string"
+                    },
+                    "notes": {
+                      "description": "Speaker notes: what to say on this slide (0-2000 characters)",
+                      "type": "string"
+                    },
+                    "kind": {
+                      "enum": [
+                        "cover",
+                        "agenda",
+                        "section",
+                        "summary",
+                        "kpis",
+                        "cards",
+                        "chart",
+                        "table",
+                        "split",
+                        "text",
+                        "closing"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "deck": {
+                  "description": "deck: the deck's fields that change.",
+                  "additionalProperties": false,
+                  "properties": {
+                    "title": {
+                      "type": "string",
+                      "description": "(1-160 characters)"
+                    },
+                    "storyline": {
+                      "type": "string",
+                      "description": "(10-600 characters)"
+                    },
+                    "audience": {
+                      "type": "string",
+                      "description": "(0-120 characters)"
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "required": [
+                "action"
+              ],
+              "type": "object"
+            },
+            "maxItems": 30,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "deck",
+          "changes"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "wizard_read_presentation",
+      "description": "Read a presentation made in this conversation, slide by slide in full (its kinds, titles, bullets, visuals, highlights, notes), before you change it.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "description": "The deck, e.g. 'D1' (pattern ^D[0-9]{1,4}$)",
+            "type": "string"
+          },
+          "slides": {
+            "description": "Slide numbers to return in full; empty: all.",
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 40,
+            "type": "array"
+          }
+        },
+        "required": [
+          "deck"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
       "name": "wizard_compare_evidence",
       "description": "Check one of your reads against another, row by row and number by number, in Wizard's code: e.g. a portal's direct data request (portal_prove_request's first reply) against the rows the report's own screen showed for the same filters. Rows are matched by the key columns, numbers within the tolerance; the rows only one side has are listed. MATCH means everything agrees. With system and report, the outcome is kept in that report's map entry.",
       "inputSchema": {

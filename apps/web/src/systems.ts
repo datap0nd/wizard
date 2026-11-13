@@ -1,4 +1,4 @@
-import type {RunView, SystemInfo} from './types';
+import type {Output, RunView, SystemInfo} from './types';
 
 /** The systems the picker offers: every system this person can use, except Metronome (it sends emails, it is not a source). */
 export function choosable(systems: SystemInfo[]): SystemInfo[] {
@@ -52,4 +52,10 @@ export function onlyNames(ids: string[], available: SystemInfo[]): string[] {
 export function conversationChoice(runs: RunView[]): string[] | null {
   const last = [...runs].reverse().find(r => r.kind === 'ask');
   return last?.systems ?? null;
+}
+
+/** The Output a conversation reopens with: its last question's. */
+export function conversationOutput(runs: RunView[]): Output {
+  const last = [...runs].reverse().find(r => r.kind === 'ask');
+  return last?.output ?? 'analysis';
 }

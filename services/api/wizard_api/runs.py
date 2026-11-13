@@ -42,6 +42,7 @@ log = logging.getLogger("wizard.runs")
 DATA_MODE_RANK = {"SYNTHETIC": 0, "USER_PROVIDED": 1, "LIVE": 2, "DATED_APPROVED_SNAPSHOT": 3, "LIVE_VERIFIED": 4}
 CITATION = re.compile(r"\[(E\d{1,4})\]")
 VISUAL = re.compile(r"\[(V\d{1,4})\]")
+DECK = re.compile(r"\[(D\d{1,4})\]")
 # Loop check. Tools are read-only, so an identical call returns what it returned before: a second try is allowed (a view
 # being refreshed can time out once), a third is refused, and after LOOP_STOP refusals the run stops researching.
 REPEAT_LIMIT = 2
@@ -79,6 +80,12 @@ TITLE_WAIT_S = 5.0
 # Gemini asks the person one question before a long route (owner, 3 Nov 2026: "ASKING the user for more info before
 # proceeding ... like a prompt helper"): only in a question, once, and the run then stops gathering data.
 ASK_PERSON = "wizard_ask_person"
+# Which story a presentation tells (deck_tools.py): a question for the person like wizard_ask_person, sharing its one per
+# request, and only where someone is waiting to answer.
+ASK_STORYLINES = "wizard_propose_storylines"
+ASKING = (ASK_PERSON, ASK_STORYLINES)
+DECK_NAMES = (ASK_STORYLINES, "wizard_make_presentation", "wizard_change_presentation", "wizard_read_presentation")
+OUTPUTS = ("analysis", "presentation")
 # Checking one read against another is mapping and task work (a portal's direct request against its own screen): offered
 # in those runs only, so a question's every step does not carry its declaration.
 COMPARE_EVIDENCE = "wizard_compare_evidence"
@@ -268,7 +275,8 @@ class ActiveRun:
     offers_ask: bool = False  # wizard_ask_for_system is in the list (some system was off)
     lane: str = "ask"  # ask | explore | task | prompts: one run per lane per person
     queued: bool = False  # a question from the prompt queue: nobody is waiting to answer a question of Gemini's
-    asked: bool = False  # Gemini asked the person a question (wizard_ask_person): it ends its turn with it
+    asked: bool = False  # Gemini asked the person a question (wizard_ask_person, a storyline): it ends its turn with it
+    output: str = "analysis"  # what the person asked for (the composer's Output): analysis | presentation
     steers: list[dict[str, Any]] = field(default_factory=list)  # the person's notes, and system changes, for Gemini
     rejected: list[str] = field(default_factory=list)  # evidence the person marked Not this
     seq: int = 0
@@ -346,6 +354,15 @@ class Recorder:
         visual_id = self.store.add_visual(self.run.conversation_id, self.run.id, payload)
         self.run.visual_ids.append(visual_id)
         return visual_id
+
+    def all_visuals(self) -> list[dict[str, Any]]:
+        return self.store.visuals(self.run.conversation_id)
+
+    def add_deck(self, payload: dict[str, Any]) -> str:
+        return self.store.add_deck(self.run.conversation_id, self.run.id, payload)
+
+    def all_decks(self) -> list[dict[str, Any]]:
+        return self.store.decks(self.run.conversation_id)
 
     def add_check(self, payload: dict[str, Any]) -> None:
         self.store.add_check(self.run.id, payload)
@@ -458,6 +475,12 @@ def tool_label(name: str, args: dict[str, Any], services: Services) -> str:
             "wizard_schedule_brief": f"Prepared a recurring brief for Metronome: {args.get('title', '')}",
             ASK_FOR_SYSTEM: f"Asked you to switch on {args.get('system', 'a system')}",
             ASK_PERSON: f"Asked you: {str(args.get('question', ''))[:160]}",
+            ASK_STORYLINES: "Asked you which story the presentation should tell",
+            "wizard_make_presentation": f"Made a presentation: {str(args.get('title', ''))[:120]}"
+                                        f" ({len(args.get('slides') or [])} slides)",
+            "wizard_change_presentation": f"Changed presentation {args.get('deck', '')}: "
+                                          f"{len(args.get('changes') or [])} change(s)",
+            "wizard_read_presentation": f"Read presentation {args.get('deck', '')}",
             "wizard_check_my_data": f"Checked {len(args.get('claims', []))} figure(s) against the evidence"}.get(name, name)
 
 
@@ -512,6 +535,12 @@ def tool_summary(name: str, outcome: ToolOutcome) -> str:
         return f"waiting for you to switch on {data.get('name')}"
     if name == ASK_PERSON:
         return "waiting for your answer: " + " · ".join(str(o) for o in data.get("options") or [])
+    if name == ASK_STORYLINES:
+        return "waiting for your storyline: " + " · ".join(str(s.get("title")) for s in data.get("storylines") or [])
+    if "deck_id" in data:
+        warned = len(data.get("warnings") or [])
+        return (f"{data['deck_id']}: {data['slides']} slides" + (f", version {data['version']}" if data.get("version", 1) > 1
+                else "") + (f" · {warned} thing(s) to fix" if warned else ""))
     if name.endswith("_run_report"):
         extra = f" of {data['total_rows']}" if data.get("truncated") else ""
         as_of = f" · as of {str(data.get('as_of'))[:10]}" if data.get("as_of") else ""
@@ -585,7 +614,7 @@ class RunManager:
     def start(self, identity: Identity, conversation_id: str, question: str, kind: str = "ask",
               parent_run_id: str | None = None, explore: dict[str, Any] | None = None,
               choice: SystemChoice | None = None, work: dict[str, Any] | None = None,
-              queued: bool = False) -> dict[str, Any]:
+              queued: bool = False, output: str = "analysis") -> dict[str, Any]:
         # A question, a portal being mapped, a task and a question from the prompt queue run side by side: one of each
         # per person.
         lane = PROMPTS_LANE if queued else kind if kind in LANES else "ask"
@@ -598,12 +627,13 @@ class RunManager:
         row = {"id": run_id, "conversation_id": conversation_id, "user_id": identity.id, "kind": kind,
                "question": question, "status": "queued", "runtime": self.runtime.kind, "runtime_label": self.runtime.label(),
                "model": self.runtime.model, "check_status": "NOT_CHECKED", "parent_run_id": parent_run_id,
-               "created_at": now(), "systems": encode_systems(choice)}
+               "created_at": now(), "systems": encode_systems(choice),
+               "output": output if kind == "ask" and output in OUTPUTS else "analysis"}
         self.store.create_run(row)
         self.store.touch_conversation(conversation_id, question[:80] if kind == "ask" else None)
         run = ActiveRun(run_id, identity, conversation_id, kind, question, parent_run_id, self.runtime.kind, explore=explore,
                         work=work, choice=choice, ever_on=None if choice is None else choice.on,
-                        offers_ask=bool(choice and choice.off()), lane=lane, queued=queued)
+                        offers_ask=bool(choice and choice.off()), lane=lane, queued=queued, output=row["output"])
         self.active[run_id] = run
         loop = asyncio.get_running_loop()
         if kind == "ask" and hasattr(self.runtime, "title") and len(self.store.runs(conversation_id)) == 1:
@@ -702,7 +732,8 @@ class RunManager:
         return [t for t in self.registry.describe(scope)
                 if (run.offers_ask if t["name"] == ASK_FOR_SYSTEM else offered(t["name"], shown, catalogs, portals))
                 and (reads_path or t["name"] not in TASK_FILE_NAMES)
-                and ((run.kind == "ask" and not run.queued) or t["name"] != ASK_PERSON)
+                and ((run.kind == "ask" and not run.queued) or t["name"] not in ASKING)
+                and (run.kind not in ("task", "explore") or t["name"] not in DECK_NAMES)
                 and (run.kind in ("task", "explore") or t["name"] != COMPARE_EVIDENCE)]
 
     def subscribe(self, run_id: str) -> asyncio.Queue[dict[str, Any]] | None:
@@ -818,6 +849,14 @@ class RunManager:
             run.kb_saves += 1
         if not outcome.ok and outcome.error_code == "sign_in_required":
             run.needs_sign_in = True
+        if outcome.ok and "deck_id" in outcome.data:
+            deck = next(d for d in self.store.decks(run.conversation_id, run.id) if d["id"] == outcome.data["deck_id"])
+            await self.emit(run, "deck_added", {"deck": deck})
+        if outcome.ok and name == ASK_STORYLINES:
+            run.asked = True
+            await self.emit(run, "storylines_proposed", {"question": outcome.data["question"],
+                                                         "storylines": outcome.data["storylines"],
+                                                         "why": outcome.data.get("why")})
         if outcome.ok and name == ASK_PERSON:
             run.asked = True
             await self.emit(run, "person_asked", {"question": outcome.data["question"], "options": outcome.data["options"],
@@ -850,11 +889,12 @@ class RunManager:
                                    "wizard_task_files_done, then summarise this round; Wizard starts the next round with "
                                    "the files left." if in_rounds else
                                    "Answer with what you have and say what is missing."))
-        if name == ASK_PERSON and (run.kind != "ask" or run.queued):
+        if name in ASKING and (run.kind != "ask" or run.queued):
             return ToolOutcome(False, {}, 0, "no_one_to_ask",
                                "Nobody is waiting to answer a question in this run: decide yourself, and say what you "
-                               "assumed in your summary.")
-        if name == ASK_PERSON and run.asked:
+                               "assumed in your summary." + (" Choose the storyline the evidence supports best and make "
+                                                             "the presentation with it." if name == ASK_STORYLINES else ""))
+        if name in ASKING and run.asked:
             return ToolOutcome(False, {}, 0, "already_asked", "You already asked the person a question in this run: end "
                                                               "your turn with it.")
         if run.asked and (category in RESEARCH or name in MAP_WRITES):
@@ -1256,7 +1296,9 @@ class RunManager:
                                     for a in self.store.conversation_attachments(run.conversation_id)], explore=run.explore,
                                    task=run.work, systems=systems, order=order,
                                    when_asked=[choice.name(s) for s in choice.off()] if choice and choice.auto else None,
-                                   database=self._database(run), away=run.queued,
+                                   database=self._database(run), away=run.queued, output=run.output,
+                                   visuals=self.store.visuals(run.conversation_id) if run.kind == "ask" else None,
+                                   decks=self.store.decks(run.conversation_id) if run.kind == "ask" else None,
                                    remembered=[] if run.kind in LANES
                                    else [m["text"] for m in self.store.memories(run.identity.id)]),
                     question=run.question, kind=run.kind,  # type: ignore[arg-type]
@@ -1341,6 +1383,9 @@ class RunManager:
         missing_visuals = [v for v in VISUAL.findall(answer) if v not in {x["id"] for x in visuals}]
         if missing_visuals:
             run.warnings.append(f"The answer refers to visuals that were not prepared: {', '.join(missing_visuals)}.")
+        missing_decks = [d for d in DECK.findall(answer) if d not in {x["id"] for x in self.store.decks(run.conversation_id)}]
+        if missing_decks:
+            run.warnings.append(f"The answer refers to presentations that were not made: {', '.join(missing_decks)}.")
         rejected = [c for c in cited if c in run.rejected]
         if rejected:
             run.warnings.append(f"The answer cites {', '.join(rejected)}, which you marked Not this.")

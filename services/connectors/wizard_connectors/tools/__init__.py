@@ -16,6 +16,7 @@ from ..postgres_query import PostgresQuery
 from .compare_tools import COMPARE_TOOLS
 from .core_tools import CORE_TOOLS
 from .dashboard_tools import DASHBOARD_TOOLS
+from .deck_tools import DECK_TOOLS
 from .kb_tools import KB_TOOLS
 from .nerp_tools import NERP_TOOLS
 from .portal_tools import PORTAL_TOOLS
@@ -76,6 +77,7 @@ def build_registry(services: Services) -> ToolRegistry:
     for system in services.catalog.systems:
         specs.extend(make_source_tools(system.id, system.name))
     specs.extend(CORE_TOOLS)
+    specs.extend(DECK_TOOLS)
     specs.extend(COMPARE_TOOLS)
     specs.extend(KB_TOOLS)
     specs.extend(QUIZ_TOOLS)

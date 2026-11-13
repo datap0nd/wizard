@@ -29,6 +29,7 @@ class MemoryRecorder:
         self.visuals: list[dict[str, Any]] = []
         self.checks: list[dict[str, Any]] = []
         self.schedules: list[dict[str, Any]] = []
+        self.decks: list[dict[str, Any]] = []
         self.files = {}
 
     def add_evidence(self, payload: dict[str, Any]) -> str:
@@ -46,6 +47,17 @@ class MemoryRecorder:
         visual_id = f"V{len(self.visuals) + 1}"
         self.visuals.append({**payload, "id": visual_id})
         return visual_id
+
+    def all_visuals(self) -> list[dict[str, Any]]:
+        return self.visuals
+
+    def add_deck(self, payload: dict[str, Any]) -> str:
+        deck_id = f"D{len(self.decks) + 1}"
+        self.decks.append({**payload, "id": deck_id})
+        return deck_id
+
+    def all_decks(self) -> list[dict[str, Any]]:
+        return self.decks
 
     def add_check(self, payload: dict[str, Any]) -> None:
         self.checks.append(payload)

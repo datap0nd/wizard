@@ -323,6 +323,10 @@ export interface RunRecord {
   schedules?: Schedule[];
   /** The systems the person chose for this question; null is Auto. */
   systems?: string[] | null;
+  /** The composer's Output for this question. */
+  output?: Output;
+  /** Presentations made in this answer (a change is a new version that revises one). */
+  decks?: Deck[];
   active: boolean;
 }
 
@@ -339,6 +343,76 @@ export interface SystemRequest { system: string; name: string; reason: string }
 
 /** A question Gemini asked the person before going on (wizard_ask_person): each option is a button that asks it. */
 export interface PersonQuestion { question: string; options: string[]; why: string | null }
+
+/** What a question asks for (the composer's Output): an analysis in the chat, or a PowerPoint presentation. */
+export type Output = 'analysis' | 'presentation';
+
+/** One story a presentation could tell, as Gemini proposed it from the evidence. */
+export interface Storyline { title: string; arc: string[]; best_for: string | null }
+export interface StorylineQuestion { question: string; storylines: Storyline[]; why: string | null }
+
+export type SlideKind = 'cover' | 'agenda' | 'section' | 'summary' | 'kpis' | 'cards' | 'chart' | 'table' | 'split' | 'text' | 'closing';
+export type ChartStyle = 'auto' | 'column' | 'stacked' | 'percent' | 'bar' | 'stacked_bar' | 'line';
+export type DeckPoint = string | {text: string; sub?: string[]};
+export interface DeckKpi { value: string; label: string; change?: string; tone?: 'good' | 'bad' | 'neutral'; evidence_ids?: string[] }
+export interface DeckCardItem { heading: string; points?: DeckPoint[]; value?: string }
+export interface DeckHighlight { row: string; column: string; tone: 'good' | 'bad' }
+export interface DeckPanel { heading?: string; visual?: string; chart?: ChartStyle; points?: DeckPoint[] }
+
+export interface DeckSlide {
+  kind: SlideKind;
+  title?: string;
+  subtitle?: string;
+  meta?: string;
+  points?: DeckPoint[];
+  kpis?: DeckKpi[];
+  cards?: DeckCardItem[];
+  visual?: string;
+  chart?: ChartStyle;
+  highlights?: DeckHighlight[];
+  left?: DeckPanel;
+  right?: DeckPanel;
+  items?: string[];
+  evidence_ids?: string[];
+  footnote?: string;
+  notes?: string;
+}
+
+/** The company's look (the knowledge base's presentation-look note), else Wizard's neutral design. */
+export interface DesignTokens {
+  name: string;
+  slide: {width: number; height: number};
+  fonts: {title: string; subtitle: string; body: string; labels: string; east_asian: string};
+  colors: {brand: string; title: string; text: string; secondary: string; muted: string; background: string; card: string;
+    line: string; good_fill: string; good_text: string; bad_fill: string; bad_text: string; positive: string; negative: string;
+    series: string[]};
+  sizes: {cover_title: number; cover_subtitle: number; cover_meta: number; title: number; subtitle: number; section_title: number;
+    agenda: number; heading: number; body: number; kpi: number; table: number; chart_label: number; unit: number; footnote: number};
+  cover: {background: 'brand' | 'white'};
+  footer: {text: string; page_numbers: boolean};
+  rules: {max_highlights: number; max_points: number};
+}
+
+export interface DeckSource { name: string; as_of: string | null; data_mode: string | null }
+
+export interface Deck {
+  id: string;
+  run_id: string;
+  title: string;
+  storyline: string;
+  audience: string | null;
+  slides: DeckSlide[];
+  design: {tokens: DesignTokens; source: 'knowledge' | 'default'; note: string | null; status: string | null; problems: string[]; about: string};
+  /** The deck this one changed, its first version's id and its version number (1 for a new deck). */
+  revises: string | null;
+  family: string | null;
+  version: number;
+  visuals: Record<string, Visual>;
+  sources: Record<string, DeckSource>;
+  evidence_ids: string[];
+  data_mode: string | null;
+  created_at: string;
+}
 
 /** A note the person asked Wizard to remember: it goes into every question they ask. */
 export interface Memory { id: string; text: string; run_id: string | null; created_at: string }
@@ -562,6 +636,11 @@ export interface RunView {
   /** Systems Gemini asked the person to switch on. */
   systemRequests: SystemRequest[];
   questions: PersonQuestion[];
+  /** Storylines Gemini proposed for a presentation: the one clicked is the next question. */
+  storylines: StorylineQuestion[];
+  /** Presentations made in this answer, in order (a change adds a newer version). */
+  decks: Deck[];
+  output: Output;
   createdAt: string;
   /** Server time the agent started (run_started), the zero point for each step's start time. */
   startedAt: string | null;

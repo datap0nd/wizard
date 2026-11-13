@@ -3722,6 +3722,15 @@
               }
             ],
             "title": "Systems"
+          },
+          "output": {
+            "type": "string",
+            "enum": [
+              "analysis",
+              "presentation"
+            ],
+            "title": "Output",
+            "default": "analysis"
           }
         },
         "additionalProperties": false,

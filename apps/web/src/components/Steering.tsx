@@ -1,10 +1,10 @@
 import {createContext, useContext, useState} from 'react';
-import {Ban, BookmarkPlus, Check, CheckCircle2, Clock3, Layers, MessageCircleQuestionMark, UserRound} from 'lucide-react';
+import {ArrowRight, Ban, BookmarkPlus, Check, CheckCircle2, Clock3, Layers, MessageCircleQuestionMark, Presentation, UserRound} from 'lucide-react';
 import {cn} from '@/lib/utils';
 import {steerLabel} from '@/runState';
 import {Button} from './ui/button';
 import {SystemLogo} from './SystemLogo';
-import type {RunView, Steer, SteerReason, SystemRequest, TimelineItem} from '@/types';
+import type {RunView, Steer, SteerReason, Storyline, SystemRequest, TimelineItem} from '@/types';
 
 /** What the person can do to steer an answer, provided by the app to every card. */
 export interface SteerActions {
@@ -15,6 +15,13 @@ export interface SteerActions {
   turnOn: (run: RunView, request: SystemRequest) => void;
   /** The person's answer to a question Gemini asked (one of its options): asked as the next question. */
   reply: (run: RunView, text: string) => void;
+  /** The storyline the person chose for a presentation: asked as the next question, for a presentation. */
+  story?: (run: RunView, text: string) => void;
+}
+
+/** What choosing a storyline sends: the story and its arc, which Gemini builds the deck on. */
+export function storylineReply(storyline: Storyline): string {
+  return `Storyline: ${storyline.title}` + (storyline.arc.length ? ` (${storyline.arc.join(' → ')})` : '');
 }
 
 export const SteerContext = createContext<SteerActions | null>(null);
@@ -141,6 +148,45 @@ export function SystemRequests({run}: {run: RunView}) {
 
 /** Gemini asked the person before going on (wizard_ask_person): one click on an option asks it as the next question.
  * Only the latest answer of a conversation takes a click; an earlier one shows what was asked. */
+/** Which story a presentation tells (wizard_propose_storylines): each storyline with its arc, the one chosen is the
+ * next question; or the person writes their own below. Only the conversation's last answer takes a click. */
+export function StorylineQuestions({run, latest = true}: {run: RunView; latest?: boolean}) {
+  const actions = useContext(SteerContext);
+  const [chosen, setChosen] = useState<string | null>(null);
+  if (!run.storylines.length || !actions) return null;
+  const running = run.status === 'running' || run.status === 'queued';
+  const open = latest && !running && run.status === 'succeeded' && chosen === null;
+  const send = actions.story ?? actions.reply;
+  return <>
+    {run.storylines.map((item, index) => (
+      <div key={index} className="rounded-xl border border-accent-line bg-accent-soft/40 px-3 py-3 text-[13px]" data-testid="storylines">
+        <p className="flex items-start gap-2"><Presentation className="mt-0.5 size-4 shrink-0 text-accent" />
+          <span className="min-w-0"><span className="font-medium">{item.question}</span>{item.why && <span className="text-ink-2"> {item.why}</span>}</span></p>
+        <div className="mt-2.5 grid gap-2 sm:grid-cols-2" role="group" aria-label="Storylines">
+          {item.storylines.map(story => {
+            const picked = chosen === story.title;
+            return (
+              <button key={story.title} type="button" disabled={!open} data-testid="storyline" aria-pressed={picked}
+                onClick={() => { setChosen(story.title); send(run, storylineReply(story)); }}
+                className={cn('rounded-lg border bg-canvas px-3 py-2.5 text-left transition-colors disabled:cursor-default',
+                  picked ? 'border-accent ring-2 ring-accent/25' : 'border-line', open && 'hover:border-accent-line hover:bg-accent-soft/30',
+                  !open && !picked && 'opacity-70')}>
+                <span className="block font-semibold text-ink">{story.title}</span>
+                <span className="mt-1.5 flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[12px] text-ink-2">
+                  {story.arc.map((beat, i) => <span key={i} className="inline-flex items-center gap-1">
+                    {i > 0 && <ArrowRight className="size-3 text-ink-3" aria-hidden="true" />}{beat}</span>)}
+                </span>
+                {story.best_for && <span className="mt-1 block text-[11.5px] text-ink-3">For {story.best_for}</span>}
+              </button>
+            );
+          })}
+        </div>
+        {open && <p className="mt-2 text-[11.5px] text-ink-3">Or describe the story you want to tell below.</p>}
+      </div>
+    ))}
+  </>;
+}
+
 export function PersonQuestions({run, latest = true}: {run: RunView; latest?: boolean}) {
   const actions = useContext(SteerContext);
   const [chosen, setChosen] = useState<string | null>(null);

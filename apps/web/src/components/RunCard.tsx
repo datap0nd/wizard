@@ -1,9 +1,9 @@
 import {memo, useContext, useEffect, useMemo, useState} from 'react';
-import {AlertTriangle, CalendarClock, ChevronDown, Copy, ExternalLink, Flag, Info, Layers, Link2, ListTree, Mail, RotateCcw, ShieldCheck, Square} from 'lucide-react';
+import {AlertTriangle, CalendarClock, ChevronDown, Copy, ExternalLink, Flag, Info, Layers, Link2, ListTree, Mail, Presentation, RotateCcw, ShieldCheck, Square} from 'lucide-react';
 import {placedVisuals} from '@/citations';
 import {sourceCount, sourceGroups} from '@/sources';
 import {clock, duration} from '@/format';
-import {errorDetails} from '@/runState';
+import {errorDetails, shownDecks} from '@/runState';
 import {Button} from './ui/button';
 import {DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger, Hint} from './ui/menu';
 import {ActivityTimeline} from './ActivityTimeline';
@@ -11,8 +11,9 @@ import {AnswerMarkdown} from './AnswerMarkdown';
 import {CheckBadge, DataModeBadge, RuntimeBadge} from './Badges';
 import {Diagnostics} from './Diagnostics';
 import {MadeFiles} from './Attachments';
+import {DeckCard} from './DeckCard';
 import {RecurringCard} from './RecurringCard';
-import {PersonQuestions, SteerNotes, SystemRequests} from './Steering';
+import {PersonQuestions, SteerNotes, StorylineQuestions, SystemRequests} from './Steering';
 import {SystemsContext, SystemsStage} from './SystemsStage';
 import {onlyNames} from '@/systems';
 import {VisualBlock} from './VisualBlock';
@@ -43,6 +44,8 @@ interface Props {
   canRecur?: boolean;
   /** The last answer of the conversation: only it takes a click on a question's options. */
   latest?: boolean;
+  /** Make a PowerPoint: the follow-up that turns this analysis into a presentation. */
+  onPresentation?: (run: RunView) => void;
   busy: boolean;
 }
 
@@ -118,7 +121,7 @@ function ErrorDetails({run}: {run: RunView}) {
 }
 
 export const RunCard = memo(function RunCard({run, onEvidence, onCheck, onCancel, onRetry, onFeedback, onEmail, onRecurring, onSchedule,
-  canRecur = false, latest = true, busy}: Props) {
+  canRecur = false, latest = true, busy, onPresentation}: Props) {
   const running = run.status === 'running' || run.status === 'queued';
   const text = run.answer ?? run.streamText;
   const placed = placedVisuals(text);
@@ -128,6 +131,7 @@ export const RunCard = memo(function RunCard({run, onEvidence, onCheck, onCancel
   const visualEnv = useMemo(() => wizardVisualEnv(run.conversationId, run.dataMode, run.evidence), [run.conversationId, run.dataMode, run.evidence]);
   const queried = run.evidence.some(e => e.system === 'postgresql');
   const sources = sourceCount(sourceGroups(run.evidence));  // tables, reports and files, not each query
+  const decks = shownDecks(run);
   return (
     <section className="rounded-card border border-line border-t-[3px] border-t-accent bg-canvas shadow-card" aria-label={run.kind === 'check' ? 'Check my data result' : 'Wizard answer'}
       data-testid="run-card" data-status={run.status} data-run-id={run.id}>
@@ -147,6 +151,10 @@ export const RunCard = memo(function RunCard({run, onEvidence, onCheck, onCancel
           {text && <AnswerMarkdown text={text} visuals={run.visuals} streaming={running} onEvidence={id => onEvidence(run, id)} />}
           {loose.map(v => <VisualBlock key={v.id} visual={v} onEvidence={id => onEvidence(run, id)} />)}
         </VisualEnvContext.Provider>
+        <VisualEnvContext.Provider value={visualEnv}>
+          {decks.map(deck => <DeckCard key={deck.id} deck={deck} />)}
+        </VisualEnvContext.Provider>
+        <StorylineQuestions run={run} latest={latest} />
         <MadeFiles files={run.attachments} />
         {run.schedules.map(schedule => <RecurringCard key={schedule.id} schedule={schedule}
           onCreate={s => onSchedule?.(run, s, 'create')} onDismiss={s => onSchedule?.(run, s, 'dismiss')} />)}
@@ -184,6 +192,12 @@ export const RunCard = memo(function RunCard({run, onEvidence, onCheck, onCancel
             <Button variant="ghost" size="sm" aria-label="Copy report link" onClick={() => void navigator.clipboard?.writeText(`${location.origin}/r/${run.reportId}`)}><Link2 /></Button>
           </Hint>
         </>}
+        {run.status === 'succeeded' && run.kind === 'ask' && run.answer && onPresentation && !run.decks.length && !run.storylines.length
+          && (run.visuals.length > 0 || run.evidence.length > 0) && (
+          <Hint text="Turn this analysis into a PowerPoint presentation: Wizard asks which story to tell, then makes the slides in the company's design.">
+            <Button variant="ghost" size="sm" onClick={() => onPresentation(run)} disabled={busy} data-testid="make-presentation"><Presentation />Make a PowerPoint</Button>
+          </Hint>
+        )}
         {run.status === 'succeeded' && run.kind === 'ask' && run.answer && (
           <Hint text="Open an Outlook draft with the question, this answer, how long it took and the sources it used. You add the recipient and send it.">
             <Button variant="ghost" size="sm" onClick={() => onEmail(run)} data-testid="email-answer"><Mail />Email</Button>
