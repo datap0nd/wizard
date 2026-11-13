@@ -1,6 +1,7 @@
 // A presentation Gemini made, under its answer: every slide as it will look in PowerPoint (one large, the rest in a strip
 // to pick from), Download PowerPoint, and Open where Wizard saved it on this PC. Changes are asked for in the chat; each
-// change is a new version shown in its own answer.
+// change is a new version shown in its own answer. On the Cases site (`shared`) the same card previews the slides and
+// downloads the PowerPoint drawn in the page; there is no chat to ask for changes in.
 import {useContext, useEffect, useMemo, useState} from 'react';
 import {ChevronLeft, ChevronRight, Download, FolderOpen, Loader2, Presentation} from 'lucide-react';
 import {Button} from './ui/button';
@@ -13,7 +14,7 @@ import type {Deck} from '@/types';
 
 type State = {step: 'idle'} | {step: 'busy'} | {step: 'done'; text: string; saved: SavedExport | null} | {step: 'failed'; text: string};
 
-export function DeckCard({deck}: {deck: Deck}) {
+export function DeckCard({deck, shared = false}: {deck: Deck; shared?: boolean}) {
   const env = useContext(VisualEnvContext);
   const pages = useMemo(() => layoutDeck(deck), [deck]);
   const tokens = deck.design.tokens;
@@ -82,8 +83,10 @@ export function DeckCard({deck}: {deck: Deck}) {
           {state.saved && env.open && <button type="button" onClick={() => void open(state.saved!)} data-testid="deck-open"
             className="ml-2 inline-flex items-center gap-1 font-medium text-accent hover:underline"><FolderOpen className="size-3.5" />Open</button>}</p>}
         {state.step === 'failed' && <p className="text-[12.5px] text-danger" role="alert">{state.text}</p>}
-        <p className="text-[12px] text-ink-3" data-testid="deck-hint">Ask for any change below, for example “make slide 3 a table” or “shorter titles”.{' '}
-          {deck.design.source === 'default'
+        <p className="text-[12px] text-ink-3" data-testid="deck-hint">
+          {shared ? 'Shared from Wizard: download it to edit it in PowerPoint.' : 'Ask for any change below, for example “make slide 3 a table” or “shorter titles”.'}{' '}
+          {shared ? <span>{deck.design.source === 'default' ? "Drawn in Wizard's neutral design." : `In the company's design (${deck.design.tokens.name}).`}</span>
+            : deck.design.source === 'default'
             ? <Hint text={deck.design.about}><span tabIndex={0} className="underline decoration-dotted underline-offset-2">Drawn in Wizard's neutral design.</span></Hint>
             : <Hint text={deck.design.about}><span tabIndex={0} className="underline decoration-dotted underline-offset-2">In the company's design ({deck.design.tokens.name}).</span></Hint>}
         </p>

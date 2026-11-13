@@ -32,8 +32,8 @@ around a precomputed result is withdrawn. Its credential, entitlement, DLP and h
   (`portal-maps/`), an empty repository's first commit (a README, from Test connection or the first write) and, at the
   person's click, the Pages site (Brain and Cases) on its own branch (`gh-pages`, never the
   notes' branch), with the write token the person enters in Settings on their own PC
-  ([decision](docs/decisions/2026-10-30-pages-site.md)): a case carries prompts, answers, charts, source names and
-  the queries that read them (SQL; portal steps without hosts or secrets), never a source's rows; the Brain snapshot never a note's text. The
+  ([decision](docs/decisions/2026-10-30-pages-site.md)): a case carries prompts, answers, charts, the presentations they made, source names
+  and the queries that read them (SQL; portal steps without hosts or secrets), never a source's rows; the Brain snapshot never a note's text. The
   Cases site takes anonymous ratings, comments and quiz answers as issues in a feedback repository of its own, with a
   feedback token published beside its pages (owner decision,
   [docs/decisions/2026-11-12-case-feedback-and-quiz.md](docs/decisions/2026-11-12-case-feedback-and-quiz.md)): keep

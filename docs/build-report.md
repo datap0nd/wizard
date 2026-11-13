@@ -3,7 +3,30 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-13 (latest) — Wizard checks the portals' sign-in before each answer, and turns yellow until the person signs in
+## 2026-11-13 (latest) — A shared case carries the PowerPoint its answer made
+
+The owner: "Wizard is not putting the powerpoint in cases." Share as case published each answer's text, charts,
+sources and steps; a presentation (a deck, drawn in the page from its slides) was left out, so the case had the answer
+that announced it and nothing to open. [Decision](decisions/2026-11-13-presentations.md) (In a shared case).
+
+- `services/api/wizard_api/site.py`: each turn of a case carries `decks`, the newest version of each deck its run made
+  or changed (as the chat shows them): title, storyline, audience, slides, version, the deck's copies of the visuals,
+  its sources' names, data label, and of its design only the tokens and whether they are the company's (where the look
+  came from, its status and problems stay in Wizard). The gallery entry counts them (`presentations`). Everything still
+  passes the credential check and the 4 MB limit before it is published.
+- Page: the case's answer window shows the deck card under the answer (`CaseFlow.tsx`): every slide, moving between
+  them, and **Download PowerPoint**, built in the page with the same layout and pptxgenjs as in the chat; on the site
+  it is the browser's own download, and the card says "Shared from Wizard: download it to edit it in PowerPoint"
+  instead of asking for changes (`DeckCard` `shared`). The share dialog names the PowerPoint under its answer and says
+  it is published; the case and the gallery say "1 PowerPoint". A case published before this has none until it is
+  published again.
+- AGENTS.md: a case carries the presentations its answers made.
+- Checks: `tests/unit/test_site.py` 13 passed (one new: two versions of a deck, only the newest in the case and on the
+  site, the look only, the gallery's count); `CaseFlow.test.tsx` 2 new (the slides, the hint, the .pptx downloaded in
+  the page; none for an answer without one). The case preview of a replay answer with a deck added in a browser: the
+  card under the answer, its four slides, and Download PowerPoint saved a .pptx of four slides.
+
+## 2026-11-13 — Wizard checks the portals' sign-in before each answer, and turns yellow until the person signs in
 
 The owner: portals end the sign-in every now and then and Wizard should say so; before any response it should check the
 portals' sign-in in code (no AI), flag the ones signed out on the stage where Gemini decides the next step (it said

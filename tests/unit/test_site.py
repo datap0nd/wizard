@@ -227,6 +227,40 @@ def test_share_as_case_publishes_the_answers_and_source_names_never_the_rows(tmp
         assert f"cases/{cid}.json" not in site and json.loads(site["cases/cases.json"])["cases"] == []
 
 
+def test_a_case_carries_the_powerpoint_its_answer_made(tmp_path, monkeypatch):
+    """Owner, 13 Nov 2026: "Wizard is not putting the powerpoint in cases". An answer's presentation goes with it, the
+    newest version of each deck as the chat shows it, for the page to preview and download; of its design only the look."""
+    hub = FakeHub(pages_url="https://pages.github.example.com/acme/kb/")
+    with owner_app(tmp_path, monkeypatch, hub) as client:
+        login(client, "local-owner")
+        run = ask(client, CEO_QUESTION)
+        conversation = run["conversation_id"]
+        store = client.app.state.manager.store
+        design = {"tokens": {"name": "Company look"}, "source": "knowledge", "note": "presentation-look", "status": "DRAFT",
+                  "problems": ["colors.brand is not a colour"], "about": "The company's look, from presentation-look."}
+        slides = [{"kind": "cover", "title": "Marketing return"}, {"kind": "chart", "title": "Egypt leads", "visual": "V1"}]
+        first = {"title": "Marketing return", "storyline": "Egypt leads on return", "audience": "Executives", "slides": slides,
+                 "design": design, "revises": None, "family": None, "version": 1, "visuals": {"V1": {"id": "V1", "kind": "bar"}},
+                 "sources": {"E1": {"name": "NERP · Spend", "as_of": None, "data_mode": "SYNTHETIC"}},
+                 "evidence_ids": ["E1"], "data_mode": "SYNTHETIC", "created_at": "2026-11-13T10:00:00"}
+        store.add_deck(conversation, run["id"], first)
+        store.add_deck(conversation, run["id"], {**first, "title": "Marketing return, by market", "revises": "D1",
+                                                 "family": "D1", "version": 2, "slides": [*slides, {"kind": "closing"}]})
+        case = client.get(f"/api/v1/conversations/{conversation}/case").json()["case"]
+        decks = case["turns"][0]["decks"]
+        assert [(d["id"], d["title"], d["version"], len(d["slides"])) for d in decks] == [("D2", "Marketing return, by market", 2, 3)]
+        assert decks[0]["visuals"] == {"V1": {"id": "V1", "kind": "bar"}} and decks[0]["sources"]["E1"]["name"] == "NERP · Spend"
+        assert decks[0]["design"] == {"tokens": {"name": "Company look"}, "source": "knowledge", "note": None, "status": None,
+                                      "problems": [], "about": ""}, "the look only: Wizard's notes on it stay in Wizard"
+        published = client.post(f"/api/v1/conversations/{conversation}/case", headers=HEADERS,
+                                json={"title": "Marketing return", "takeaway": "", "run_ids": []})
+        assert published.status_code == 200, published.text
+        site = hub.files("gh-pages")
+        stored = json.loads(site[f"cases/{case_id(conversation)}.json"])
+        assert [d["id"] for d in stored["turns"][0]["decks"]] == ["D2"]
+        assert json.loads(site["cases/cases.json"])["cases"][0]["presentations"] == 1
+
+
 def test_the_brain_is_published_as_a_snapshot_without_the_notes_text(tmp_path, monkeypatch):
     hub = FakeHub()
     with owner_app(tmp_path, monkeypatch, hub) as client:
