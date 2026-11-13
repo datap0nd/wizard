@@ -3,7 +3,38 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-13 (latest) — The tasks come packaged with the app
+## 2026-11-13 (latest) — A tool's failure never ends the answer
+
+The owner's run `run_yPgtdV71NyagKRC9` (build 1.0.221.0 f70d715): asked about the installed base by gender and age,
+Gemini read the Big Data Portal with `portal_run` ("Check accessible databases in Superset"). Its first step was an
+`evaluate`, so Wizard opened Superset's SQL Lab first, Chrome answered `net::ERR_CONNECTION_RESET`, and Playwright's
+exception went through the portal browser, the tool registry and the run: "Wizard hit an internal error" after 3 min
+13 s, with nothing said about BDP and no way to answer from ASAP. "This cannot happen."
+
+- `services/connectors/wizard_connectors/portal_browser.py`: every page load (the start page a call opens first, a
+  `goto` step, the light page a `request` step opens, Check sign-in) goes through `_goto`. A load the network cut off
+  (connection reset, closed or timed out, an empty reply, the network changing) is sent once more two seconds later;
+  a portal still out of reach, or one this PC cannot reach at all (refused, name not found, off the VPN), is
+  `portal_unreachable` in words: which host, Chrome's code, that Gemini's steps did not cause it, nothing was read, try
+  once more at most, then answer from the other sources and say what the portal would have added. Anything else the
+  browser raises outside a step is `browser_failed` in words, and a browser that closed or crashed is started again on
+  the next call (`_ready_page`). A page that is not on a web address (blank, or Chrome's error page) never reads as a
+  sign-in page, and a call that starts there opens the portal's start page first.
+- `services/connectors/wizard_connectors/tools/registry.py`: whatever a tool raises outside `ToolError` and
+  `SourceError` (or a result that cannot be encoded) is logged and becomes the call's error, `tool_failed`, with the
+  exception's first line (secrets shortened): Gemini reads it and the run goes on.
+- Checks: `tests/integration/test_portal_browser.py` 23 passed — three new tests in a real Chromium against a portal
+  that resets its connections with raw sockets: the owner's call (an `evaluate` first) is `portal_unreachable` after one
+  more load, a `goto` step says the same, and a connection dropped once is loaded again and read. Before the change the
+  first raised `Page.goto: net::ERR_CONNECTION_RESET` out of the registry. `tests/integration/test_isolation_and_failures.py`
+  11 passed — a new test: a tool that raises leaves the run `succeeded` with Gemini's answer, and Gemini read
+  `tool_failed` with the exception (before: `failed`, `internal_error`).
+- Full run (`CI=1 bash scripts/verify_all.sh --allow-blocked=live-parity,postgres`): lock, spec, secrets, contracts,
+  lint, types, python-tests (875 passed), portal-browser (42 passed), evals-schema, web-types, web-unit, web-dist,
+  web-build and e2e PASS; postgres and live-parity BLOCKED (allowed); gemini-cli BLOCKED (Gemini CLI not installed in
+  this container).
+
+## 2026-11-13 — The tasks come packaged with the app
 
 The owner: "can you package the tasks in the app? I cant read the tasks ... Checking for updates work, but checking for
 tasks doesnt" ([decision](decisions/2026-11-13-tasks-packaged.md)). The task list read api.github.com with Wizard's own
