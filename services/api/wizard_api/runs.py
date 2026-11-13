@@ -77,6 +77,8 @@ CANNOT_RUN = ("gemini_signin_required", "runtime_unavailable", "model_quota", "m
 # A new chat's name from Gemini (owner, 30 Oct 2026): asked beside the first answer; the answer waits at most this long
 # for it before it is shown finished, so the chat list it refreshes already has the name.
 TITLE_WAIT_S = 5.0
+# An answer that is ready while the portals' sign-in check is still running waits this long for it, so the card shows it.
+SIGN_IN_WAIT_S = 1.5
 # Gemini asks the person one question before a long route (owner, 3 Nov 2026: "ASKING the user for more info before
 # proceeding ... like a prompt helper"): only in a question, once, and the run then stops gathering data.
 ASK_PERSON = "wizard_ask_person"
@@ -306,6 +308,8 @@ class ActiveRun:
     maps_changed: set[str] = field(default_factory=set)  # portals whose map this run added to (published after it)
     kb_saves: int = 0  # knowledge-base saves that committed in this run (a task that repeats needs progress to go on)
     needs_sign_in: bool = False  # a portal asked for a sign-in during this run
+    ended: bool = False  # run_finished or run_failed was sent: nothing more is announced for this run
+    sign_in_check: asyncio.Task[None] | None = None  # the portals' sign-in check beside the answer
     task: asyncio.Task[None] | None = None
     title_task: asyncio.Task[None] | None = None  # Gemini naming a new chat, beside the answer
 
@@ -1281,6 +1285,8 @@ class RunManager:
                 if not ready.get("ready"):
                     raise AgentFailure("gemini_signin_required" if "Link" in str(ready.get("reason")) else "runtime_unavailable",
                                        str(ready.get("reason")))
+                if run.kind not in LANES:  # a question (and its check or brief), not a mapping round or a task
+                    run.sign_in_check = asyncio.get_running_loop().create_task(self._sign_in_check(run))
                 today = datetime.now().astimezone().date()  # the server's local date: on Gulf time UTC is still yesterday until 04:00
                 history = self.history(run)
                 choice = run.choice
@@ -1335,9 +1341,40 @@ class RunManager:
         finally:
             self.active.pop(run.id, None)
 
+    async def _sign_in_check(self, run: ActiveRun) -> None:
+        """Before an answer, a check in code (never Gemini) of whether the person is still signed in to the portals this
+        question may read (owner, 13 Nov 2026, docs/decisions/2026-11-13-portal-sign-in-check.md). The stage shows a
+        portal that ended the sign-in with a Sign in button instead of "ready", and the page turns the bar at its top
+        (and WizardBar's button) yellow until the person signs in again. It runs beside the answer: Gemini is not told,
+        and its portal calls wait only for the browser, which runs one job at a time."""
+        browsers = self.services.portals
+        if browsers is None:
+            return
+        ids = [p.id for p in browsers.settings.portals
+               if run.identity.can_use_system(p.id) and (run.choice is None or run.choice.allows(p.id))]
+        if not ids:
+            return
+        browser = browsers.for_user(run.identity.id)
+        try:
+            due = browser.sign_in_due(ids)
+            if due:  # the stage shows "checking" on these meanwhile
+                before = browser.sign_in_state(ids)
+                await self._sign_in_event(run, {**before, "checking": True, "portals": [
+                    {**p, "checking": p.get("checking") or p["portal"] in due} for p in before["portals"]]})
+            state = await asyncio.to_thread(browser.check_for_question, ids)
+        except Exception:  # noqa: BLE001 - the check never touches the answer
+            log.exception("run %s: the portals' sign-in check failed", run.id)
+            return
+        await self._sign_in_event(run, state)
+
+    async def _sign_in_event(self, run: ActiveRun, state: dict[str, Any]) -> None:
+        if not run.ended:  # a check that ends after the answer is kept by the browser; the page reads it from there
+            await self.emit(run, "portal_sign_in", state)
+
     async def _fail(self, run: ActiveRun, code: str, message: str, status: str = "failed",
                     details: dict[str, str] | None = None) -> None:
         log.warning("run %s %s: %s %s %s", run.id, status, code, message, details or "")
+        run.ended = True
         with contextlib.suppress(Exception):
             self.store.update_run(run.id, status=status, error_code=code, error_message=message, finished_at=now(),
                                   stats=json.dumps(run.stats))
@@ -1431,6 +1468,10 @@ class RunManager:
         if run.title_task and not run.title_task.done():
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(asyncio.shield(run.title_task), TITLE_WAIT_S)
+        if run.sign_in_check and not run.sign_in_check.done():
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(asyncio.shield(run.sign_in_check), SIGN_IN_WAIT_S)
+        run.ended = True
         self._publish(run, "run_finished", {"status": "succeeded", "report_id": report_id, "answer": answer,
                                             "data_mode": data_mode, "check_status": check_status,
                                             "check_summary": check_summary, "warnings": run.warnings,

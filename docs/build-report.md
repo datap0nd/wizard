@@ -3,7 +3,43 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-13 (latest) — A tool's failure never ends the answer
+## 2026-11-13 (latest) — Wizard checks the portals' sign-in before each answer, and turns yellow until the person signs in
+
+The owner: portals end the sign-in every now and then and Wizard should say so; before any response it should check the
+portals' sign-in in code (no AI), flag the ones signed out on the stage where Gemini decides the next step (it said
+"ready" on all of them) with a Sign in button, and turn yellow at the top so that after a prompt the person is asked to
+sign in again. [Decision](decisions/2026-11-13-portal-sign-in-check.md).
+
+- `services/connectors/wizard_connectors/portal_browser.py`: the browser keeps how each application stands
+  (`signed_in`, `signed_out`, `unreachable`, `unknown`) from its checks and from Gemini's own reads (a read that ends on
+  the portal is signed in; one that meets a sign-in page is signed out). `check()` opens each start page in a tab of its
+  own and closes it, so the page Gemini works on (a running GSCM client) is left as it is. `sign_in_due` /
+  `check_for_question`: a portal checked or read in the last three minutes is not opened again, one signed out stays so
+  until the person signs in, nothing is opened while the sign-in window is open, and closing the window queues a check
+  of every portal. `GET /api/v1/portals` carries `sign_in` (with `checking` per application and the why, in the words
+  `SIGN_IN_AGAIN`). `sign_in_required` now says the sign-in ended and points to the yellow bar.
+- `services/api/wizard_api/runs.py`: a question (its Check my data, a brief; not a mapping round or a task) starts the
+  check beside the answer for the portals it may read (the person's, and only the chosen ones) and announces it as
+  `portal_sign_in` (first "checking", then the result). Gemini is not told. An answer ready while the check runs waits
+  at most 1.5 s (`SIGN_IN_WAIT_S`); nothing is announced after `run_finished` / `run_failed`.
+- Page: `portalSignIn.ts` keeps what Wizard knows (a question's check merges into the last full reading);
+  `SignInBar.tsx` is the yellow bar at the top of the panel and the full window (which portals, why, **Sign in**, Done
+  while the window is open, "Signed in again" when the re-check passes), and `useSignInWatch` reads the state when
+  Wizard opens, after each answer and each time the panel opens, every 3 s while a check or the window is open, and
+  tells WizardBar (`{type: 'sign-in', portals}`). The stage (`SystemsStage.tsx`) shows *checking sign-in…*, *signed
+  in*, *can't be reached*, or a yellow key and **Sign in** instead of "ready". Settings → Portals explains the same and
+  feeds the bar. Gemini's portal guide says it too.
+- WizardBar: `TopButton` is yellow while any portal has ended the sign-in ("Sign in again", "Click to sign in to
+  GSCM"; a running question keeps its caption on the yellow tab); `WizardContext` names them in the tray tooltip and
+  shows a notification once when the panel is not in front. `--snapshot` draws three new looks.
+- Checks: `tests/integration/test_portal_browser.py` 24 passed (one new: the check in a real Chromium; the browser layer, 43 passed);
+  `tests/integration/test_portal_sign_in_api.py` 3 passed (new); `apps/web` 227 passed (7 new in
+  `SignInBar.test.tsx`), typecheck clean; ruff, mypy and `export_contracts.py --check` clean; `dotnet build
+  apps/desktop/WizardBar/WizardBar.csproj -c Release` 0 warnings, 0 errors (built on Linux with the .NET 8 SDK; CI
+  builds, snapshots and smoke-tests it on Windows). The scratch run of the real app in replay mode with a simulated
+  GSCM sign-in page showed the yellow bar and GSCM's Sign in on the stage while ASAP said "signed in".
+
+## 2026-11-13 — A tool's failure never ends the answer
 
 The owner's run `run_yPgtdV71NyagKRC9` (build 1.0.221.0 f70d715): asked about the installed base by gender and age,
 Gemini read the Big Data Portal with `portal_run` ("Check accessible databases in Superset"). Its first step was an

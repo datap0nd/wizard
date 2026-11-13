@@ -6,7 +6,9 @@ export type ToHost =
   | {type: 'hide'}
   | {type: 'update'}
   /** What the wizard acts out on the page (wizard.ts), so the button at the top of the screen acts out the same. */
-  | {type: 'activity'; animation: string};
+  | {type: 'activity'; animation: string}
+  /** The portals whose sign-in has ended (empty: none): the button at the top of the screen is yellow while any has. */
+  | {type: 'sign-in'; portals: string[]};
 /** A file dropped on the button (or on this page, through dropToHost): WizardBar has allowed Wizard to read it where
  * it is, and the page attaches it like "From this PC". `error` says why a file cannot be attached. */
 export interface DroppedFile { path: string; name: string; error?: string }

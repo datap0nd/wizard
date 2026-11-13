@@ -36,6 +36,9 @@ namespace WizardBar
         public event Action<List<string>> FilesDropped;
         /// <summary>What the wizard on the page acts out while a question runs, for the button to act out too.</summary>
         public event Action<string> ActivityChanged;
+        /// <summary>The portals whose sign-in has ended (none: an empty list), from Wizard's check before each answer: the
+        /// button turns yellow while there are any.</summary>
+        public event Action<List<string>> SignInChanged;
         private string settingsPending;  // the open-settings message to post once the page has loaded
         private readonly List<string> waiting = new List<string>();
         private readonly Timer slide = new Timer { Interval = 15 };
@@ -157,6 +160,7 @@ namespace WizardBar
                 else if (type == "update") UpdateRequested?.Invoke();
                 else if (type == "busy") BusyChanged?.Invoke(message.TryGetValue("busy", out var b) && b is bool busy && busy);
                 else if (type == "activity") ActivityChanged?.Invoke(message.TryGetValue("animation", out var a) ? a as string : null);
+                else if (type == "sign-in") SignInChanged?.Invoke(Names(message.TryGetValue("portals", out var n) ? n : null));
                 else if (type == "drop")
                 {
                     var files = e.AdditionalObjects.OfType<CoreWebView2File>().Select(f => f.Path).Where(p => !string.IsNullOrEmpty(p)).Take(Dropped.Limit).ToList();
@@ -167,6 +171,14 @@ namespace WizardBar
                                      message.TryGetValue("ok", out var ok) && ok is bool done && done);
             }
             catch (Exception error) { Log.Error("web message", error); }
+        }
+
+        /// <summary>A list of names from the page's message (JavaScriptSerializer reads a JSON array as an ArrayList).</summary>
+        private static List<string> Names(object value)
+        {
+            if (value is string one) return string.IsNullOrWhiteSpace(one) ? new List<string>() : new List<string> { one };
+            if (!(value is System.Collections.IEnumerable items)) return new List<string>();
+            return items.OfType<string>().Where(name => !string.IsNullOrWhiteSpace(name)).Select(name => name.Trim()).Distinct().Take(12).ToList();
         }
 
         private static void OpenExternal(string uri)

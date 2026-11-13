@@ -30,6 +30,7 @@ namespace WizardBar
         private readonly SynchronizationContext ui;
         private Release pendingUpdate;
         private bool busy, answered, quitting, balloonForUpdate;
+        private string signIn;  // the portals whose sign-in has ended, as words; null when none
 
         public WizardContext(Paths paths)
         {
@@ -46,6 +47,7 @@ namespace WizardBar
             button.FilesDropped += DroppedOnButton;
             panel.FilesDropped += files => _ = Attach(files);
             panel.ActivityChanged += animation => button.Activity = animation;
+            panel.SignInChanged += SignInChanged;
             hotkey.Pressed += Toggle;
             tray.MouseClick += (s, e) => { if (e.Button == MouseButtons.Left) Toggle(); };
             tray.BalloonTipClicked += (s, e) => { if (balloonForUpdate) InstallUpdate(); else ShowPanel(); };
@@ -169,6 +171,32 @@ namespace WizardBar
                 ok ? ToolTipIcon.Info : ToolTipIcon.Warning);
         }
 
+        /// <summary>Wizard's check before an answer found portals that ended the person's sign-in (or, with none, that they
+        /// are all signed in again): the button turns yellow until they sign in, and a note says so once if the panel is
+        /// not in front.</summary>
+        private void SignInChanged(List<string> portals)
+        {
+            var words = Join(portals);
+            if (words == signIn) return;
+            var appeared = words != null && signIn == null;
+            signIn = words;
+            button.SignIn = words;
+            Refresh();
+            if (!appeared || panel.IsInFront) return;
+            balloonForUpdate = false;
+            tray.ShowBalloonTip(10000, "Sign in again to " + words,
+                "Portals end your sign-in after a while, so you sign in again every now and then. Open Wizard and press Sign in.",
+                ToolTipIcon.Warning);
+        }
+
+        /// <summary>"GSCM", "GSCM and ASAP", "GSCM, ASAP and Big Data Portal: Superset"; null for none.</summary>
+        internal static string Join(List<string> names)
+        {
+            if (names == null || names.Count == 0) return null;
+            if (names.Count == 1) return names[0];
+            return string.Join(", ", names.GetRange(0, names.Count - 1)) + " and " + names[names.Count - 1];
+        }
+
         private void OnServiceState()
         {
             switch (backend.State)
@@ -194,14 +222,16 @@ namespace WizardBar
                 : answered ? ButtonLook.Answered
                 : ButtonLook.Ready;
             button.Look = look;
-            tray.Text = look switch
+            var text = look switch
             {
                 ButtonLook.Failed => "Wizard stopped: open the menu for the log",
                 ButtonLook.Starting => "Wizard is starting",
                 ButtonLook.Working => "Wizard is working on your question",
                 ButtonLook.Answered => "Wizard answered your question",
+                _ when signIn != null => "Wizard: sign in again to " + signIn,
                 _ => "Wizard (Ctrl+Alt+W)",
             };
+            tray.Text = text.Length <= 63 ? text : text.Substring(0, 62) + "…";  // NotifyIcon refuses a longer text
         }
 
         private void OpenInBrowser()

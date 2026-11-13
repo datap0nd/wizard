@@ -75,8 +75,11 @@ A refused request makes the step fail with `request_refused`; use another route.
 
 ## Signing in
 
-If a portal shows a sign-in page, the call fails with `sign_in_required`. Tell the person to open **Settings →
-Portals → Sign in to the portals**, sign in in the window that opens, and close it. Never type a password or a code.
+If a portal shows a sign-in page, the call fails with `sign_in_required`: the person's sign-in to it has ended, as
+portals end it after a while. Tell the person to press **Sign in** on the yellow bar at the top of Wizard (or **Settings
+→ Portals → Sign in to the portals**), sign in in the window that opens, close it and ask again; answer meanwhile with
+what the other sources read. Never type a password or a code. Wizard checks the sign-in itself before each answer and
+shows the person which portals need it; you are not told and need not check.
 
 ## Honesty
 

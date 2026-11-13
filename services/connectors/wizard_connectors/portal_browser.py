@@ -24,7 +24,7 @@ import queue
 import re
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from concurrent.futures import Future
 from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import dataclass, field
@@ -68,6 +68,14 @@ UNREACHABLE = DROPPED | {"ERR_CONNECTION_REFUSED", "ERR_CONNECTION_FAILED", "ERR
 RETRY_AFTER_MS = 2000
 # The browser itself is gone (the person closed Wizard's Chrome, it crashed): the next call starts it again.
 GONE = ("has been closed", "Target closed", "browser has disconnected", "Browser closed", "Connection closed")
+# The sign-in check before a question (owner, 13 Nov 2026, docs/decisions/2026-11-13-portal-sign-in-check.md): a portal
+# found signed in (or read) this recently is not opened again for the next question; one found signed out stays signed
+# out until the person signs in again; one that could not be reached is tried again after this long too.
+SIGN_IN_FRESH_S = 180
+# Why the person signs in again now and then, in the words the page, Gemini and the docs use.
+SIGN_IN_AGAIN = ("Most portals end your sign-in after a while (each portal sets its own time), so you sign in again in "
+                 "Wizard's browser every now and then. Wizard reads a portal only while you are signed in to it there, "
+                 "and it never stores your password.")
 
 
 class SecretStore(Protocol):
@@ -132,6 +140,11 @@ class PortalBrowser:
         self.session_file = root / "session.bin"
         self._session: list[dict[str, Any]] = self._load_session()
         self._seen: list[dict[str, Any]] | None = None  # the sign-in window's cookies, the last time Wizard looked
+        # Whether each application is signed in, as Wizard last found it (a check, or Gemini's own read): page id ->
+        # {state, at (time.monotonic()), checked_at, title, host, error}. Replaced whole, never changed in place.
+        self._signed: dict[str, dict[str, Any]] = {}
+        self._pending: dict[str, int] = {}  # page id -> sign-in checks of it queued or running
+        self._pending_lock = threading.Lock()
     # State without secrets: the hosts sign-in went through and when it last happened --------------------------------
     def _state(self) -> dict[str, Any]:
         try:
@@ -434,6 +447,10 @@ class PortalBrowser:
             self._seen = None
         self._close()
         self._headed, self._window = False, None
+        # What Wizard found before the person signed in no longer holds: each portal is checked again at once, so the
+        # page (and the button at the top of the screen) shows whether the sign-in worked.
+        self._signed = {page_id: {**result, "at": 0.0} for page_id, result in self._signed.items()}
+        self._queue_check()
 
     def status_now(self) -> dict[str, Any]:
         state = self._state()
@@ -443,35 +460,142 @@ class PortalBrowser:
                 "portals": [{"id": p.id, "name": p.name, "host": p.host,
                              **({"parts": [{"id": part.id, "name": part.label, "host": part.host} for part in p.parts]}
                                 if p.parts else {})}
-                            for p in self.settings.portals]}
+                            for p in self.settings.portals],
+                "sign_in": self.sign_in_state()}
 
     def status(self) -> dict[str, Any]:
         return self.status_now()
 
-    def check(self) -> dict[str, Any]:
-        """Open each portal (each application of one that has several) in the background and say whether it is
-        signed in (the page stays on the portal's host and asks for no password)."""
-        pages = [(portal, *page) for portal in self.settings.portals for page in portal.pages]
+    # Whether the person is still signed in: a check in code, never the model ------------------------------------------
+    def sign_in_state(self, portal_ids: Collection[str] | None = None) -> dict[str, Any]:
+        """Each application of these portals (all of them when None) as Wizard last found it: signed_in, signed_out
+        (the portal showed a sign-in page), unreachable (it could not be loaded: off the VPN, the portal down; signing
+        in does not help) or unknown (not checked since Wizard started). `checking`: a check of it is queued or
+        running (what it was found before still shows meanwhile)."""
+        signed = self._signed
+        found = []
+        for portal in self.settings.portals:
+            if portal_ids is not None and portal.id not in portal_ids:
+                continue
+            for page_id, name, _ in portal.pages:
+                result = signed.get(page_id) or {}
+                found.append({"id": page_id, "portal": portal.id, "name": name, "state": result.get("state", "unknown"),
+                              "signed_in": result.get("state") == "signed_in", "checking": page_id in self._pending,
+                              **{key: result[key] for key in ("checked_at", "title", "host", "error") if result.get(key)}})
+        times = [r["checked_at"] for r in found if r.get("checked_at")]
+        return {"portals": found, "checking": any(r["checking"] for r in found), "signing_in": self._headed,
+                "checked_at": max(times) if times else None, "why": SIGN_IN_AGAIN}
 
-        def job() -> dict[str, Any]:
+    def sign_in_due(self, portal_ids: Collection[str]) -> list[str]:
+        """The portals among these whose sign-in Wizard does not know well enough to answer a question: never checked,
+        checked more than SIGN_IN_FRESH_S ago, or checked before the person last signed in. One found signed out stays
+        signed out until the person signs in again (Wizard's browser is its own: nothing else signs it in)."""
+        due, now = [], time.monotonic()
+        for portal in self.settings.portals:
+            if portal.id not in portal_ids:
+                continue
+            for page_id, _, _ in portal.pages:
+                result = self._signed.get(page_id)
+                fresh = result is not None and result.get("at", 0) > 0 and (
+                    result.get("state") == "signed_out" or now - result["at"] < SIGN_IN_FRESH_S)
+                if not fresh:
+                    due.append(portal.id)
+                    break
+        return due
+
+    def check_for_question(self, portal_ids: Collection[str]) -> dict[str, Any]:
+        """Before a question: check the portals among these that are due (sign_in_due), then say how each stands. While
+        the person's sign-in window is open nothing is opened: they are signing in."""
+        due = self.sign_in_due(portal_ids)
+        if due and not self._headed:
+            try:
+                self.check(due)
+            except PortalError as error:  # the sign-in window opened meanwhile, or the browser could not start
+                log.info("portal browser: sign-in check before a question: %s", error.message)
+        return self.sign_in_state(portal_ids)
+
+    def _record(self, results: list[dict[str, Any]]) -> None:
+        stamp, at = time.strftime("%Y-%m-%dT%H:%M:%S"), time.monotonic()
+        kept = dict(self._signed)
+        for result in results:
+            kept[result["id"]] = {**{key: result[key] for key in ("state", "title", "host", "error") if result.get(key)},
+                                  "at": at, "checked_at": stamp}
+        self._signed = kept
+
+    def _read_was(self, portal: Portal, page: Any, signed_in: bool) -> None:
+        """Gemini's own read of a portal says how its sign-in stands too: a sign-in page marks it signed out, a read
+        that ended on the portal marks it signed in (so the next question does not open it again to check)."""
+        host = (urlsplit(getattr(page, "url", "") or "").hostname or "").lower()
+        pages = [page_id for page_id, _, url in portal.pages if (urlsplit(url).hostname or "").lower() == host]
+        if not pages and signed_in:
+            return  # a read that ended elsewhere (an identity provider's page) says nothing of the portal's sign-in
+        self._record([{"id": page_id, "state": "signed_in" if signed_in else "signed_out", "host": host}
+                      for page_id in pages or [page_id for page_id, _, _ in portal.pages]])
+
+    def _queue_check(self) -> None:
+        """A check of every portal, on the browser thread after what is queued, without waiting for it."""
+        self._count_checks(self.settings.portals, 1)
+        self._jobs.put((lambda: self._check_job(self.settings.portals), Future()))
+
+    def _count_checks(self, chosen: Collection[Portal], change: int) -> None:
+        with self._pending_lock:
+            pending = dict(self._pending)
+            for portal in chosen:
+                for page_id, _, _ in portal.pages:
+                    left = pending.get(page_id, 0) + change
+                    if left > 0:
+                        pending[page_id] = left
+                    else:
+                        pending.pop(page_id, None)
+            self._pending = pending
+
+    def check(self, portal_ids: Collection[str] | None = None) -> dict[str, Any]:
+        """Open each portal (each application of one that has several; only these portals when given) in a tab of its
+        own in the background and say whether it is signed in (the page stays on the portal's host and asks for no
+        password). The tab closes again: the page Gemini works on is left as it is, so a running GSCM client is not
+        restarted. The results are kept for sign_in_state."""
+        chosen = [p for p in self.settings.portals if portal_ids is None or p.id in portal_ids]
+        self._count_checks(chosen, 1)  # the job counts it down when it has run, even after this call stopped waiting
+        return self.run(lambda: self._check_job(chosen), timeout=60 + 60 * sum(len(p.pages) for p in chosen))
+
+    def _check_job(self, chosen: Collection[Portal]) -> dict[str, Any]:
+        try:
             if self._headed:
                 raise PortalError("signing_in", "Close Wizard's sign-in window first.")
-            results = []
-            for portal, page_id, name, url in pages:
-                self._log = CallLog()
-                try:
-                    page = self._ready_page()
-                    self._goto(page, portal, url, timeout=45_000)
-                    page.wait_for_timeout(1500)
-                    results.append({"id": page_id, "name": name, "signed_in": not self._signs_in(page, portal),
-                                    "title": (page.title() or "")[:120], "host": urlsplit(page.url).hostname or ""})
-                except Exception as error:  # noqa: BLE001 - reported per portal
-                    results.append({"id": page_id, "name": name, "signed_in": False,
-                                    "error": str(error).splitlines()[0][:200]})
-                finally:
-                    self._log = None
+            results = [self._check_page(portal, page_id, name, url)
+                       for portal in chosen for page_id, name, url in portal.pages]
+            self._record(results)
             return {"portals": results}
-        return self.run(job, timeout=60 + 60 * len(pages))
+        finally:
+            self._count_checks(chosen, -1)
+
+    def _check_page(self, portal: Portal, page_id: str, name: str, url: str) -> dict[str, Any]:
+        self._log = CallLog()
+        tab, kept = None, None
+        try:
+            kept = self._ready_page()  # the browser is running (started again if it had closed)
+            tab = self._context.new_page()
+            self._goto(tab, portal, url, timeout=45_000)
+            tab.wait_for_timeout(1500)
+            if not _on_web(tab.url):
+                return {"id": page_id, "portal": portal.id, "name": name, "signed_in": False, "state": "unreachable",
+                        "error": f"{portal.name} did not load"}
+            signed_in = not self._signs_in(tab, portal)
+            return {"id": page_id, "portal": portal.id, "name": name, "signed_in": signed_in,
+                    "state": "signed_in" if signed_in else "signed_out",
+                    "title": (tab.title() or "")[:120], "host": urlsplit(tab.url).hostname or ""}
+        except Exception as error:  # noqa: BLE001 - reported per portal
+            message = error.message if isinstance(error, PortalError) else _first_line(error)
+            return {"id": page_id, "portal": portal.id, "name": name, "signed_in": False, "state": "unreachable",
+                    "error": message.split(". Your steps")[0][:200]}
+        finally:
+            self._log = None
+            if tab is not None:
+                with contextlib.suppress(Exception):  # already closed
+                    tab.close()
+            with contextlib.suppress(Exception):  # the browser went while checking: the next call starts it again
+                if kept is not None and not kept.is_closed():
+                    self._page = kept
 
     def _signs_in(self, page: Any, portal: Portal) -> bool:
         """The page asks for a sign-in: it left the reachable hosts, it is an identity provider's page (a host the
@@ -551,10 +675,14 @@ class PortalBrowser:
                                         "name": step.get("save_as") or None, **result})
                 page = self._page or page
                 if self._signs_in(page, portal):
+                    self._read_was(portal, page, signed_in=False)
                     raise PortalError("sign_in_required",
-                                      f"{portal.name} asks for a sign-in in Wizard's browser. Tell the user to open "
-                                      f"Settings → Portals and press 'Sign in to the portals', sign in to {portal.name} "
-                                      "in the window that opens, then close it and ask again.")
+                                      f"{portal.name} asks for a sign-in in Wizard's browser: the person's sign-in to it "
+                                      "has ended, as portals end it after a while. Tell the user to press Sign in on "
+                                      "the yellow bar at the top of Wizard (or 'Sign in to the portals' in Settings → "
+                                      f"Portals), sign in to {portal.name} in the window that opens, then close it and "
+                                      "ask again. Answer with what the other sources read meanwhile.")
+                self._read_was(portal, page, signed_in=True)
                 if stopped is not None and not outputs:
                     raise stopped
                 result = {"outputs": outputs, **self._page_state(page), "log": self._finish_log()}
