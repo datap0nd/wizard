@@ -34,6 +34,9 @@ KB_REF = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_./-]{0,200}$")
 KB_PATH = re.compile(r"^[A-Za-z0-9_. /\\-]{1,200}$")
 SITE_URL = re.compile(r"^https://[A-Za-z0-9.-]+(?::\d{1,5})?(?:/[A-Za-z0-9._~%/-]*)?$")
 AUTH_MODES = ("fixture", "trusted-header")
+# The longest a run may take and the most tool calls it may make (Settings → Runs).
+MAX_RUN_TIMEOUT_S = 10 * 3600
+MAX_TOOL_CALLS = 2000
 
 
 class ConfigError(ValueError):
@@ -105,7 +108,8 @@ class Settings:
     news_table: str | None = None
     news_database: str | None = None
     # Backstops against a runaway run, not a budget for a normal answer: Gemini may take its time and many calls. A run
-    # is steered to answer by the loop and time checks in runs.py long before it is cut off.
+    # is steered to answer by the loop and time checks in runs.py long before it is cut off. Settings → Runs changes
+    # them, up to MAX_RUN_TIMEOUT_S (owner, 13 Nov 2026: "should be able to go up to 10h") and MAX_TOOL_CALLS.
     max_concurrent_runs: int = 8
     run_timeout_s: int = 1800
     max_tool_calls: int = 150
@@ -309,8 +313,9 @@ def load_settings(env: dict[str, str] | None = None, env_file: Path | None = Non
     settings.news_table = (get("WIZARD_NEWS_TABLE") or "").strip() or None
     settings.news_database = (get("WIZARD_NEWS_DATABASE") or "").strip() or None
     settings.max_concurrent_runs = _int(get("WIZARD_MAX_CONCURRENT_RUNS", "8") or "8", "WIZARD_MAX_CONCURRENT_RUNS", 1, 64)
-    settings.run_timeout_s = _int(get("WIZARD_RUN_TIMEOUT_S", "1800") or "1800", "WIZARD_RUN_TIMEOUT_S", 10, 3600)
-    settings.max_tool_calls = _int(get("WIZARD_MAX_TOOL_CALLS", "150") or "150", "WIZARD_MAX_TOOL_CALLS", 1, 500)
+    settings.run_timeout_s = _int(get("WIZARD_RUN_TIMEOUT_S", "1800") or "1800", "WIZARD_RUN_TIMEOUT_S", 10,
+                                  MAX_RUN_TIMEOUT_S)
+    settings.max_tool_calls = _int(get("WIZARD_MAX_TOOL_CALLS", "150") or "150", "WIZARD_MAX_TOOL_CALLS", 1, MAX_TOOL_CALLS)
     settings.require_google_email_match = _bool(get("WIZARD_REQUIRE_GOOGLE_EMAIL_MATCH", "true") or "true",
                                                 "WIZARD_REQUIRE_GOOGLE_EMAIL_MATCH")
     settings.report_retention_days = _int(get("WIZARD_REPORT_RETENTION_DAYS", "30") or "30", "WIZARD_REPORT_RETENTION_DAYS", 1, 3650)

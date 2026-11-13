@@ -12,7 +12,7 @@ from tests.helpers import HEADERS, make_settings
 
 from wizard_api import knowledge_sync, provisioning, settings_pane
 from wizard_api.app import create_app
-from wizard_api.config import load_settings
+from wizard_api.config import PICKER_KEYS, load_settings
 
 PASSWORD = "pg-secret-123"
 TOKEN = "github_pat_" + "y" * 40
@@ -357,3 +357,99 @@ def test_quick_setup_imports_the_settings_file_the_person_chose_and_restarts(tmp
     reloaded = load_settings(env={}, home=tmp_path)
     assert reloaded.postgres and (reloaded.postgres.host, reloaded.postgres.password) == ("db.corp", PASSWORD)
     assert reloaded.provision["name"] == "ACME Wizard"
+
+
+def test_run_limits_are_set_in_minutes_up_to_ten_hours(tmp_path):
+    """Owner, 13 Nov 2026: "Wizard should have all its configuration settings in the settings pane. stuff like max time
+    total (Its 30m, should be able to go up to 10h)". The pane shows the time limit in minutes; Wizard reads seconds."""
+    settings = install(tmp_path, "WIZARD_MAX_TOOL_CALLS=300\n")
+    with TestClient(create_app(settings)) as client:
+        owner(client)
+        view = client.get("/api/v1/settings").json()
+        assert "runs" in [s["id"] for s in view["sections"]]
+        limit = field(view, "WIZARD_RUN_TIMEOUT_S")
+        assert has(limit, section="runs", source="default", value="", placeholder="30", editable=True)
+        assert limit["number"] == {"low": 1, "high": 600, "unit": "minutes", "whole": False}
+        assert has(field(view, "WIZARD_MAX_TOOL_CALLS"), value="300", source="env_file")
+        saved = put(client, {"WIZARD_RUN_TIMEOUT_S": "600", "WIZARD_MAX_TOOL_CALLS": "2000"})
+        assert saved.status_code == 200, saved.text
+        assert has(field(saved.json(), "WIZARD_RUN_TIMEOUT_S"), value="600", source="this_pc")
+        for values, why in (({"WIZARD_RUN_TIMEOUT_S": "601"}, "between 1 and 600 minutes"),
+                            ({"WIZARD_RUN_TIMEOUT_S": "ten"}, "must be a number"),
+                            ({"WIZARD_MAX_TOOL_CALLS": "2001"}, "between 1 and 2,000 calls"),
+                            ({"WIZARD_MAX_TOOL_CALLS": "12.5"}, "whole number")):
+            refused = put(client, values)
+            assert refused.status_code == 400 and why in refused.json()["error"], (values, refused.text)
+    reloaded = load_settings(env={}, home=tmp_path)
+    assert (reloaded.run_timeout_s, reloaded.max_tool_calls) == (36000, 2000)
+    assert provisioning.load(settings.data_dir, layer="local").values()["WIZARD_RUN_TIMEOUT_S"] == "36000"
+    assert "WIZARD_MAX_TOOL_CALLS" not in (tmp_path / ".env").read_text(encoding="utf-8"), "Save moves it out of .env"
+    assert settings_pane.export(reloaded)["text"].count('"WIZARD_RUN_TIMEOUT_S": "36000"') == 1, "another PC gets it too"
+
+
+def test_a_time_limit_in_seconds_is_shown_in_minutes(tmp_path):
+    settings = install(tmp_path, "WIZARD_RUN_TIMEOUT_S=1000\nWIZARD_ATTACHMENT_TIMEOUT_S=90\n")
+    view = settings_pane.describe(settings)
+    assert field(view, "WIZARD_RUN_TIMEOUT_S")["value"] == "16.67"
+    assert has(field(view, "WIZARD_ATTACHMENT_TIMEOUT_S"), value="90", number={"low": 10, "high": 3600, "unit": "seconds",
+                                                                                "whole": True})
+    assert settings_pane._clean({"WIZARD_RUN_TIMEOUT_S": "1.5"}) == {"WIZARD_RUN_TIMEOUT_S": "90"}
+
+
+def test_choices_show_words_people_read(tmp_path):
+    view = settings_pane.describe(install(tmp_path))
+    assert has(field(view, "WIZARD_DIAGNOSTICS"), choices=["true", "false"], choice_labels=["Shown", "Hidden"])
+    assert has(field(view, "WIZARD_GEMINI_THINKING"), choices=["high", "low", "none"], placeholder="high")
+    assert field(view, "WIZARD_PG_SSLMODE")["choice_labels"] == []
+
+
+def test_attachment_folders_are_this_pcs_own(tmp_path):
+    """The folders From this PC lists are set in the pane, never by a company file or carried by Export settings…"""
+    folder = tmp_path / "Reports"
+    folder.mkdir()
+    settings = install(tmp_path / "pc")
+    with TestClient(create_app(settings)) as client:
+        owner(client)
+        assert put(client, {"WIZARD_ATTACHMENT_FOLDERS": str(tmp_path / "missing")}).status_code == 400
+        assert put(client, {"WIZARD_ATTACHMENT_FOLDERS": str(folder), "WIZARD_PG_NAME": "BI"}).status_code == 200
+    assert load_settings(env={}, home=tmp_path / "pc").attachment_folders == [folder.resolve()]
+    exported = settings_pane.export(settings)
+    assert "WIZARD_ATTACHMENT_FOLDERS" not in exported["text"] and exported["left_out"] == []
+    company = tmp_path / "company.provision"
+    company.write_text(json.dumps({"wizard_provision": 1, "settings": {"WIZARD_ATTACHMENT_FOLDERS": "C:\\x"}}), encoding="utf-8")
+    with pytest.raises(provisioning.ProvisionError, match="set on each PC"):
+        provisioning.import_file(company, tmp_path / "other")
+
+
+def test_the_desktop_does_not_put_back_a_default_the_person_changed(tmp_path):
+    """Save takes a key out of .env; the desktop's start-up adds missing defaults to .env, which would win again."""
+    from wizard_api import desktop
+    home = tmp_path / "home"
+    desktop.ensure_env(home)
+    assert "WIZARD_DIAGNOSTICS=false" in (home / ".env").read_text(encoding="utf-8")
+    settings = load_settings(env={}, home=home)
+    settings_pane.save(settings, {"WIZARD_DIAGNOSTICS": "true"})
+    assert desktop.ensure_env(home) == []
+    assert load_settings(env={}, home=home).diagnostics is True
+
+
+# What the pane leaves out, and why: the install itself (folders, port, sign-in mode, set by the installer or setup), a
+# server behind SSO, a protection, and developers' tests. Everything else Wizard reads is a Settings field.
+NOT_IN_THE_PANE = {
+    "WIZARD_AGENT_RUNTIME", "WIZARD_HOST", "WIZARD_PORT", "WIZARD_DATA_DIR", "WIZARD_LOCAL_USER_EMAIL",
+    "WIZARD_LOCAL_USER_NAME", "WIZARD_CONTENT_DIR", "WIZARD_CONTROL_TOKEN",
+    "WIZARD_AUTH_MODE", "WIZARD_IDENTITY_HEADER", "WIZARD_TRUSTED_PROXIES", "WIZARD_PUBLIC_ORIGIN", "WIZARD_SECURE_COOKIES",
+    "WIZARD_REQUIRE_GOOGLE_EMAIL_MATCH", "WIZARD_GOOGLE_CLOUD_PROJECT",  # the pane sets GOOGLE_CLOUD_PROJECT, its other name
+    "WIZARD_GEMINI_CLI_JS", "WIZARD_NODE", "WIZARD_GEMINI_FAKE_RESPONSES", "WIZARD_IDENTITIES_FILE", "WIZARD_TRANSCRIPTS_DIR",
+    "WIZARD_WEB_DIST", "WIZARD_REPLAY_DELAY_S", "WIZARD_BROWSER_EXECUTABLE",
+}
+
+
+def test_every_setting_wizard_reads_is_in_the_pane():
+    import pathlib
+    import re
+    config = (pathlib.Path(__file__).resolve().parents[2] / "services" / "api" / "wizard_api" / "config.py").read_text(encoding="utf-8")
+    read = set(re.findall(r'get\("(WIZARD_[A-Z0-9_]+)"', config)) | {"WIZARD_BROWSER_EXECUTABLE"}
+    missing = read - set(settings_pane.BY_KEY) - NOT_IN_THE_PANE - set(PICKER_KEYS)
+    assert not missing, f"add these to Settings (settings_pane.FIELDS) or say why not in NOT_IN_THE_PANE: {sorted(missing)}"
+    assert not NOT_IN_THE_PANE & set(settings_pane.BY_KEY)

@@ -1273,8 +1273,9 @@ class RunManager:
             else:
                 await self._fail(run, failure.code, failure.message, details=failure.details)
         except TimeoutError:
-            await self._fail(run, "timeout", f"The run did not finish within {self.settings.run_timeout_s} seconds.",
-                             details={"Time limit": f"{self.settings.run_timeout_s} s (WIZARD_RUN_TIMEOUT_S)"})
+            limit = minutes(self.settings.run_timeout_s).removesuffix(" 0 s")
+            await self._fail(run, "timeout", f"The run did not finish within its time limit ({limit}).",
+                             details={"Time limit": f"{limit} (Settings → Runs → Time limit per run)"})
         except asyncio.CancelledError:
             await self._fail(run, "cancelled", "The run was cancelled.", status="cancelled")
         except Exception as error:  # noqa: BLE001 - every failure must surface as a clear run state, never a hung spinner

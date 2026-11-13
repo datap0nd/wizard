@@ -74,6 +74,10 @@ export interface SettingField {
   help: string;
   placeholder: string;
   choices: string[];
+  /** What the person sees for each choice, when not the stored word itself. */
+  choice_labels?: string[];
+  /** A number between low and high, typed in `unit` (a time limit in minutes; Wizard stores it as it reads it). */
+  number?: {low: number; high: number; unit: string; whole: boolean};
   secret: boolean;
   source: SettingSource;
   /** Never sent for a secret. */

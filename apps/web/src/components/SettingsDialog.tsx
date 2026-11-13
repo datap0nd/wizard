@@ -55,8 +55,8 @@ export async function waitForRestart(): Promise<void> {
   }
 }
 
-/** Company settings the person may change on their own PC: Gemini, the knowledge base, the read-only database, the
- * portals and the browser Wizard reads them in, the proxy. Secrets are write-only: the page learns only whether one is set. Also shows the version and installs updates.
+/** The settings the person may change on their own PC: Gemini, the run limits, the knowledge base, the read-only
+ * database, the portals and the browser Wizard reads them in, attached files, the proxy, diagnostics. Secrets are write-only: the page learns only whether one is set. Also shows the version and installs updates.
  * Quick setup sits at its top (owner, 13 Nov 2026): with `boot`, a new person's walk through Wizard, the settings file,
  * the Gemini sign-in and the portals; `setup` opens Settings on it. */
 export function SettingsDialog({open, onClose, onSaved, boot, onAccount, setup: startInSetup = false}: {open: boolean; onClose: () => void;
@@ -143,8 +143,18 @@ export function SettingsDialog({open, onClose, onSaved, boot, onAccount, setup: 
     if (f.choices.length) {
       return (
         <select value={value(f) || f.placeholder} disabled={disabled} onChange={e => edit(f.key, e.target.value)} aria-label={f.label} className={common}>
-          {f.choices.map(c => <option key={c} value={c}>{c}</option>)}
+          {f.choices.map((c, n) => <option key={c} value={c}>{f.choice_labels?.[n] || c}</option>)}
         </select>
+      );
+    }
+    if (f.number) {  // a limit: typed in its unit (minutes for a run's time limit), checked against its bounds on Save
+      return (
+        <div className="flex items-center gap-2">
+          <input type="number" inputMode={f.number.whole ? 'numeric' : 'decimal'} min={f.number.low} max={f.number.high}
+            step={f.number.whole ? 1 : 'any'} value={value(f)} placeholder={f.placeholder} disabled={disabled} aria-label={f.label}
+            onChange={e => edit(f.key, e.target.value)} className={cn(common, 'w-32')} data-testid={`setting-${f.key}`} />
+          {f.number.unit && <span className="text-[13px] text-ink-2">{f.number.unit}</span>}
+        </div>
       );
     }
     return <input type={f.secret ? 'password' : 'text'} value={value(f)} placeholder={f.placeholder} disabled={disabled} aria-label={f.label}

@@ -3,7 +3,26 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-13 (latest) — Quick setup at the top of Settings
+## 2026-11-13 (latest) — Every setting in Settings; a run may take up to 10 hours
+
+The owner: "Wizard should have all its configuration settings in the settings pane. stuff like max time total (Its 30m,
+should be able to go up to 10h)" ([decision](decisions/2026-11-13-every-setting-in-settings.md)).
+
+- **Settings → Runs** (`settings_pane.py`): time limit per run in minutes (1 to 600; stored in seconds as
+  `WIZARD_RUN_TIMEOUT_S`, which `config.py` now accepts up to 36,000), tool calls per run (up to 2,000, was 500), runs
+  at the same time, days answer reports are kept. A pane field can now be a number with a unit and bounds (shown in the
+  unit, stored as Wizard reads it, refused on Save when out of range) and a choice with words people read.
+- **Also added:** Gemini → Thinking; Company database → the Brain page's news table and database; **Attached files**
+  (folders From this PC lists, largest file, time limit per file, with or without Office); **Diagnostics**. The folders
+  are this PC's own (`provisioning.PC_CHOSEN`): never in a company file or an export. A test now fails when Wizard reads
+  a setting that is neither in Settings nor on the list of install, server and test settings left out, with why.
+- **Long runs:** the Code Assist route renews the Google access token before a step that would start with it nearly
+  expired (tokens last about an hour, so a run past an hour failed before), and its step backstop is the tool-call limit
+  plus 50 (at least 200). The time-limit failure names the limit in minutes and Settings → Runs.
+- **Desktop start-up** no longer adds back a `.env` default (diagnostics off) that the person changed in Settings.
+- Checks: see below.
+
+## 2026-11-13 — Quick setup at the top of Settings
 
 The owner: "When someone downloads wizard, there should be a 'quick setup' in settings at the top button. This will
 take them through Wizard, how it works, through the gemini sign in, through importing a settings file, etc."

@@ -31,7 +31,7 @@ SECRET_SUFFIXES = ("_PASSWORD", "_TOKEN", "_SECRET", "_KEY")
 LOCAL_ONLY = frozenset({
     "WIZARD_DATA_DIR", "WIZARD_HOST", "WIZARD_PORT", "WIZARD_LOCAL_USER_EMAIL", "WIZARD_LOCAL_USER_NAME", "WIZARD_AUTH_MODE",
     "WIZARD_IDENTITIES_FILE", "WIZARD_IDENTITY_HEADER", "WIZARD_TRUSTED_PROXIES", "WIZARD_PUBLIC_ORIGIN", "WIZARD_CONTENT_DIR",
-    "WIZARD_WEB_DIST", "WIZARD_TRANSCRIPTS_DIR", "WIZARD_ATTACHMENT_FOLDERS", "WIZARD_GEMINI_CLI_JS",
+    "WIZARD_WEB_DIST", "WIZARD_TRANSCRIPTS_DIR", "WIZARD_GEMINI_CLI_JS",
     "WIZARD_NODE", "WIZARD_GEMINI_FAKE_RESPONSES", "WIZARD_CONTROL_TOKEN", "WIZARD_INSTALL_ROOT",
     "WIZARD_BROWSER_EXECUTABLE",  # a test browser binary: never chosen by a file someone hands out
     # The retired kb-publish set-up (decision 2026-11-02): an old .env may still hold these; never in a company file.
@@ -39,8 +39,9 @@ LOCAL_ONLY = frozenset({
 })
 # Chosen on each PC in the settings pane, never handed out in a company file: the knowledge base's write token lets a
 # PC change the company's notes repository (owner, 30 Oct 2026), so only the person who enters it holds it. The Cases
-# site's feedback token too (owner, 12 Nov 2026): only the PC that publishes the site puts it there.
-PC_CHOSEN = frozenset({"WIZARD_KB_WRITE_TOKEN", "WIZARD_FEEDBACK_TOKEN"})
+# site's feedback token too (owner, 12 Nov 2026): only the PC that publishes the site puts it there. And the folders
+# "From this PC" lists (Settings → Attached files): they are this PC's own folders.
+PC_CHOSEN = frozenset({"WIZARD_KB_WRITE_TOKEN", "WIZARD_FEEDBACK_TOKEN", "WIZARD_ATTACHMENT_FOLDERS"})
 MAX_BYTES = 64 * 1024
 # The team's dashboards folder: a file made on one PC carries the network path its mapped drive stands for, never the
 # letter (owner, 2 Nov 2026: "Y:\ ... might not be the same in another PC").
@@ -168,7 +169,8 @@ def load(data_dir: Path, box: SecretBox | None = None, layer: str = "provision")
         record = json.loads((target / "settings.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    settings = {k: v for k, v in record.get("settings", {}).items() if isinstance(v, str) and KEY.match(k) and k not in LOCAL_ONLY}
+    settings = {k: v for k, v in record.get("settings", {}).items() if isinstance(v, str) and KEY.match(k) and k not in LOCAL_ONLY
+                and (layer == "local" or k not in PC_CHOSEN)}
     secrets: dict[str, str] = {}
     stored = (box or SecretBox()).read(target / "secrets.bin")
     if stored:

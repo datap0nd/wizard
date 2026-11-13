@@ -35,10 +35,15 @@ def _work_email() -> str:
 
 
 def ensure_env(home: Path) -> list[str]:
-    """Add the desktop defaults that are missing from <home>/.env; never changes a value. Returns the keys added."""
+    """Add the desktop defaults that are missing from <home>/.env; never changes a value, and never adds one the person
+    chose in Settings (Save takes a key out of .env, so a default added back would win over their choice). Returns the
+    keys added."""
     home.mkdir(parents=True, exist_ok=True)
     path = home / ".env"
     present = read_env_file(path)
+    data = Path(os.environ.get("WIZARD_DATA_DIR") or present.get("WIZARD_DATA_DIR") or "data")
+    chosen = provisioning.load(data if data.is_absolute() else home / data, layer="local")
+    present.update(chosen.settings if chosen else {})
     defaults = [
         ("WIZARD_AGENT_RUNTIME", "code-assist", "Gemini runs in Wizard with your own Google sign-in (no Node or Gemini CLI)"),
         ("WIZARD_DATA_DIR", "data", "Conversations, your Gemini sign-in and the knowledge base"),

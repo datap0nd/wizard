@@ -43,6 +43,35 @@ describe('Dashboards', () => {
   });
 });
 
+describe('Runs', () => {
+  const LIMIT = 'WIZARD_RUN_TIMEOUT_S';
+  const RUNS: SettingsView = {...VIEW,
+    sections: [{id: 'runs', title: 'Runs', about: 'How long one answer may take.'}],
+    fields: [
+      {key: LIMIT, label: 'Time limit per run', section: 'runs', help: 'Up to 600 minutes (10 hours).', placeholder: '30', choices: [],
+        number: {low: 1, high: 600, unit: 'minutes', whole: false}, secret: false, source: 'default', value: '', set: false,
+        company_value: null, editable: true},
+      {key: 'WIZARD_DIAGNOSTICS', label: 'Diagnostics in the app', section: 'runs', help: '', placeholder: 'true',
+        choices: ['true', 'false'], choice_labels: ['Shown', 'Hidden'], secret: false, source: 'env_file', value: 'false',
+        set: true, company_value: null, editable: true}]};
+
+  it('takes the time limit in minutes, up to 10 hours, and shows choices in words', async () => {
+    vi.spyOn(api, 'settings').mockResolvedValue(RUNS);
+    vi.spyOn(api, 'updates').mockResolvedValue(FAILED);
+    const save = vi.spyOn(api, 'saveSettings').mockResolvedValue({...RUNS, changed: [LIMIT], apply: 'none'});
+    render(<SettingsDialog open onClose={vi.fn()} onSaved={vi.fn()} />);
+    const input = await screen.findByTestId(`setting-${LIMIT}`) as HTMLInputElement;
+    expect([input.type, input.min, input.max, input.placeholder]).toEqual(['number', '1', '600', '30']);
+    expect(screen.getByText('minutes')).toBeTruthy();
+    const diagnostics = screen.getByLabelText('Diagnostics in the app') as HTMLSelectElement;
+    expect([...diagnostics.options].map(o => o.textContent)).toEqual(['Shown', 'Hidden']);
+    expect(diagnostics.value).toBe('false');
+    fireEvent.change(input, {target: {value: '600'}});
+    fireEvent.click(screen.getByTestId('settings-save'));
+    expect(save).toHaveBeenCalledWith({[LIMIT]: '600'});
+  });
+});
+
 describe('Version and updates', () => {
   it('in the desktop app, offers WizardBar\'s own update check when the service could not read the release', async () => {
     const postMessage = inWizardBar();
