@@ -39,9 +39,9 @@ export const AnswerMarkdown = memo(function AnswerMarkdown({text, visuals, strea
             return <button type="button" onClick={() => onEvidence(id)} data-testid="citation" aria-label={`Show evidence ${id}`}
               className="mx-0.5 inline-flex h-[18px] items-center rounded bg-accent-soft px-1 align-[1px] text-[11px] font-semibold text-accent hover:bg-accent-line/60">{id}</button>;
           }
-          if (target.startsWith('#visual-')) {
-            const id = target.slice('#visual-'.length);
-            return <a href={`#visual-${id}`} className="!no-underline"><span className="rounded bg-surface px-1 text-[11px] font-semibold text-ink-2">{id}</span></a>;
+          if (target.startsWith('#visual-') || target.startsWith('#deck-')) {
+            const id = target.slice(target.indexOf('-') + 1);
+            return <a href={target} className="!no-underline"><span className="rounded bg-surface px-1 text-[11px] font-semibold text-ink-2">{id}</span></a>;
           }
           const safe = /^https?:\/\//i.test(target);
           return safe ? <a href={target} target="_blank" rel="noopener noreferrer nofollow">{children}</a> : <span>{children}</span>;

@@ -1,12 +1,12 @@
 import type {BrainLive, BrainMap} from './brain';
 import type {CasePreview, CasePublished, SiteStatus} from './cases';
 import type {SavedExport} from './visualEnv';
-import type {Attachment, Bootstrap, Cadence, ConversationSummary, Evidence, GeminiAccount, GeminiQuota, LocalFile, Memory, PortalCheck, PortalMapView, PortalStatus, PromptQueue, PromptSeparator, RecurringList, Report, RunRecord, SavedFile, Schedule, SettingsImported, SettingsSaved, SettingsTest, SettingsTestResult, SettingsView, SourceCatalog, SourceSummary, Steer, SteerReason, TasksView, UpdateInfo} from './types';
+import type {Attachment, Bootstrap, Cadence, ConversationSummary, Evidence, GeminiAccount, GeminiQuota, LocalFile, Memory, Output, PortalCheck, PortalMapView, PortalStatus, PromptQueue, PromptSeparator, RecurringList, Report, RunRecord, SavedFile, Schedule, SettingsImported, SettingsSaved, SettingsTest, SettingsTestResult, SettingsView, SourceCatalog, SourceSummary, Steer, SteerReason, TasksView, UpdateInfo} from './types';
 
 /** What a note to Wizard did: reached the running answer (steer), or became the next question (follow_up). */
 export interface SteerResult {
   steer?: Steer;
-  follow_up?: {run_id: string; conversation_id: string; question: string; systems: string[] | null};
+  follow_up?: {run_id: string; conversation_id: string; question: string; systems: string[] | null; output?: Output};
 }
 
 export class ApiError extends Error {
@@ -79,8 +79,8 @@ export const api = {
   conversation: (id: string) => request<{conversation: ConversationSummary; runs: RunRecord[]}>(`/api/v1/conversations/${encodeURIComponent(id)}`),
   rename: (id: string, title: string) => request<{ok: true}>(`/api/v1/conversations/${encodeURIComponent(id)}`, {method: 'PATCH', body: {title}}),
   remove: (id: string) => request<{ok: true}>(`/api/v1/conversations/${encodeURIComponent(id)}`, {method: 'DELETE'}),
-  ask: (question: string, conversationId: string | null, attachmentIds: string[] = [], systems: string[] | null = null) =>
-    request<{run_id: string; conversation_id: string; attachments: Attachment[]}>('/api/v1/runs', {body: {question, conversation_id: conversationId, attachment_ids: attachmentIds, systems}}),
+  ask: (question: string, conversationId: string | null, attachmentIds: string[] = [], systems: string[] | null = null, output: Output = 'analysis') =>
+    request<{run_id: string; conversation_id: string; attachments: Attachment[]}>('/api/v1/runs', {body: {question, conversation_id: conversationId, attachment_ids: attachmentIds, systems, output}}),
   steer: (runId: string, note: {text?: string; call_id?: string; reason?: SteerReason}) =>
     request<SteerResult>(`/api/v1/runs/${encodeURIComponent(runId)}/steer`, {body: {text: note.text ?? '', call_id: note.call_id ?? null, reason: note.reason ?? null}}),
   setSystems: (runId: string, systems: string[] | null) => request<{systems: string[] | null}>(`/api/v1/runs/${encodeURIComponent(runId)}/systems`, {body: {systems}}),

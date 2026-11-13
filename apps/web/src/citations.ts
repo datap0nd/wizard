@@ -11,7 +11,9 @@ export function prepareAnswer(markdown: string): string {
     if (fenced) { out.push(line); continue; }
     const visual = line.trim().match(/^\[(V\d{1,4})\]$/);
     if (visual) { out.push('', '```wizard-visual', visual[1], '```', ''); continue; }
-    out.push(line.replace(/\[(E\d{1,4}|V\d{1,4})\](?!\()/g, (_, id: string) => `[${id}](#${id.startsWith('E') ? 'evidence' : 'visual'}-${id})`));
+    if (/^\[D\d{1,4}\]$/.test(line.trim())) continue;  // a presentation's place: its card is shown under the answer
+    out.push(line.replace(/\[(E\d{1,4}|V\d{1,4}|D\d{1,4})\](?!\()/g, (_, id: string) =>
+      `[${id}](#${id.startsWith('E') ? 'evidence' : id.startsWith('V') ? 'visual' : 'deck'}-${id})`));
   }
   return out.join('\n');
 }

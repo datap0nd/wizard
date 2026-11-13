@@ -23,10 +23,13 @@ import {Sidebar} from './components/Sidebar';
 import {WizardSprite} from './components/WizardSprite';
 import {dropToHost, onHost, toHost, type DroppedFile} from './host';
 import {cn} from './lib/utils';
-import {autoSystems, choosable, conversationChoice, withFiles} from './systems';
+import {autoSystems, choosable, conversationChoice, conversationOutput, withFiles} from './systems';
 import {wizardAnimation} from './wizard';
-import type {Attachment, Bootstrap, Cadence, ConversationSummary, EvidenceSummary, GeminiAccount, LocalFile, RunEvent, RunView, Schedule, SteerReason,
+import type {Attachment, Bootstrap, Cadence, ConversationSummary, EvidenceSummary, GeminiAccount, LocalFile, Output, RunEvent, RunView, Schedule, SteerReason,
   SystemRequest, TimelineItem} from './types';
+
+/** Make a PowerPoint under an analysis: the follow-up that turns it into a presentation (Gemini asks the storyline first). */
+const PRESENTATION_REQUEST = 'Turn this analysis into a PowerPoint presentation.';
 
 const LAST = 'wizard-conversation';
 const HISTORY = 'wizard-quick-history';     // the panel's history beside the chat: 'hidden' once the person hides it
@@ -54,6 +57,8 @@ export function App({compact = false}: {compact?: boolean}) {
   const [draft, setDraft] = useState('');
   /** The systems picker for this conversation: null is Auto. */
   const [chosen, setChosen] = useState<string[] | null>(null);
+  // The composer's Output (analysis or PowerPoint), kept per conversation like the systems picker.
+  const [output, setOutput] = useState<Output>('analysis');
   const [notice, setNotice] = useState<string | null>(null);
   const [drawer, setDrawer] = useState<{items: EvidenceSummary[]; focus: string | null} | null>(null);
   // The desktop panel's history (owner, 6 Nov 2026): beside the chat unless hidden, or over it on a narrow panel.
@@ -156,6 +161,7 @@ export function App({compact = false}: {compact?: boolean}) {
     views.forEach(v => questions.current.set(v.id, v.question));
     setRuns(views);
     setChosen(conversationChoice(views));
+    setOutput(conversationOutput(views));
     for (const record of data.runs) if (record.active) follow(record.id, Math.max(0, ...record.events.map(e => e.seq)), record.parent_run_id);
   }, [follow]);
 
@@ -226,18 +232,18 @@ export function App({compact = false}: {compact?: boolean}) {
     return () => window.removeEventListener('keydown', keydown);
   }, [compact, dialogOpen, historyOver]);
   const available = useMemo(() => choosable(boot?.systems ?? []), [boot?.systems]);
-  const ask = useCallback(async (question: string, systems: string[] | null = chosen) => {
+  const ask = useCallback(async (question: string, systems: string[] | null = chosen, wanted: Output = output) => {
     moved.current++;
     setNotice(null);
     try {
       const ready = files.filter(f => f.state === 'ok' && f.attachment).map(f => f.attachment!.id);
       const using = ready.length ? withFiles(systems, available) : systems;
-      const started = await api.ask(question, currentId, ready, using);
+      const started = await api.ask(question, currentId, ready, using, wanted);
       questions.current.set(started.run_id, question);
       if (started.conversation_id !== currentId) { setCurrentId(started.conversation_id); localStorage.setItem(LAST, started.conversation_id); }
       setChosen(using);
       setRuns(prev => [...(started.conversation_id === currentId ? prev : []),
-        {...emptyRun(started.run_id, started.conversation_id, question), attachments: started.attachments ?? [], systems: using}]);
+        {...emptyRun(started.run_id, started.conversation_id, question), attachments: started.attachments ?? [], systems: using, output: wanted}]);
       setDraft('');
       files.filter(f => f.state === 'failed' && f.attachment).forEach(f => void api.removeAttachment(f.attachment!.id).catch(() => undefined));
       setFiles([]);
@@ -246,14 +252,14 @@ export function App({compact = false}: {compact?: boolean}) {
     } catch (e) {
       setNotice(e instanceof ApiError && e.loginRequired ? 'You were signed out. Your question is still here: send it again.' : e instanceof Error ? e.message : 'The question could not be sent.');
     }
-  }, [available, chosen, currentId, files, follow, refreshConversations]);
+  }, [available, chosen, currentId, files, follow, output, refreshConversations]);
 
   /** A note that became the next question (an answer already finished, or a connection that cannot take notes). */
   const followed = useCallback((result: SteerResult) => {
     const next = result.follow_up;
     if (!next) return;
     questions.current.set(next.run_id, next.question);
-    setRuns(prev => [...prev, {...emptyRun(next.run_id, next.conversation_id, next.question), systems: next.systems}]);
+    setRuns(prev => [...prev, {...emptyRun(next.run_id, next.conversation_id, next.question), systems: next.systems, output: next.output ?? 'analysis'}]);
     follow(next.run_id, 0, null);
     void refreshConversations();
   }, [follow, refreshConversations]);
@@ -287,6 +293,7 @@ export function App({compact = false}: {compact?: boolean}) {
       void ask(`Continue with ${request.name} switched on.`, next);
     },
     reply: (_run: RunView, text: string) => { void ask(text); },
+    story: (_run: RunView, text: string) => { setOutput('presentation'); void ask(text, chosen, 'presentation'); },
   }), [ask, available, boot?.runtime?.steering, choose, chosen, steerRun]);
 
   const check = useCallback(async (run: RunView) => {
@@ -346,7 +353,7 @@ export function App({compact = false}: {compact?: boolean}) {
     return Array.from(seen.values());
   }, [runs]);
 
-  const newChat = useCallback(() => { moved.current++; streams.current.forEach(s => s.close()); streams.current.clear(); setCurrentId(null); setRuns([]); setDraft(''); setChosen(null); localStorage.removeItem(LAST); }, []);
+  const newChat = useCallback(() => { moved.current++; streams.current.forEach(s => s.close()); streams.current.clear(); setCurrentId(null); setRuns([]); setDraft(''); setChosen(null); setOutput('analysis'); localStorage.removeItem(LAST); }, []);
   // Each time the panel opens: a blank question goes back to the latest analysis; an open one stays, its list refreshed.
   reopen.current = () => { if (!currentId && runs.length === 0 && !draft.trim() && files.length === 0) void openLatest(); else void refreshConversations(); };
   const rename = (id: string, title: string) => void api.rename(id, title).then(refreshConversations);
@@ -375,14 +382,15 @@ export function App({compact = false}: {compact?: boolean}) {
         onCheck={run => void check(run)} onCancel={run => void api.cancel(run.id)} onRetry={run => void ask(run.question, run.systems)}
         onFeedback={(run, category) => void api.feedback(run.id, category).then(() => setNotice('Thanks — recorded in the evaluation log.'))}
         onEmail={run => void email(run)} onRecurring={(run, cadence) => void recurring(run, cadence)}
-        onSchedule={(run, schedule, action) => void decide(run, schedule, action)} canRecur={!!boot.metronome?.enabled} />
+        onSchedule={(run, schedule, action) => void decide(run, schedule, action)} canRecur={!!boot.metronome?.enabled}
+        onPresentation={() => { setOutput('presentation'); void ask(PRESENTATION_REQUEST, chosen, 'presentation'); }} />
     </SteerContext.Provider></SystemsContext.Provider>
   );
   const composer = (
     <div className={compact ? 'border-t border-line bg-canvas px-3 pb-2 pt-2.5' : 'border-t border-line bg-canvas px-4 pb-3 pt-3 md:px-6'}>
       {notice && <p className="mx-auto mb-2 max-w-[820px] rounded-lg bg-surface px-3 py-2 text-[13px] text-ink-2" role="status">{notice}</p>}
       <Composer busy={busy} draft={draft} onDraftChange={setDraft} onSubmit={question => ask(question)} disabledReason={blocked} focusSignal={focusTick}
-        placeholder={compact ? 'Ask Wizard anything' : undefined} systems={available} chosen={chosen} onChoose={choose}
+        placeholder={compact ? 'Ask Wizard anything' : undefined} systems={available} chosen={chosen} onChoose={choose} output={output} onOutput={setOutput}
         steer={working ? {live: !!runtime.steering, onSteer: async text => { if (await steerRun(working.id, {text})) setDraft(''); }} : null}
         files={files} onFiles={addFiles} onRemoveFile={removeFile} onLocal={boot.attachments?.from_this_pc ? () => setLocalOpen(true) : undefined} />
     </div>

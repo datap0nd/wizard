@@ -30,6 +30,7 @@ export const CAPABILITIES: Capability[] = [
   {icon: 'portal', title: 'Reads the portals live', body: 'ASAP, GSCM and the Big Data Portal (catalog and Superset), in your own signed-in Wizard browser.'},
   {icon: 'knowledge', title: 'Knows the business', body: 'A company knowledge base of metrics, datasets and platforms, each note marked draft, expert-checked or signed.'},
   {icon: 'files', title: 'Works with your files', body: 'Reads Excel, PowerPoint, Word, email and CSV, totals every row of a sheet, and edits a copy of a workbook for you.'},
+  {icon: 'slides', title: 'Makes presentations', body: 'Choose PowerPoint as the output: Wizard asks which story to tell, then makes the deck in the company\'s design, with editable charts. Ask for changes in the chat.'},
   {icon: 'brief', title: 'Recurring briefs', body: 'Turns an analysis into a newsletter email that Metronome sends on a schedule.'},
   {icon: 'access', title: 'Finds the tables you need', body: 'Searches the Big Data Portal\'s catalog and names the tables an analysis needs; you request access to them yourself.'},
   {icon: 'evidence', title: 'Shows its work', body: 'Every step Wizard took, the sources it cites, and Check my data to recompute an answer.'},
@@ -54,7 +55,7 @@ export const MILESTONES: Milestone[] = [
     items: [{name: 'SC+ Global Dashboard', logo: 'scplus'}, {name: 'NERP BI Portal', logo: 'nerp'}],
   },
   {
-    id: 'slides', weeks: 2, icon: 'slides', logo: 'powerpoint', title: 'PowerPoint slides from an answer',
+    id: 'slides', weeks: 2, icon: 'slides', logo: 'powerpoint', title: 'PowerPoint slides from an answer', done: true,
     body: 'Wizard turns its analysis into a slide deck: the story, the charts and the numbers, ready to present.',
     items: [{name: 'A deck from any answer', icon: 'slides'}, {name: 'Charts and tables with their sources', icon: 'metrics'},
       {name: 'Opens and edits in PowerPoint', logo: 'powerpoint'}],

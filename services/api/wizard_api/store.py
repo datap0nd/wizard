@@ -32,6 +32,8 @@ CREATE TABLE IF NOT EXISTS evidence(conversation_id TEXT NOT NULL, id TEXT NOT N
   PRIMARY KEY(conversation_id, id));
 CREATE TABLE IF NOT EXISTS visuals(conversation_id TEXT NOT NULL, id TEXT NOT NULL, run_id TEXT NOT NULL,
   payload TEXT NOT NULL, PRIMARY KEY(conversation_id, id));
+CREATE TABLE IF NOT EXISTS decks(conversation_id TEXT NOT NULL, id TEXT NOT NULL, run_id TEXT NOT NULL,
+  payload TEXT NOT NULL, PRIMARY KEY(conversation_id, id));
 CREATE TABLE IF NOT EXISTS checks(run_id TEXT NOT NULL, seq INTEGER NOT NULL, payload TEXT NOT NULL,
   PRIMARY KEY(run_id, seq));
 CREATE TABLE IF NOT EXISTS reports(id TEXT PRIMARY KEY, run_id TEXT NOT NULL, conversation_id TEXT NOT NULL,
@@ -60,7 +62,7 @@ CREATE TABLE IF NOT EXISTS site_cases(id TEXT PRIMARY KEY, conversation_id TEXT 
   title TEXT, takeaway TEXT, runs TEXT, published_at TEXT, commit_sha TEXT, url TEXT);
 """
 # Columns added after a database was first created. Nullable, so an older release still reads and writes the table.
-ADDED_COLUMNS = {"runs": {"systems": "TEXT"}}
+ADDED_COLUMNS = {"runs": {"systems": "TEXT", "output": "TEXT"}}
 MAX_MEMORIES = 50
 
 
@@ -212,6 +214,20 @@ class Store:
 
     def visuals(self, conversation_id: str, run_id: str | None = None) -> list[dict[str, Any]]:
         rows = self._q("SELECT payload FROM visuals WHERE conversation_id=? AND (? IS NULL OR run_id=?) "
+                       "ORDER BY CAST(substr(id,2) AS INTEGER)", (conversation_id, run_id, run_id))
+        return [json.loads(r["payload"]) for r in rows]
+
+    def add_deck(self, conversation_id: str, run_id: str, payload: dict[str, Any]) -> str:
+        """A presentation Gemini made (D1, D2... per conversation; a changed deck is a new one that revises it)."""
+        with self.lock:
+            count = self.db.execute("SELECT COUNT(*) FROM decks WHERE conversation_id=?", (conversation_id,)).fetchone()[0]
+            deck_id = f"D{count + 1}"
+            self.db.execute("INSERT INTO decks(conversation_id,id,run_id,payload) VALUES(?,?,?,?)",
+                            (conversation_id, deck_id, run_id, json.dumps({**payload, "id": deck_id, "run_id": run_id})))
+        return deck_id
+
+    def decks(self, conversation_id: str, run_id: str | None = None) -> list[dict[str, Any]]:
+        rows = self._q("SELECT payload FROM decks WHERE conversation_id=? AND (? IS NULL OR run_id=?) "
                        "ORDER BY CAST(substr(id,2) AS INTEGER)", (conversation_id, run_id, run_id))
         return [json.loads(r["payload"]) for r in rows]
 

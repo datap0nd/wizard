@@ -2,9 +2,10 @@ import {useEffect, useRef, useState} from 'react';
 import {ArrowUp, CornerDownRight, FolderOpen, Paperclip, Upload} from 'lucide-react';
 import {cn} from '@/lib/utils';
 import {PendingChip, type PendingFile} from './Attachments';
+import {OutputPicker} from './OutputPicker';
 import {SystemsPicker} from './SystemsPicker';
 import {DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, Hint} from './ui/menu';
-import type {SystemInfo} from '@/types';
+import type {Output, SystemInfo} from '@/types';
 
 /** What the box holds, a question or a note while an answer runs (the API's MAX_QUESTION_CHARS). */
 export const MAX_QUESTION_CHARS = 100_000;
@@ -31,12 +32,15 @@ interface Props {
   /** Set while an answer runs: what is typed goes to Wizard as a note. live: it reaches Gemini before its next step;
    * otherwise the note stops the run and asks again. */
   steer?: {live: boolean; onSteer: (text: string) => Promise<void> | void} | null;
+  /** The Output picker: an analysis or a PowerPoint presentation. */
+  output?: Output;
+  onOutput?: (next: Output) => void;
 }
 
 /** B2B composer: one rounded surface growing to six lines; Enter submits, Shift+Enter adds a line, IME-safe. Files
  * attached here are read by Wizard before the question is sent. */
 export function Composer({onSubmit, busy, draft, onDraftChange, placeholder, disabledReason, files = [], onFiles, onLocal, onRemoveFile, focusSignal,
-  systems = [], chosen = null, onChoose, steer}: Props) {
+  systems = [], chosen = null, onChoose, steer, output = 'analysis', onOutput}: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const [composing, setComposing] = useState(false);
@@ -87,9 +91,11 @@ export function Composer({onSubmit, busy, draft, onDraftChange, placeholder, dis
           <input ref={picker} type="file" multiple accept={ACCEPT} className="hidden" data-testid="file-input"
             onChange={e => { const picked = Array.from(e.target.files ?? []); e.target.value = ''; if (picked.length) onFiles?.(picked); }} />
           {onChoose && <SystemsPicker systems={systems} chosen={chosen} onChange={onChoose} disabled={!!disabledReason} running={busy} />}
+          {onOutput && <OutputPicker output={output} onChange={onOutput} disabled={!!disabledReason || steering} />}
           <textarea ref={ref} value={draft} rows={1} maxLength={MAX_QUESTION_CHARS} data-steering={steering || undefined}
             placeholder={disabledReason ?? (steering ? (steer!.live ? 'Tell Wizard while it works, e.g. use the weekly sell-out view'
-              : 'Stop and ask again with a note, e.g. use the weekly sell-out view') : placeholder ?? 'Ask about markets, models, spend, share or switching')}
+              : 'Stop and ask again with a note, e.g. use the weekly sell-out view') : output === 'presentation' ? 'What should the presentation be about? Wizard asks which story to tell'
+              : placeholder ?? 'Ask about markets, models, spend, share or switching')}
             aria-label={steering ? 'A note to Wizard while it works' : 'Your question'} disabled={!!disabledReason} onChange={e => onDraftChange(e.target.value)}
             onCompositionStart={() => setComposing(true)} onCompositionEnd={() => setComposing(false)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !composing && !e.nativeEvent.isComposing) { e.preventDefault(); void submit(); } }}

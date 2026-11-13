@@ -20,6 +20,8 @@ interface Props {
   onRecurring?: (run: RunView, cadence: Cadence | null) => void;
   onSchedule?: (run: RunView, schedule: Schedule, action: 'create' | 'dismiss') => void;
   canRecur?: boolean;
+  /** Make a PowerPoint: the follow-up that turns an analysis into a presentation. */
+  onPresentation?: (run: RunView) => void;
 }
 
 /** Questions and answers. New output scrolls into view only while the reader follows the latest turn (B2B behaviour). */

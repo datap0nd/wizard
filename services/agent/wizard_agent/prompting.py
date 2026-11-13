@@ -327,6 +327,53 @@ def clean_title(text: str) -> str | None:
     return squeeze(line, TITLE_CHARS) or None
 
 
+# The composer's Output set to PowerPoint (owner, 13 Nov 2026: "make it so that the output can be analysis, powerpoint
+# ... powerpoints are all about storyline"): the answer is a deck, and its story is the person's choice.
+PRESENTATION_OUTPUT = """<output>
+The person chose PowerPoint as the output of this request: the answer is a presentation they download, made with wizard_make_presentation, with a short note in the chat, not a full written analysis.
+1. Evidence first: gather what the deck needs as you would for an analysis, and render its charts and tables with wizard_render_visual. A deck from an analysis already in this conversation needs no new data: use its visuals and evidence.
+2. The storyline: unless the person has said the story (in this request, earlier, or by choosing one of your storylines), call wizard_propose_storylines with two to four storylines the evidence supports, each a message and its arc, and end your turn.
+3. With the storyline: read the company's presentation guide (wizard_read_knowledge with the presentation-* notes that exist) and make the deck with wizard_make_presentation.
+When this conversation already has a presentation (<presentations_in_this_conversation>) and the request is about it, change it with wizard_change_presentation instead of asking the storyline again or starting over.
+</output>"""
+
+
+def visuals_block(visuals: list[dict[str, Any]]) -> str:
+    """The charts and tables prepared earlier in this conversation: a later turn shows them on slides by id."""
+    lines = ["<visuals_in_this_conversation>",
+             "Charts and tables prepared in earlier turns; their ids stay valid in this conversation (a presentation shows "
+             "them by id):"]
+    for v in visuals[-30:]:
+        series = ", ".join(str(c.get("label")) for c in v.get("columns") or [] if c.get("key") in (v.get("series") or []))
+        lines.append(f"- {v['id']}: {v.get('kind')}, “{squeeze(str(v.get('title') or ''), 100)}”"
+                     + (f" ({squeeze(series, 120)})" if series else "") + f", {len(v.get('rows') or [])} rows")
+    lines.append("</visuals_in_this_conversation>")
+    return "\n".join(lines)
+
+
+def decks_block(decks: list[dict[str, Any]]) -> str:
+    """The presentations made in this conversation, each at its latest version, slide by slide, so a change the person
+    asks for in the chat ("slide 4 as a table") finds its slide."""
+    latest = {}
+    for deck in decks:
+        latest[deck.get("family") or deck["id"]] = deck
+    lines = ["<presentations_in_this_conversation>",
+             "Change one with wizard_change_presentation on the id below (its latest version, which the person sees); "
+             "read its slides in full with wizard_read_presentation when a change needs more than this outline."]
+    for deck in latest.values():
+        version = f", version {deck.get('version')}" if (deck.get("version") or 1) > 1 else ""
+        lines.append(f"{deck['id']}{version}: “{squeeze(str(deck.get('title') or ''), 120)}”. Storyline: "
+                     f"{squeeze(str(deck.get('storyline') or ''), 300)}")
+        for number, slide in enumerate(deck.get("slides") or [], 1):
+            shown = [x for x in (slide.get("visual"), (slide.get("left") or {}).get("visual"),
+                                 (slide.get("right") or {}).get("visual")) if x]
+            style = f" {slide['chart']}" if slide.get("chart") and slide.get("chart") != "auto" else ""
+            lines.append(f"  {number}. {slide.get('kind')}: {squeeze(str(slide.get('title') or ''), 140)}"
+                         + (f" [{', '.join(shown)}{style}]" if shown else ""))
+    lines.append("</presentations_in_this_conversation>")
+    return "\n".join(lines)
+
+
 # A question from the person's prompt queue (owner, 4 Nov 2026: "so I can run overnight"): nobody is there to choose.
 AWAY_BLOCK = ("<from_the_prompt_queue>\nThe person queued this question and is away while it runs: nobody can answer a "
               "question now, and nobody will see this run until it has ended. Where the request leaves something open, "
@@ -338,11 +385,14 @@ def compose(question: str, history: list[Turn], kind: str, today: date, files: l
             explore: dict[str, Any] | None = None, systems: tuple[list[str], list[str]] | None = None,
             remembered: list[str] | None = None, task: dict[str, Any] | None = None,
             order: list[list[tuple[str, str]]] | None = None, when_asked: list[str] | None = None,
-            database: tuple[str, list[str]] | None = None, away: bool = False) -> str:
+            database: tuple[str, list[str]] | None = None, away: bool = False, output: str = "analysis",
+            visuals: list[dict[str, Any]] | None = None, decks: list[dict[str, Any]] | None = None) -> str:
     """systems: (names on, names off) when the person chose the systems for this request; None is Auto. order: the
     company's source order for this request's sources, as levels of (name, use it for); None adds no block. when_asked:
     in Auto, the names of the sources the company uses only when asked. database: the database's name and the schemas
-    Wizard may query, when the company limits them. away: the question runs from the person's prompt queue."""
+    Wizard may query, when the company limits them. away: the question runs from the person's prompt queue. output:
+    the composer's Output (analysis or presentation). visuals and decks: the charts, tables and presentations made in
+    earlier turns of this conversation."""
     parts = [calendar_block(today)]
     if away:
         parts.append(AWAY_BLOCK)
@@ -358,6 +408,10 @@ def compose(question: str, history: list[Turn], kind: str, today: date, files: l
         parts.append(database_block(*database))
     if files:
         parts.append(attachments_block(files))
+    if visuals:
+        parts.append(visuals_block(visuals))
+    if decks:
+        parts.append(decks_block(decks))
     if history:
         lines = ["<conversation_so_far>"]
         for turn in history[-MAX_TURNS:]:
@@ -373,5 +427,7 @@ def compose(question: str, history: list[Turn], kind: str, today: date, files: l
         request = task_request(str(task["title"]), str(task["body"]), task)
     else:
         request = recurring_request(question) if kind == "recurring" else CHECK_REQUEST if kind == "check" else question
+    if output == "presentation" and kind == "ask":
+        parts.append(PRESENTATION_OUTPUT)
     parts.append(f"<request>\n{request}\n</request>")
     return "\n\n".join(parts)

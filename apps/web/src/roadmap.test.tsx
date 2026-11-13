@@ -19,15 +19,17 @@ describe('the roadmap', () => {
   });
 
   it('counts down in calendar days, and the first step not done or past is next', () => {
-    const wednesday = placeMilestones(MILESTONES, new Date(2026, 9, 28, 23, 30));
+    const open = MILESTONES.map(m => ({...m, done: undefined}));  // the countdown, before any step was delivered
+    const wednesday = placeMilestones(open, new Date(2026, 9, 28, 23, 30));
     expect(wednesday.map(m => [m.state, m.when])).toEqual([['next', 'In 2 days'], ['planned', 'In 16 days'], ['planned', 'In 23 days']]);
-    expect(placeMilestones(MILESTONES, new Date(2026, 9, 29, 8))[0].when).toBe('Due tomorrow');
-    expect(placeMilestones(MILESTONES, new Date(2026, 9, 30, 8))[0].when).toBe('Due today');
-    const saturday = placeMilestones(MILESTONES, new Date(2026, 9, 31));
+    expect(placeMilestones(open, new Date(2026, 9, 29, 8))[0].when).toBe('Due tomorrow');
+    expect(placeMilestones(open, new Date(2026, 9, 30, 8))[0].when).toBe('Due today');
+    const saturday = placeMilestones(open, new Date(2026, 9, 31));
     expect(saturday.map(m => m.state)).toEqual(['late', 'next', 'planned']);
     expect(saturday[0].when).toBe('Due date passed');
-    const delivered = placeMilestones([{...MILESTONES[0], done: true}, ...MILESTONES.slice(1)], new Date(2026, 9, 31));
+    const delivered = placeMilestones([{...open[0], done: true}, ...open.slice(1)], new Date(2026, 9, 31));
     expect(delivered.map(m => [m.state, m.when])).toEqual([['done', 'Delivered'], ['next', 'In 13 days'], ['planned', 'In 20 days']]);
+    expect(placeMilestones(MILESTONES, new Date(2026, 10, 13)).find(m => m.id === 'slides')?.state).toBe('done');
   });
 
   it('shows what Wizard does at once, and the next Friday on each → (← takes it back)', () => {

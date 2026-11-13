@@ -100,7 +100,8 @@ PUBLIC_PATHS = {"/api/v1/health", "/api/v1/ready", "/api/v1/bootstrap", "/api/v1
                 "/api/v1/session/logout", "/api/v1/session/identities"}
 TIMELINE_EVENTS = {"run_started", "status", "agent_session", "note", "tool_started", "tool_finished", "visual_added",
                    "check_result", "schedule_proposed", "file_made", "warning", "run_failed",
-                   "run_finished", "steer", "steer_read", "systems_changed", "system_requested", "person_asked"}
+                   "run_finished", "steer", "steer_read", "systems_changed", "system_requested", "person_asked",
+                   "storylines_proposed", "deck_added"}
 TERMINAL = {"run_finished", "run_failed"}
 SUGGESTIONS = [
     {"story": "Executive", "question": "Which market gave us the best return on marketing investment last quarter — tie NERP "
@@ -127,6 +128,8 @@ class RunBody(Body):
     attachment_ids: list[str] = Field(default_factory=list, max_length=5)
     # The systems picker: the ids of the systems this question may use; None (or absent) is Auto.
     systems: list[str] | None = Field(default=None, max_length=30)
+    # The composer's Output: an analysis (the answer) or a presentation (Gemini asks the storyline, then makes the deck).
+    output: Literal["analysis", "presentation"] = "analysis"
 
 
 class TaskRunBody(Body):
@@ -622,8 +625,10 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         shown_run["systems"] = decode_systems(run.get("systems"))
         files = [public(a) for a in store.conversation_attachments(run["conversation_id"]) if a["run_id"] == run["id"]]
         schedules = [public_schedule(s) for s in store.schedules(run["conversation_id"], run["id"])]
+        shown_run["output"] = run.get("output") or "analysis"
         return {**shown_run, "events": events, "visuals": visuals, "evidence": evidence, "attachments": files,
-                "schedules": schedules, "active": run["id"] in manager.active}
+                "schedules": schedules, "decks": store.decks(run["conversation_id"], run["id"]),
+                "active": run["id"] in manager.active}
 
     @app.get("/api/v1/conversations/{conversation_id}")
     def conversation(request: Request, conversation_id: str) -> dict[str, Any]:
@@ -679,7 +684,7 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
             choice = systems.choice(settings, services, identity, [*(body.systems or []), "attachment"])
         conversation_id = conversation_id or store.create_conversation(identity.id)
         try:
-            run = manager.start(identity, conversation_id, body.question.strip(), choice=choice)
+            run = manager.start(identity, conversation_id, body.question.strip(), choice=choice, output=body.output)
         except Busy as busy:
             raise HTTPException(429, str(busy)) from None
         # Bound before the run's task first runs (no await in between), so its prompt lists these files.
@@ -967,11 +972,12 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         question = correction_question(text, about, body.reason)[:MAX_QUESTION_CHARS]
         try:  # the systems as they are now: the picker may have changed while the run worked
             follow = manager.start(identity, run["conversation_id"], question,
-                                   choice=inherited(identity, store.run(identity.id, run_id) or run))
+                                   choice=inherited(identity, store.run(identity.id, run_id) or run),
+                                   output=str(run.get("output") or "analysis"))
         except Busy as busy:
             raise HTTPException(429, str(busy)) from None
         return {"follow_up": {"run_id": follow["id"], "conversation_id": run["conversation_id"], "question": question,
-                              "systems": decode_systems(follow.get("systems"))}}
+                              "systems": decode_systems(follow.get("systems")), "output": follow.get("output")}}
 
     @app.post("/api/v1/runs/{run_id}/systems")
     def change_systems(request: Request, run_id: str, body: SystemsBody) -> dict[str, Any]:

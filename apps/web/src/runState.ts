@@ -1,4 +1,4 @@
-import type {Attachment, PersonQuestion, RunEvent, RunKind, RunRecord, RunView, Schedule, Steer, SystemRequest, TimelineItem} from './types';
+import type {Attachment, Deck, PersonQuestion, RunEvent, RunKind, RunRecord, RunView, Schedule, Steer, StorylineQuestion, SystemRequest, TimelineItem} from './types';
 
 const REASON_WORDS: Record<string, string> = {table: 'Wrong table', filter: 'Wrong filter', period: 'Wrong period', other: 'Not this'};
 
@@ -14,7 +14,7 @@ export function emptyRun(id: string, conversationId: string, question: string, k
   return {id, conversationId, kind, question, status: 'queued', runtime: 'replay', runtimeLabel: '', model: '', timeline: [],
     streamText: '', answer: null, visuals: [], evidence: [], check: null, checkStatus: 'NOT_CHECKED', checkSummary: null,
     dataMode: null, reportId: null, error: null, warnings: [], lastSeq: 0, attachments: [], schedules: [],
-    systems: null, steers: [], systemRequests: [], questions: [],
+    systems: null, steers: [], systemRequests: [], questions: [], storylines: [], decks: [], output: 'analysis',
     createdAt: new Date().toISOString(),
     startedAt: null, finishedAt: null, parentRunId: null, diagnostics: []};
 }
@@ -64,6 +64,12 @@ export function applyEvent(run: RunView, event: RunEvent): RunView {
     case 'person_asked':
       return {...next, questions: [...next.questions, {question: String(p.question ?? ''),
         options: Array.isArray(p.options) ? p.options.map(String) : [], why: p.why ? String(p.why) : null} as PersonQuestion]};
+    case 'storylines_proposed':
+      return {...next, storylines: [...next.storylines, {question: String(p.question ?? ''), why: p.why ? String(p.why) : null,
+        storylines: Array.isArray(p.storylines) ? p.storylines.map((s: Record<string, unknown>) => ({title: String(s.title ?? ''),
+          arc: Array.isArray(s.arc) ? s.arc.map(String) : [], best_for: s.best_for ? String(s.best_for) : null})) : []} as StorylineQuestion]};
+    case 'deck_added':
+      return {...next, decks: [...next.decks.filter(d => d.id !== p.deck.id), p.deck as Deck]};
     case 'file_made':
       return {...next, attachments: [...next.attachments.filter(a => a.id !== p.attachment.id), p.attachment as Attachment]};
     case 'check_result':
@@ -88,13 +94,14 @@ export function applyEvent(run: RunView, event: RunEvent): RunView {
 export function fromRecord(record: RunRecord): RunView {
   let view = emptyRun(record.id, record.conversation_id, record.question, record.kind);
   view = {...view, runtime: record.runtime, runtimeLabel: record.runtime_label, model: record.model, createdAt: record.created_at,
-    parentRunId: record.parent_run_id, status: record.status, systems: record.systems ?? null};
+    parentRunId: record.parent_run_id, status: record.status, systems: record.systems ?? null, output: record.output ?? 'analysis'};
   for (const event of record.events) view = applyEvent(view, event);
   return {...view, status: record.status, answer: record.answer ?? view.answer, reportId: record.report_id ?? view.reportId,
     dataMode: record.data_mode ?? view.dataMode, checkStatus: record.check_status, checkSummary: record.check_summary,
     visuals: record.visuals.length ? record.visuals : view.visuals, evidence: record.evidence.length ? record.evidence : view.evidence,
     error: record.error_code ? {code: record.error_code, message: record.error_message ?? '', details: view.error?.details} : view.error,
     attachments: record.attachments ?? [], schedules: record.schedules?.length ? record.schedules : view.schedules,
+    decks: record.decks?.length ? record.decks : view.decks,
     finishedAt: record.finished_at};
 }
 
@@ -115,6 +122,13 @@ export function errorDetails(run: RunView): Record<string, string> {
   if (run.finishedAt) known.Stopped = run.finishedAt;
   known.Run = run.id;
   return known;
+}
+
+/** The decks an answer shows: the newest version of each deck it made or changed. */
+export function shownDecks(run: RunView): Deck[] {
+  const newest = new Map<string, Deck>();
+  for (const deck of run.decks) newest.set(deck.family ?? deck.id, deck);
+  return [...newest.values()];
 }
 
 export function sourcesConsulted(run: RunView): string[] {
