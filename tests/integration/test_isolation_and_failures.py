@@ -147,6 +147,37 @@ def test_an_internal_error_names_the_exception_and_where(tmp_path):
         assert details["Where"].startswith("test_isolation_and_failures.py, line ") and details["Where"].endswith(" in run")
 
 
+class ToolBreaks(Outage):
+    """Gemini calls a tool that raises something no tool expects, then answers with what it has."""
+
+    def __init__(self) -> None:
+        self.seen: tuple[bool, dict] | None = None
+
+    async def run(self, request, emit, tools, cancelled):
+        ok, text = await tools.call("wizard_lookup_definitions", {"query": "installed base"})
+        self.seen = (ok, json.loads(text))
+        await emit("text_delta", {"text": "The knowledge base could not be read just now, so this answer has no figures."})
+
+
+def test_a_tool_that_raises_is_an_error_gemini_reads_and_the_run_still_answers(tmp_path, monkeypatch):
+    """The owner's run of 13 Nov 2026: one tool's exception (a portal's ERR_CONNECTION_RESET) ended the whole answer
+    as "Wizard hit an internal error". Whatever a tool raises, Gemini reads it as the call's error and goes on."""
+    runtime = ToolBreaks()
+    with TestClient(create_app(make_settings(tmp_path), runtime=runtime)) as client:
+        def broken(ctx, args):
+            raise RuntimeError("Page.goto: net::ERR_CONNECTION_RESET at https://portal.example/\nCall log:\n  - navigating")
+        monkeypatch.setattr(client.app.state.registry.specs["wizard_lookup_definitions"], "handler", broken)
+        login(client, "u-ceo")
+        run = ask(client, CEO_QUESTION)
+    assert run["status"] == "succeeded" and run["answer"].startswith("The knowledge base could not be read")
+    finished = next(e["payload"] for e in run["events"] if e["type"] == "tool_finished")
+    assert not finished["ok"] and finished["error_code"] == "tool_failed"
+    assert runtime.seen is not None and runtime.seen[0] is False
+    error = runtime.seen[1]["error"]
+    assert error["code"] == "tool_failed" and "RuntimeError: Page.goto: net::ERR_CONNECTION_RESET" in error["message"]
+    assert "Call log" not in error["message"] and "say what this one would have added" in error["message"]
+
+
 class Unlinked(Outage):
     async def readiness(self, home, email):
         return {"ready": False, "reason": "Link your own Gemini account to ask questions."}

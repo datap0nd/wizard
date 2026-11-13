@@ -21,6 +21,7 @@ import contextlib
 import json
 import logging
 import queue
+import re
 import threading
 import time
 from collections.abc import Callable
@@ -54,6 +55,19 @@ MAX_CAPTURED = 60
 # is visible yet (an account picker, a code prompt).
 SIGN_IN_MARKERS = ("single sign on", "single sign-on", "please enter your password", "verification code", "session expired",
                    "sign in to continue", "login required")
+# Chrome's network errors on a page load: the portal could not be reached, which is the network's or the portal's doing,
+# never Gemini's steps (owner's run of 13 Nov 2026: Superset's ERR_CONNECTION_RESET ended the answer with an internal
+# error). The first group drops a connection that was made, often for a moment on a VPN, so the load is sent once more;
+# the second says the PC cannot reach the host at all (off the VPN, a proxy down), so it is not.
+DROPPED = frozenset({"ERR_CONNECTION_RESET", "ERR_CONNECTION_CLOSED", "ERR_CONNECTION_ABORTED", "ERR_EMPTY_RESPONSE",
+                     "ERR_NETWORK_CHANGED", "ERR_TIMED_OUT", "ERR_CONNECTION_TIMED_OUT", "ERR_SOCKET_NOT_CONNECTED",
+                     "ERR_HTTP2_PROTOCOL_ERROR", "ERR_QUIC_PROTOCOL_ERROR", "ERR_SSL_PROTOCOL_ERROR"})
+UNREACHABLE = DROPPED | {"ERR_CONNECTION_REFUSED", "ERR_CONNECTION_FAILED", "ERR_NAME_NOT_RESOLVED",
+                         "ERR_NAME_RESOLUTION_FAILED", "ERR_ADDRESS_UNREACHABLE", "ERR_INTERNET_DISCONNECTED",
+                         "ERR_PROXY_CONNECTION_FAILED", "ERR_TUNNEL_CONNECTION_FAILED", "ERR_NETWORK_ACCESS_DENIED"}
+RETRY_AFTER_MS = 2000
+# The browser itself is gone (the person closed Wizard's Chrome, it crashed): the next call starts it again.
+GONE = ("has been closed", "Target closed", "browser has disconnected", "Browser closed", "Connection closed")
 
 
 class SecretStore(Protocol):
@@ -444,10 +458,10 @@ class PortalBrowser:
                 raise PortalError("signing_in", "Close Wizard's sign-in window first.")
             results = []
             for portal, page_id, name, url in pages:
-                page = self._ready_page()
                 self._log = CallLog()
                 try:
-                    page.goto(url, wait_until="domcontentloaded", timeout=45_000)
+                    page = self._ready_page()
+                    self._goto(page, portal, url, timeout=45_000)
                     page.wait_for_timeout(1500)
                     results.append({"id": page_id, "name": name, "signed_in": not self._signs_in(page, portal),
                                     "title": (page.title() or "")[:120], "host": urlsplit(page.url).hostname or ""})
@@ -462,6 +476,8 @@ class PortalBrowser:
     def _signs_in(self, page: Any, portal: Portal) -> bool:
         """The page asks for a sign-in: it left the reachable hosts, it is an identity provider's page (a host the
         person's sign-in went through outside the portals' domains), or it shows a password field or sign-in text."""
+        if not _on_web(page.url):  # a blank page, or Chrome's error page for a load that failed: no sign-in asked
+            return False
         host = (urlsplit(page.url).hostname or "").lower()
         if host and not self.policy.allowed(host):
             return True
@@ -484,27 +500,36 @@ class PortalBrowser:
         if self._headed:
             raise PortalError("signing_in", "The person is signing in to the portals in Wizard's browser window. Ask them "
                                             "to finish and close that window, then try again.")
-        if self._context is None:
-            self._launch(headed=False)
-        pages = [p for p in self._context.pages if not p.is_closed()]
-        if self._page is None or self._page.is_closed():
-            self._page = pages[-1] if pages else self._context.new_page()
-        for extra in pages[:-MAX_PAGES]:
-            if extra is not self._page:
-                extra.close()
-        return self._page
+        for attempt in (1, 2):
+            if self._context is None:
+                self._launch(headed=False)
+            try:
+                pages = [p for p in self._context.pages if not p.is_closed()]
+                if self._page is None or self._page.is_closed():
+                    self._page = pages[-1] if pages else self._context.new_page()
+                for extra in pages[:-MAX_PAGES]:
+                    if extra is not self._page:
+                        extra.close()
+                return self._page
+            except Exception as error:  # noqa: BLE001 - the browser closed or crashed since the last call
+                if attempt == 2 or not _gone(error):
+                    raise
+                log.warning("portal browser: the browser had gone (%s); starting it again", _first_line(error))
+                self._close()
+        raise AssertionError("unreachable")
 
     def execute(self, portal: Portal, steps: list[dict[str, Any]], params: dict[str, Any]) -> dict[str, Any]:
         """Run Gemini's steps on the browser thread; see portal_tools.Step for what each step does."""
         def job() -> dict[str, Any]:
-            page = self._ready_page()
             self._log = CallLog()
             outputs: list[dict[str, Any]] = []
             stopped: PortalError | None = None
             started = time.monotonic()
             try:
-                if page.url in ("", "about:blank") and steps and steps[0].get("action") not in ("goto", "request"):
-                    page.goto(portal.url, wait_until="domcontentloaded", timeout=60_000)
+                page = self._ready_page()
+                # A new page, or the error page a load that failed left behind: the portal's start page first.
+                if not _on_web(page.url) and steps and steps[0].get("action") not in ("goto", "request"):
+                    self._goto(page, portal, portal.url, timeout=60_000)
                 for index, step in enumerate(steps):
                     if time.monotonic() - started > CALL_LIMIT_S - 20:
                         stopped = PortalError("browser_timeout", f"Stopped before step {index + 1}: the steps took too long.")
@@ -540,9 +565,37 @@ class PortalBrowser:
             except PortalError as error:
                 error.message += self._log_note()
                 raise
+            except Exception as error:  # noqa: BLE001 - the browser failed outside a step: Gemini reads it, the run goes on
+                log.warning("portal browser: %s failed outside a step: %s", portal.id, _first_line(error))
+                if _gone(error):
+                    self._close()
+                raise PortalError("browser_failed", (
+                    f"Wizard's browser failed while reading {portal.name}: {_first_line(error)}. Nothing was read in this "
+                    "call. It can be sent once more (Wizard starts its browser again if it closed); if it fails again, "
+                    f"answer with what the other sources read and say that {portal.name} could not be read."
+                    ) + self._log_note()) from None
             finally:
                 self._log = None
         return self.run(job)
+
+    def _goto(self, page: Any, portal: Portal, url: str, wait_until: str = "domcontentloaded", timeout: int = 45_000) -> Any:
+        """page.goto, sent once more a moment later when the connection dropped (a page load only reads). A portal that
+        stays out of reach is a PortalError in words for Gemini (`portal_unreachable`), never an exception that ends
+        the run."""
+        for attempt in (1, 2):
+            try:
+                return page.goto(url, wait_until=wait_until, timeout=timeout)
+            except Exception as error:  # noqa: BLE001 - Playwright's own error: a network failure is said in words
+                found = re.search(r"net::(ERR_[A-Z0-9_]+)", str(error))
+                code = found.group(1) if found else ""
+                if code not in UNREACHABLE:
+                    raise
+                if attempt == 1 and code in DROPPED:
+                    log.info("portal browser: %s dropped the connection (%s); loading it once more", portal.id, code)
+                    page.wait_for_timeout(RETRY_AFTER_MS)
+                    continue
+                raise PortalError("portal_unreachable", _unreachable(portal, url, code, retried=attempt == 2)) from None
+        raise AssertionError("unreachable")
 
     def _page_state(self, page: Any) -> dict[str, Any]:
         try:
@@ -621,7 +674,7 @@ class PortalBrowser:
                 raise PortalError("host_not_allowed", f"{urlsplit(target).hostname} is not a portal address.")
             if not step.get("reload") and _same_page(target, page.url, portal) and _client_running(page):
                 return {"status": None, "url": portals.redact_url(page.url)[:300], "kept": KEPT_PAGE}
-            response = page.goto(target, wait_until="domcontentloaded", timeout=max(timeout, 45_000))
+            response = self._goto(page, portal, target, timeout=max(timeout, 45_000))
             return {"status": response.status if response else None, "url": portals.redact_url(page.url)[:300]}
         if action == "back":
             page.go_back(wait_until="domcontentloaded", timeout=timeout)
@@ -710,7 +763,8 @@ class PortalBrowser:
             raise PortalError("request_refused", f"Wizard refused {method} {portals.redact_url(target)[:200]}: {reason}.")
         here = urlsplit(page.url)
         if (here.scheme, here.netloc) != (parts.scheme, parts.netloc):
-            page.goto(f"{parts.scheme}://{parts.netloc}/robots.txt", wait_until="commit", timeout=max(timeout, 30_000))
+            self._goto(page, portal, f"{parts.scheme}://{parts.netloc}/robots.txt", wait_until="commit",
+                       timeout=max(timeout, 30_000))
             if urlsplit(page.url).netloc != parts.netloc:
                 raise PortalError("session_needed", f"{portal.name} sent the browser to {urlsplit(page.url).hostname}: its "
                                                     "session needs renewing. Open the portal first (goto its start page, "
@@ -750,6 +804,32 @@ def _first_line(error: BaseException) -> str:
     for marker in ("Call log:", "==========", "\n    at ", " at window.", " at __run"):
         text = text.split(marker)[0]
     return " ".join(text.split())[:400] or type(error).__name__
+
+
+def _on_web(url: str) -> bool:
+    """The page is on a web address (not about:blank, nor Chrome's error page for a load that failed)."""
+    return urlsplit(url).scheme in ("http", "https")
+
+
+def _gone(error: BaseException) -> bool:
+    """The browser, its window or its page has closed under Wizard (the person closed it, it crashed)."""
+    text = str(error)
+    return any(marker in text for marker in GONE)
+
+
+def _unreachable(portal: Portal, url: str, code: str, retried: bool) -> str:
+    """Why a portal could not be read, for Gemini to pass on: the network, not its steps, and what to do next."""
+    host = urlsplit(url).hostname or portal.host
+    if code in DROPPED:
+        cause = (f"{host} dropped the connection ({code}" + (", again when Wizard loaded it once more" if retried else "")
+                 + "): the portal or the network between (VPN, proxy) cut it off")
+    else:
+        cause = (f"this PC could not reach {host} ({code}): it may be off the company network or VPN, or the portal "
+                 "is down")
+    return (f"{portal.name} could not be reached: {cause}. Your steps did not cause it and nothing was read. You may "
+            "send the call once more; if it fails again, answer with what the other sources read, say that "
+            f"{portal.name} could not be reached and what it would have added, and never fill in its data. The person "
+            "can ask again once the connection is back.")
 
 
 def _same_page(target: str, current: str, portal: Portal) -> bool:

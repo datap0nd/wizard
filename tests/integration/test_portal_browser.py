@@ -11,6 +11,8 @@ import glob
 import json
 import os
 import shutil
+import socket
+import struct
 import tempfile
 import threading
 import time
@@ -706,3 +708,79 @@ def test_wizard_proves_a_request_itself_or_says_why_not(setup, tmp_path):
     assert missing.error_code == "invalid_arguments" and "No value for week" in missing.error_message
     services.portal_maps = None
 
+
+
+class Resetting:
+    """A portal whose connections are cut (TCP reset) while Chrome waits for the page, as Superset's were on the owner's
+    work PC: the first `resets` connections, then it answers. Raw sockets, so Chrome sees net::ERR_CONNECTION_RESET."""
+
+    def __init__(self, resets: int) -> None:
+        self.resets, self.connections = resets, 0
+        self.server = socket.socket()
+        self.server.bind(("127.0.0.1", 0))
+        self.server.listen(16)
+        self.url = f"http://127.0.0.1:{self.server.getsockname()[1]}/"
+        threading.Thread(target=self._serve, daemon=True).start()
+
+    def _serve(self) -> None:
+        while True:
+            try:
+                conn, _ = self.server.accept()
+            except OSError:
+                return
+            with conn:
+                conn.recv(65536)
+                self.connections += 1
+                if self.connections <= self.resets:
+                    conn.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+                    continue
+                body = b"<title>Superset</title><div id=app>SQL Lab</div>"
+                conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\nContent-Length: "
+                             + str(len(body)).encode() + b"\r\n\r\n" + body)
+
+    def close(self) -> None:
+        self.server.close()
+
+
+def reset_call(portal: Resetting, steps: list[dict[str, Any]]) -> Any:
+    root = Path(tempfile.mkdtemp(prefix="portal-reset-", dir=TEST_TMP))
+    settings = settings_from({"WIZARD_PORTAL_BDP_URL": portal.url + "superset/sqllab/", "WIZARD_BROWSER_EXECUTABLE": BROWSER})
+    assert settings is not None
+    services = build_services()
+    services.portals = PortalBrowsers(settings, lambda user_id: root / user_id)
+    try:
+        return call((services, build_registry(services)), "portal_run",
+                    {"system": "bdp", "title": "Check accessible databases in Superset", "steps": steps}, systems=("bdp",))
+    finally:
+        services.portals.shutdown()
+        portal.close()
+        shutil.rmtree(root, ignore_errors=True)
+
+
+CHECK_DATABASES = [{"action": "evaluate", "script": "return document.title;"}]
+
+
+def test_a_portal_that_resets_the_connection_is_a_tool_error_gemini_reads_not_the_end_of_the_run():
+    """The owner's run of 13 Nov 2026: portal_run's first evaluate step on the Big Data Portal opened Superset's SQL Lab
+    first, Chrome answered net::ERR_CONNECTION_RESET, and the exception ended the whole answer as an internal error.
+    Now the load is sent once more, and a portal still out of reach is an error in words that Gemini reads."""
+    portal = Resetting(resets=1_000)
+    outcome = reset_call(portal, CHECK_DATABASES)
+    assert not outcome.ok and outcome.error_code == "portal_unreachable", outcome
+    message = outcome.error_message or ""
+    assert "Big Data Portal could not be reached" in message and "ERR_CONNECTION_RESET" in message
+    assert "again when Wizard loaded it once more" in message and "never fill in its data" in message
+    assert portal.connections >= 2, "the page load was sent once more before Wizard gave up"
+
+
+def test_a_goto_step_to_a_portal_that_resets_is_the_same_error_in_words():
+    outcome = reset_call(Resetting(resets=1_000), [{"action": "goto", "url": "/superset/sqllab/"}])
+    assert not outcome.ok and outcome.error_code == "portal_unreachable", outcome
+    assert (outcome.error_message or "").startswith("Step 1 (goto): Big Data Portal could not be reached")
+
+
+def test_a_connection_dropped_once_is_loaded_again_and_read():
+    portal = Resetting(resets=1)
+    outcome = reset_call(portal, CHECK_DATABASES)
+    assert outcome.ok, outcome.error_message
+    assert outcome.data["outputs"][-1]["value"] == "Superset" and portal.connections >= 2
