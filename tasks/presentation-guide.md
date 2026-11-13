@@ -1,10 +1,10 @@
 ---
 id: presentation-guide
 title: Write the company's presentation guide from its decks
-summary: You choose a folder of the company's presentations, or one deck or template. Wizard reads how they look and how they are built - template, colors, fonts, layouts, logo and labels, slide types, charts, wording - and writes the presentation guide in the knowledge base, so presentations Wizard makes follow the company's way.
+summary: You choose a folder of the company's presentations, one deck or template, or a guide someone wrote (.md, .docx). Wizard reads how they look and how they are built - template, colors, fonts, layouts, logo and labels, slide types, charts, wording - and writes the presentation guide in the knowledge base, with the design tokens Wizard draws its own presentations in.
 added: 2026-11-01
 input: folder or file
-input_label: The folder with the presentations, or one deck or template (.potx)
+input_label: The folder with the presentations, one deck or template (.potx), or a written guide (.md, .docx)
 ---
 Write the company's presentation guide: notes in the knowledge base that say how a presentation is made here, precisely
 enough that someone who has never seen one, or Wizard, can build a deck that looks and reads like the company's own.
@@ -17,7 +17,10 @@ exact values.
 2. Choose the decks with wizard_task_files(left=false). When the person chose one file, it is the reference. With a
    folder, take every template (.potx, .pot, and files whose name says template, master or guideline), which define
    the standard, then up to 40 other presentations: the newest first, spread over the subfolders (teams, years, kinds
-   of deck), never several versions of the same deck.
+   of deck), never several versions of the same deck. A written guide (a .md, .docx or .txt about how presentations
+   are made, chosen alone or in the folder) is read in full with wizard_task_read_file first: it is the company's own
+   account of its standard, so its values (colors, fonts, sizes, layouts, chart rules, vocabulary) go into the notes,
+   cited by its source id; where the decks show something else, give both and add an open question.
 3. Read how they look with wizard_task_design, 4 decks a call, until every chosen deck is read. `all_read_so_far.shared`
    counts, once per deck, what the decks share. What most decks share is the standard; what one team or one template
    uses is a variant: name it as such. A one-off is not the standard. When the decks use more than one template, say
@@ -38,6 +41,10 @@ exact values.
      really use; the fonts (Latin and East Asian, for titles and body) with point sizes for the title, subtitle, each
      body level, footnotes and chart labels; the logo (where, how big), the confidentiality label (its exact text,
      where), page number, footer and date; margins; and what is never done (fonts, colors or effects no deck uses).
+     End it with `## Design tokens`: the same values as one fenced `json` block in the keys wizard_kb_standard
+     (section 12) lists, which Wizard draws its own presentations with. Write a font as its family name as PowerPoint
+     lists it (a bold weight is the title's bold, not a separate font, unless the decks name a separate family). Leave
+     out a key the sources do not settle.
    - `presentation-slide-types`: each slide type the decks use (cover, agenda, executive summary, section divider,
      content with a chart, content with a table, comparison, timeline or roadmap, key message, closing, appendix): its
      layout name in the template, what goes on it in what order, and how much text (the decks' words per slide).
@@ -54,6 +61,6 @@ exact values.
 8. Save the notes with wizard_kb_save_notes, message "Presentation guide from the company's decks". A refused save
    says why: fix it and save again.
 
-End with: how many decks and which templates you read, the notes you wrote or changed, the standard in five lines
-(template, colors, fonts, logo and label, title style), the variants you found, and the open questions for the guide's
-owner.
+End with: how many decks and which templates you read (and the written guide, if any), the notes you wrote or changed,
+the standard in five lines (template, colors, fonts, logo and label, title style), the design tokens you wrote, the
+variants you found, and the open questions for the guide's owner.

@@ -293,7 +293,7 @@ export function App({compact = false}: {compact?: boolean}) {
       void ask(`Continue with ${request.name} switched on.`, next);
     },
     reply: (_run: RunView, text: string) => { void ask(text); },
-    story: (_run: RunView, text: string) => { void ask(text, chosen, 'presentation'); },
+    story: (_run: RunView, text: string) => { setOutput('presentation'); void ask(text, chosen, 'presentation'); },
   }), [ask, available, boot?.runtime?.steering, choose, chosen, steerRun]);
 
   const check = useCallback(async (run: RunView) => {
@@ -383,7 +383,7 @@ export function App({compact = false}: {compact?: boolean}) {
         onFeedback={(run, category) => void api.feedback(run.id, category).then(() => setNotice('Thanks — recorded in the evaluation log.'))}
         onEmail={run => void email(run)} onRecurring={(run, cadence) => void recurring(run, cadence)}
         onSchedule={(run, schedule, action) => void decide(run, schedule, action)} canRecur={!!boot.metronome?.enabled}
-        onPresentation={() => void ask(PRESENTATION_REQUEST, chosen, 'presentation')} />
+        onPresentation={() => { setOutput('presentation'); void ask(PRESENTATION_REQUEST, chosen, 'presentation'); }} />
     </SteerContext.Provider></SystemsContext.Provider>
   );
   const composer = (

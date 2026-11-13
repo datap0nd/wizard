@@ -624,16 +624,17 @@ class RunManager:
         if len(self.active) >= self.settings.max_concurrent_runs * 4:
             raise Busy("Wizard is busy. Try again in a minute.")
         run_id = new_id("run")
+        shown_output = output if kind == "ask" and output in OUTPUTS else "analysis"
         row = {"id": run_id, "conversation_id": conversation_id, "user_id": identity.id, "kind": kind,
                "question": question, "status": "queued", "runtime": self.runtime.kind, "runtime_label": self.runtime.label(),
                "model": self.runtime.model, "check_status": "NOT_CHECKED", "parent_run_id": parent_run_id,
                "created_at": now(), "systems": encode_systems(choice),
-               "output": output if kind == "ask" and output in OUTPUTS else "analysis"}
+               "output": shown_output}
         self.store.create_run(row)
         self.store.touch_conversation(conversation_id, question[:80] if kind == "ask" else None)
         run = ActiveRun(run_id, identity, conversation_id, kind, question, parent_run_id, self.runtime.kind, explore=explore,
                         work=work, choice=choice, ever_on=None if choice is None else choice.on,
-                        offers_ask=bool(choice and choice.off()), lane=lane, queued=queued, output=row["output"])
+                        offers_ask=bool(choice and choice.off()), lane=lane, queued=queued, output=shown_output)
         self.active[run_id] = run
         loop = asyncio.get_running_loop()
         if kind == "ask" and hasattr(self.runtime, "title") and len(self.store.runs(conversation_id)) == 1:

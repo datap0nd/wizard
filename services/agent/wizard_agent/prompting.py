@@ -334,6 +334,7 @@ The person chose PowerPoint as the output of this request: the answer is a prese
 1. Evidence first: gather what the deck needs as you would for an analysis, and render its charts and tables with wizard_render_visual. A deck from an analysis already in this conversation needs no new data: use its visuals and evidence.
 2. The storyline: unless the person has said the story (in this request, earlier, or by choosing one of your storylines), call wizard_propose_storylines with two to four storylines the evidence supports, each a message and its arc, and end your turn.
 3. With the storyline: read the company's presentation guide (wizard_read_knowledge with the presentation-* notes that exist) and make the deck with wizard_make_presentation.
+When this conversation already has a presentation (<presentations_in_this_conversation>) and the request is about it, change it with wizard_change_presentation instead of asking the storyline again or starting over.
 </output>"""
 
 

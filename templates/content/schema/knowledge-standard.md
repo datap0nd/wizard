@@ -274,6 +274,43 @@ cited by their source ids; what most decks share is the standard, what one team 
 such. Examples are written with placeholders (`<market> sell-out grew <x>% in <period>`), never a deck's real figures,
 names or plans. Up to about 600 words per note; tables are welcome.
 
+**Design tokens.** Wizard draws every presentation it makes in the look `presentation-look` gives in a section
+`## Design tokens`: one fenced `json` block, read each time a deck is made (a corrected note changes the next deck). A
+value it does not recognise, or one out of range, is left out (Wizard says which) and Wizard's neutral value stands in.
+Every key is optional:
+
+```json
+{
+  "name": "<the template or theme's name>",
+  "slide": {"width": 13.333, "height": 7.5},
+  "fonts": {"title": "<font>", "subtitle": "<font>", "body": "<font>", "labels": "<font for chart labels>",
+            "east_asian": "<Korean / East Asian font>"},
+  "colors": {"brand": "#RRGGBB", "title": "#RRGGBB", "text": "#RRGGBB", "secondary": "#RRGGBB", "muted": "#RRGGBB",
+             "background": "#RRGGBB", "card": "#RRGGBB", "line": "#RRGGBB", "good_fill": "#RRGGBB",
+             "good_text": "#RRGGBB", "bad_fill": "#RRGGBB", "bad_text": "#RRGGBB", "positive": "#RRGGBB",
+             "negative": "#RRGGBB", "series": ["#RRGGBB", "#RRGGBB"]},
+  "sizes": {"cover_title": 0, "cover_subtitle": 0, "cover_meta": 0, "title": 0, "subtitle": 0, "section_title": 0,
+            "agenda": 0, "heading": 0, "body": 0, "kpi": 0, "table": 0, "chart_label": 0, "unit": 0, "footnote": 0},
+  "cover": {"background": "brand"},
+  "footer": {"text": "<the confidentiality label, exactly>", "page_numbers": true},
+  "rules": {"max_highlights": 4, "max_points": 6}
+}
+```
+
+- `slide` in inches (16:9 is 13.333 × 7.5). Sizes in points, 5 to 96: `title` is a content slide's title, `subtitle`
+  the scope line under it, `section_title` a divider's, `agenda` an agenda's topics, `heading` a card's or panel's
+  title, `body` bullets, `kpi` a big figure, `table` a table's text, `chart_label` axis and data labels and legends,
+  `unit` the unit in a chart's corner, `footnote` the source line.
+- Colors as `#RRGGBB`: `brand` (cover, dividers, rules, card numbers, big figures), `title`, `text` (body),
+  `secondary` (subtitles, table headers), `muted` (units, footnotes, page numbers), `background`, `card` (cards, table
+  header rows, panels), `line` (borders, gridlines), `good_fill`/`good_text` and `bad_fill`/`bad_text` (the few table
+  cells a slide shades), `positive`/`negative` (a figure's ▲ and ▼ change), `series` (chart series in order).
+- `cover.background`: `brand` (the title on a brand-colored slide) or `white`. `footer.text`: the label on every slide
+  but the cover. `rules`: how many cells of each tone a table slide shades and how many bullets a slide holds before
+  Wizard says so.
+- Only values the decks or the company's written guide show; leave a key out rather than guess. When the company's
+  fonts are not on every PC, say which font PowerPoint shows instead under `## Open questions`.
+
 ## 13. Dashboard notes
 
 The team's HTML dashboards combine data from PostgreSQL with business logic: definitions, filters, exclusions and

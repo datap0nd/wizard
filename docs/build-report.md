@@ -3,7 +3,37 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-13 (latest) — Quick setup at the top of Settings
+## 2026-11-13 (latest) — Wizard makes presentations
+
+The owner: "Wizard should be able to make complete powerpoint presentations, start to finish", "powerpoints are all
+about storyline … a question that wizard asks", "the output can be analysis, powerpoint … something they can toggle",
+"asking to turn this into a powerpoint will do that" and "any changes can be requested in the chat easily"
+([decision](decisions/2026-11-13-presentations.md)).
+
+- **Tools** (`services/connectors/wizard_connectors/tools/deck_tools.py`): `wizard_propose_storylines` (a question like
+  `wizard_ask_person`, sharing its one per request; refused where nobody waits), `wizard_make_presentation` (eleven
+  slide kinds; refuses what cannot be drawn, warns about long titles, too many bullets or shaded cells, uncited
+  figures and long tables), `wizard_change_presentation` (update, insert, delete, move, retitle: a new version) and
+  `wizard_read_presentation`. Decks are kept per conversation (`decks` table, D1, D2…) with copies of the visuals they
+  show and the names of the sources they cite; `deck_added` and `storylines_proposed` reach the page.
+- **Design** (`services/connectors/wizard_connectors/deck_design.py`): the `presentation-look` note's `## Design tokens`
+  JSON (knowledge standard section 12), merged over Wizard's neutral design; a bad value is left out with its reason.
+  The presentation-guide task now takes a written guide (.md, .docx) and writes the tokens.
+- **Requests** (`prompting.py`, `prompts/system.md`): the composer's Output reaches the API (`output`) and adds an
+  `<output>` block; later turns list the conversation's visuals and decks (slide by slide), so a change in the chat
+  finds its slide. The system prompt says how a deck is built on the chosen storyline.
+- **Page** (`apps/web/src/deck/`): one layout (`layout.ts`), drawn by `SlideView.tsx` as the preview and written by
+  `pptx.ts` with pptxgenjs (native text, tables, editable charts; East Asian font in runs and theme; pptxgenjs's
+  repeated paragraph settings tidied). `DeckCard.tsx` under the answer (slides, strip, Download PowerPoint, Open),
+  storyline cards in `Steering.tsx`, the Output picker in the composer, **Make a PowerPoint** under an analysis. The
+  roadmap's slides step is marked done and "Makes presentations" joins what Wizard does today.
+- Checks (cloud Linux container): `tests/unit/test_presentations.py` 10 passed; full Python suite passed apart from
+  the tool count and contract snapshot this change updates (both fixed, contracts re-exported); web: `deck.test.ts` 7,
+  `DeckCard.test.tsx` 6, all 36 web test files passed, typecheck clean. A 13-slide sample deck was previewed in Chromium
+  and its .pptx rendered in LibreOffice (cover, agenda, sections, summary with key figures, stacked and 100% stacked
+  columns, a line chart, a shaded table, cards, key figures, two panels, Korean text, closing).
+
+## 2026-11-13 — Quick setup at the top of Settings
 
 The owner: "When someone downloads wizard, there should be a 'quick setup' in settings at the top button. This will
 take them through Wizard, how it works, through the gemini sign in, through importing a settings file, etc."

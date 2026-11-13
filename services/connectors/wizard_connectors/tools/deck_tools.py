@@ -75,10 +75,10 @@ class StorylinesArgs(Args):
 
 
 def propose_storylines(ctx: ToolContext, args: StorylinesArgs) -> dict[str, Any]:
-    storylines = []
+    storylines: list[dict[str, Any]] = []
     for item in args.storylines:
         title = " ".join(item.title.split())
-        if any(s["title"].casefold() == title.casefold() for s in storylines):
+        if any(str(s["title"]).casefold() == title.casefold() for s in storylines):
             continue
         storylines.append({"title": title, "arc": item.arc, "best_for": " ".join((item.best_for or "").split()) or None})
     if len(storylines) < 2:
@@ -393,7 +393,7 @@ def change_presentation(ctx: ToolContext, args: ChangeArgs) -> dict[str, Any]:
     for index, change in enumerate(args.changes, 1):
         where = f"Change {index} ({change.action})"
 
-        def number(value: int | None, allow_zero: bool = False) -> int:
+        def number(value: int | None, allow_zero: bool = False, where: str = where) -> int:
             if value is None or not ((0 if allow_zero else 1) <= value <= len(slides)):
                 raise ToolError("invalid_change", f"{where}: slide number {value} is not in the deck (1 to {len(slides)}).")
             return value
