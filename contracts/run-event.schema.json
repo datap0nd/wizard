@@ -10,7 +10,7 @@
     "seq": {"type": "integer", "minimum": 1},
     "ts": {"type": "string"},
     "type": {"enum": ["run_started", "status", "agent_session", "text_delta", "note", "model_tool_trace", "tool_started",
-                      "tool_finished", "visual_added", "check_result", "schedule_proposed", "access_request_proposed", "file_made",
+                      "tool_finished", "visual_added", "check_result", "schedule_proposed", "file_made",
                       "warning", "agent_stats", "model_wait", "diagnostic", "steer", "steer_read", "systems_changed",
                       "system_requested", "person_asked", "run_finished", "run_failed"]},
     "payload": {"type": "object"}

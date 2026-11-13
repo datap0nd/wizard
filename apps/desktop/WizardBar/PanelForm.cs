@@ -36,7 +36,7 @@ namespace WizardBar
         public event Action<List<string>> FilesDropped;
         /// <summary>What the wizard on the page acts out while a question runs, for the button to act out too.</summary>
         public event Action<string> ActivityChanged;
-        private bool settingsPending;
+        private string settingsPending;  // the open-settings message to post once the page has loaded
         private readonly List<string> waiting = new List<string>();
         private readonly Timer slide = new Timer { Interval = 15 };
         private readonly Stopwatch slideClock = new Stopwatch();
@@ -108,7 +108,7 @@ namespace WizardBar
                 {
                     loaded = e.IsSuccess;
                     if (e.IsSuccess) notice.Visible = false;
-                    if (e.IsSuccess && settingsPending) { settingsPending = false; Post("{\"type\":\"open-settings\"}"); }
+                    if (e.IsSuccess && settingsPending != null) { Post(settingsPending); settingsPending = null; }
                     if (e.IsSuccess) { foreach (var message in waiting) Post(message); waiting.Clear(); }
                 };
                 core.WebMessageReceived += OnMessage;
@@ -234,10 +234,12 @@ namespace WizardBar
             try { web.CoreWebView2?.PostWebMessageAsJson(json); } catch (Exception error) { Log.Error("post to page", error); }
         }
 
-        /// <summary>Open the page's settings pane (tray menu "Settings…"); waits for the page if it is still loading.</summary>
-        public void OpenSettings()
+        /// <summary>Open the page's settings pane (tray menu "Settings…"), or Quick setup at its top (tray menu "Quick
+        /// setup…"); waits for the page if it is still loading.</summary>
+        public void OpenSettings(bool setup = false)
         {
-            if (webReady && loaded) Post("{\"type\":\"open-settings\"}"); else settingsPending = true;
+            var message = setup ? "{\"type\":\"open-settings\",\"setup\":true}" : "{\"type\":\"open-settings\"}";
+            if (webReady && loaded) Post(message); else settingsPending = message;
         }
 
         public void HidePanel()

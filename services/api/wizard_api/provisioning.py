@@ -112,10 +112,20 @@ def import_file(path: Path, data_dir: Path, box: SecretBox | None = None, delete
     """Store a provisioning file for this PC, replacing any earlier one, and delete the plaintext file."""
     if path.stat().st_size > MAX_BYTES:
         raise ProvisionError("the provisioning file is too large")
-    provision = parse(path.read_text(encoding="utf-8-sig"))
-    _store(folder(data_dir), provision, box, {"imported_at": datetime.now(UTC).isoformat(timespec="seconds")})
+    provision = import_text(path.read_text(encoding="utf-8-sig"), data_dir, box)
     if delete:
         path.unlink(missing_ok=True)
+    return provision
+
+
+def import_text(text: str, data_dir: Path, box: SecretBox | None = None) -> Provision:
+    """Store a provisioning file's text for this PC, replacing any earlier one: the file the person chose in Quick setup
+    (Settings), read by the page and checked here before anything is stored. Nothing is written when it is not valid."""
+    text = text.removeprefix("\ufeff")
+    if len(text.encode("utf-8")) > MAX_BYTES:
+        raise ProvisionError("the provisioning file is too large")
+    provision = parse(text)
+    _store(folder(data_dir), provision, box, {"imported_at": datetime.now(UTC).isoformat(timespec="seconds")})
     return provision
 
 

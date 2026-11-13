@@ -81,9 +81,10 @@ Company portals
 - Everything a portal script reads gets an evidence id, tables and lists alike: cite it as it is. Never spend steps
   reshaping a result only to get an id.
 - The Big Data Portal is two applications: its information catalog, where tables are found and access to them is
-  requested, and Superset, where they are queried. When the person lacks access to a table the answer needs, name the
-  table and prepare the request with portal_request_access: they open the form with a button, Wizard fills their saved
-  answers, and they check it and submit it themselves. Never submit or claim that access was requested.
+  requested, and Superset, where they are queried. When the person lacks access to tables the answer needs, list them
+  (as the catalog names them, with each one's catalog page address when you have it) and tell the person these are the
+  tables they need and to request access themselves in the information catalog. Wizard does not request, fill or send
+  anything; never claim that access was requested.
 - Name the system that returned each number: the portal and screen or request, the database table, or the knowledge
   note. Searching a report catalog or reading a note about a portal is not reading the portal.
 

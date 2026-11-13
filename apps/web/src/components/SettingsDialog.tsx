@@ -1,5 +1,5 @@
 import {useEffect, useMemo, useState} from 'react';
-import {CheckCircle2, ChevronDown, Download, KeyRound, Loader2, PlugZap, RefreshCw, RotateCcw, XCircle} from 'lucide-react';
+import {ArrowRight, CheckCircle2, ChevronDown, Download, KeyRound, Loader2, PlugZap, RefreshCw, RotateCcw, Sparkles, XCircle} from 'lucide-react';
 import {api, ApiError} from '@/api';
 import {formatDate} from '@/format';
 import {inHost, toHost} from '@/host';
@@ -9,8 +9,9 @@ import {Dialog, DialogContent} from './ui/dialog';
 import {PortalSignIn} from './PortalSignIn';
 import {SourceOrder} from './SourceOrder';
 import {PromptQueuePanel} from './PromptQueuePanel';
+import {QuickSetup} from './QuickSetup';
 import {TasksPanel} from './TasksPanel';
-import type {SettingField, SettingsTest, SettingsTestResult, SettingsView, UpdateInfo} from '@/types';
+import type {Bootstrap, GeminiAccount, SettingField, SettingsTest, SettingsTestResult, SettingsView, UpdateInfo} from '@/types';
 
 const SOURCES: Record<string, string> = {
   environment: 'Set by an environment variable (locked)', env_file: 'From the .env file', this_pc: 'Set on this PC',
@@ -42,7 +43,7 @@ type Draft = Record<string, string | null>;
 type Result = SettingsTestResult | null;
 
 /** Wait for the local service to stop and come back (it restarts itself about a second after the save). */
-async function waitForRestart(): Promise<void> {
+export async function waitForRestart(): Promise<void> {
   const started = Date.now();
   let wentDown = false;
   while (Date.now() - started < 90_000) {
@@ -55,8 +56,11 @@ async function waitForRestart(): Promise<void> {
 }
 
 /** Company settings the person may change on their own PC: Gemini, the knowledge base, the read-only database, the
- * portals and the browser Wizard reads them in, the proxy. Secrets are write-only: the page learns only whether one is set. Also shows the version and installs updates. */
-export function SettingsDialog({open, onClose, onSaved}: {open: boolean; onClose: () => void; onSaved: () => void}) {
+ * portals and the browser Wizard reads them in, the proxy. Secrets are write-only: the page learns only whether one is set. Also shows the version and installs updates.
+ * Quick setup sits at its top (owner, 13 Nov 2026): with `boot`, a new person's walk through Wizard, the settings file,
+ * the Gemini sign-in and the portals; `setup` opens Settings on it. */
+export function SettingsDialog({open, onClose, onSaved, boot, onAccount, setup: startInSetup = false}: {open: boolean; onClose: () => void;
+  onSaved: () => void; boot?: Bootstrap; onAccount?: (a: GeminiAccount) => void; setup?: boolean}) {
   const [view, setView] = useState<SettingsView | null>(null);
   const [draft, setDraft] = useState<Draft>({});
   const [editingSecret, setEditingSecret] = useState<Record<string, boolean>>({});
@@ -67,13 +71,16 @@ export function SettingsDialog({open, onClose, onSaved}: {open: boolean; onClose
   const [saving, setSaving] = useState(false);
   const [tests, setTests] = useState<Record<string, Result | 'running'>>({});
   const [update, setUpdate] = useState<UpdateInfo | 'checking' | null>(null);
+  const [setup, setSetup] = useState(false);
 
   useEffect(() => {
     if (!open) return;
-    setDraft({}); setEditingSecret({}); setError(null); setNotice(null); setTests({});
+    setDraft({}); setEditingSecret({}); setError(null); setNotice(null); setTests({}); setSetup(startInSetup && !!boot);
     api.settings().then(setView).catch(e => setError(e instanceof Error ? e.message : 'Settings could not be read.'));
     api.updates().then(setUpdate).catch(() => setUpdate(null));
   }, [open]);
+  // The tray's Quick setup… while Settings is already open.
+  useEffect(() => { if (open && startInSetup && boot) setSetup(true); }, [startInSetup]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const changed = useMemo(() => Object.keys(draft), [draft]);
   const value = (f: SettingField) => (f.key in draft ? draft[f.key] ?? '' : f.value ?? '');
@@ -146,10 +153,26 @@ export function SettingsDialog({open, onClose, onSaved}: {open: boolean; onClose
 
   return (
     <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
-      <DialogContent side="right" title="Settings" description="For Wizard on this PC. Secrets are stored encrypted and never shown again.">
+      <DialogContent side="right" title={setup ? 'Quick setup' : 'Settings'} description={setup
+        ? 'Wizard on this PC, step by step: how it works, the settings file, your Gemini sign-in and the portals.'
+        : 'For Wizard on this PC. Secrets are stored encrypted and never shown again.'}>
+        {setup && view && boot ? (
+          <QuickSetup boot={boot} view={view} onExit={() => setSetup(false)} onFinish={onClose} onAccount={a => onAccount?.(a)}
+            waitForRestart={waitForRestart}
+            onImported={async () => { try { setView(await api.settings()); } catch { /* the next open reads it */ } onSaved(); }} />
+        ) : <>
         <div className="space-y-6 pb-20 text-sm" data-testid="settings-dialog">
           {error && <p className="rounded-lg bg-danger-soft px-3 py-2 text-danger" role="alert">{error}</p>}
           {!view && !error && <p className="text-ink-3">Loading…</p>}
+          {view && boot && (
+            <button type="button" onClick={() => setSetup(true)} data-testid="quick-setup-open"
+              className="flex w-full items-center gap-3 rounded-xl border border-accent-line bg-accent-soft/50 px-4 py-3 text-left hover:bg-accent-soft">
+              <Sparkles className="size-5 shrink-0 text-accent" />
+              <span className="flex-1"><strong className="block">Quick setup</strong>
+                <span className="text-xs text-ink-2">New to Wizard? A few steps: how it works, the company settings file, your Gemini sign-in and the portals.</span></span>
+              <ArrowRight className="size-4 shrink-0 text-accent" />
+            </button>
+          )}
           {view?.company_file && (
             <p className="rounded-lg bg-surface px-3 py-2 text-xs text-ink-2">Company settings file: <strong>{view.company_file.name || 'imported'}</strong>
               {view.company_file.imported_at ? `, imported ${formatDate(view.company_file.imported_at, true)}` : ''}. What you set here wins over it; clear a field to use the company value again.</p>
@@ -231,6 +254,7 @@ export function SettingsDialog({open, onClose, onSaved}: {open: boolean; onClose
               {saving && <Loader2 className="animate-spin" />}Save</Button>
           </div>
         )}
+        </>}
       </DialogContent>
     </Dialog>
   );

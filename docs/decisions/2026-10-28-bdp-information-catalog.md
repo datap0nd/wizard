@@ -1,7 +1,8 @@
 # 2026-10-28 — The Big Data Portal is its information catalog and Superset
 
-**Owner:** project owner. **Status:** decided (28 October 2026); access requests are opened and filled for the person
-since [the access request decision](2026-10-28-bdp-access-requests.md) the same day. Amends
+**Owner:** project owner. **Status:** decided (28 October 2026); access requests were opened and filled for the person
+from [the access request decision](2026-10-28-bdp-access-requests.md) the same day until
+[13 November 2026](2026-11-13-bdp-access-self-service.md), when Wizard went back to naming the tables only. Amends
 [2026-10-12](2026-10-12-bdp-superset.md) and [2026-10-23](2026-10-23-portal-browser.md).
 
 **Context.** Wizard treated the Big Data Portal (BDP) as Superset alone: one address (`WIZARD_PORTAL_BDP_URL`,

@@ -1,5 +1,7 @@
 # 2026-10-28 — Wizard opens the access request form, filled from the person's saved answers
 
+> **Superseded** on 13 November 2026 by [Wizard names the Big Data Portal tables the person needs; the person requests access](2026-11-13-bdp-access-self-service.md): Wizard no longer prepares, opens, fills or sends access requests. Kept as the record of what was built.
+
 **Owner:** project owner. **Status:** decided (28 October 2026); amended 1 November 2026
 ([predefined fields, drop-downs and prepared requests](2026-11-01-bdp-dataset-access.md)): Wizard now also chooses the
 person's option in the form's own drop-downs. Builds on

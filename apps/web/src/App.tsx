@@ -25,12 +25,13 @@ import {dropToHost, onHost, toHost, type DroppedFile} from './host';
 import {cn} from './lib/utils';
 import {autoSystems, choosable, conversationChoice, withFiles} from './systems';
 import {wizardAnimation} from './wizard';
-import type {Attachment, Bootstrap, Cadence, ConversationSummary, EvidenceSummary, LocalFile, RunEvent, RunView, Schedule, SteerReason,
+import type {Attachment, Bootstrap, Cadence, ConversationSummary, EvidenceSummary, GeminiAccount, LocalFile, RunEvent, RunView, Schedule, SteerReason,
   SystemRequest, TimelineItem} from './types';
 
 const LAST = 'wizard-conversation';
 const HISTORY = 'wizard-quick-history';     // the panel's history beside the chat: 'hidden' once the person hides it
 const WIDE = '(min-width: 640px)';          // a panel this wide keeps its history beside the chat; a narrower one over it
+const SETUP = 'wizard-quick-setup';         // 'shown' once Quick setup opened by itself on this PC's first start
 
 function useWide(): boolean {
   const [wide, setWide] = useState(() => typeof matchMedia !== 'function' || matchMedia(WIDE).matches);
@@ -65,6 +66,7 @@ export function App({compact = false}: {compact?: boolean}) {
   const [sharing, setSharing] = useState(false);
   const [localOpen, setLocalOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSetup, setSettingsSetup] = useState(false);  // Settings opens on Quick setup
   const streams = useRef(new Map<string, EventSource>());
   const refollows = useRef(new Map<string, number>());
   const [focusTick, setFocusTick] = useState(0);
@@ -185,6 +187,17 @@ export function App({compact = false}: {compact?: boolean}) {
     if (last) void loadConversation(last).catch(() => localStorage.removeItem(LAST));
   }, [boot?.identity?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => { streams.current.forEach(s => s.close()); }, []);
+  // A new install (owner, 13 Nov 2026: "When someone downloads wizard, there should be a quick setup"): the first time
+  // Wizard opens on this PC with no Gemini sign-in yet, Quick setup opens by itself, once. It stays at the top of Settings.
+  useEffect(() => {
+    const account = boot?.gemini_account;
+    if (!boot?.identity || !boot.settings_editable || !account?.needs_link || account.linked || account.link_note) return;
+    try {
+      if (localStorage.getItem(SETUP)) return;
+      localStorage.setItem(SETUP, 'shown');
+    } catch { return; }  // no storage: never open it by itself, so it cannot open on every start
+    setSettingsSetup(true); setSettingsOpen(true);
+  }, [boot?.identity?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const busy = runs.some(r => r.status === 'running' || r.status === 'queued');
   const dialogOpen = !!drawer || accountOpen || logOpen || localOpen || settingsOpen;
@@ -195,7 +208,7 @@ export function App({compact = false}: {compact?: boolean}) {
   useEffect(() => { if (activity) toHost({type: 'activity', animation: activity}); }, [activity]);
   useEffect(() => onHost(message => {
     if (message.type === 'focus') { setFocusTick(t => t + 1); setEntering(true); if (compact) reopen.current(); }
-    if (message.type === 'open-settings') setSettingsOpen(true);
+    if (message.type === 'open-settings') { setSettingsSetup(!!message.setup); setSettingsOpen(true); }
     if (message.type === 'attach') addDropped(message.files);
   }), [addDropped]);
   useEffect(() => {
@@ -351,6 +364,7 @@ export function App({compact = false}: {compact?: boolean}) {
   if (boot.auth.login_required || !boot.identity) return <LoginScreen mode={boot.auth.mode} onLogin={() => void loadBoot()} />;
 
   const runtime = boot.runtime!;
+  const accountChanged = (account: GeminiAccount) => { setBoot(b => (b ? {...b, gemini_account: account} : b)); void loadBoot(); };
   const synthetic = (boot.data_modes ?? []).includes('SYNTHETIC');
   const blocked = runtime.ready ? null : runtime.reason ?? 'Gemini is not available.';
   const title = conversations.find(c => c.id === currentId)?.title ?? (compact ? 'Ask Wizard' : 'New analysis');
@@ -379,9 +393,9 @@ export function App({compact = false}: {compact?: boolean}) {
     <ShareCaseDialog conversationId={currentId} open={sharing} onClose={() => setSharing(false)} />
     <LocalFilesDialog open={localOpen} onClose={() => setLocalOpen(false)} onPick={addLocal} />
     <DropZone onDrop={drop} disabled={!!blocked || files.length >= 5} />
-    <AccountDialog open={accountOpen} boot={boot} onClose={() => setAccountOpen(false)}
-      onChanged={account => { setBoot(b => (b ? {...b, gemini_account: account} : b)); void loadBoot(); }} />
-    {boot.settings_editable && <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} onSaved={() => void loadBoot()} />}
+    <AccountDialog open={accountOpen} boot={boot} onClose={() => setAccountOpen(false)} onChanged={accountChanged} />
+    {boot.settings_editable && <SettingsDialog open={settingsOpen} onClose={() => { setSettingsOpen(false); setSettingsSetup(false); }}
+      onSaved={() => void loadBoot()} boot={boot} onAccount={accountChanged} setup={settingsSetup} />}
   </>;
 
   if (compact) return (

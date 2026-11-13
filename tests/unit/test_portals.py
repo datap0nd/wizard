@@ -285,8 +285,10 @@ def test_settings_show_both_big_data_portal_addresses(tmp_path: Path):
         assert client.get("/api/v1/portals").json()["portals"] == [
             {"id": "bdp", "name": "Big Data Portal", "host": "superset.corp.example.com",
              "parts": [{"id": "superset", "name": "Superset", "host": "superset.corp.example.com"},
-                       {"id": "catalog", "name": "information catalog", "host": "catalog.corp.example.com"}],
-             "access_requests": True}]
+                       {"id": "catalog", "name": "information catalog", "host": "catalog.corp.example.com"}]}]
+        # Wizard requests no access in its catalog (owner, 13 Nov 2026): the person does, from Gemini's list of tables.
+        assert "portal_request_access" not in client.app.state.registry.specs
+        assert client.post("/api/v1/portals/bdp/access-request", json={}, headers=HEADERS).status_code in (404, 405)
 
 
 def test_without_portals_there_are_no_portal_tools(client):

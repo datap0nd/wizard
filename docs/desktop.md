@@ -181,7 +181,8 @@ he hops. While a long answer streams, a slim bar pinned to the top of the panel 
 ## Settings, model and updates in the app
 
 The ⚙ button in the panel (or **Settings…** in the tray menu, or Settings in the full app's sidebar) opens the settings
-of Wizard on this PC:
+of Wizard on this PC. **Quick setup** sits at its top: a new person's walk through Wizard, the settings file, the
+Gemini sign-in, the portals and a connection check ([decision](decisions/2026-11-13-quick-setup.md)).
 
 | Section | Settings | Test |
 |---|---|---|
@@ -275,10 +276,13 @@ never on a server behind SSO.
 2. Put `WizardSetup.exe` and `wizard.provision` in one folder: a shared drive, or a zip sent internally.
 3. They run `WizardSetup.exe`. SmartScreen may warn about an unsigned app ("More info → Run anyway"), as with Scribble.
    Setup copies `wizard.provision` along, and Wizard starts.
-4. The tab appears at the top of the screen. The first click shows **"First, link your Gemini account"**. They sign in
-   with their company Google account in the browser and paste the code.
+4. The tab appears at the top of the screen. The first click shows **Quick setup**
+   ([decision](decisions/2026-11-13-quick-setup.md)): what Wizard is and how it works, the settings file (if Setup did
+   not bring one, they choose it there), their Gemini sign-in (company Google account in the browser, code pasted
+   back), the portals' sign-in, and a check of every connection. Each step can be skipped and done later.
 
-Someone who already has Wizard can import a new file from the tray menu: **Import a settings file…**.
+Quick setup stays at the top of Settings and in the tray menu (**Quick setup…**). Someone who already has Wizard can
+import a new file there, or from the tray menu: **Import a settings file…**.
 
 ### Moving to another PC
 

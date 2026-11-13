@@ -109,6 +109,14 @@ export interface SettingsTestResult {
   count?: number;
 }
 
+/** Quick setup imported a settings file: its name, how many settings and secrets it set, and how it applies (as Save). */
+export interface SettingsImported {
+  name: string;
+  settings: number;
+  secrets: number;
+  apply: 'now' | 'after_run' | 'manual';
+}
+
 export interface SettingsSaved extends SettingsView {
   changed: string[];
   /** How the change applies: now / after_run (the service restarts itself), manual (restart Wizard yourself), none. */
@@ -369,17 +377,13 @@ export interface PortalStep { action: string; url?: string; selector?: string; r
 /** The company portals Gemini reads in this person's own Wizard browser. */
 export interface PortalStatus {
   browser: string;
-  /** A visible Wizard browser window is open: the person's sign-in, or an access request form. */
+  /** A visible Wizard browser window is open: the person's sign-in. */
   signing_in: boolean;
-  window?: 'sign_in' | 'access_request' | null;
-  /** The open access request window: the saved answers it filled, those it found no field (or no option) for, and
-   *  which prepared request it shows when it walks through them. */
-  access_request?: {system: string; filled: string[]; missing: string[]; note?: string; sending?: {left: number; sent: number};
-    queued?: {id: string; position: number; total: number; waiting: number}};
+  window?: 'sign_in' | null;
   running: boolean;
   last_sign_in: string | null;
   /** parts: the applications of a portal that has several (the Big Data Portal's Superset and information catalog). */
-  portals: {id: string; name: string; host: string; parts?: {id: string; name: string; host: string}[]; access_requests?: boolean}[];
+  portals: {id: string; name: string; host: string; parts?: {id: string; name: string; host: string}[]}[];
   /** What Wizard learned exploring each portal, and the portal being mapped now (one per person). */
   maps?: Record<string, PortalMapStatus>;
   mapping?: PortalMapping | null;
@@ -517,82 +521,6 @@ export interface TasksView {
   queue?: TaskQueue | null;
 }
 
-/** A form field and its answer. section: the box it sits in (DPA / DSA); kind: typed text, or an option chosen in a
- *  drop-down (none: either, by label). */
-export interface Answer { label: string; value: string; section?: string; kind?: 'text' | 'choice' }
-
-/** A saved field: the portal's predefined ones (preset, with a hint and an example) come first. */
-export interface AccessField extends Answer { preset?: boolean; hint?: string; example?: string }
-
-/** A request Gemini prepared, waiting in the person's list until they open it (and submit it themselves). */
-export interface QueuedRequest {
-  id: string;
-  address: string;
-  tables: string[];
-  answers: Answer[];
-  added: string;
-  opened: string | null;
-  open_steps?: OpenStep[];
-  form_button?: string;
-  /** Went through: by the person (the window saw it) or by Wizard on their approval. */
-  sent?: {at: string; by: 'you' | 'wizard'; status: number; path: string} | null;
-  /** Wizard tried to send it and stopped: why. */
-  failed?: {at: string; reason: string} | null;
-}
-
-/** A request the person submitted themselves, as the request window saw it: the control, the request, the answer. */
-export interface Submission {
-  tables?: string[];
-  button: string;
-  method: string;
-  path: string;
-  status: number;
-  expect?: Record<string, string | number | boolean>;
-  dialog?: string;
-  at?: string;
-  proved_at?: string;
-}
-
-/** Sending: on once the person says their own submitted request worked; Wizard then sends the ones they approve. */
-export interface AccessSending { enabled: boolean; proof: Submission | null; last_submission: Submission | null }
-
-/** The answers this person gives on every access request in a portal's information catalog, kept on their PC. */
-export interface AccessForm {
-  system: string;
-  /** The catalog's request page, when it has one for every request ('' when not saved). */
-  page: string;
-  fields: AccessField[];
-  /** The requests Gemini prepared, oldest first. */
-  queue: QueuedRequest[];
-  sending: AccessSending;
-  /** Labels Wizard saw on the request form the last time it was open. */
-  seen: string[];
-  /** Where a request opens when nothing else names a page: the catalog's start page. */
-  default_page: string;
-}
-
-/** An access request Gemini prepared: the person opens the form, checks it and submits it themselves. */
-export interface AccessRequest {
-  id: string;
-  system: string;
-  portal: string;
-  address: string;
-  tables: string[];
-  /** This request's own answers; the saved ones (by label) are filled too. */
-  answers: Answer[];
-  saved: string[];
-  /** For a catalog that keeps one address for every table: the steps from address to the table's page. */
-  open_steps?: OpenStep[];
-  /** The control on the table's page that opens the request form, which Wizard presses with writes stopped. */
-  form_button?: string;
-  /** Sending is on: the card offers Send request (the person's permission). */
-  can_send?: boolean;
-}
-
-/** One navigation step to a table's page (as Gemini ran it with portal_run). */
-export interface OpenStep { action: 'goto' | 'click' | 'fill' | 'select' | 'press' | 'wait'; url?: string; selector?: string;
-  role?: string; name?: string; text?: string; frame?: string; nth?: number; value?: string; timeout_ms?: number }
-
 export interface PortalCheck {
   portals: {id: string; name: string; signed_in: boolean; title?: string; host?: string; error?: string}[];
 }
@@ -627,8 +555,6 @@ export interface RunView {
   attachments: Attachment[];
   /** Recurring extractions proposed in this answer, with their current state. */
   schedules: Schedule[];
-  /** Access requests prepared in this answer, for the person to open and submit. */
-  accessRequests: AccessRequest[];
   /** The systems the person chose for this question (null: Auto), as they are now. */
   systems: string[] | null;
   /** Notes the person sent while Wizard worked. */

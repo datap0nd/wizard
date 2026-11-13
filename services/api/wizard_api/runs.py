@@ -433,9 +433,6 @@ def tool_label(name: str, args: dict[str, Any], services: Services) -> str:
     if name == "portal_map_route":
         count = len([r for r in args.get("reports") or [] if isinstance(r, dict)])
         return f"Said what {count} report(s) in Wizard's map of {portal_name(services, args.get('system'))} are for"
-    if name == "portal_request_access":
-        tables = ", ".join(str(t) for t in args.get("tables") or [])
-        return f"Prepared an access request in {portal_name(services, args.get('system'))}" + (f": {tables}" if tables else "")
     system = name.split("_", 1)[0].upper()
     if name.endswith("_search_reports"):
         return f"Searched {system} reports for “{args.get('query', '')}”"
@@ -511,8 +508,6 @@ def tool_summary(name: str, outcome: ToolOutcome) -> str:
             return ", ".join(str(r.get("name") or r.get("id")) for r in data["reports"][:5]) or "nothing matches"
         counts = data.get("counts") or {}
         return f"{counts.get('mapped', 0)} report(s) mapped, {counts.get('todo', 0)} to do" if counts else "done"
-    if name == "portal_request_access":
-        return "waiting for you to open the request form and submit it"
     if name == ASK_FOR_SYSTEM:
         return f"waiting for you to switch on {data.get('name')}"
     if name == ASK_PERSON:
@@ -823,8 +818,6 @@ class RunManager:
             run.kb_saves += 1
         if not outcome.ok and outcome.error_code == "sign_in_required":
             run.needs_sign_in = True
-        if outcome.ok and name == "portal_request_access":
-            await self.emit(run, "access_request_proposed", {"request": outcome.data["access_request"]})
         if outcome.ok and name == ASK_PERSON:
             run.asked = True
             await self.emit(run, "person_asked", {"question": outcome.data["question"], "options": outcome.data["options"],
