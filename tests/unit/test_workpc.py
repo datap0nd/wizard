@@ -32,17 +32,19 @@ def test_install_folder_settings_resolve_relative_paths(tmp_path):
         load_settings(env={"WIZARD_LOCAL_USER_EMAIL": "not-an-email"}, home=tmp_path)
 
 
-def test_dashboards_folder_is_optional_and_one_this_pc_cannot_reach_does_not_stop_start_up(tmp_path):
-    # Owner, 2 Nov 2026: the dashboards share may not be mapped, or reachable, on another PC. Wizard starts; the tools and
-    # run.py --check say so (tests/unit/test_dashboards.py).
-    assert load_settings(env={}, home=tmp_path).html_reports_dir is None
-    (tmp_path / "reports").mkdir()
-    settings = load_settings(env={"WIZARD_HTML_REPORTS_DIR": '"reports"'}, home=tmp_path)
-    assert settings.html_reports_dir == (tmp_path / "reports").resolve(), "quotes from Copy as path are fine"
-    assert settings.dashboards_name == "Dashboards"
-    missing = load_settings(env={"WIZARD_HTML_REPORTS_DIR": str(tmp_path / "missing"), "WIZARD_DASHBOARDS_NAME": "Team BI"},
-                            home=tmp_path)
-    assert missing.html_reports_dir == tmp_path / "missing" and missing.dashboards_name == "Team BI"
+def test_dashboards_are_optional_and_the_retired_folder_setting_does_not_stop_start_up(tmp_path):
+    # Owner, 16 Nov 2026: the dashboards are on the company GitHub, read with a token. A GitHub this PC cannot reach never
+    # stops Wizard: the tools and run.py --check say so (tests/unit/test_dashboards.py).
+    plain = load_settings(env={}, home=tmp_path)
+    assert plain.dashboards_token is None and plain.dashboards_repos == () and plain.dashboards_name == "Dashboards"
+    settings = load_settings(env={"WIZARD_DASHBOARDS_TOKEN": "github_pat_x", "WIZARD_DASHBOARDS_NAME": "Team BI",
+                                  "WIZARD_DASHBOARDS_REPOS": "sales-bi/weekly-kpi, finance-bi/*",
+                                  "WIZARD_HTML_REPORTS_DIR": r"\\fileserver\team\Dashboards"}, home=tmp_path)
+    assert settings.dashboards_token == "github_pat_x" and settings.dashboards_name == "Team BI"
+    assert settings.dashboards_repos == ("sales-bi/weekly-kpi", "finance-bi/*")
+    assert settings.retired_dashboards_folder == r"\\fileserver\team\Dashboards", "kept only so run.py --check says so"
+    with pytest.raises(ConfigError, match="WIZARD_DASHBOARDS_REPOS"):
+        load_settings(env={"WIZARD_DASHBOARDS_REPOS": "not a repository"}, home=tmp_path)
 
 
 def test_local_owner_identity_signs_in_with_the_real_email(tmp_path):

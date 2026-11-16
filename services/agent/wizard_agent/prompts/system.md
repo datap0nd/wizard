@@ -47,8 +47,12 @@ Where to start
   a metric note's "Where to get it", the dashboard notes, a mapped portal report's use_for. Look it up before you decide
   a source is enough.
 - The team's HTML dashboards (wizard_dashboards with business words, then wizard_read_dashboard) combine the
-  database's data with the business logic (definitions, filters, adjustments) that a fresh query may miss.
-- Give the dashboard's as-of date with its figures, and say when it is only the file's date (the page states none).
+  database's data with the business logic (definitions, filters, adjustments) that a fresh query may miss. They live in
+  repositories on the company GitHub. A dashboard's note (`note` in wizard_dashboards, read with wizard_read_knowledge)
+  says what it shows and how each figure is calculated; its repository's code and SQL (wizard_dashboard_files,
+  wizard_dashboard_read_file) say what the note does not.
+- Give the dashboard's as-of date with its figures, and say when it is only its last commit (the page states none).
+  Name the dashboard you used and give its link (open_url) so the reader can open it.
 - When your own query disagrees with a dashboard, show both figures and say why they may differ (definition, filters,
   period, refresh time). Never pick one silently.
 - What a dashboard loads from elsewhere is not read; say so when the answer needs it.

@@ -70,6 +70,21 @@ describe('evidence drawer', () => {
     expect(screen.queryByText(/returned no rows/)).toBeNull();
   });
 
+  it('links a dashboard read from the company GitHub to the page itself', () => {
+    const url = 'https://pages.github.example.com/sales-bi/weekly-kpi/index.html';
+    const table: Evidence = {...evidence, id: 'E2', system: 'dashboards', system_name: 'Dashboards', report_id: 'd1a2b3c4d5e',
+      report_name: 'Weekly sell-out › Units by market', folder_path: ['sales-bi/weekly-kpi'], as_of: '2026-10-31',
+      tool: 'wizard_read_dashboard', connector_status: 'PREPARED_FILE',
+      request: {filters: [], group_by: null, measures: null, limit: 3, dashboard: 'd1a2b3c4d5e', repository: 'sales-bi/weekly-kpi',
+                path: 'sales-bi/weekly-kpi/index.html', part: 'T1', offset: 0},
+      columns: [{key: 'market', label: 'Market', type: 'string'}], rows: [['North']],
+      locator: {system: 'dashboards', report_id: 'd1a2b3c4d5e', open_url: url}};
+    render(<TooltipProvider><EvidenceDrawer conversationId={null} open focus="E2" items={[table]} preloaded={[table]} onClose={() => {}} /></TooltipProvider>);
+    expect(screen.getByTestId('evidence-dashboard').textContent).toBe('sales-bi/weekly-kpi/index.html · T1');
+    const link = screen.getByText('Open the dashboard on GitHub').closest('a');
+    expect(link?.getAttribute('href')).toBe(url);
+  });
+
   it('opens on the source and the query a citation points at', () => {
     const other: EvidenceSummary = {...evidence, id: 'E2', report_id: 'sql-2', sql: 'SELECT * FROM ref.markets'};
     const cited: EvidenceSummary = {...evidence, id: 'E3', report_id: 'sql-3', sql};

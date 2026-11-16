@@ -3,7 +3,39 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-16 (latest) — Presentations: no citation marks on slides; a case update takes the PowerPoint made since
+## 2026-11-16 (latest) — The dashboards are read from the company GitHub, and mapped from scratch
+
+The owner: "In wizard, I want the dashboards part to be mapped from scratch. Our dashboards are all in github
+enterprise, I want to map them and then I want wizard to reference them. I am a collaborator on all of them"
+([decision](decisions/2026-11-16-dashboards-on-github.md)).
+
+- `dashboards.py`: the folder walk and the drive-letter lookup are replaced by the company GitHub. A read-only token
+  (`WIZARD_DASHBOARDS_TOKEN`) finds every repository its account owns or is a collaborator on
+  (`affiliation=owner,collaborator`), or only those `WIZARD_DASHBOARDS_REPOS` names (`owner/name`, `owner/*`, pasted
+  addresses), and in each the `.html`/`.htm` pages of the default branch and of the branch its Pages site is published
+  from (with the page's Pages address). Only GET requests to the API, answers kept with their ETags and asked again
+  conditionally, pages read by blob id (a version is parsed once), libraries and hidden folders skipped, Wizard's own
+  repositories excluded. As-of: the date the page states, else the file's last commit. The page reader is unchanged.
+- `dashboard_tools.py`: `wizard_dashboards` and `wizard_read_dashboard` give each dashboard's repository, path, links and
+  the knowledge note that maps it; two new tools read the repositories' own files: `wizard_dashboard_files` (repositories,
+  or a repository's files with their kind) and `wizard_dashboard_read_file` (text in parts, with its source id).
+- `tasks/map-dashboards.md`: **Map the dashboards from scratch** (repeats until done, up to 30 runs) writes one
+  `dashboards/` note per dashboard from the page and its code, keeps a `dashboards-index` note, rewrites or removes the
+  old folder notes and points metric notes to the new ones. Knowledge standard section 13: `## Where it lives`
+  (repository, path, dashboard id, Pages address) replaces `## File`. The system prompt: read the note, then the
+  dashboard, then the code; give the dashboard's link.
+- Settings → Dashboards: token, repositories, name; **Find dashboards** lists the dashboards per repository and what
+  could not be looked at, and warns about a classic token. `team_dashboards.py` builds the system for the service,
+  `run.py --check` and Settings, on the company GitHub's route. `WIZARD_HTML_REPORTS_DIR` is retired: not read, shown,
+  provisioned or exported; `run.py --check` says so. The sources' link reads "Open the dashboard on GitHub".
+- Checks: `test_dashboards.py` rewritten over an invented company GitHub (with `test_workpc.py`: 49 passed, 4 skipped
+  off Windows), the contract tests and `tool-catalog.json` (four dashboards tools); web `SettingsDialog.test.tsx`,
+  `EvidenceDrawer.test.tsx` (one new; 234 web tests pass). `verify_all.sh --allow-blocked=live-parity,postgres` here:
+  every layer PASS but gemini-cli (BLOCKED: the CLI is not installed in this container; CI runs it); e2e 32 passed with
+  Playwright's Chromium (`CI=1`; this container has no Edge). The first calls to the real company GitHub happen on the
+  owner's PC: Settings → Dashboards → Find dashboards, then the task.
+
+## 2026-11-16 — Presentations: no citation marks on slides; a case update takes the PowerPoint made since
 
 The owner: "In cases, the powerpoint created isnt there", then "I opened the slides and they have the source of each
 claim, like: 15% was male [E31]. But E31 is just text ... can we remove that"

@@ -18,10 +18,9 @@ const SOURCES: Record<string, string> = {
   company: 'From the company settings file', default: 'Default',
 };
 const TESTS: Record<string, SettingsTest> = {knowledge: 'knowledge', postgres: 'postgres', metronome: 'metronome', dashboards: 'dashboards', nerp: 'nerp', site: 'site'};
-/** What a section's test button says: a connection test, finding the dashboards in the folder typed, or checking the
- *  feedback token and putting feedback on the Cases site. */
+/** What a section's test button says: a connection test, finding the dashboards the token reads on the company GitHub,
+ *  or checking the feedback token and putting feedback on the Cases site. */
 const TEST_LABEL: Record<string, string> = {dashboards: 'Find dashboards', site: 'Turn feedback on'};
-const DASHBOARDS_FOLDER = 'WIZARD_HTML_REPORTS_DIR';
 const SOURCE_ORDER = 'WIZARD_SOURCE_ORDER';
 
 /** One settings section, collapsed until the person opens it (owner, 31 Oct 2026: "make every section collapsed by default"). */
@@ -113,11 +112,6 @@ export function SettingsDialog({open, onClose, onSaved, boot, onAccount, setup: 
     try {
       const result = await api.testSettings(section, values);
       setTests(t => ({...t, [section]: result}));
-      // The folder as Wizard saves it: a mapped drive becomes its network path, so the person sees what Save keeps.
-      const shown = view?.fields.find(f => f.key === DASHBOARDS_FOLDER);
-      if (section === 'dashboards' && result.value && shown && result.value !== (draft[DASHBOARDS_FOLDER] ?? shown.value)) {
-        edit(DASHBOARDS_FOLDER, result.value);
-      }
     }
     catch (e) { setTests(t => ({...t, [section]: {ok: false, message: e instanceof Error ? e.message : 'The test failed.'}})); }
   }

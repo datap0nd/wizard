@@ -163,24 +163,31 @@ def _check_postgres(settings: Settings) -> None:
 
 
 def _check_dashboards(settings: Settings) -> None:
-    """The team's dashboards folder: a WARN when this PC cannot reach it, never a failure (Wizard runs without it)."""
-    from wizard_connectors.dashboards import DashboardError, Dashboards, unreachable
-    if settings.html_reports_dir is None:
-        _line("INFO", "Dashboards not configured (Settings > Dashboards, or WIZARD_HTML_REPORTS_DIR)")
-        return
-    folder = Dashboards(settings.html_reports_dir, None, settings.dashboards_name)
-    problem = folder.problem(fresh=True)
-    if problem:
-        _line("WARN", unreachable(folder.root, problem).split(" Until")[0] + " Wizard starts without them and says so "
-                      "when a question needs them.")
+    """The team's dashboards on the company GitHub: a WARN when this PC cannot read them, never a failure (Wizard runs
+    without them)."""
+    from wizard_connectors.dashboards import DashboardError
+
+    from . import team_dashboards
+    if settings.retired_dashboards_folder:
+        _line("INFO", "WIZARD_HTML_REPORTS_DIR (the dashboards folder) is no longer read: the dashboards are read from the "
+                      "company GitHub (Settings > Dashboards: a read-only token)")
+    team = team_dashboards.build(settings, None)
+    if team is None:
+        _line("INFO", "Dashboards not configured (Settings > Dashboards: a token that reads their repositories)")
         return
     try:
-        count = len(folder.listing(fresh=True))
+        listing = team.inventory(fresh=True)
     except DashboardError as error:
-        _line("WARN", error.message)
+        _line("WARN", error.message.split(" Until then")[0] + " Wizard starts without them and says so when a question "
+                      "needs them.")
         return
+    finally:
+        team.close()
+    count, repos = len(listing.dashboards), len({d.repo for d in listing.dashboards})
     _line("PASS" if count else "WARN", f"{settings.dashboards_name}: {count} HTML dashboard{'' if count == 1 else 's'} in "
-                                       f"{folder.root}" + ("" if count else " (check that this is the dashboards folder)"))
+                                       f"{repos} repositor{'y' if repos == 1 else 'ies'} on {urlsplit(GITHUB_API).netloc}"
+                                       + ("" if count else f" (the token reads {len(listing.repos)}; check Settings > "
+                                                           "Dashboards)"))
 
 
 def run_checks(settings: Settings) -> int:

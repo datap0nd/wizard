@@ -30,12 +30,12 @@ def load(name: str):
 
 def test_tool_catalog_matches_published_contract():
     # The published catalog includes the portal tools a PC with company portals configured serves, the dashboards tools
-    # a PC with a dashboards folder serves, and NERP's view tools a PC with NERP connected serves.
+    # a PC with a dashboards token serves, and NERP's view tools a PC with NERP connected serves.
     services = build_services()
     portals = settings_from({"WIZARD_PORTAL_ASAP_URL": "https://asap.example.com/", "WIZARD_PORTAL_GSCM_URL": "https://gscm.example.com/"})
     assert portals is not None
     services.portals = PortalBrowsers(portals, lambda _: ROOT)
-    services.dashboards = Dashboards(ROOT / "example-dashboards", None)
+    services.dashboards = Dashboards("example-token")
     nerp = nerp_settings({"WIZARD_NERP_HOST": "nerp-db.example.com", "WIZARD_NERP_DATABASE": "nerp",
                           "WIZARD_NERP_SCHEMA": "reporting", "WIZARD_NERP_USER": "wizard_ro"})
     assert nerp is not None

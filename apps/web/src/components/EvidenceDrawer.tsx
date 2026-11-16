@@ -95,7 +95,7 @@ function EvidenceDetail({conversationId, summary, preloaded}: {conversationId: s
       )}
       {evidence && !attached && !dashboard && evidence.rows.length === 0 && <p className="mt-3 rounded-lg border border-dashed border-line px-3 py-4 text-center text-xs text-ink-3">The source returned no rows for this request. Missing rows mean no data, not zero.</p>}
       <div className="mt-3 flex items-center gap-2 text-xs text-ink-3">
-        {evidence?.locator.open_url ? <a href={evidence.locator.open_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-accent"><ExternalLink className="size-3.5" />Open in {summary.system.toUpperCase()}</a>
+        {evidence?.locator.open_url ? <a href={evidence.locator.open_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-accent"><ExternalLink className="size-3.5" />{dashboard ? 'Open the dashboard on GitHub' : `Open in ${summary.system.toUpperCase()}`}</a>
           : <StatusPill tone="muted">{attached ? 'A file attached to the question' : sql ? 'A live query Gemini wrote' : steps ? 'Steps Gemini wrote, read live'
             : dashboard ? "A team dashboard, read as it is: its figures are the dashboard's own" : 'No source link: synthetic fixture'}</StatusPill>}
       </div>

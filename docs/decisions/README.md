@@ -25,7 +25,7 @@ Evidence**. A decision that changes repository rules also updates [AGENTS.md](..
 - [2026-11-01 Access to the Big Data Portal's datasets: the form's own fields, drop-downs, and prepared requests](2026-11-01-bdp-dataset-access.md) (superseded 2026-11-13)
 - [2026-11-01 Wizard sends the access requests the person approves, the way their own one went](2026-11-01-bdp-access-sending.md) (superseded 2026-11-13)
 - [2026-11-01 Tasks that read a folder: digest the company's presentations, and write its presentation guide](2026-11-01-folder-tasks.md)
-- [2026-11-02 Dashboards: the team's HTML dashboards are a system Wizard reads first](2026-11-02-html-dashboards.md)
+- [2026-11-02 Dashboards: the team's HTML dashboards are a system Wizard reads first](2026-11-02-html-dashboards.md) (the folder superseded 2026-11-16)
 - [2026-11-02 A dashboards area in the knowledge base, and tasks that move, rename and remove notes](2026-11-02-dashboards-area.md)
 - [2026-11-02 A portal Wizard has mapped is read through its map; its report catalog is retired](2026-11-02-retire-portal-catalogs.md)
 - [2026-11-02 The Brain page links each mapped report to the notes it names](2026-11-02-brain-report-links.md)
@@ -50,3 +50,4 @@ Evidence**. A decision that changes repository rules also updates [AGENTS.md](..
 - [2026-11-13 Wizard makes presentations: the person chooses the story, Wizard makes the deck](2026-11-13-presentations.md)
 - [2026-11-13 The tasks come packaged with the app](2026-11-13-tasks-packaged.md)
 - [2026-11-13 Wizard checks the portals' sign-in before each answer, and turns yellow until the person signs in](2026-11-13-portal-sign-in-check.md)
+- [2026-11-16 The dashboards are read from the company GitHub, and mapped from scratch](2026-11-16-dashboards-on-github.md)
