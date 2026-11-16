@@ -47,6 +47,15 @@ downloaded as one PowerPoint slide ([decision](2026-11-09-heatmaps-and-visual-ex
   slide under four points, a summary under three, figures without analysis, cards under three bullets, a panel under
   three points, a section divider in a deck of twelve slides or fewer — and the prompt tells Gemini to fix them and to
   prefer fewer, fuller slides.
+- **No citation marks on a slide** (owner, 16 Nov 2026: "15% was male [E31]. But E31 is just text, so it doesnt make
+  sense. can we remove that"). An answer cites evidence as [E3]; on a slide that is only text. The tool takes [E…],
+  [V…] and [D…] marks out of every text field of a slide and adds the evidence they named to the slide's evidence_ids,
+  so its source line names those sources; the page cleans decks made before the same way, and Gemini is told to cite
+  in evidence_ids only.
+- **In a shared case** (owner, 16 Nov 2026: "In cases, the powerpoint created isnt there"). Updating a case pre-ticked
+  only the answers published before, so the answer that made the PowerPoint, asked after the first publish, was left
+  out. Share as case now ticks the answers published before and every answer asked since, and says when a PowerPoint
+  sits in an answer left out.
 - **Changes in the chat.** `wizard_change_presentation` updates, inserts, deletes or moves slides, or retitles the deck,
   and keeps the result as a new version (D2 revises D1); `wizard_read_presentation` returns slides in full. Each later
   request lists the conversation's decks slide by slide, so "make slide 4 a table" finds its slide.

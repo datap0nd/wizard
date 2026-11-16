@@ -208,8 +208,32 @@ def _points(items: list[Any] | None) -> list[Any]:
     return [i if isinstance(i, dict) else " ".join(str(i).split()) for i in items or [] if (i.get("text") if isinstance(i, dict) else str(i).strip())]
 
 
+# An answer's citation marks ([E3], [V1], [E2, E5]): on a slide they are only text (owner, 16 Nov 2026: "15% was male
+# [E31]. But E31 is just text ... can we remove that"). The slide's source line names the sources instead.
+CITATION = re.compile(r"\s*\[(?:[EVD]\d{1,4})(?:\s*[,;]\s*[EVD]?\d{1,4})*\]")
+EVIDENCE_MARK = re.compile(r"E\d{1,4}")
+
+
+def _uncite(value: Any, cited: list[str]) -> Any:
+    """Text without citation marks (the evidence ids they named go to `cited`), through lists and dicts."""
+    if isinstance(value, str):
+        for mark in CITATION.findall(value):
+            cited.extend(EVIDENCE_MARK.findall(mark))
+        return " ".join(CITATION.sub("", value).split()) if CITATION.search(value) else value
+    if isinstance(value, list):
+        return [_uncite(v, cited) for v in value]
+    if isinstance(value, dict):
+        return {k: (v if k in ("evidence_ids", "visual", "chart", "kind", "tone") else _uncite(v, cited)) for k, v in value.items()}
+    return value
+
+
 def _clean(slide: dict[str, Any]) -> dict[str, Any]:
-    """A slide as the deck keeps it: only the fields it has, text without stray spaces."""
+    """A slide as the deck keeps it: only the fields it has, text without stray spaces or citation marks (the evidence
+    they cite joins the slide's evidence_ids, so its source line names it)."""
+    cited: list[str] = []
+    slide = _uncite(slide, cited)
+    if cited:
+        slide["evidence_ids"] = list(dict.fromkeys([*(slide.get("evidence_ids") or []), *cited]))
     out: dict[str, Any] = {}
     for key, value in slide.items():
         if value is None or value == [] or value == "":
@@ -512,7 +536,8 @@ MAKE_DESCRIPTION = (
     "several markets, segments or measures side by side); text (points); closing (title: the decisions, next steps or "
     "the ask, with points: what, who, when). "
     "Any slide takes evidence_ids, a footnote and speaker notes; sources and units are written on each slide from the "
-    "evidence and the visuals. Returns the deck id (D1...) to place in your answer, the outline and warnings.")
+    "evidence and the visuals. Never write evidence or visual ids ([E3], [V1]) in slide text: put them in evidence_ids; "
+    "Wizard takes any it finds out of the text. Returns the deck id (D1...) to place in your answer, the outline and warnings.")
 
 DECK_TOOLS = [
     ToolSpec("wizard_propose_storylines", "Ask the person which story the presentation should tell, before you make "

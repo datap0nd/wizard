@@ -6,7 +6,7 @@ import {useContext, useEffect, useMemo, useState} from 'react';
 import {ChevronLeft, ChevronRight, Download, FolderOpen, Loader2, Presentation} from 'lucide-react';
 import {Button} from './ui/button';
 import {Hint} from './ui/menu';
-import {deckFileName, layoutDeck} from '@/deck/layout';
+import {deckFileName, layoutDeck, uncited} from '@/deck/layout';
 import {SlideView} from '@/deck/SlideView';
 import {deliver} from '@/visualExport';
 import {VisualEnvContext, type SavedExport} from '@/visualEnv';
@@ -45,7 +45,7 @@ export function DeckCard({deck, shared = false}: {deck: Deck; shared?: boolean})
       <header className="flex flex-wrap items-start gap-x-3 gap-y-1 border-b border-line px-4 py-3">
         <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent"><Presentation className="size-4" /></span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[15px] font-semibold text-ink" data-testid="deck-title">{deck.title}</p>
+          <p className="truncate text-[15px] font-semibold text-ink" data-testid="deck-title">{uncited(deck.title)}</p>
           <p className="text-[12.5px] text-ink-3">{pages.length} slides{deck.version > 1 ? ` · version ${deck.version}` : ''} · {deck.id}
             {deck.data_mode === 'SYNTHETIC' && <span className="ml-1.5 rounded border border-warn-line bg-warn-soft px-1 text-[11px] font-medium text-warn">SYNTHETIC test data</span>}</p>
         </div>
@@ -56,7 +56,7 @@ export function DeckCard({deck, shared = false}: {deck: Deck; shared?: boolean})
         </div>
       </header>
       <div className="space-y-3 px-4 py-3">
-        <p className="text-[13px] text-ink-2" data-testid="deck-storyline"><span className="font-medium text-ink">Story:</span> {deck.storyline}</p>
+        <p className="text-[13px] text-ink-2" data-testid="deck-storyline"><span className="font-medium text-ink">Story:</span> {uncited(deck.storyline)}</p>
         <div className="relative" onKeyDown={e => { if (e.key === 'ArrowRight') go(1); if (e.key === 'ArrowLeft') go(-1); }} tabIndex={0}
           aria-label="Slides: use the arrow keys to move" data-testid="deck-viewer">
           <div className="overflow-hidden rounded-lg border border-line shadow-card">

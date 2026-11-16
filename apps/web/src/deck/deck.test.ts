@@ -1,6 +1,6 @@
 import JSZip from 'jszip';
 import {describe, expect, it} from 'vitest';
-import {deckFileName, drawnChart, fit, layoutDeck, lead, runs, sections, tableCells, textWidth, unitLabel, type Element, type Para} from './layout';
+import {cleanSlide, deckFileName, drawnChart, fit, layoutDeck, lead, runs, sections, tableCells, textWidth, uncited, unitLabel, type Element, type Para} from './layout';
 import {deckPptx, tidyParagraphs} from './pptx';
 import type {Deck, DesignTokens, Visual} from '../types';
 
@@ -94,6 +94,21 @@ describe('deck layout', () => {
     expect(Math.max(...cards.elements.filter(e => e.type === 'rect' && e.fill === TOKENS.colors.card).map(e => e.y + e.h))).toBeGreaterThan(6.5);
     expect(lead('**Flagship:** +18% vs plan')).toEqual(['Flagship', '+18% vs plan']);
     expect(lead('No lead here')).toBeNull();
+  });
+
+  it('takes citation marks out of the slides and names their evidence in the source line', () => {
+    expect(uncited('15% was male [E31].')).toBe('15% was male.');
+    expect(uncited('Share rose [E2, E5] while [V1] spend fell [E3][E4]')).toBe('Share rose while spend fell');
+    const slide = cleanSlide({kind: 'text', title: 'Mass fell [E1]', points: ['**Mass:** -15% [E1]', {text: 'Eco flat', sub: ['wearables +12% [E9]']}],
+      kpis: [{value: '+6%', label: 'S/O vs MP [E1]', evidence_ids: ['E1']}], evidence_ids: ['E2']});
+    expect(slide.title).toBe('Mass fell');
+    expect(slide.points).toEqual(['**Mass:** -15%', {text: 'Eco flat', sub: ['wearables +12%']}]);
+    expect(slide.kpis?.[0]).toEqual({value: '+6%', label: 'S/O vs MP', evidence_ids: ['E1']});
+    expect(slide.evidence_ids).toEqual(['E2', 'E1', 'E9']);
+    const [page] = layoutDeck(deck({slides: [{kind: 'text', title: 'Flagship grew 18% [E1]', points: ['a [E1]', 'b', 'c', 'd']}]}));
+    const shown = page.elements.flatMap(e => e.type === 'text' ? e.paras.flatMap(p => p.runs.map(r => r.text)) : []).join(' ');
+    expect(shown).not.toMatch(/\[E\d+\]/);
+    expect(shown).toContain('Source: AI Team Database · Sell-out by segment');
   });
 
   it('shades the highlighted cells and keeps a heatmap or table as a native table', () => {

@@ -519,13 +519,43 @@ function slidePage(deck: Deck, slide: DeckSlide, index: number): Page {
   return {number, kind: slide.kind, title: slide.title ?? (slide.kind === 'agenda' ? 'Agenda' : ''), background, elements, notes: spoken};
 }
 
+// An answer's citation marks ([E3], [V1], [E2, E5]) are only text on a slide (owner, 16 Nov 2026: "15% was male [E31].
+// But E31 is just text ... can we remove that"): they come out, and the evidence they named joins the slide's sources.
+const MARK = /\s*\[(?:[EVD]\d{1,4})(?:\s*[,;]\s*[EVD]?\d{1,4})*\]/g;
+const KEPT = new Set(['evidence_ids', 'visual', 'chart', 'kind', 'tone']);
+
+/** Text without citation marks; the evidence ids they named are added to `cited`. */
+export function uncited(text: string, cited: string[] = []): string {
+  const marks = text.match(MARK);
+  if (!marks) return text;
+  for (const mark of marks) cited.push(...(mark.match(/E\d{1,4}/g) ?? []));
+  return text.replace(MARK, '').replace(/\s+/g, ' ').trim();
+}
+
+function clean<T>(value: T, cited: string[]): T {
+  if (typeof value === 'string') return uncited(value, cited) as T;
+  if (Array.isArray(value)) return value.map(v => clean(v, cited)) as T;
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, KEPT.has(k) ? v : clean(v, cited)])) as T;
+  }
+  return value;
+}
+
+/** A slide as it is drawn: no citation marks in its text, the evidence they named among its sources. */
+export function cleanSlide(slide: DeckSlide): DeckSlide {
+  const cited: string[] = [];
+  const out = clean(slide, cited);
+  return cited.length ? {...out, evidence_ids: [...new Set([...(slide.evidence_ids ?? []), ...cited])]} : out;
+}
+
 /** Every slide of the deck, laid out. */
 export function layoutDeck(deck: Deck): Page[] {
-  return deck.slides.map((slide, i) => slidePage(deck, slide, i));
+  const drawn = {...deck, slides: deck.slides.map(cleanSlide)};
+  return drawn.slides.map((slide, i) => slidePage(drawn, slide, i));
 }
 
 /** The deck's file name: its title, without the marks Windows refuses. */
 export function deckFileName(deck: Deck): string {
-  const stem = deck.title.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80).trim() || `Wizard ${deck.id}`;
+  const stem = uncited(deck.title).replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80).trim() || `Wizard ${deck.id}`;
   return `${stem}${deck.version > 1 ? ` (v${deck.version})` : ''}.pptx`;
 }

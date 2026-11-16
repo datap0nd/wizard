@@ -3,7 +3,24 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-13 (latest) — Tasks: the list answers at once, and every release proves it ships them
+## 2026-11-16 (latest) — Presentations: no citation marks on slides; a case update takes the PowerPoint made since
+
+The owner: "In cases, the powerpoint created isnt there", then "I opened the slides and they have the source of each
+claim, like: 15% was male [E31]. But E31 is just text ... can we remove that"
+([decision](decisions/2026-11-13-presentations.md)).
+
+- `deck_tools.py`: `_clean` takes citation marks ([E3], [V1], [E2, E5]) out of every text field of a slide and adds the
+  evidence they named to its `evidence_ids` (an unknown one is refused, as before); the tool description and the system
+  prompt say to cite in `evidence_ids` only. `apps/web/src/deck/layout.ts` (`cleanSlide`, `uncited`) does the same when
+  it draws a deck, so decks made before show no marks either, in the chat, in a case and in the .pptx.
+- `ShareCaseDialog.tsx` with `cases.ts` `defaultPicks`: updating a case ticks the answers published before and every
+  answer asked since (before, only the published ones, which left out a PowerPoint made after the first publish); a
+  PowerPoint in an answer left out is named ("Not in the case: the PowerPoint …. Tick its answer to share it.").
+- Checks: `test_presentations.py` 12 passed (one new: marks out, evidence in, an unknown mark refused); `deck.test.ts`
+  9 (one new: marks out of every field, the source line names their evidence), `cases.test.ts` (two new: the picks, the
+  left-out PowerPoint). Full run: see the commit's CI.
+
+## 2026-11-13 — Tasks: the list answers at once, and every release proves it ships them
 
 The owner, after updating: "The tasks stay loading and then it says cant run ... include the tasks on the actual set up
 of the next version" ([decision](decisions/2026-11-13-tasks-packaged.md)).

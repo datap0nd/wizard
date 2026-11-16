@@ -48,6 +48,23 @@ export interface CasePublished { outcome: string; message: string; commit: strin
 
 export const CASE_ID = /^c[0-9a-f]{14}$/;
 
+/** The answers Share as case ticks to start with (owner, 16 Nov 2026: "In cases, the powerpoint created isnt there"):
+ *  every answer of a chat not shared yet; for one shared before, the answers it published and every answer asked since,
+ *  so a PowerPoint made after the first publish goes into the update. An answer the person left out before stays out. */
+export function defaultPicks(turns: CaseTurn[], published: PublishedCase | null): Set<string> {
+  const runs = turns.map(t => t.run_id).filter((id): id is string => !!id);
+  if (!published) return new Set(runs);
+  const before = published.runs.filter(id => runs.includes(id));
+  const since = turns.filter(t => t.run_id && !published.runs.includes(t.run_id) && t.asked_at > published.published_at).map(t => t.run_id!);
+  const picked = [...before, ...since];
+  return new Set(picked.length ? picked : runs);
+}
+
+/** The presentations in answers left out of a case, which it would not carry. */
+export function decksLeftOut(turns: CaseTurn[], picked: Set<string>): string[] {
+  return turns.filter(t => t.run_id && !picked.has(t.run_id)).flatMap(t => (t.decks ?? []).map(d => d.title));
+}
+
 /** The snake (owner, 30 Oct 2026): the first prompt on the left with its answer to the right; a follow-up drops down on
  *  the side the answer ended and runs the other way (answer to the left of its prompt), and so on. `reversed`: the
  *  prompt is on the right. `drop`: the side of the arrow down to the next prompt. */

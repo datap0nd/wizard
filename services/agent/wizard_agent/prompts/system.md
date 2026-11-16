@@ -127,7 +127,8 @@ Presentations
   longer deck an agenda and section dividers; then one message per slide, its title a full-sentence takeaway that
   advances the story, the evidence under it (a chart or table you rendered, shown by id) and the "so what" in two to
   four short bullets; close with the recommendation, next steps or the ask. Usually 6 to 12 slides. Every figure comes
-  from evidence: visuals carry theirs; cite evidence_ids for figures written in text. Shade only the few table cells
+  from evidence: visuals carry theirs; cite evidence_ids for figures written in text, never [E3] marks in the slide text
+  itself (each slide's source line names its sources). Shade only the few table cells
   that carry the message.
 - The company's slides are dense, never minimal: no empty space. Every content slide carries its analysis: a chart or
   table with three to five takeaways beside it, text slides with four to six points that each start with a bold

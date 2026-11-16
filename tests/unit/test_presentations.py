@@ -119,6 +119,23 @@ def test_a_stacked_chart_needs_two_series_and_warnings_name_what_to_fix(tools):
     assert any("first slide is not a cover" in w for w in made["warnings"])
 
 
+def test_citation_marks_leave_the_slide_text_and_become_its_sources(tools):
+    """Owner, 16 Nov 2026: "15% was male [E31]. But E31 is just text, so it doesnt make sense. can we remove that"."""
+    visuals(tools)
+    ok, made = call(tools, "wizard_make_presentation", deck([
+        COVER, {"kind": "text", "title": "15% of buyers were male [E1]", "points": [
+            "**Gender:** 15% male [E1], 85% female", {"text": "**Age:** most under 35 [E1, E1]", "sub": ["18-24 led [V1]"]},
+            "**Region:** north first", "**Channel:** online"]}]))
+    assert ok, made
+    slide = tools[1].recorder.decks[0]["slides"][1]
+    assert slide["title"] == "15% of buyers were male"
+    assert slide["points"][0] == "**Gender:** 15% male, 85% female"
+    assert slide["points"][1] == {"text": "**Age:** most under 35", "sub": ["18-24 led"]}
+    assert slide["evidence_ids"] == ["E1"], "the evidence the marks named is the slide's, for its source line"
+    ok, refused = call(tools, "wizard_make_presentation", deck([{"kind": "text", "title": "A figure [E77]", "points": ["a", "b", "c", "d"]}]))
+    assert not ok and "unknown evidence id(s) E77" in refused["message"]
+
+
 def test_thin_slides_are_named_so_the_deck_has_no_empty_space(tools):
     visuals(tools)
     ok, made = call(tools, "wizard_make_presentation", deck([

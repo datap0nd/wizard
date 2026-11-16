@@ -1,7 +1,7 @@
 import {useEffect, useState} from 'react';
 import {ExternalLink, Eye, Trash2, Upload} from 'lucide-react';
 import {api} from '@/api';
-import type {Case, CasePreview} from '@/cases';
+import {decksLeftOut, defaultPicks, type Case, type CasePreview} from '@/cases';
 import {DataModeBadge} from '../Badges';
 import {Button} from '../ui/button';
 import {Dialog, DialogContent} from '../ui/dialog';
@@ -29,9 +29,7 @@ export function ShareCaseDialog({conversationId, open, onClose}: {conversationId
       const made = found.case && !('problem' in found.case && found.case.problem) ? found.case as Case : null;
       setTitle(found.published?.title ?? made?.title ?? '');
       setTakeaway(found.published?.takeaway ?? '');
-      const runs = (made?.turns ?? []).map(t => t.run_id!).filter(Boolean);
-      const before = found.published?.runs.filter(id => runs.includes(id)) ?? [];
-      setPicked(new Set(before.length ? before : runs));
+      setPicked(defaultPicks(made?.turns ?? [], found.published));
     }).catch((e: unknown) => setError(e instanceof Error ? e.message : 'The chat could not be read.'));
   }, [open, conversationId]);
 
@@ -95,6 +93,10 @@ export function ShareCaseDialog({conversationId, open, onClose}: {conversationId
                   </label>
                 ))}
               </fieldset>
+              {decksLeftOut(made.turns, picked).length > 0 && (
+                <p className="rounded-lg border border-warn-line bg-warn-soft p-3 text-[13px] text-warn" data-testid="case-decks-left-out">
+                  Not in the case: the PowerPoint {decksLeftOut(made.turns, picked).map(t => `“${t}”`).join(', ')}. Tick its answer to share it.</p>
+              )}
               <p className="rounded-lg border border-line bg-surface p-3 text-[13px] leading-relaxed text-ink-2">
                 Everyone who can open the Pages site will see these prompts and answers, with their charts, tables, data labels, the
                 PowerPoint presentations they made (to preview and download), the names of their sources and the queries that read them (the SQL, or the portal steps without their addresses' hosts).
