@@ -88,9 +88,10 @@ SECTIONS = [
     ("nerp", "NERP", "NERP's views on their own PostgreSQL server: one database, one schema, views only, read with a "
                      "read-only account. Gemini queries only those views; each view's dataset note in the knowledge base "
                      "says what a row is, so questions go straight to the right columns."),
-    ("dashboards", "Dashboards", "The team's HTML dashboards: the database's data with the team's business logic, which "
-                                 "Gemini reads first when one covers the question. A mapped drive is saved as the network "
-                                 "path it stands for, so every PC finds the same folder."),
+    ("dashboards", "Dashboards", "The team's HTML dashboards, kept in repositories on the company GitHub: the database's "
+                                 "data with the team's business logic, which Gemini reads first when one covers the "
+                                 "question. Find dashboards lists what the token finds; the task Map the dashboards "
+                                 "(Settings → Tasks) writes each one's note in the knowledge base."),
     ("metronome", "Metronome", "Recurring extractions: Metronome emails a table on a schedule, as Flows owned by its "
                                "Wizard user."),
     ("portals", "Portals", "ASAP, GSCM and the Big Data Portal (its information catalog and Superset), read by Gemini in "
@@ -177,10 +178,15 @@ FIELDS = [
     Field("WIZARD_NERP_USER", "User (read-only)", "nerp", "An account that can read those views only.", "wizard_nerp_ro"),
     Field("WIZARD_NERP_PASSWORD", "Password", "nerp"),
     Field("WIZARD_NERP_SSLMODE", "SSL", "nerp", "", "prefer", ("disable", "prefer", "require", "verify-ca", "verify-full")),
-    Field("WIZARD_HTML_REPORTS_DIR", "Folder", "dashboards", "Paste the folder's path (quotes from Copy as path are fine). "
-          "A mapped drive such as Y:\\Dashboards is saved as its network path (\\\\server\\share\\Dashboards). If this "
-          "PC cannot reach it, ask for access to the share: Wizard still starts, and says so when it needs them.",
-          "\\\\fileserver\\team\\Dashboards"),
+    Field("WIZARD_DASHBOARDS_TOKEN", "Read-only token", "dashboards", "A token that can read the dashboards' "
+          "repositories on the company GitHub. Wizard reads every repository its account owns or is a collaborator on, "
+          "unless Repositories names them. A settings file carries it to every PC, so make it read-only: a fine-grained "
+          "token, resource owner the organisation that owns the repositories, Contents \"Read-only\" (and Pages "
+          "\"Read-only\" for the pages' addresses). A classic token (scope repo) reads repositories of several owners, "
+          "but it can also write to them.", "github_pat_…"),
+    Field("WIZARD_DASHBOARDS_REPOS", "Repositories", "dashboards", "Empty: every repository the token's account owns or "
+          "is a collaborator on. Or only these, separated by commas: owner/name, or owner/* for all of an "
+          "organisation's (an address on the company GitHub is fine).", "sales-bi/weekly-kpi, finance-bi/*"),
     Field("WIZARD_DASHBOARDS_NAME", "Name people see", "dashboards", "Shown in the systems list and in answers' sources.",
           "Dashboards"),
     Field("WIZARD_METRONOME_URL", "Address", "metronome", "Metronome on the office network.", "http://10.0.0.5:8000"),
@@ -213,13 +219,13 @@ FIELDS = [
           ".pptx and .xlsx files.", "auto", ("auto", "never"), ("With Office when it is installed", "Without Office")),
     Field("WIZARD_PROXY", "Proxy", "network", "For Google (Gemini) and the app's updates: http://host:port, or direct. "
           "Empty: the proxy in your Gemini CLI settings, else the Windows proxy settings.", ""),
-    Field("WIZARD_GITHUB_PROXY", "Company GitHub proxy", "network", "For the company GitHub (the knowledge base and the "
-          "portal maps): http://host:port, or direct. Empty: the route Windows and Edge take to it.", ""),
+    Field("WIZARD_GITHUB_PROXY", "Company GitHub proxy", "network", "For the company GitHub (the knowledge base, the "
+          "portal maps and the dashboards): http://host:port, or direct. Empty: the route Windows and Edge take to it.", ""),
     Field("WIZARD_DIAGNOSTICS", "Diagnostics in the app", "diagnostics", "Every run's full diagnostics and the server log "
           "(Log), for whoever looks after Wizard on this PC.", "true", ("true", "false"), ("Shown", "Hidden")),
 ]
 BY_KEY = {f.key: f for f in FIELDS}
-DASHBOARDS = "WIZARD_HTML_REPORTS_DIR"
+DASHBOARD_REPOS = "WIZARD_DASHBOARDS_REPOS"
 MAX_CHARS = 2000
 # Values longer than one ordinary line: the source order holds a "use it for" line per source.
 LONG = {source_order.KEY: source_order.MAX_CHARS}
@@ -315,8 +321,11 @@ def save(settings: Settings, changes: dict[str, Any]) -> dict[str, Any]:
     if locked:
         raise PaneError(f"{', '.join(locked)} is set by an environment variable on this PC; change it there", 409)
     updates = {k: v for k, v in cleaned.items() if not (BY_KEY[k].secret and v is None)}
-    if updates.get(DASHBOARDS):  # quotes removed, a mapped drive as its network path (owner, 2 Nov 2026)
-        updates[DASHBOARDS] = dashboards.stored_value(str(updates[DASHBOARDS]))
+    if updates.get(DASHBOARD_REPOS):  # owner/name, one way of writing it: addresses and spaces become a plain list
+        try:
+            updates[DASHBOARD_REPOS] = ", ".join(dashboards.repo_list(str(updates[DASHBOARD_REPOS])))
+        except ValueError as error:
+            raise PaneError(f"Dashboards → Repositories: {error}") from None
     if not updates:
         return {"changed": []}
     local_folder = provisioning.folder(settings.data_dir, "local")
@@ -522,31 +531,52 @@ def test_metronome(settings: Settings, proposed: dict[str, Any],
     return MetronomeClient(target, transport).check()
 
 
-def test_dashboards(settings: Settings, proposed: dict[str, Any]) -> dict[str, Any]:
-    """Find the dashboards in the folder the person typed: the path Wizard would save (a mapped drive as its network
-    path), whether this PC reaches it, and how many dashboards it holds."""
+def test_dashboards(settings: Settings, proposed: dict[str, Any],
+                    transport: httpx.BaseTransport | None = None) -> dict[str, Any]:
+    """Settings → Dashboards → Find dashboards: the repositories the token reads (every one its account owns or is a
+    collaborator on, or the ones typed), the HTML pages in each, and what could not be looked at. Nothing is saved."""
+    from . import team_dashboards
     values = _candidate(settings, proposed)
-    typed = values.get(DASHBOARDS) or ""
-    if not dashboards.clean(typed):
-        return {"ok": False, "message": "Paste the path of the folder that holds the team's HTML dashboards."}
-    stored = dashboards.stored_value(typed)
-    folder = dashboards.Dashboards(dashboards.folder_path(stored, settings.home or ROOT), None)
-    mapped = (f" ({dashboards.clean(typed)[:2].upper()} on this PC; Wizard saves the network path so every PC finds the "
-              "same folder)") if stored != dashboards.clean(typed) else ""
-    problem = folder.problem(fresh=True)
-    if problem:
-        return {"ok": False, "value": stored, "message": dashboards.unreachable(folder.root, problem).split(" Until")[0]}
+    token = values.get("WIZARD_DASHBOARDS_TOKEN")
+    if not token:
+        return {"ok": False, "message": "Enter a read-only token that can read the dashboards' repositories on the "
+                                        "company GitHub."}
     try:
-        found = folder.listing(fresh=True)
+        repos = dashboards.repo_list(values.get(DASHBOARD_REPOS))
+    except ValueError as error:
+        return {"ok": False, "message": f"Repositories: {error}."}
+    team = team_dashboards.build(settings, None, token=token, repos=repos,
+                                 proxy=values.get("WIZARD_GITHUB_PROXY") or settings.github_proxy, transport=transport)
+    assert team is not None
+    try:
+        listing = team.inventory(fresh=True)
     except dashboards.DashboardError as error:
-        return {"ok": False, "value": stored, "message": error.message}
-    if not found:
-        return {"ok": False, "value": stored, "count": 0,
-                "message": f"Wizard reaches {folder.root}{mapped}, but it holds no HTML files (.html, .htm), subfolders "
-                           "included. Check that this is the dashboards folder."}
-    return {"ok": True, "value": stored, "count": len(found),
-            "message": f"Found {len(found):,} dashboard{'' if len(found) == 1 else 's'} in {folder.root}{mapped}. Save to "
-                       "keep it."}
+        return {"ok": False, "count": 0, "message": error.message.split(" Until then")[0]}
+    finally:
+        team.close()
+    counts: dict[str, int] = {}
+    for item in listing.dashboards:
+        counts[item.repo] = counts.get(item.repo, 0) + 1
+    where = ", ".join(repos) if repos else "the repositories your account owns or is a collaborator on"
+    skipped = (" Not looked at: " + "; ".join(listing.skipped[:5]) + ("…" if len(listing.skipped) > 5 else "") + "."
+               if listing.skipped else "")
+    classic = (f" The token is {team.github.classic}: it can also write to these repositories, and a settings file "
+               "carries it to every PC. A fine-grained read-only token is safer." if team.github.classic else "")
+    found = [{"repository": name, "dashboards": count} for name, count in sorted(counts.items(), key=lambda p: p[0].casefold())]
+    if not listing.dashboards:
+        return {"ok": False, "count": 0, "repos": found,
+                "message": f"The token reads {len(listing.repos):,} repositor{'y' if len(listing.repos) == 1 else 'ies'} "
+                           f"({where}), but none holds an HTML page (.html, .htm) on its default branch or its Pages "
+                           f"branch.{skipped} Name the dashboards' repositories in Repositories, or use a token that can "
+                           f"read them.{classic}"}
+    shown = ", ".join(f"{r['repository']} ({r['dashboards']})" for r in found[:12]) + (
+        f" and {len(found) - 12} more" if len(found) > 12 else "")
+    total = len(listing.dashboards)
+    return {"ok": True, "count": total, "repos": found,
+            "message": f"Found {total:,} dashboard{'' if total == 1 else 's'} in {len(found):,} "
+                       f"repositor{'y' if len(found) == 1 else 'ies'} ({where}): {shown}.{skipped} Save to keep it, "
+                       f"then run the task Map the dashboards (Settings → Tasks) so Wizard knows what each one shows."
+                       f"{classic}"}
 
 
 RELEASE = "https://github.com/datap0nd/wizard/releases/download/desktop-continuous/"

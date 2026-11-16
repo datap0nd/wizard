@@ -29,7 +29,6 @@ from wizard_agent.runtime import AgentFailure, AgentRuntime
 from wizard_agent.secret_box import SecretBox
 from wizard_connectors import metronome
 from wizard_connectors.content import errors, validate_content
-from wizard_connectors.dashboards import Dashboards
 from wizard_connectors.entitlements import Identity, IdentityDirectory, SystemRights
 from wizard_connectors.paths import ROOT
 from wizard_connectors.portal_browser import PortalBrowser, PortalBrowsers, PortalError
@@ -38,7 +37,7 @@ from wizard_connectors.task_files import TaskFiles
 from wizard_connectors.tools import build_registry, build_services, connect_nerp, retire_portal_catalogs
 from wizard_connectors.tools.systems import SystemChoice
 
-from . import __version__, brain, knowledge_sync, provisioning, settings_pane, systems
+from . import __version__, brain, knowledge_sync, provisioning, settings_pane, systems, team_dashboards
 from .attachments import AttachmentError, public
 from .config import Settings, kb_source, load_settings
 from .exports import Exports
@@ -346,8 +345,8 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         services.kb_writer, services.kb_prefix = map_writer(settings, "these notes"), settings.kb_path
     task_board = TaskBoard(settings.data_dir, ROOT / "tasks")  # the tasks come with the installed version
     services.task_files = TaskFiles(settings.data_dir, Documents(settings))  # what a task that asks for a folder reads
-    if settings.html_reports_dir:  # the Dashboards system; a folder this PC cannot reach is said by its tools, not here
-        services.dashboards = Dashboards(settings.html_reports_dir, settings.data_dir / "dashboards", settings.dashboards_name)
+    # The Dashboards system, on the company GitHub; a GitHub this PC cannot reach is said by its tools, not here.
+    services.dashboards = team_dashboards.build(settings, settings.data_dir / "dashboards")
     portal_ids = [p.id for p in settings.portals.portals] if settings.portals else []
     registry = build_registry(services)
     identities = IdentityDirectory.load(settings.identities_file)

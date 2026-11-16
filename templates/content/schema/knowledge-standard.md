@@ -23,7 +23,7 @@ safe to quote on its own, and honest about how sure we are. Wizard tells executi
 | `processes/` | how work happens: planning cycle, budgeting, month close, launches, approvals, reporting rhythm | process |
 | `platforms/` | data platforms (ASAP, GSCM, NERP, PostgreSQL...): what they hold, how to navigate them | platform |
 | `datasets/` | data dictionary: one note per database object (materialized view, table): grain, columns, how each is computed, lineage, refresh. A dashboard or report built on them is not a dataset | dataset |
-| `dashboards/` | the team's HTML dashboards, one note per dashboard: what it shows and the business logic it applies (section 13) | entity |
+| `dashboards/` | the team's HTML dashboards on the company GitHub, one note per dashboard: what it shows, the business logic it applies and where it lives; and one index of them all (section 13) | entity, overview |
 | `metrics/` | how each measure is defined and computed, what must not be summed, and where the data holds it (section 11) | metric |
 | `glossary/` | acronyms, jargon and **ambiguous terms**, grouped by domain | glossary |
 | `faq/` | recurring executive questions and where their answer lives | faq |
@@ -314,29 +314,41 @@ Every key is optional:
 ## 13. Dashboard notes
 
 The team's HTML dashboards combine data from PostgreSQL with business logic: definitions, filters, exclusions and
-adjustments that the data alone does not hold. A note in `dashboards/` says what one dashboard shows and how it gets
-each figure, precisely enough that Wizard can reproduce the figure in SQL, or knows when it cannot and the dashboard is
-the source. A dashboard is not a database object, so its note never goes in `datasets/`.
+adjustments that the data alone does not hold. They are kept in repositories on the company GitHub, with the code and
+SQL that build them; Wizard lists and reads them there (`wizard_dashboards`, `wizard_read_dashboard`,
+`wizard_dashboard_files`, `wizard_dashboard_read_file`), and the task "Map the dashboards" writes their notes. A note in
+`dashboards/` says what one dashboard shows and how it gets each figure, precisely enough that Wizard can reproduce the
+figure in SQL, or knows when it cannot and the dashboard is the source. A dashboard is not a database object, so its
+note never goes in `datasets/`.
 
-- One note per HTML dashboard, `type: entity`. Id `<what it shows>-dashboard` in kebab-case; title the dashboard's
-  name as people say it; `aliases` hold its file name without `.html`, any other name it goes by, and the business
-  words for what it shows ("weekly sell-in", "channel stock").
+- One note per dashboard, `type: entity`: a dashboard of several pages (an index and its detail pages) is one note
+  that names each page. Id `<what it shows>-dashboard` in kebab-case; title the dashboard's name as people say it;
+  `aliases` hold its file or repository name, any other name it goes by, and the business words for what it shows
+  ("weekly sell-in", "channel stock").
 - Lead: what the dashboard shows, who uses it, how often it is refreshed, and the one thing not to get wrong when
   reading it.
 - Sections:
   - `## What it shows`: each measure, breakdown (market, channel, product) and period (week, month, year to date); a
     table when there are several.
   - `## Business logic`: every definition, filter, exclusion and adjustment the dashboard applies, and how each figure
-    is calculated, step by step, with the dataset notes, columns and values it uses. Say when Wizard should not
-    reproduce a figure (a manual adjustment, an input the database does not hold). Logic you cannot see is
-    `UNKNOWN (ask: <role>)`, never guessed.
+    is calculated, step by step, with the dataset notes, columns and values it uses, read from the page and from the
+    code and SQL in its repository. Say when Wizard should not reproduce a figure (a manual adjustment, an input the
+    database does not hold). Logic you cannot see is `UNKNOWN (ask: <role>)`, never guessed.
   - `## Where the data comes from`: the dataset note ids it is built from (also in `related`), and any other input
     (a file, a manual entry) described by kind.
-  - `## Refresh and as-of`: how often it is refreshed and by what, and where the dashboard shows its as-of date.
+  - `## Refresh and as-of`: how often it is refreshed and by what (a workflow's schedule, a script someone runs), and
+    where the dashboard shows its as-of date.
   - `## Who maintains it`: the role or team.
-  - `## File`: the file name and its subfolder inside the dashboards folder Wizard reads, e.g.
-    `sales/weekly-sell-in.html`. Never a drive letter, share path or full path: they differ by PC.
+  - `## Where it lives`: the repository on the company GitHub (`owner/name`), the branch when it is not the default,
+    each page's path in it, Wizard's dashboard id for each page (`d` and 10 characters, from `wizard_dashboards`: Wizard
+    ties the note to the dashboard by it), and the GitHub Pages address when the dashboard is published there, e.g.
+    `sales-bi/weekly-kpi` · `docs/index.html` · `d1a2b3c4d5e`. Never a token, a drive letter or a path on a PC.
   - `## Questions this note answers` and `## Open questions`.
+- `sources` hold the source ids of the page and of the code files the note was written from (`source_id` in
+  `wizard_read_dashboard` and `wizard_dashboard_read_file`).
+- One index note, `dashboards-index` (`type: overview`): a table of every repository and page Wizard finds, each page
+  with its dashboard id and the note that maps it, or why it is not a dashboard (a template without figures,
+  documentation, a test page).
 - `related` lists the dataset notes it reads and the metric notes for the measures it shows. Each of those metric notes
   names the dashboard in its `## Where to get it` (section 11).
 - No performance figures (rule 7): the dashboard itself is the live source. Say what a figure is, never its value.

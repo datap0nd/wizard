@@ -411,20 +411,22 @@ def list_sources(ctx: ToolContext, _: NoArgs) -> dict[str, Any]:
                         "connector_status": "READ_ONLY_SQL", "data_mode": "LIVE", "your_market_access": "all markets",
                         "how_to_navigate": "nerp_list_views → the view's dataset note (wizard_read_knowledge) → "
                                            "nerp_query"})
-    folder = ctx.services.dashboards
-    if folder is not None and ctx.identity.can_use_system(dashboards.SYSTEM) and _on(ctx, dashboards.SYSTEM):
-        problem = folder.problem()
-        found = folder.known_count()
+    team = ctx.services.dashboards
+    if team is not None and ctx.identity.can_use_system(dashboards.SYSTEM) and _on(ctx, dashboards.SYSTEM):
+        problem = team.problem()
+        found = team.known_count()
         # The prepared dashboards first in the list (owner, 2 Nov 2026: "the first thing in the priority list").
         systems.insert(0, {
-            "system": dashboards.SYSTEM, "name": f"{folder.name} (the team's HTML dashboards)",
-            "description": "Standalone HTML dashboards the team prepared from the company database with its business "
-                           "logic (definitions, filters, adjustments), read as they are: tables, chart data and text, as "
-                           "of the date each states.",
+            "system": dashboards.SYSTEM, "name": f"{team.name} (the team's HTML dashboards, on the company GitHub)",
+            "description": "HTML dashboards the team prepared from the company database with its business logic "
+                           "(definitions, filters, adjustments), kept in repositories on the company GitHub and read as "
+                           "they are: tables, chart data and text, as of the date each states. Each mapped dashboard has "
+                           "a note in the knowledge base's dashboards area with its business logic.",
             "connector_status": "BLOCKED" if problem else "PREPARED_FILE", "data_mode": "LIVE",
-            **({"problem": dashboards.unreachable(folder.root, problem)} if problem else
+            **({"problem": dashboards.unreachable(problem)} if problem else
                {"dashboards": found} if found is not None else {}),
-            "how_to_navigate": "wizard_dashboards(find=...) → wizard_read_dashboard(dashboard=...)"})
+            "how_to_navigate": "wizard_dashboards(find=...) → its note (wizard_read_knowledge) → "
+                               "wizard_read_dashboard(dashboard=...); its code: wizard_dashboard_files"})
     maps = ctx.services.portal_maps
     for portal in ctx.services.portals.settings.portals if ctx.services.portals else ():
         if ctx.identity.can_use_system(portal.id) and _on(ctx, portal.id):

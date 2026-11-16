@@ -425,13 +425,19 @@ def tool_label(name: str, args: dict[str, Any], services: Services) -> str:
         what = (str(reports[0].get("name") or reports[0].get("id")) if len(reports) == 1 else
                 f"{len(reports)} reports" if reports else "how it works")
         return f"Added to Wizard's map of {portal_name(services, args.get('system'))}: {what}"
-    if name in ("wizard_dashboards", "wizard_read_dashboard"):
-        folder = services.dashboards
-        system = folder.name if folder else "Dashboards"
+    if name in ("wizard_dashboards", "wizard_read_dashboard", "wizard_dashboard_files", "wizard_dashboard_read_file"):
+        team = services.dashboards
+        system = team.name if team else "Dashboards"
         if name == "wizard_dashboards":
-            return f"Listed the {system}" + (f" for “{args['find']}”" if args.get("find") else "")
+            return f"Listed the {system}" + (f" for “{args['find']}”" if args.get("find") else "") + (
+                f" in {args['repository']}" if args.get("repository") else "")
+        if name == "wizard_dashboard_files":
+            return (f"Listed the files of {args['repository']}" if args.get("repository") else
+                    f"Listed the {system}' repositories") + (f" for “{args['find']}”" if args.get("find") else "")
+        if name == "wizard_dashboard_read_file":
+            return f"Read {args.get('repository') or 'a repository'} · {args.get('path') or 'a file'}"
         key = str(args.get("dashboard") or "")
-        title = (folder.title_of(key) if folder else None) or key
+        title = (team.title_of(key) if team else None) or key
         part = f" · {args['part']}" if args.get("part") else ""
         return f"Read {system} · {title}{part}"
     if name == "wizard_kb_save_notes":
@@ -506,9 +512,17 @@ def tool_summary(name: str, outcome: ToolOutcome) -> str:
         return f"{data.get('name')} guide · {len(data.get('saved_scripts', []))} saved script(s)"
     if name == "wizard_dashboards":
         shown = len(data.get("dashboards", []))
-        return f"{data.get('matching', shown):,} dashboard(s)" + (f" of {data['total']:,}" if data.get("matching") != data.get("total") else "")
+        return (f"{data.get('matching', shown):,} dashboard(s)" + (f" of {data['total']:,}" if data.get("matching") != data.get("total") else "")
+                + (f" · {data['mapped']:,} mapped" if data.get("mapped") else ""))
+    if name == "wizard_dashboard_files":
+        if "files" in data:
+            return f"{data.get('matching', 0):,} of {data.get('total', 0):,} file(s) in {data.get('repository')}"
+        return f"{data.get('total', 0):,} repositories"
+    if name == "wizard_dashboard_read_file":
+        return f"{data.get('path')}: {data.get('chars', 0):,} of {data.get('total_chars', 0):,} characters"
     if name == "wizard_read_dashboard":
-        as_of = f" · as of {str(data.get('as_of'))[:10]}" + (" (file date)" if data.get("as_of_from") == "file modified time" else "")
+        as_of = f" · as of {str(data.get('as_of'))[:10]}" + (
+            " (last commit)" if data.get("as_of_from") in ("the file's last commit", "the repository's last push") else "")
         if "tables_and_data" in data:
             parts = data["tables_and_data"]
             return (f"{data.get('title')}: {len(parts)} table(s) and chart data set(s), "

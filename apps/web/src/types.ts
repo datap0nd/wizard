@@ -102,15 +102,15 @@ export interface SettingsView {
   source_order?: {default: OrderEntry[]; max_use: number; sources?: OrderSource[]};
 }
 
-/** The settings sections with a test: a connection, or (Dashboards) finding the dashboards in the folder typed. */
+/** The settings sections with a test: a connection, or (Dashboards) finding the dashboards the token reads on GitHub. */
 export type SettingsTest = 'postgres' | 'knowledge' | 'metronome' | 'dashboards' | 'nerp' | 'site';
 
 export interface SettingsTestResult {
   ok: boolean;
   message: string;
-  /** Dashboards: the path Wizard would save (a mapped drive as its network path) and how many dashboards it holds. */
-  value?: string;
+  /** Dashboards: how many dashboards the token finds, and how many in each repository. */
   count?: number;
+  repos?: {repository: string; dashboards: number}[];
 }
 
 /** Quick setup imported a settings file: its name, how many settings and secrets it set, and how it applies (as Save). */
@@ -199,8 +199,9 @@ export interface Evidence extends EvidenceSummary {
             sql?: string; database?: string; max_rows?: number;
             /** A portal read: the steps Gemini ran in the person's browser, and the page it ended on. */
             steps?: PortalStep[]; page?: string | null; page_title?: string | null; script_name?: string | null;
-            /** A dashboard read: its path in the dashboards folder, the part read (text, T1, D2 or a heading) and from where. */
-            dashboard?: string; path?: string; part?: string; offset?: number};
+            /** A dashboard read: its repository on the company GitHub and path in it, the part read (text, T1, D2 or a
+             *  heading) and from where. */
+            dashboard?: string; repository?: string; branch?: string; path?: string; part?: string; offset?: number};
   columns: Column[];
   rows: (string | number | null)[][];
   retrieved_at: string;

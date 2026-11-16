@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from wizard_connectors.dashboards import DEFAULT_NAME as DASHBOARDS_NAME
-from wizard_connectors.dashboards import folder_path as dashboards_folder
+from wizard_connectors.dashboards import repo_list as dashboards_repos
 from wizard_connectors.metronome import MetronomeConfigError, MetronomeSettings
 from wizard_connectors.metronome import settings_from as metronome_settings
 from wizard_connectors.nerp import NerpSettings
@@ -82,11 +82,15 @@ class Settings:
     transcripts_dir: Path = FIXTURES / "transcripts"
     web_dist: Path = ROOT / "apps" / "web" / "dist"
     content_dir: Path | None = None
-    # The team's HTML dashboards (Settings → Dashboards; owner, 2 Nov 2026): a folder, usually on a network share, read by
-    # the dashboards tools. A mapped drive letter is kept as the network path it maps to; a folder this PC cannot reach
+    # The team's HTML dashboards (Settings → Dashboards), in repositories on the company GitHub (owner, 16 Nov 2026: "Our
+    # dashboards are all in github enterprise"): read with this read-only token, in every repository its account owns or
+    # is a collaborator on, or only in these (owner/name, owner/*). None: no dashboards. A GitHub this PC cannot reach
     # never stops Wizard (the tools say so). The name people see for that system, like pg_name.
-    html_reports_dir: Path | None = None
+    dashboards_token: str | None = None
+    dashboards_repos: tuple[str, ...] = ()
     dashboards_name: str = DASHBOARDS_NAME
+    # The dashboards folder of 2 Nov 2026 (WIZARD_HTML_REPORTS_DIR), retired: kept only so run.py --check can say so.
+    retired_dashboards_folder: str | None = None
     # Files people attach to questions: "From this PC" lists these folders (local installs; empty behind an SSO proxy,
     # where the server's folders are not the user's), uploads are capped, and each conversion has a time limit.
     attachment_folders: list[Path] = field(default_factory=list)
@@ -264,11 +268,13 @@ def load_settings(env: dict[str, str] | None = None, env_file: Path | None = Non
         if settings.runtime == "replay":
             raise ConfigError("WIZARD_CONTENT_DIR cannot be combined with the replay runtime: replay plays recorded "
                               "transcripts over the synthetic catalog. Use gemini-cli or code-assist.")
-    html_reports = get("WIZARD_HTML_REPORTS_DIR")
-    if html_reports and html_reports.strip().strip('"').strip("'").strip():
-        # Worked out without touching the disk: a share that does not answer must not hold up or stop start-up.
-        settings.html_reports_dir = dashboards_folder(html_reports, base)
+    settings.dashboards_token = (get("WIZARD_DASHBOARDS_TOKEN") or "").strip() or None
+    try:
+        settings.dashboards_repos = dashboards_repos(get("WIZARD_DASHBOARDS_REPOS"))
+    except ValueError as error:
+        raise ConfigError(f"WIZARD_DASHBOARDS_REPOS: {error}") from None
     settings.dashboards_name = (get("WIZARD_DASHBOARDS_NAME", DASHBOARDS_NAME) or DASHBOARDS_NAME).strip()[:60]
+    settings.retired_dashboards_folder = (get("WIZARD_HTML_REPORTS_DIR") or "").strip() or None
     settings.local_user_email = get("WIZARD_LOCAL_USER_EMAIL")
     if settings.local_user_email and "@" not in settings.local_user_email:
         raise ConfigError("WIZARD_LOCAL_USER_EMAIL must be your work email address")

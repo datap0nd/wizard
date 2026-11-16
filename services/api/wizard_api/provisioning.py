@@ -21,7 +21,6 @@ from pathlib import Path
 from typing import Any
 
 from wizard_agent.secret_box import SecretBox
-from wizard_connectors.dashboards import stored_value as dashboards_folder
 
 FORMAT = 1
 FILENAME = "wizard.provision"
@@ -43,9 +42,9 @@ LOCAL_ONLY = frozenset({
 # "From this PC" lists (Settings → Attached files): they are this PC's own folders.
 PC_CHOSEN = frozenset({"WIZARD_KB_WRITE_TOKEN", "WIZARD_FEEDBACK_TOKEN", "WIZARD_ATTACHMENT_FOLDERS"})
 MAX_BYTES = 64 * 1024
-# The team's dashboards folder: a file made on one PC carries the network path its mapped drive stands for, never the
-# letter (owner, 2 Nov 2026: "Y:\ ... might not be the same in another PC").
-DASHBOARDS_KEY = "WIZARD_HTML_REPORTS_DIR"
+# The dashboards folder of 2 Nov 2026, retired (the dashboards are on the company GitHub, decision 2026-11-16): a file
+# made or exported now never carries it.
+RETIRED = frozenset({"WIZARD_HTML_REPORTS_DIR"})
 
 
 class ProvisionError(ValueError):
@@ -98,9 +97,9 @@ def parse(text: str) -> Provision:
 
 
 def render(values: dict[str, str], name: str) -> str:
-    """A provisioning file with these settings, checked as Wizard checks one when it imports it. A mapped drive in the
-    dashboards folder is written as the network path it maps to on this PC."""
-    values = {k: (dashboards_folder(v) if k == DASHBOARDS_KEY and v else v) for k, v in values.items()}
+    """A provisioning file with these settings, checked as Wizard checks one when it imports it. Retired settings are
+    left out."""
+    values = {k: v for k, v in values.items() if k not in RETIRED}
     text = json.dumps({"wizard_provision": FORMAT, "name": name[:80], "created": datetime.now(UTC).date().isoformat(),
                        "settings": {k: v for k, v in sorted(values.items()) if v}}, indent=2)
     parse(text)

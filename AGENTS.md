@@ -20,8 +20,10 @@ around a precomputed result is withdrawn. Its credential, entitlement, DLP and h
   NOT_CHECKED / DISCREPANCY) as separate fields. USER_PROVIDED marks a file a user attached: never present it as a
   verified source. LIVE marks rows Gemini read from the company PostgreSQL server with its own query, or from a
   company portal with its own browser steps (BROWSER_SESSION); the query or the steps are part of the evidence. A team
-  dashboard read from the Dashboards folder is LIVE too, as PREPARED_FILE: its figures are the dashboard's own, as of the
-  date it states, else the file's modified time ([decision](docs/decisions/2026-11-02-html-dashboards.md)). Never
+  dashboard read from its repository on the company GitHub is LIVE too, as PREPARED_FILE: its figures are the
+  dashboard's own, as of the date it states, else the file's last commit
+  ([decision](docs/decisions/2026-11-02-html-dashboards.md), [on GitHub](docs/decisions/2026-11-16-dashboards-on-github.md)).
+  The dashboards tools send only GET requests, only to those repositories, with the read-only dashboards token. Never
   label it verified.
 - Run each Gemini request under the requesting user's own enterprise identity, with isolated per-user state
   (`GEMINI_CLI_HOME` + `GEMINI_FORCE_FILE_STORAGE=true`, or the per-user Code Assist token).

@@ -1,46 +1,61 @@
-"""Dashboards: the team's HTML dashboards (owner, 2 Nov 2026: "I believe these dashboards should definitely be the first
-thing in the priority list as they are dashboards prepared combining logic and data that wizard will struggle to get
-right off the bat").
+"""Dashboards: the team's HTML dashboards, kept in repositories on the company's GitHub Enterprise Server.
 
-A folder of standalone HTML pages, usually on a network share (WIZARD_HTML_REPORTS_DIR; Settings → Dashboards). Wizard
-lists them and reads one as data: its title, the date it states, headings and visible text, tables as rows, and the
-data embedded in its scripts that parses as JSON (chart series, data arrays, the objects handed to Plotly, ECharts,
-Chart.js, Highcharts or Vega), with names and chart and axis titles. It never runs a script and never fetches anything a
-page references: data a page loads from an address, and script data that is not JSON, are named as not read.
+Owner, 2 Nov 2026: "I believe these dashboards should definitely be the first thing in the priority list as they are
+dashboards prepared combining logic and data that wizard will struggle to get right off the bat". Owner, 16 Nov 2026:
+"Our dashboards are all in github enterprise, I want to map them and then I want wizard to reference them. I am a
+collaborator on all of them." (docs/decisions/2026-11-16-dashboards-on-github.md; the network folder of 2 Nov is retired.)
 
-Only files inside the folder are read (no `..`, no absolute paths, no links out), each within a size and a time limit;
-a parse is kept under the data folder by path, size and modified time. A mapped drive letter is stored as the network
-path it maps to (WNetGetConnectionW): another PC may map the share to another letter, or not at all (owner: "Y:\\ is
-indeed a risk as it's mapped as that in my pc but might not be the same in another PC"). A folder this PC cannot reach
-never stops Wizard: the tools and `run.py --check` say so, and to ask for access to the share."""
+Wizard finds them with a read-only token (Settings → Dashboards): every repository the token's account owns or is a
+collaborator on, or only the repositories Settings names, and in each the HTML pages (.html, .htm) on its default branch
+and on the branch its GitHub Pages site is published from. It reads a page as data: its title, the date it states,
+headings and visible text, tables as rows, and the data embedded in its scripts that parses as JSON (chart series, data
+arrays, the objects handed to Plotly, ECharts, Chart.js, Highcharts or Vega), with names and chart and axis titles. It
+never runs a script and never fetches anything a page references: data a page loads from an address, and script data
+that is not JSON, are named as not read. The repository's other files (the code and SQL that build a dashboard, its
+README, the workflow that refreshes it) are read as text, so its business logic can be mapped (tasks/map-dashboards.md).
+
+Only those repositories, only files in their trees, only GET requests to the company GitHub's API
+(wizard_connectors.github), each within a size and a time limit. A page is parsed once per version (its blob id) and kept
+under the data folder. A GitHub this PC cannot reach, or a token GitHub refuses, never stops Wizard: the tools and
+`run.py --check` say so."""
 from __future__ import annotations
 
 import base64
 import hashlib
 import json
 import math
-import os
 import re
-import stat
 import struct
-import sys
 import threading
 import time
-from collections.abc import Callable, Iterator
-from dataclasses import dataclass
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime
 from functools import partial
 from html.parser import HTMLParser
-from pathlib import Path, PureWindowsPath
+from pathlib import Path
 from typing import Any, TypeVar
+from urllib.parse import quote
+
+import httpx
+
+from .github import API, WEB, refused, token_kind
 
 SYSTEM = "dashboards"
 DEFAULT_NAME = "Dashboards"
 SUFFIXES = (".html", ".htm")
 ID = re.compile(r"^d[0-9a-f]{10}$")
-MAX_FILES = 2000
-MAX_DEPTH = 12
+# owner/name, or owner/* for every repository of that organisation or account the token can read.
+REPO_NAME = re.compile(r"^[A-Za-z0-9_.-]{1,100}/(?:[A-Za-z0-9_.-]{1,100}|\*)$")
+# The owner's words: "I am a collaborator on all of them". The repositories the account created count too.
+AFFILIATION = "owner,collaborator"
+# Folders that hold libraries, builds or tools, never a team's dashboard.
+SKIP_DIRS = frozenset({"node_modules", "bower_components", "vendor", "site-packages", "__pycache__", "venv", "env"})
+MAX_REPOS = 300
+MAX_FILES = 2000  # dashboards listed
+MAX_TREE = 20_000  # files of one branch kept for the repository-files tool
 MAX_BYTES = 50 * 1024 * 1024  # a page larger than this is not read
+TEXT_BYTES = 5 * 1024 * 1024  # a repository file read as text (code, SQL, README, a page's source)
 HEAD_BYTES = 512 * 1024  # what the list reads of a page it has not read whole: title, headings, the date it states
 LOOSE_MAX = 2 * 1024 * 1024  # script data that is not strict JSON is read loosely only up to this size
 MAX_TABLES = 300
@@ -49,15 +64,18 @@ MAX_ROWS = 20_000  # rows kept of one table or data set
 MAX_COLUMNS = 60
 CELL_CHARS = 300
 TEXT_CHARS = 400_000  # visible text kept of one page
-PROBE_S = 10.0
+REQUEST_S = 30.0  # one request to GitHub
+PROBE_S = 15.0
 LIST_S = 90.0
 READ_S = 100.0  # a tool call answers well within the 180 seconds the Gemini CLI route gives it
-LISTING_S = 60.0  # the folder is walked again at most once a minute
-# A folder that could not be listed is not walked again for this long, unless the person asks (fresh): the owner's run
-# of 3 Nov 2026 waited 90 s for the share, then 41 s more when Gemini tried it again. A walk cut short goes on in the
-# background and its listing is kept when it finishes, so the next try can be instant.
+LISTING_S = 60.0  # the repositories are listed again at most once a minute
+# A listing that failed is not tried again for this long, unless the person asks (fresh): the owner's run of 3 Nov 2026
+# waited 90 s for a share, then 41 s more when Gemini tried it again. A listing cut short goes on in the background and
+# is kept when it finishes, so the next try can be instant.
 FAILED_S = 300.0
 PARSER = 1  # a cached parse made by another version of the reader is made again
+COMMITTED = "the file's last commit"  # where the as-of date came from when the page states none
+PUSHED = "the repository's last push"
 
 T = TypeVar("T")
 
@@ -68,76 +86,8 @@ class DashboardError(Exception):
         self.code, self.message = code, message
 
 
-# The folder's path ----------------------------------------------------------------------------------------------------
-DRIVE = re.compile(r"^([A-Za-z]):(?:[\\/](.*))?$", re.S)
-
-
-def _windows() -> bool:
-    return os.name == "nt"
-
-
-def clean(text: str) -> str:
-    """A path as people paste it: quotes from Copy as path removed, ~ and %VARIABLES% expanded."""
-    cleaned = text.strip().strip('"').strip("'").strip()
-    return os.path.expandvars(os.path.expanduser(cleaned)) if cleaned else ""
-
-
-def drive_connection(drive: str) -> str | None:
-    """The network path a drive letter ("Y:") maps to on this PC, also while it is disconnected; None for a local drive,
-    a letter nothing maps, or off Windows."""
-    if sys.platform != "win32":
-        return None
-    import ctypes
-    from ctypes import wintypes
-    try:
-        connect = ctypes.WinDLL("mpr").WNetGetConnectionW
-        connect.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD)]
-        connect.restype = wintypes.DWORD
-        size = wintypes.DWORD(1024)
-        for _ in range(2):
-            buffer = ctypes.create_unicode_buffer(size.value)
-            result = connect(drive, buffer, ctypes.byref(size))
-            if result == 234:  # ERROR_MORE_DATA: size now holds what is needed
-                continue
-            # 0: connected; 1201 (ERROR_CONNECTION_UNAVAIL): remembered, not connected right now.
-            if result in (0, 1201) and buffer.value:
-                return str(buffer.value)
-            return None
-    except (OSError, AttributeError, ValueError):
-        return None
-    return None
-
-
-def network_path(path: str) -> str:
-    """A path on a mapped network drive (Y:\\Dashboards) as the network path it maps to (\\\\server\\share\\Dashboards),
-    so it names the same folder on every PC; any other path as it is."""
-    match = DRIVE.match(path)
-    if not match or not _windows():
-        return path
-    remote = drive_connection(match.group(1).upper() + ":")
-    if not remote:
-        return path
-    rest = (match.group(2) or "").replace("/", "\\").strip("\\")
-    return remote.rstrip("\\") + ("\\" + rest if rest else "")
-
-
-def stored_value(text: str) -> str:
-    """What Wizard keeps for the folder a person typed: quotes removed, a mapped drive as its network path."""
-    return network_path(clean(text))
-
-
-def folder_path(text: str, base: Path) -> Path:
-    """The folder a setting names, worked out without touching the disk (a share that does not answer must not hold up
-    start-up). Relative paths are inside `base`, the install folder."""
-    value = stored_value(text)
-    if value.startswith(("\\\\", "//")) or PureWindowsPath(value).is_absolute() or Path(value).is_absolute():
-        return Path(os.path.normpath(value))
-    return Path(os.path.normpath(base / value))
-
-
 def bounded(work: Callable[[], T], seconds: float, what: str) -> T:
-    """Run `work` in a thread of its own and wait at most `seconds`: Windows holds a file call on a share that does not
-    answer for a long time, and a tool must answer."""
+    """Run `work` in a thread of its own and wait at most `seconds`, so a tool answers even when GitHub does not."""
     box: dict[str, Any] = {}
 
     def target() -> None:
@@ -156,13 +106,306 @@ def bounded(work: Callable[[], T], seconds: float, what: str) -> T:
     return box["value"]
 
 
+# The repositories --------------------------------------------------------------------------------------------------------
+def repo_list(text: str | None) -> tuple[str, ...]:
+    """The repositories a setting names: owner/name or owner/*, separated by commas, spaces or new lines; an address on
+    the company GitHub (https://github.../owner/name, also .git or a page in it) is taken as its owner/name. Raises
+    ValueError for anything else."""
+    found: list[str] = []
+    for raw in re.split(r"[,;\s]+", text or ""):
+        entry = raw.strip().strip('"').strip("'")
+        if not entry:
+            continue
+        for prefix in (WEB + "/", WEB.replace("https://", "http://") + "/", WEB.removeprefix("https://") + "/"):
+            if entry.lower().startswith(prefix.lower()):
+                entry = "/".join(entry[len(prefix):].split("/")[:2])
+        entry = entry.strip("/").removesuffix(".git")
+        if not REPO_NAME.match(entry) or any(part in (".", "..") for part in entry.split("/")):
+            raise ValueError(f"'{raw}' is not a repository: write owner/name (or owner/* for all of an owner's)")
+        if entry.casefold() not in (f.casefold() for f in found):
+            found.append(entry)
+    return tuple(found)
+
+
+def dashboard_id(repo: str, branch: str, path: str) -> str:
+    return "d" + hashlib.sha256(f"{repo}@{branch}:{path}".casefold().encode("utf-8")).hexdigest()[:10]
+
+
+def source_id(raw: bytes) -> str:
+    """The knowledge standard's source id of a file (section 8): S- and the first 8 characters of its SHA-256."""
+    return "S-" + hashlib.sha256(raw).hexdigest()[:8]
+
+
+@dataclass(frozen=True)
+class Repo:
+    name: str  # owner/name
+    default_branch: str
+    url: str  # its page on the company GitHub
+    visibility: str
+    archived: bool
+    pushed_at: str | None
+    description: str
+    has_pages: bool
+    pages_url: str | None = None  # the repository's GitHub Pages site
+    pages_branch: str | None = None  # the branch it is published from (None: built by a workflow, or not known)
+    pages_folder: str = ""  # "" for the branch's root, else e.g. "docs"
+
+    def public(self) -> dict[str, Any]:
+        return {"repository": self.name, "url": self.url, "default_branch": self.default_branch,
+                "description": self.description or None, "visibility": self.visibility,
+                **({"archived": True} if self.archived else {}), "last_push": self.pushed_at,
+                **({"pages_site": self.pages_url} if self.pages_url else {}),
+                **({"pages_branch": self.pages_branch + (f" /{self.pages_folder}" if self.pages_folder else " /")}
+                   if self.pages_branch else {})}
+
+
+@dataclass(frozen=True)
+class RepoFile:
+    repo: str
+    branch: str
+    path: str
+    sha: str  # the blob id: a new version of the file has another
+    bytes: int
+
+
+@dataclass(frozen=True)
+class Dashboard:
+    id: str
+    repo: str
+    branch: str
+    path: str
+    sha: str
+    bytes: int
+    url: str  # the file on the company GitHub
+    pages_url: str | None  # the page on the repository's GitHub Pages site, when it is published there
+    pushed_at: str | None  # the repository's last push: the as-of date of last resort
+    default: bool = True  # on the repository's default branch (else on its Pages branch)
+
+    @property
+    def relative(self) -> str:
+        """How the dashboard is named: owner/name/path (owner/name@branch/path on the Pages branch)."""
+        return f"{self.repo}/{self.path}" if self.default else f"{self.repo}@{self.branch}/{self.path}"
+
+    @property
+    def subfolder(self) -> str:
+        return self.path.rpartition("/")[0]
+
+    @property
+    def folder_path(self) -> list[str]:
+        return [self.repo, *(p for p in self.subfolder.split("/") if p)]
+
+    @property
+    def open_url(self) -> str:
+        return self.pages_url or self.url
+
+
+@dataclass
+class Listing:
+    dashboards: list[Dashboard]
+    repos: dict[str, Repo]  # by owner/name, casefolded
+    files: dict[tuple[str, str], list[RepoFile]]  # (owner/name casefolded, branch) -> the branch's files
+    skipped: list[str] = field(default_factory=list)  # what could not be looked at, and why
+
+
+def _kept(path: str) -> bool:
+    """Not a library, a build or a hidden folder; .github is kept, for the workflows that refresh a dashboard."""
+    parts = path.split("/")
+    return not any((p.startswith(".") and p != ".github") or p.startswith("~$") or p in SKIP_DIRS for p in parts)
+
+
+def iso(timestamp: float) -> str:
+    return datetime.fromtimestamp(timestamp, UTC).isoformat(timespec="seconds")
+
+
+def as_of(stated: dict[str, Any] | None, committed: str | None, pushed: str | None = None) -> dict[str, Any]:
+    """The date a dashboard's figures are as of: the one the page states, else the file's last commit, else the
+    repository's last push, and which."""
+    if stated:
+        return stated
+    if committed:
+        return {"date": committed, "from": COMMITTED}
+    return {"date": pushed or "", "from": PUSHED}
+
+
+def unreachable(problem: str) -> str:
+    return (f"Wizard cannot read the dashboards on the company GitHub: {problem} Until then Wizard cannot read the "
+            "dashboards: answer from the other sources and say so.")
+
+
+# The company GitHub, read only ------------------------------------------------------------------------------------------
+JSON = "application/vnd.github+json"
+RAW = "application/vnd.github.raw+json"
+
+
+def default_client() -> httpx.Client:
+    return httpx.Client(timeout=REQUEST_S, follow_redirects=True)
+
+
+class _GitHub:
+    """GET requests to the company GitHub's API with the dashboards token. A JSON answer is kept on disk with its ETag,
+    so asking again is a conditional request: GitHub answers 304 when nothing changed, which costs no rate limit."""
+
+    def __init__(self, token: str, factory: Callable[[], httpx.Client], cache: Path | None,
+                 explain: Callable[[Exception], str] | None):
+        self.factory, self.cache, self.explain = factory, cache, explain
+        self.headers = {"Authorization": f"Bearer {token}", "X-GitHub-Api-Version": "2022-11-28",
+                        "User-Agent": "Wizard-Dashboards"}
+        self._client: httpx.Client | None = None
+        self._lock = threading.Lock()
+        self.classic: str | None = None  # "a classic token (scopes: repo)" once GitHub said so
+
+    def client(self) -> httpx.Client:
+        with self._lock:
+            if self._client is None:
+                self._client = self.factory()
+            return self._client
+
+    def close(self) -> None:
+        with self._lock:
+            if self._client is not None:
+                self._client.close()
+                self._client = None
+
+    def _url(self, path: str) -> str:
+        url = path if path.startswith("https://") else API + path
+        if not url.startswith(API + "/"):  # a Link header that points anywhere else is never followed
+            raise DashboardError("github_error", "GitHub pointed Wizard to another address; it was not followed.")
+        return url
+
+    def _send(self, url: str, params: dict[str, str] | None, headers: dict[str, str], stream: bool = False
+              ) -> httpx.Response:
+        try:
+            if stream:
+                request = self.client().build_request("GET", url, params=params, headers=headers)
+                response = self.client().send(request, stream=True)
+            else:
+                response = self.client().get(url, params=params, headers=headers)
+        except httpx.HTTPError as error:
+            reason = self.explain(error) if self.explain else f"{type(error).__name__}: {error}"
+            raise DashboardError("github_unreachable", f"this PC did not reach the company GitHub ({WEB}): {reason}.") from None
+        kind = token_kind(dict(response.headers))
+        if kind:
+            self.classic = kind
+        return response
+
+    def _cache_file(self, key: str) -> Path | None:
+        return None if self.cache is None else self.cache / "github" / (hashlib.sha256(key.encode()).hexdigest()[:24] + ".json")
+
+    def get(self, path: str, params: dict[str, str] | None = None, *, what: str = "") -> Any:
+        """The JSON GitHub answers for `path`; `what` names the repository in an error."""
+        return self._get(path, params, what)[0]
+
+    def _get(self, path: str, params: dict[str, str] | None, what: str) -> tuple[Any, str | None]:
+        """The JSON GitHub answers, and the address of the next page when there is one."""
+        url = self._url(path)
+        key = url + "?" + "&".join(f"{k}={v}" for k, v in sorted((params or {}).items()))
+        target = self._cache_file(key)
+        kept: dict[str, Any] | None = None
+        headers = {**self.headers, "Accept": JSON}
+        if target is not None:
+            try:
+                kept = json.loads(target.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                kept = None
+            if kept and kept.get("etag"):
+                headers["If-None-Match"] = str(kept["etag"])
+        response = self._send(url, params, headers)
+        if response.status_code == 304 and kept is not None:
+            return kept.get("body"), kept.get("next")
+        if response.status_code != 200:
+            raise self.refusal(response, what)
+        try:
+            body = response.json()
+        except ValueError:
+            raise DashboardError("github_error", f"GitHub's answer for {what or 'the dashboards'} was not JSON.") from None
+        following = response.links.get("next", {}).get("url")
+        if target is not None and response.headers.get("etag"):
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                pending = target.with_suffix(f".{threading.get_ident()}.tmp")
+                pending.write_text(json.dumps({"etag": response.headers["etag"], "body": body, "next": following}),
+                                   encoding="utf-8")
+                pending.replace(target)
+            except OSError:
+                pass  # the cache only saves requests
+        return body, following
+
+    def paged(self, path: str, params: dict[str, str], limit: int, what: str = "") -> list[Any]:
+        """Every page of a list GitHub answers in pages, up to `limit` items."""
+        found: list[Any] = []
+        page, following = self._get(path, {**params, "per_page": "100"}, what)
+        while isinstance(page, list):
+            found.extend(page)
+            if not following or len(found) >= limit:
+                break
+            page, following = self._get(following, None, what)
+        return found[:limit]
+
+    def blob(self, repo: str, sha: str, limit: int, head: bool = False) -> bytes:
+        """A file's bytes by its blob id; at most `limit` bytes (`head`: the first HEAD_BYTES, the rest not fetched)."""
+        url = self._url(f"/repos/{repo}/git/blobs/{sha}")
+        response = self._send(url, None, {**self.headers, "Accept": RAW}, stream=True)
+        try:
+            if response.status_code != 200:
+                response.read()
+                raise self.refusal(response, repo)
+            chunks, size = [], 0
+            for chunk in response.iter_bytes():
+                chunks.append(chunk)
+                size += len(chunk)
+                if head and size >= HEAD_BYTES:
+                    break
+                if size > limit:
+                    raise DashboardError("too_large", f"the file is larger than {limit // 1_048_576} MB")
+            raw = b"".join(chunks)
+            if "json" in response.headers.get("content-type", "") and raw.lstrip().startswith(b"{"):
+                try:  # a server that answers the JSON form: the content in base64
+                    body = json.loads(raw)
+                    if isinstance(body, dict) and body.get("encoding") == "base64":
+                        raw = base64.b64decode(str(body.get("content") or ""))
+                except ValueError:
+                    pass
+            return raw[:HEAD_BYTES] if head else raw
+        except httpx.HTTPError as error:
+            reason = self.explain(error) if self.explain else f"{type(error).__name__}: {error}"
+            raise DashboardError("github_unreachable", f"this PC did not reach the company GitHub ({WEB}): {reason}.") from None
+        finally:
+            response.close()
+
+    def refusal(self, response: httpx.Response, what: str) -> DashboardError:
+        code = response.status_code
+        try:
+            body = response.json()
+            detail = str(body.get("message", ""))[:200] if isinstance(body, dict) else ""
+        except ValueError:
+            detail = ""
+        repo = what or "the dashboards' repositories"
+        if code == 401:
+            return DashboardError("token_refused", "GitHub refused the dashboards token (HTTP 401): it is invalid or "
+                                                   "expired. Make a new one and enter it in Settings → Dashboards.")
+        if code == 403 and "x-github-request-id" not in {k.lower() for k in response.headers}:
+            return DashboardError("github_unreachable", f"a request to {WEB} was refused (HTTP 403), but not by GitHub "
+                                  "(its answers carry an X-GitHub-Request-Id): the proxy or a security gateway between "
+                                  "this PC and GitHub refused it. Settings → Network → Company GitHub proxy changes the "
+                                  "route.")
+        if code == 403:
+            return DashboardError("forbidden", "GitHub refused the dashboards token (HTTP 403): "
+                                  + refused(detail, dict(response.headers), repo))
+        if code == 404:
+            return DashboardError("not_found", f"GitHub says {repo} does not exist for this token (HTTP 404): check the "
+                                               "name, and that the token may read it.")
+        if code == 409:
+            return DashboardError("empty", f"{repo} is empty.")
+        return DashboardError("github_error", f"GitHub answered HTTP {code} for {repo}" + (f' ("{detail}").' if detail else "."))
+
+
 class _Walk(threading.Thread):
-    """One walk of the dashboards folder; what it found is kept on the folder when it ends, even late."""
+    """One listing of the dashboards; what it found is kept when it ends, even late."""
 
     def __init__(self, owner: Dashboards):
         super().__init__(name="wizard-dashboards-list", daemon=True)
         self.owner = owner
-        self.found: list[Dashboard] = []
+        self.found: Listing | None = None
         self.error: Exception | None = None
 
     def run(self) -> None:
@@ -174,135 +417,70 @@ class _Walk(threading.Thread):
         self.owner._listed(self.found)
 
 
-def dashboard_id(relative: str) -> str:
-    return "d" + hashlib.sha256(relative.casefold().encode("utf-8")).hexdigest()[:10]
+class Dashboards:
+    """The team's dashboards on the company GitHub: which there are, each page read as data (kept by its blob id), and
+    the repositories' other files read as text."""
 
-
-@dataclass(frozen=True)
-class Dashboard:
-    id: str
-    path: Path
-    relative: str  # inside the folder, with / between folders
-    bytes: int
-    modified: float
+    def __init__(self, token: str, repos: Iterable[str] = (), data_dir: Path | None = None, name: str = DEFAULT_NAME,
+                 client: Callable[[], httpx.Client] | None = None, exclude: Iterable[str | None] = (),
+                 explain: Callable[[Exception], str] | None = None):
+        self.repos = tuple(repos)
+        self.name = name
+        self.cache = data_dir  # data/dashboards: GitHub's answers, parses and the list's summaries; None keeps nothing
+        self.exclude = {r.casefold() for r in exclude if r}  # Wizard's own repositories: never dashboards
+        self.github = _GitHub(token, client or default_client, data_dir, explain)
+        self._lock = threading.Lock()
+        self._listing: tuple[float, Listing] | None = None
+        self._failed: tuple[float, str] | None = None  # when the dashboards last could not be listed, and why
+        self._walking: _Walk | None = None
 
     @property
-    def subfolder(self) -> str:
-        return self.relative.rpartition("/")[0]
+    def where(self) -> str:
+        """Where Wizard looks, in words."""
+        if self.repos:
+            return ", ".join(self.repos)
+        return "every repository the token's account owns or is a collaborator on"
 
+    def close(self) -> None:
+        self.github.close()
 
-def _junction(entry: os.DirEntry[str]) -> bool:
-    check = getattr(entry, "is_junction", None)  # Python 3.12+
-    return bool(check()) if check else False
-
-
-def _walk(root: Path) -> Iterator[Path]:
-    """HTML files under root, never following a link out of it, skipping hidden folders and lock files."""
-    stack = [(root, 0)]
-    while stack:
-        folder, depth = stack.pop()
-        try:
-            entries = sorted(os.scandir(folder), key=lambda e: e.name.casefold())
-        except OSError:
-            continue
-        for entry in entries:
-            if entry.name.startswith((".", "~$")):
-                continue
-            try:
-                if entry.is_symlink() or _junction(entry):
-                    continue
-                if entry.is_dir():
-                    if depth < MAX_DEPTH:
-                        stack.append((Path(entry.path), depth + 1))
-                elif entry.is_file() and entry.name.lower().endswith(SUFFIXES):
-                    yield Path(entry.path)
-            except OSError:
-                continue
-
-
-def iso(timestamp: float) -> str:
-    return datetime.fromtimestamp(timestamp, UTC).isoformat(timespec="seconds")
-
-
-def as_of(stated: dict[str, Any] | None, modified: float) -> dict[str, Any]:
-    """The date a dashboard's figures are as of: the one the page states, else the file's modified time, and which."""
-    if stated:
-        return stated
-    return {"date": iso(modified), "from": "file modified time"}
-
-
-def unreachable(root: Path, problem: str) -> str:
-    return (f"This PC cannot reach the dashboards folder {root}: {problem}. Ask for access to the share that holds it (or "
-            "set the folder again in Settings → Dashboards if it moved). Until then Wizard cannot read the dashboards: "
-            "answer from the other sources and say so.")
-
-
-class Dashboards:
-    """The dashboards folder on this PC: what is in it, and each page read as data (kept by path, size and time)."""
-
-    def __init__(self, root: Path, data_dir: Path | None, name: str = DEFAULT_NAME):
-        self.root = root
-        self.name = name
-        self.cache = data_dir  # data/dashboards: parses and the list's summaries; None keeps nothing
-        self._lock = threading.Lock()
-        self._listing: tuple[float, list[Dashboard]] | None = None
-        self._probe: tuple[float, str | None] | None = None
-        self._failed: tuple[float, str] | None = None  # when the folder last could not be listed, and why
-        self._walking: _Walk | None = None  # the walk of the folder, while it runs
-
-    # Reaching the folder ------------------------------------------------------------------------------------------------
-    def _check_root(self) -> str | None:
-        try:
-            info = os.stat(self.root)
-        except FileNotFoundError:
-            return "it is not there (the share or folder does not exist, or this PC is not connected to it)"
-        except PermissionError:
-            return "this PC's Windows account is not allowed to open it"
-        except OSError as error:
-            return error.strerror or str(error)
-        return None if stat.S_ISDIR(info.st_mode) else "it is a file, not a folder"
-
-    def problem(self, fresh: bool = False) -> str | None:
-        """None when this PC can open the folder; else what is wrong, in words the person can act on."""
-        cached = self._probe
-        if cached and not fresh and time.monotonic() - cached[0] < LISTING_S:
-            return cached[1]
-        try:
-            problem = bounded(self._check_root, PROBE_S, "the folder")
-        except DashboardError as error:
-            problem = error.message
-        self._probe = (time.monotonic(), problem)
-        return problem
+    # Reaching GitHub ----------------------------------------------------------------------------------------------------
+    def problem(self) -> str | None:
+        """Why the dashboards could not be listed the last time (in the last few minutes), else None. Asks nothing."""
+        failed = self._failed
+        if failed and time.monotonic() - failed[0] < FAILED_S:
+            return failed[1]
+        return None
 
     def known_count(self) -> int | None:
-        """How many dashboards the last listing found, without walking the folder again; None before one."""
-        return len(self._listing[1]) if self._listing else None
+        """How many dashboards the last listing found, without asking GitHub again; None before one."""
+        return len(self._listing[1].dashboards) if self._listing else None
 
-    # What is in it -------------------------------------------------------------------------------------------------------
-    def listing(self, fresh: bool = False) -> list[Dashboard]:
+    # What there is ------------------------------------------------------------------------------------------------------
+    def inventory(self, fresh: bool = False) -> Listing:
         cached = self._listing
         if cached and not fresh and time.monotonic() - cached[0] < LISTING_S:
             return cached[1]
         failed = self._failed
         if failed and not fresh and time.monotonic() - failed[0] < FAILED_S:
             ago = round(time.monotonic() - failed[0])
-            raise DashboardError("folder_unreachable", unreachable(self.root, failed[1]) + (
-                f" (This was {ago} s ago; Wizard tries the folder again after {round(FAILED_S / 60)} minutes, so do not "
-                "call the dashboards tools again for this answer.)"))
-        problem = self.problem(fresh=True)
-        if problem:
-            self._failed = (time.monotonic(), problem)
-            raise DashboardError("folder_unreachable", unreachable(self.root, problem))
+            raise DashboardError("github_unreachable", unreachable(failed[1]) + (
+                f" (This was {ago} s ago; Wizard tries again after {round(FAILED_S / 60)} minutes, so do not call the "
+                "dashboards tools again for this answer.)"))
         try:
-            found = self._walk_listing()
+            return self._walk_listing()
         except DashboardError as error:
-            self._failed = (time.monotonic(), error.message)
-            raise DashboardError("folder_unreachable", unreachable(self.root, error.message)) from None
-        return found
+            if error.code in ("github_unreachable", "token_refused", "forbidden", "no_answer", "not_found", "github_error"):
+                self._failed = (time.monotonic(), error.message)
+                raise DashboardError("github_unreachable", unreachable(error.message)) from None
+            raise
 
-    def _walk_listing(self) -> list[Dashboard]:
-        """Walk the folder in a thread and wait at most LIST_S. A walk still running from an earlier call is waited for,
-        never started twice; one that finishes after its caller stopped waiting still keeps its listing."""
+    def listing(self, fresh: bool = False) -> list[Dashboard]:
+        return self.inventory(fresh).dashboards
+
+    def _walk_listing(self) -> Listing:
+        """List in a thread and wait at most LIST_S. A listing still running from an earlier call is waited for, never
+        started twice; one that finishes after its caller stopped waiting still keeps what it found."""
         with self._lock:
             walk = self._walking
             if walk is None or not walk.is_alive():
@@ -310,160 +488,305 @@ class Dashboards:
                 walk.start()
         walk.join(LIST_S)
         if walk.is_alive():
-            raise DashboardError("no_answer", f"Listing the dashboards folder did not answer within {round(LIST_S)} "
+            raise DashboardError("no_answer", f"Listing the dashboards on GitHub did not finish within {round(LIST_S)} "
                                               "seconds (it goes on in the background)")
         if walk.error is not None:
             raise walk.error
+        assert walk.found is not None
         return walk.found
 
-    def _listed(self, found: list[Dashboard]) -> None:
+    def _listed(self, found: Listing) -> None:
         self._listing, self._failed = (time.monotonic(), found), None
+        self._prune({d.sha for d in found.dashboards})
 
-    def _list(self) -> list[Dashboard]:
-        found = []
-        for path in _walk(self.root):
+    def _repositories(self, skipped: list[str]) -> list[Repo]:
+        listed: list[Any] = []
+        if not self.repos:
+            listed = self.github.paged("/user/repos", {"affiliation": AFFILIATION, "sort": "full_name"}, MAX_REPOS)
+        for entry in self.repos:
+            owner, _, name = entry.partition("/")
             try:
-                info = path.stat()
-            except OSError:
+                if name == "*":
+                    try:
+                        listed.extend(self.github.paged(f"/orgs/{quote(owner)}/repos", {"type": "all"}, MAX_REPOS, entry))
+                    except DashboardError as error:
+                        if error.code != "not_found":
+                            raise
+                        listed.extend(self.github.paged(f"/users/{quote(owner)}/repos", {"type": "all"}, MAX_REPOS, entry))
+                else:
+                    listed.append(self.github.get(f"/repos/{quote(owner)}/{quote(name)}", what=entry))
+            except DashboardError as error:
+                if error.code not in ("not_found", "forbidden"):
+                    raise
+                skipped.append(f"{entry}: {error.message}")
+        repos: dict[str, Repo] = {}
+        for item in listed:
+            if not isinstance(item, dict) or not item.get("full_name"):
                 continue
-            relative = path.relative_to(self.root).as_posix()
-            found.append(Dashboard(dashboard_id(relative), path, relative, info.st_size, info.st_mtime))
-            if len(found) >= MAX_FILES:
+            full = str(item["full_name"])
+            if full.casefold() in self.exclude or full.casefold() in repos:
+                continue
+            repos[full.casefold()] = Repo(
+                name=full, default_branch=str(item.get("default_branch") or "main"),
+                url=str(item.get("html_url") or f"{WEB}/{full}"),
+                visibility=str(item.get("visibility") or ("private" if item.get("private") else "public")),
+                archived=bool(item.get("archived")), pushed_at=item.get("pushed_at") or None,
+                description=str(item.get("description") or "")[:300], has_pages=bool(item.get("has_pages")))
+            if len(repos) >= MAX_REPOS:
+                skipped.append(f"only the first {MAX_REPOS} repositories were looked at")
                 break
+        return list(repos.values())
+
+    def _with_pages(self, repo: Repo) -> Repo:
+        """The repository's GitHub Pages site: its address and the branch and folder it is published from."""
+        if not repo.has_pages:
+            return repo
+        try:
+            site = self.github.get(f"/repos/{repo.name}/pages", what=repo.name)
+        except DashboardError as error:
+            if error.code in ("github_unreachable", "token_refused"):
+                raise
+            return repo  # a token without Pages: read still lists the pages, without their site address
+        if not isinstance(site, dict):
+            return repo
+        given = site.get("source")
+        source: dict[str, Any] = given if isinstance(given, dict) else {}
+        branch = str(source.get("branch") or "") or None
+        folder = str(source.get("path") or "/").strip("/")
+        return replace(repo, pages_url=str(site.get("html_url") or "") or None, pages_branch=branch, pages_folder=folder)
+
+    def _list(self) -> Listing:
+        skipped: list[str] = []
+        found: list[Dashboard] = []
+        files: dict[tuple[str, str], list[RepoFile]] = {}
+        repos = []
+        for repo in self._repositories(skipped):
+            repo = self._with_pages(repo)
+            repos.append(repo)
+            branches = [repo.default_branch]
+            if repo.pages_branch and repo.pages_branch != repo.default_branch:
+                branches.append(repo.pages_branch)
+            for branch in branches:
+                try:
+                    tree = self.github.get(f"/repos/{repo.name}/git/trees/{quote(branch, safe='')}", {"recursive": "1"},
+                                           what=repo.name)
+                except DashboardError as error:
+                    if error.code in ("github_unreachable", "token_refused"):
+                        raise
+                    if error.code != "empty":
+                        skipped.append(f"{repo.name} ({branch}): {error.message}")
+                    continue
+                if not isinstance(tree, dict):
+                    continue
+                if tree.get("truncated"):
+                    skipped.append(f"{repo.name} ({branch}): GitHub listed only part of its files (it has too many)")
+                kept = [RepoFile(repo.name, branch, str(e["path"]), str(e.get("sha") or ""), int(e.get("size") or 0))
+                        for e in tree.get("tree", []) if isinstance(e, dict) and e.get("type") == "blob"
+                        and isinstance(e.get("path"), str) and _kept(e["path"])]
+                files[(repo.name.casefold(), branch)] = kept[:MAX_TREE]
+                prefix = f"{repo.pages_folder}/" if repo.pages_folder else ""
+                for entry in kept:
+                    if not entry.path.lower().endswith(SUFFIXES) or len(found) >= MAX_FILES:
+                        continue
+                    on_site = branch == repo.pages_branch and entry.path.startswith(prefix) and bool(repo.pages_url)
+                    if branch != repo.default_branch and not on_site:
+                        continue  # the Pages branch outside the folder its site is published from
+                    pages_url = (str(repo.pages_url).rstrip("/") + "/" + quote(entry.path[len(prefix):])) if on_site else None
+                    found.append(Dashboard(
+                        dashboard_id(repo.name, branch, entry.path), repo.name, branch, entry.path, entry.sha, entry.bytes,
+                        f"{repo.url}/blob/{quote(branch, safe='')}/{quote(entry.path)}", pages_url, repo.pushed_at,
+                        default=branch == repo.default_branch))
+        if len(found) >= MAX_FILES:
+            skipped.append(f"only the first {MAX_FILES} dashboards are listed")
         found.sort(key=lambda d: d.relative.casefold())
-        return found
+        return Listing(found, {r.name.casefold(): r for r in repos}, files, skipped)
 
     def find(self, key: str) -> Dashboard:
-        """A dashboard by its id, or by its path inside the folder. Anything that points outside is refused."""
-        wanted = key.strip().strip('"').strip("'").replace("\\", "/").strip()
+        """A dashboard by its id, by owner/name/path, or by its path in the repository when only one has it."""
+        wanted = key.strip().strip('"').strip("'").replace("\\", "/").strip().strip("/")
+        if not wanted:
+            raise DashboardError("unknown_dashboard", "Give a dashboard's id from wizard_dashboards.")
         by_id = bool(ID.match(wanted))
-        if not by_id and (not wanted or wanted.startswith("/") or ":" in wanted
-                          or any(p in ("..", ".") for p in wanted.split("/"))):
-            raise DashboardError("outside_folder", "Only dashboards inside the dashboards folder can be read: give an id "
-                                                   "from wizard_dashboards or a path inside the folder.")
         folded = wanted.casefold()
         for fresh in (False, True):
-            item = next((d for d in self.listing(fresh=fresh)
-                         if (d.id == wanted if by_id else d.relative.casefold() == folded)), None)
-            if item is not None:
-                return item
-        raise DashboardError("unknown_dashboard", f"No dashboard '{key}' in the dashboards folder. Ids come from "
+            items = self.listing(fresh=fresh)
+            if by_id:
+                match = [d for d in items if d.id == wanted]
+            else:
+                match = [d for d in items if d.relative.casefold() == folded or d.url.casefold() == folded
+                         or (d.pages_url or "").casefold() == folded]
+                if not match:
+                    match = [d for d in items if d.path.casefold() == folded]
+            if len(match) == 1:
+                return match[0]
+            if len(match) > 1:
+                raise DashboardError("ambiguous_dashboard", f"Several dashboards have the path '{key}': "
+                                     + ", ".join(f"{d.id} ({d.relative})" for d in match[:10]) + ". Give the id.")
+        raise DashboardError("unknown_dashboard", f"No dashboard '{key}' on the company GitHub. Ids come from "
                                                   "wizard_dashboards.")
 
     def title_of(self, key: str) -> str | None:
-        """A dashboard's title as last read, without touching the folder (for step labels)."""
+        """A dashboard's title as last read, without asking GitHub (for step labels)."""
         if not self._listing:
             return None
-        item = next((d for d in self._listing[1] if d.id == key or d.relative.casefold() == key.casefold()), None)
+        folded = key.strip().casefold()
+        item = next((d for d in self._listing[1].dashboards if d.id == key or d.relative.casefold() == folded), None)
         if item is None:
             return None
-        summary = self._summaries().get(item.relative)
+        summary = self._summaries().get(item.sha)
         return str(summary["title"]) if summary and summary.get("title") else item.relative
 
-    # Reading ------------------------------------------------------------------------------------------------------------
-    def _inside(self, item: Dashboard) -> Path:
-        """The file itself, checked once more: inside the folder, an HTML file, not a link out of it."""
+    def repository(self, name: str) -> Repo:
+        """One of the dashboards' repositories, by owner/name; any other is refused."""
         try:
-            real = item.path.resolve(strict=True)
-            root = self.root.resolve(strict=True)
-        except OSError:
-            raise DashboardError("dashboard_gone", f"{item.relative} is no longer in the dashboards folder (moved or "
-                                                   "renamed). List the dashboards again.") from None
-        if item.path.is_symlink() or not real.is_relative_to(root) or real.suffix.lower() not in SUFFIXES:
-            raise DashboardError("outside_folder", f"{item.relative} points outside the dashboards folder; Wizard does "
-                                                   "not read it.")
-        return real
+            wanted = repo_list(name)
+        except ValueError:
+            wanted = ()
+        if len(wanted) == 1 and not wanted[0].endswith("/*"):
+            for fresh in (False, True):
+                repo = self.inventory(fresh=fresh).repos.get(wanted[0].casefold())
+                if repo is not None:
+                    return repo
+        raise DashboardError("unknown_repository", f"'{name}' is not one of the dashboards' repositories; Wizard reads "
+                             "only those. Their names come from wizard_dashboards (repository) or "
+                             "wizard_dashboard_files without a repository.")
 
-    def _cache_file(self, item: Dashboard) -> Path | None:
-        if self.cache is None:
-            return None
-        return self.cache / "pages" / (hashlib.sha256(item.relative.casefold().encode("utf-8")).hexdigest()[:20] + ".json")
+    def files(self, repo: Repo) -> list[RepoFile]:
+        """The repository's files: its default branch, then its Pages branch's (the same path once)."""
+        listing = self.inventory()
+        branches = [repo.default_branch, *([repo.pages_branch] if repo.pages_branch not in (None, repo.default_branch) else [])]
+        return [item for branch in branches for item in listing.files.get((repo.name.casefold(), str(branch)), [])]
+
+    def file(self, repo: Repo, path: str) -> RepoFile:
+        wanted = path.strip().strip('"').strip("'").replace("\\", "/").strip("/")
+        branch = repo.default_branch
+        if wanted.startswith("@") and "/" in wanted:  # @gh-pages/index.html: a file on the Pages branch
+            branch, _, wanted = wanted[1:].partition("/")
+        folded = wanted.casefold()
+        found = next((f for f in self.files(repo) if f.branch == branch and f.path.casefold() == folded), None)
+        if found is None:
+            raise DashboardError("unknown_file", f"{repo.name} has no file '{path}' on {branch}. Its files come from "
+                                                 f"wizard_dashboard_files(repository='{repo.name}').")
+        return found
+
+    def read_text(self, item: RepoFile) -> tuple[str, bytes]:
+        """A repository file as text (code, SQL, a README, a workflow, a page's own source)."""
+        if item.bytes > TEXT_BYTES:
+            raise DashboardError("too_large", f"{item.path} is {item.bytes / 1_048_576:.0f} MB; Wizard reads files up to "
+                                              f"{TEXT_BYTES // 1_048_576} MB as text.")
+        try:
+            raw = bounded(partial(self.github.blob, item.repo, item.sha, TEXT_BYTES), READ_S, f"Reading {item.path}")
+        except DashboardError as error:
+            if error.code == "no_answer":
+                raise DashboardError("github_unreachable", unreachable(error.message + ".")) from None
+            raise
+        if b"\0" in raw[:8000]:
+            raise DashboardError("not_text", f"{item.path} is not a text file (a picture, a workbook or another binary "
+                                             "file); Wizard reads only text files of a repository.")
+        return decode_text(raw), raw
+
+    # Reading a page -----------------------------------------------------------------------------------------------------
+    def _cache_file(self, sha: str) -> Path | None:
+        return None if self.cache is None or not re.fullmatch(r"[0-9a-f]{40,64}", sha) else self.cache / "pages" / f"{sha}.json"
 
     def _cached(self, item: Dashboard) -> dict[str, Any] | None:
-        target = self._cache_file(item)
+        target = self._cache_file(item.sha)
         if target is None:
             return None
         try:
             record = json.loads(target.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return None
-        if (record.get("parser") != PARSER or record.get("bytes") != item.bytes
-                or record.get("modified") != round(item.modified, 3)):
+        if record.get("parser") != PARSER:
             return None
         page = record.get("page")
         return page if isinstance(page, dict) else None
 
     def _keep(self, item: Dashboard, page: dict[str, Any]) -> None:
-        target = self._cache_file(item)
+        target = self._cache_file(item.sha)
         if target is None:
             return
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
             pending = target.with_suffix(".tmp")
-            pending.write_text(json.dumps({"parser": PARSER, "relative": item.relative, "bytes": item.bytes,
-                                           "modified": round(item.modified, 3), "page": page}, ensure_ascii=False),
-                               encoding="utf-8")
+            pending.write_text(json.dumps({"parser": PARSER, "relative": item.relative, "page": page},
+                                          ensure_ascii=False), encoding="utf-8")
             pending.replace(target)
-            self._remember({item.relative: self._entry(item, summary_of(page))})
+            self._remember({item.sha: {**summary_of(page), "parser": PARSER}})
         except OSError:
             pass  # the cache only saves time
 
-    def _current(self, item: Dashboard) -> Dashboard:
-        """The file as it is now (the list is up to a minute old): its size and modified time."""
+    def _prune(self, current: set[str]) -> None:
+        """Drop the parses of versions no dashboard has any more."""
+        if self.cache is None:
+            return
         try:
-            info = bounded(item.path.stat, PROBE_S, f"The dashboard {item.relative}")
-        except DashboardError as error:
-            raise DashboardError("folder_unreachable", unreachable(self.root, error.message)) from None
+            for path in (self.cache / "pages").glob("*.json"):
+                if path.stem not in current:
+                    path.unlink(missing_ok=True)
         except OSError:
-            raise DashboardError("dashboard_gone", f"{item.relative} is no longer in the dashboards folder (moved, "
-                                                   "renamed or deleted). List the dashboards again.") from None
-        if info.st_size == item.bytes and info.st_mtime == item.modified:
-            return item
-        return Dashboard(item.id, item.path, item.relative, info.st_size, info.st_mtime)
+            pass
+
+    def committed(self, item: Dashboard) -> str | None:
+        """When the file last changed: the date of the last commit to it on its branch (kept with its version)."""
+        known = self._summaries().get(item.sha) or {}
+        if known.get("committed"):
+            return str(known["committed"])
+
+        def ask() -> str | None:
+            commits = self.github.get(f"/repos/{item.repo}/commits", {"sha": item.branch, "path": item.path, "per_page": "1"},
+                                      what=item.repo)
+            if isinstance(commits, list) and commits and isinstance(commits[0], dict):
+                info = commits[0].get("commit") or {}
+                return (info.get("committer") or {}).get("date") or (info.get("author") or {}).get("date")
+            return None
+
+        try:
+            stamp = bounded(ask, PROBE_S, "GitHub")
+        except DashboardError:
+            return None
+        if stamp:
+            self._remember({item.sha: {**known, "committed": str(stamp)}})
+        return str(stamp) if stamp else None
 
     def page(self, item: Dashboard) -> dict[str, Any]:
-        """The dashboard read as data (see parse_page), from the cache when the file has not changed. `modified` is the
-        file's modified time when it was read: the as-of date when the page states none."""
-        item = self._current(item)
+        """The dashboard read as data (see parse_page), from the cache when this version was read before. `committed`
+        is its last commit: the as-of date when the page states none."""
         cached = self._cached(item)
         if cached is not None:
-            return {**cached, "modified": item.modified}
+            return {**cached, "committed": self.committed(item)}
         if item.bytes > MAX_BYTES:
             raise DashboardError("too_large", f"{item.relative} is {item.bytes / 1_048_576:.0f} MB; Wizard reads "
                                               f"dashboards up to {MAX_BYTES // 1_048_576} MB. Say it could not be read.")
 
         def read() -> dict[str, Any]:
-            real = self._inside(item)
-            with real.open("rb") as handle:
-                raw = handle.read(MAX_BYTES + 1)
-            if len(raw) > MAX_BYTES:
-                raise DashboardError("too_large", f"{item.relative} is larger than {MAX_BYTES // 1_048_576} MB; Wizard "
-                                                  "does not read it.")
+            raw = self.github.blob(item.repo, item.sha, MAX_BYTES)
             page = parse_page(decode(raw), deadline=time.monotonic() + READ_S - 10)
             page["sha256"] = hashlib.sha256(raw).hexdigest()
             page["bytes"] = len(raw)
+            page["source_id"] = source_id(raw)
             return page
 
         try:
             page = bounded(read, READ_S, f"Reading {item.relative}")
         except DashboardError as error:
             if error.code == "no_answer":
-                raise DashboardError("folder_unreachable", unreachable(self.root, error.message)) from None
+                raise DashboardError("github_unreachable", unreachable(error.message + ".")) from None
+            if error.code == "not_found":
+                raise DashboardError("dashboard_gone", f"{item.relative} is no longer on GitHub in this version (it "
+                                                       "changed or was removed). List the dashboards again.") from None
             raise
-        except OSError as error:
-            raise DashboardError("dashboard_unreadable", f"{item.relative} could not be opened: "
-                                                         f"{error.strerror or error}.") from None
         self._keep(item, page)
-        return {**page, "modified": item.modified}
+        return {**page, "committed": self.committed(item)}
 
-    # The list's summaries (title, headings, stated date) ------------------------------------------------------------------
+    # The list's summaries (title, headings, stated date) ----------------------------------------------------------------
     def _index_file(self) -> Path | None:
         return self.cache / "index.json" if self.cache is not None else None
 
     def _summaries(self) -> dict[str, dict[str, Any]]:
         target = self._index_file()
         if target is None:
-            return {}
+            return getattr(self, "_memory", {})
         try:
             value = json.loads(target.read_text(encoding="utf-8"))
             return value if isinstance(value, dict) else {}
@@ -471,34 +794,33 @@ class Dashboards:
             return {}
 
     def _remember(self, entries: dict[str, dict[str, Any]]) -> None:
-        """Add summaries (by relative path) to the list's index."""
-        target = self._index_file()
-        if target is None or not entries:
+        """Add summaries (by blob id) to the list's index."""
+        if not entries:
             return
-        try:
-            with self._lock:
-                known = {**self._summaries(), **entries}
+        target = self._index_file()
+        with self._lock:
+            if target is None:
+                self._memory = {**getattr(self, "_memory", {}), **entries}
+                return
+            try:
+                current = self._summaries()
+                known = {**current, **{k: {**current.get(k, {}), **v} for k, v in entries.items()}}
                 target.parent.mkdir(parents=True, exist_ok=True)
                 pending = target.with_suffix(".tmp")
                 pending.write_text(json.dumps(known, ensure_ascii=False), encoding="utf-8")
                 pending.replace(target)
-        except OSError:
-            pass  # the index only saves time
-
-    @staticmethod
-    def _entry(item: Dashboard, summary: dict[str, Any]) -> dict[str, Any]:
-        return {**summary, "bytes": item.bytes, "modified": round(item.modified, 3), "parser": PARSER}
+            except OSError:
+                pass  # the index only saves time
 
     def summaries(self, items: list[Dashboard], seconds: float = LIST_S) -> dict[str, dict[str, Any]]:
-        """Each dashboard's title, first headings and stated date, from the cache or from the start of the file. Pages
-        not reached before the time is up show their file name."""
+        """Each dashboard's title, first headings and stated date, from the index or from the start of the page (the
+        rest is not fetched). Pages not reached before the time is up show their path."""
         known = self._summaries()
         found: dict[str, dict[str, Any]] = {}
         todo = []
         for item in items:
-            entry = known.get(item.relative)
-            if (entry and entry.get("bytes") == item.bytes and entry.get("modified") == round(item.modified, 3)
-                    and entry.get("parser") == PARSER):
+            entry = known.get(item.sha)
+            if entry and entry.get("parser") == PARSER and "title" in entry:
                 found[item.id] = entry
             else:
                 todo.append(item)
@@ -507,9 +829,7 @@ class Dashboards:
         deadline = time.monotonic() + seconds
 
         def head(item: Dashboard) -> dict[str, Any]:
-            real = self._inside(item)
-            with real.open("rb") as handle:
-                raw = handle.read(HEAD_BYTES)
+            raw = self.github.blob(item.repo, item.sha, MAX_BYTES, head=True)
             return summary_of(parse_page(decode(raw), deadline=time.monotonic() + 20, scripts=False))
 
         added: dict[str, dict[str, Any]] = {}
@@ -519,11 +839,28 @@ class Dashboards:
                 break
             try:
                 summary = bounded(partial(head, item), min(left, 30), item.relative)
-            except (DashboardError, OSError):
+            except DashboardError as error:
+                if error.code in ("github_unreachable", "token_refused"):
+                    break
                 continue
-            added[item.relative] = found[item.id] = self._entry(item, summary)
+            added[item.sha] = {**summary, "parser": PARSER}
+            found[item.id] = {**known.get(item.sha, {}), **added[item.sha]}
         self._remember(added)
         return found
+
+
+def decode_text(raw: bytes) -> str:
+    """A text file's characters: its byte-order mark, else UTF-8, else the Korean code page (cp949), else Latin-1."""
+    if raw.startswith(b"\xef\xbb\xbf"):
+        return raw[3:].decode("utf-8", errors="replace")
+    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return raw.decode("utf-16", errors="replace")
+    for encoding in ("utf-8", "cp949"):
+        try:
+            return raw.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("latin-1")
 
 
 def summary_of(page: dict[str, Any]) -> dict[str, Any]:
@@ -1941,11 +2278,13 @@ def read_part(page: dict[str, Any], part: str, offset: int = 0, limit: int | Non
             "digest": _sha({"columns": found["columns"], "rows": chosen})}
 
 
-def replay(folder: Dashboards, request: dict[str, Any], digest: str) -> tuple[str, str]:
-    """Read the same part of the same dashboard again (Check my data): UNCHANGED, CHANGED or UNAVAILABLE."""
+def replay(team: Dashboards, request: dict[str, Any], digest: str) -> tuple[str, str]:
+    """Read the same part of the same dashboard again, as it is on GitHub now (Check my data): UNCHANGED, CHANGED or
+    UNAVAILABLE."""
     try:
-        item = folder.find(str(request.get("path") or request.get("dashboard") or ""))
-        again = read_part(folder.page(item), str(request.get("part") or "text"), int(request.get("offset") or 0),
+        team.listing(fresh=True)  # the version on its branch now, not the one listed a minute ago
+        item = team.find(str(request.get("dashboard") or request.get("path") or ""))
+        again = read_part(team.page(item), str(request.get("part") or "text"), int(request.get("offset") or 0),
                           int(request.get("limit") or 0) or None)
     except DashboardError as error:
         return "UNAVAILABLE", error.message

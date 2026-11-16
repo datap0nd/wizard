@@ -2,8 +2,6 @@
 with 400 INVALID_ARGUMENT before the model runs (seen on the work PC: `required: ["title"]` with `title` stripped)."""
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from wizard_agent.code_assist import gemini_schema
@@ -12,7 +10,7 @@ from wizard_connectors.gemini_rules import function_problems
 from wizard_connectors.tools import build_registry, build_services
 
 SERVICES = build_services()
-SERVICES.dashboards = Dashboards(Path("example-dashboards"), None)  # its tools are checked too
+SERVICES.dashboards = Dashboards("example-token")  # its tools are checked too
 TOOLS = build_registry(SERVICES).describe()
 
 
