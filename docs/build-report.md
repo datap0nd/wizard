@@ -3,7 +3,31 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-16 (latest) — The dashboards are read from the company GitHub, and mapped from scratch
+## 2026-11-19 (latest) — Developer mode: Tasks and the other developer settings behind a PIN
+
+The owner, before handing Wizard to people who install it from the company's GitHub: "I just need the app to be a bit
+more beginner friendly too. I want you to keep tasks and other 'developer' stuff behind a developer mode PIN code menu
+protection" ([decision](decisions/2026-11-19-developer-mode.md)).
+
+- `developer_mode.py`: the PIN's salted SHA-256 (never its digits: the repository is public), and this PC's flag in its
+  own file in the data folder (`developer-mode.json`), never a setting, so no settings file or export carries it.
+  `POST /api/v1/developer-mode` (the PIN; a wrong one waits a second and is refused with "That PIN is not right.") and
+  `DELETE` turn it on and off for the person at the PC only, each audited. Bootstrap, `GET /api/v1/settings` and the
+  tray's `/internal/v1/desktop/status` say whether it is on. The APIs answer as before: it hides, it is not a password.
+- `SettingsDialog.tsx`: a beginner sees Quick setup, the company file's name, **Portals** with the sign-in only
+  (`PortalSignIn developer={false}`: no addresses, no maps), **Version and updates** and **Developer mode** (the PIN,
+  **Unlock**). Developer mode adds every other section with Save, the prompt queue, Tasks and the portal maps, with a
+  line at the top saying it is on, and **Turn off developer mode**. `App.tsx`: **Share as case** only in developer mode.
+  Quick setup's empty Check step no longer sends a beginner to Settings.
+- WizardBar: **Sync the knowledge base now** and **Export settings…** are in the tray menu only while developer mode is
+  on (read from the status each time the menu opens).
+- Checks: `test_developer_mode.py` 7 passed; with `test_desktop.py` and `test_settings_pane.py`, all pass.
+  `SettingsDialog.test.tsx` three new (a beginner's sections, a wrong then the right PIN, turning it off); the tests of
+  the developer sections now open them in developer mode; 237 web tests pass. `contracts/openapi.json` gains the two
+  endpoints. WizardBar built here with the .NET 8 SDK (`-c Release`, warnings as errors): 0 warnings. Not run: the
+  tray menu on Windows (the `desktop` workflow builds and smoke-tests it).
+
+## 2026-11-16 — The dashboards are read from the company GitHub, and mapped from scratch
 
 The owner: "In wizard, I want the dashboards part to be mapped from scratch. Our dashboards are all in github
 enterprise, I want to map them and then I want wizard to reference them. I am a collaborator on all of them"

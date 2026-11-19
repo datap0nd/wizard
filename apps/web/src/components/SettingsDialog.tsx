@@ -1,5 +1,5 @@
 import {useEffect, useMemo, useState} from 'react';
-import {ArrowRight, CheckCircle2, ChevronDown, Download, KeyRound, Loader2, PlugZap, RefreshCw, RotateCcw, Sparkles, XCircle} from 'lucide-react';
+import {ArrowRight, CheckCircle2, ChevronDown, Download, KeyRound, Loader2, Lock, LockOpen, PlugZap, RefreshCw, RotateCcw, Sparkles, XCircle} from 'lucide-react';
 import {api, ApiError} from '@/api';
 import {formatDate} from '@/format';
 import {inHost, toHost} from '@/host';
@@ -22,6 +22,10 @@ const TESTS: Record<string, SettingsTest> = {knowledge: 'knowledge', postgres: '
  *  or checking the feedback token and putting feedback on the Cases site. */
 const TEST_LABEL: Record<string, string> = {dashboards: 'Find dashboards', site: 'Turn feedback on'};
 const SOURCE_ORDER = 'WIZARD_SOURCE_ORDER';
+/** The sections a beginner sees (owner, 19 Nov 2026: "keep tasks and other 'developer' stuff behind a developer mode PIN"):
+ *  Portals, for signing in again (its addresses and the maps are the developer's). With Quick setup at the top and Version
+ *  and updates below. Every other section, the prompt queue and Tasks need developer mode; a new section does too. */
+const EVERYDAY = new Set(['portals']);
 
 /** One settings section, collapsed until the person opens it (owner, 31 Oct 2026: "make every section collapsed by default"). */
 function Section({id, title, about, onToggle, children}: {id: string; title: string; about?: string;
@@ -71,10 +75,15 @@ export function SettingsDialog({open, onClose, onSaved, boot, onAccount, setup: 
   const [tests, setTests] = useState<Record<string, Result | 'running'>>({});
   const [update, setUpdate] = useState<UpdateInfo | 'checking' | null>(null);
   const [setup, setSetup] = useState(false);
+  const [pin, setPin] = useState('');
+  const [pinError, setPinError] = useState<string | null>(null);
+  const [unlocking, setUnlocking] = useState(false);
+  const developer = !!view?.developer_mode;
 
   useEffect(() => {
     if (!open) return;
     setDraft({}); setEditingSecret({}); setError(null); setNotice(null); setTests({}); setSetup(startInSetup && !!boot);
+    setPin(''); setPinError(null);
     api.settings().then(setView).catch(e => setError(e instanceof Error ? e.message : 'Settings could not be read.'));
     api.updates().then(setUpdate).catch(() => setUpdate(null));
   }, [open]);
@@ -114,6 +123,19 @@ export function SettingsDialog({open, onClose, onSaved, boot, onAccount, setup: 
       setTests(t => ({...t, [section]: result}));
     }
     catch (e) { setTests(t => ({...t, [section]: {ok: false, message: e instanceof Error ? e.message : 'The test failed.'}})); }
+  }
+
+  /** Developer mode: the PIN unlocks every section on this PC until it is turned off again. */
+  async function developerMode(on: boolean) {
+    setUnlocking(true); setPinError(null);
+    try {
+      if (on) await api.developerMode(pin.trim()); else await api.leaveDeveloperMode();
+      setPin(''); setDraft({}); setEditingSecret({});
+      setView(await api.settings());
+      onSaved();  // the app reads it again (Share as case)
+    } catch (e) {
+      setPinError(e instanceof ApiError ? e.message : 'Developer mode could not be changed.');
+    } finally { setUnlocking(false); }
   }
 
   async function checkUpdate() {
@@ -179,9 +201,17 @@ export function SettingsDialog({open, onClose, onSaved, boot, onAccount, setup: 
           )}
           {view?.company_file && (
             <p className="rounded-lg bg-surface px-3 py-2 text-xs text-ink-2">Company settings file: <strong>{view.company_file.name || 'imported'}</strong>
-              {view.company_file.imported_at ? `, imported ${formatDate(view.company_file.imported_at, true)}` : ''}. What you set here wins over it; clear a field to use the company value again.</p>
+              {view.company_file.imported_at ? `, imported ${formatDate(view.company_file.imported_at, true)}` : ''}.{developer ? ' What you set here wins over it; clear a field to use the company value again.' : ''}</p>
           )}
-          {view?.sections.map(section => (
+          {developer && (
+            <p className="flex items-center gap-2 rounded-lg border border-warn-line bg-warn-soft px-3 py-2 text-xs text-ink" data-testid="developer-on">
+              <LockOpen className="size-3.5 shrink-0 text-warn" />Developer mode is on: every setting, the prompt queue and Tasks are shown. Turn it off at the bottom.</p>
+          )}
+          {view?.sections.filter(section => developer || EVERYDAY.has(section.id)).map(section => !developer ? (
+            <Section key={section.id} id={section.id} title={section.title} about={section.about}>
+              {section.id === 'portals' && <PortalSignIn developer={false} />}
+            </Section>
+          ) : (
             <Section key={section.id} id={section.id} title={section.title} about={section.about}>
               {TESTS[section.id] && (
                 <Button size="xs" variant="outline" onClick={() => void runTest(TESTS[section.id])} disabled={tests[section.id] === 'running'} data-testid={`test-${section.id}`}>
@@ -221,13 +251,13 @@ export function SettingsDialog({open, onClose, onSaved, boot, onAccount, setup: 
               {section.id === 'portals' && <PortalSignIn />}
             </Section>
           ))}
-          {view && (
+          {view && developer && (
             <Section id="prompts" title="Prompt queue" onToggle={setPromptsOpen}
               about="Paste many prompts at once: Wizard asks them one after another, each in a chat of its own, and tries one that fails again up to twice. Run it overnight.">
               <PromptQueuePanel active={promptsOpen} />
             </Section>
           )}
-          {view && (
+          {view && developer && (
             <Section id="tasks" title="Tasks" onToggle={setTasksOpen}
               about="Work the Wizard team prepared for Gemini. Run one: it works in a conversation of its own and saves what it produces to the knowledge base.">
               <TasksPanel active={tasksOpen} />
@@ -249,8 +279,27 @@ export function SettingsDialog({open, onClose, onSaved, boot, onAccount, setup: 
               {update && update !== 'checking' && <p className="text-xs text-ink-2" role="status" data-testid="update-message">{update.message}</p>}
             </Section>
           )}
+          {view && (
+            <Section id="developer" title="Developer mode" about={developer
+              ? 'On for this PC: every setting, the prompt queue and Tasks.'
+              : 'For the Wizard team: Tasks, the prompt queue and every setting. Asks for the developer PIN.'}>
+              {developer ? (
+                <Button size="sm" variant="outline" onClick={() => void developerMode(false)} disabled={unlocking || saving} data-testid="developer-off">
+                  {unlocking ? <Loader2 className="animate-spin" /> : <Lock />}Turn off developer mode</Button>
+              ) : (
+                <form className="flex flex-wrap items-center gap-2" onSubmit={e => { e.preventDefault(); if (pin.trim()) void developerMode(true); }}>
+                  <input type="password" inputMode="numeric" autoComplete="off" maxLength={32} value={pin} placeholder="Developer PIN"
+                    aria-label="Developer PIN" onChange={e => { setPin(e.target.value); setPinError(null); }} data-testid="developer-pin"
+                    className="h-9 w-40 rounded-lg border border-line bg-canvas px-3 text-sm outline-none focus:border-line-2" />
+                  <Button type="submit" size="sm" variant="outline" disabled={!pin.trim() || unlocking} data-testid="developer-unlock">
+                    {unlocking ? <Loader2 className="animate-spin" /> : <LockOpen />}Unlock</Button>
+                </form>
+              )}
+              {pinError && <p className="rounded-lg bg-danger-soft px-3 py-2 text-xs text-danger" role="alert" data-testid="developer-error">{pinError}</p>}
+            </Section>
+          )}
         </div>
-        {view && (
+        {view && developer && (
           <div className="sticky bottom-0 -mx-5 flex items-center gap-3 border-t border-line bg-canvas px-5 py-3">
             <p className="min-w-0 flex-1 text-xs text-ink-2" role="status">{notice ?? (changed.length ? `${changed.length} unsaved change${changed.length === 1 ? '' : 's'}` : '')}</p>
             <Button variant="ghost" size="sm" onClick={() => { setDraft({}); setEditingSecret({}); }} disabled={!changed.length || saving}>Discard</Button>

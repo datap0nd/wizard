@@ -242,7 +242,7 @@ export function QuickSetup({boot, view, onExit, onFinish, onAccount, onImported,
         <Status ok={!!runtime?.ready}>Gemini: {runtime?.ready ? `ready (${runtime.label})` : runtime?.reason ?? 'not available yet.'}</Status>
         {toCheck.length === 0
           ? <p className="rounded-lg bg-surface px-3 py-2 text-xs text-ink-2" data-testid="setup-nothing-to-check">No connections are set up on this
-              PC yet. Import the settings file first (step 3), or set them in Settings.</p>
+              PC yet. Import the settings file first (step 3), or ask whoever gave you Wizard.</p>
           : <>
               <Button size="sm" variant="accent" onClick={() => void runChecks()} disabled={Object.values(checks).includes('running')} data-testid="setup-check">
                 {Object.values(checks).includes('running') ? <Loader2 className="animate-spin" /> : <PlugZap />}Test the connections</Button>

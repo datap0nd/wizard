@@ -26,6 +26,10 @@ namespace WizardBar
         private readonly ToolStripMenuItem showButton = new ToolStripMenuItem("Show the button at the top of the screen");
         private readonly ToolStripMenuItem startWithWindows = new ToolStripMenuItem("Start Wizard when I sign in");
         private readonly ToolStripMenuItem update = new ToolStripMenuItem("Check for updates…");
+        // Developer items (owner, 19 Nov 2026): shown only while Settings → Developer mode is on for this PC.
+        private readonly ToolStripMenuItem syncNow = new ToolStripMenuItem("Sync the knowledge base now");
+        private readonly ToolStripMenuItem exportSettings = new ToolStripMenuItem("Export settings…");
+        private bool developerMode;
         private readonly System.Windows.Forms.Timer updateTimer = new System.Windows.Forms.Timer { Interval = 6 * 60 * 60 * 1000 };
         private readonly SynchronizationContext ui;
         private Release pendingUpdate;
@@ -83,19 +87,23 @@ namespace WizardBar
             startWithWindows.Checked = StartsWithWindows();
             startWithWindows.Click += (s, e) => { SetStartWithWindows(!StartsWithWindows()); startWithWindows.Checked = StartsWithWindows(); };
             update.Click += async (s, e) => { if (pendingUpdate != null) InstallUpdate(); else await CheckForUpdate(true); };
+            syncNow.Click += async (s, e) => await SyncNow();
+            exportSettings.Click += async (s, e) => await ExportProvision();
+            ShowDeveloperItems();
+            menu.Opening += (s, e) => { ShowDeveloperItems(); _ = ReadDeveloperMode(); };
             menu.Items.AddRange(new ToolStripItem[]
             {
                 ask,
                 new ToolStripMenuItem("Open Wizard in the browser", null, (s, e) => OpenInBrowser()),
                 new ToolStripSeparator(),
-                new ToolStripMenuItem("Sync the knowledge base now", null, async (s, e) => await SyncNow()),
+                syncNow,
                 showButton,
                 startWithWindows,
                 new ToolStripSeparator(),
                 new ToolStripMenuItem("Quick setup…", null, (s, e) => { ShowPanel(); panel.OpenSettings(setup: true); }),
                 new ToolStripMenuItem("Settings…", null, (s, e) => { ShowPanel(); panel.OpenSettings(); }),
                 new ToolStripMenuItem("Import a settings file…", null, (s, e) => ImportProvision()),
-                new ToolStripMenuItem("Export settings…", null, async (s, e) => await ExportProvision()),
+                exportSettings,
                 update,
                 new ToolStripMenuItem("Open the log folder", null, (s, e) => PanelForm.OpenFolder(paths.Logs)),
                 new ToolStripMenuItem("Restart Wizard", null, (s, e) => backend.Restart()),
@@ -238,6 +246,28 @@ namespace WizardBar
         {
             try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(backend.BaseUrl + "/") { UseShellExecute = true }); }
             catch (Exception error) { Log.Error("open browser", error); }
+        }
+
+        private void ShowDeveloperItems()
+        {
+            syncNow.Visible = developerMode;
+            exportSettings.Visible = developerMode;
+        }
+
+        /// <summary>Whether developer mode is on, as the service's status says (the person turns it on in Settings with the
+        /// developer PIN). Read each time the menu opens; the items follow as soon as the answer arrives.</summary>
+        private async Task ReadDeveloperMode()
+        {
+            if (backend.State != ServiceState.Ready) return;
+            try
+            {
+                var status = await backend.Control("status", HttpMethod.Get);
+                var on = Backend.Text(status, "developer_mode") == "True";
+                if (on == developerMode) return;
+                developerMode = on;
+                ShowDeveloperItems();
+            }
+            catch (Exception error) { Log.Error("developer mode", error); }
         }
 
         private async Task SyncNow()

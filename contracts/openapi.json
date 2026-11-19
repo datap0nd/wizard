@@ -3060,6 +3060,64 @@
         }
       }
     },
+    "/api/v1/developer-mode": {
+      "post": {
+        "summary": "Developer Mode On",
+        "operationId": "developer_mode_on_api_v1_developer_mode_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeveloperModeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Developer Mode On Api V1 Developer Mode Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Developer Mode Off",
+        "operationId": "developer_mode_off_api_v1_developer_mode_delete",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Developer Mode Off Api V1 Developer Mode Delete"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/updates": {
       "get": {
         "summary": "Updates",
@@ -3352,6 +3410,22 @@
         "additionalProperties": false,
         "type": "object",
         "title": "CaseBody"
+      },
+      "DeveloperModeBody": {
+        "properties": {
+          "pin": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Pin"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "pin"
+        ],
+        "title": "DeveloperModeBody"
       },
       "DropBody": {
         "properties": {

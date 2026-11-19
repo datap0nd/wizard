@@ -57,6 +57,8 @@ export interface Bootstrap {
   desktop?: boolean;
   /** The person at this PC may change its settings (their own install). */
   settings_editable?: boolean;
+  /** Developer mode on this PC (the developer PIN): Tasks, the prompt queue, the other settings, Share as case. */
+  developer_mode?: boolean;
   systems?: SystemInfo[];
   /** Recurring extractions in Metronome: whether this person can set them up, and the Metronome user that owns them. */
   metronome?: {enabled: boolean; user: string | null};
@@ -100,6 +102,8 @@ export interface SettingsView {
   version: string;
   /** Settings → Source order: the order when none is saved, the longest "use it for" line, and this PC's data sources. */
   source_order?: {default: OrderEntry[]; max_use: number; sources?: OrderSource[]};
+  /** Developer mode on this PC: without it, Settings shows a beginner's sections only (EVERYDAY in SettingsDialog). */
+  developer_mode?: boolean;
 }
 
 /** The settings sections with a test: a connection, or (Dashboards) finding the dashboards the token reads on GitHub. */

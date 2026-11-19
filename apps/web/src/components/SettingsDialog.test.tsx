@@ -1,6 +1,6 @@
 import {afterEach, describe, expect, it, vi} from 'vitest';
 import {cleanup, fireEvent, render, screen} from '@testing-library/react';
-import {api} from '@/api';
+import {api, ApiError} from '@/api';
 import {SettingsDialog} from './SettingsDialog';
 import type {SettingsView, UpdateInfo} from '@/types';
 
@@ -21,7 +21,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); delete (window as unknown as 
 
 describe('Dashboards', () => {
   const REPOS = 'WIZARD_DASHBOARDS_REPOS';
-  const DASHBOARDS: SettingsView = {...VIEW,
+  const DASHBOARDS: SettingsView = {...VIEW, developer_mode: true,
     sections: [{id: 'dashboards', title: 'Dashboards', about: "The team's HTML dashboards, on the company GitHub."}],
     fields: [{key: REPOS, label: 'Repositories', section: 'dashboards', help: '', placeholder: 'sales-bi/weekly-kpi', choices: [],
       secret: false, source: 'default', value: null, set: false, company_value: null, editable: true}]};
@@ -46,7 +46,7 @@ describe('Dashboards', () => {
 
 describe('Runs', () => {
   const LIMIT = 'WIZARD_RUN_TIMEOUT_S';
-  const RUNS: SettingsView = {...VIEW,
+  const RUNS: SettingsView = {...VIEW, developer_mode: true,
     sections: [{id: 'runs', title: 'Runs', about: 'How long one answer may take.'}],
     fields: [
       {key: LIMIT, label: 'Time limit per run', section: 'runs', help: 'Up to 600 minutes (10 hours).', placeholder: '30', choices: [],
@@ -98,5 +98,75 @@ describe('Version and updates', () => {
     render(<SettingsDialog open onClose={vi.fn()} onSaved={vi.fn()} />);
     expect((await screen.findByTestId('update-now')).textContent).toContain('Update to 1.0.66.0');
     expect(screen.queryByTestId('update-with-windows')).toBeNull();
+  });
+});
+
+describe('Developer mode', () => {
+  // Owner, 19 Nov 2026: "keep tasks and other 'developer' stuff behind a developer mode PIN code menu protection".
+  const field = (key: string, section: string) => ({key, label: key, section, help: '', placeholder: '', choices: [], secret: false,
+    source: 'company' as const, value: 'x', set: true, company_value: 'x', editable: true});
+  const EVERY: SettingsView = {...VIEW, company_file: {name: 'ACME Wizard', imported_at: null},
+    sections: [{id: 'gemini', title: 'Gemini', about: ''}, {id: 'knowledge', title: 'Knowledge base', about: ''},
+      {id: 'portals', title: 'Portals', about: 'ASAP, GSCM and the Big Data Portal.'}, {id: 'network', title: 'Network', about: ''}],
+    fields: [field('GOOGLE_CLOUD_PROJECT', 'gemini'), field('WIZARD_KB_REPO', 'knowledge'), field('WIZARD_PORTAL_GSCM_URL', 'portals'),
+      field('WIZARD_PROXY', 'network')]};
+  const PORTALS = {browser: 'Google Chrome', portals: [{id: 'gscm', name: 'GSCM', host: 'gscm.corp'}], signing_in: false, running: false,
+    last_sign_in: null, maps: {}};
+
+  function mocks(view: SettingsView) {
+    vi.spyOn(api, 'updates').mockResolvedValue(FAILED);
+    vi.spyOn(api, 'portals').mockResolvedValue(PORTALS);
+    return vi.spyOn(api, 'settings').mockResolvedValue(view);
+  }
+
+  it('shows a beginner Quick setup, the portals sign-in and the version only', async () => {
+    mocks(EVERY);
+    render(<SettingsDialog open onClose={vi.fn()} onSaved={vi.fn()} />);
+    await screen.findByTestId('settings-developer');
+    expect(screen.getByTestId('settings-portals')).toBeTruthy();
+    expect(await screen.findByTestId('portal-sign-in-open')).toBeTruthy();
+    expect(screen.getByTestId('settings-updates')).toBeTruthy();
+    for (const hidden of ['gemini', 'knowledge', 'network', 'prompts', 'tasks']) expect(screen.queryByTestId(`settings-${hidden}`)).toBeNull();
+    expect(screen.queryByTestId('setting-WIZARD_PORTAL_GSCM_URL')).toBeNull();
+    expect(screen.queryByTestId('portal-maps')).toBeNull();
+    expect(screen.queryByTestId('settings-save')).toBeNull();
+    expect(screen.queryByTestId('developer-on')).toBeNull();
+    expect(screen.getByText(/Company settings file/).textContent).not.toContain('wins over it');
+  });
+
+  it('a wrong PIN says so and shows nothing more; the right one shows every setting, Tasks and the prompt queue', async () => {
+    const settings = mocks(EVERY);
+    const onSaved = vi.fn();
+    const unlock = vi.spyOn(api, 'developerMode').mockRejectedValueOnce(new ApiError('That PIN is not right.', 403))
+      .mockResolvedValueOnce({developer_mode: true});
+    render(<SettingsDialog open onClose={vi.fn()} onSaved={onSaved} />);
+    const pin = await screen.findByTestId('developer-pin') as HTMLInputElement;
+    expect(pin.type).toBe('password');
+    fireEvent.change(pin, {target: {value: '1111'}});
+    fireEvent.click(screen.getByTestId('developer-unlock'));
+    expect((await screen.findByTestId('developer-error')).textContent).toBe('That PIN is not right.');
+    expect(screen.queryByTestId('settings-tasks')).toBeNull();
+    settings.mockResolvedValue({...EVERY, developer_mode: true});
+    fireEvent.change(pin, {target: {value: ' 2468 '}});
+    fireEvent.click(screen.getByTestId('developer-unlock'));
+    expect(await screen.findByTestId('developer-on')).toBeTruthy();
+    expect(unlock).toHaveBeenLastCalledWith('2468');
+    for (const shown of ['gemini', 'knowledge', 'network', 'prompts', 'tasks']) expect(screen.getByTestId(`settings-${shown}`)).toBeTruthy();
+    expect(screen.getByTestId('setting-WIZARD_PORTAL_GSCM_URL')).toBeTruthy();
+    expect(screen.getByTestId('settings-save')).toBeTruthy();
+    expect(onSaved).toHaveBeenCalled();
+  });
+
+  it('turns off again', async () => {
+    const settings = mocks({...EVERY, developer_mode: true});
+    const off = vi.spyOn(api, 'leaveDeveloperMode').mockResolvedValue({developer_mode: false});
+    render(<SettingsDialog open onClose={vi.fn()} onSaved={vi.fn()} />);
+    const button = await screen.findByTestId('developer-off');
+    settings.mockResolvedValue(EVERY);
+    fireEvent.click(button);
+    expect(await screen.findByTestId('developer-pin')).toBeTruthy();
+    expect(off).toHaveBeenCalled();
+    expect(screen.queryByTestId('settings-tasks')).toBeNull();
+    expect(screen.queryByTestId('developer-on')).toBeNull();
   });
 });

@@ -37,7 +37,7 @@ from wizard_connectors.task_files import TaskFiles
 from wizard_connectors.tools import build_registry, build_services, connect_nerp, retire_portal_catalogs
 from wizard_connectors.tools.systems import SystemChoice
 
-from . import __version__, brain, knowledge_sync, provisioning, settings_pane, systems, team_dashboards
+from . import __version__, brain, developer_mode, knowledge_sync, provisioning, settings_pane, systems, team_dashboards
 from .attachments import AttachmentError, public
 from .config import Settings, kb_source, load_settings
 from .exports import Exports
@@ -219,6 +219,11 @@ class SettingsBody(Body):
 class SettingsImportBody(Body):
     # The company settings file (wizard.provision) the person chose in Quick setup, as text. Checked before it is stored.
     text: str = Field(min_length=2, max_length=provisioning.MAX_BYTES)
+
+
+class DeveloperModeBody(Body):
+    # The developer PIN the person typed (developer_mode.py); checked against its digest, never stored.
+    pin: str = Field(min_length=1, max_length=developer_mode.MAX_PIN)
 
 
 class SettingsTestBody(Body):
@@ -567,8 +572,10 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
                         and s.connector.status in ("SYNTHETIC_FIXTURE", "ROWS_VERIFIED")}
                        | ({"LIVE"} if services.postgres and identity.can_use_system("postgresql") else set())
                        | ({"LIVE"} if services.dashboards and identity.can_use_system("dashboards") else set()))
+        editable = identity.id == OWNER_ID and settings_pane.editable(settings)
         return {**base, "diagnostics": settings.diagnostics, "desktop": settings.desktop,
-                "settings_editable": identity.id == OWNER_ID and settings_pane.editable(settings),
+                "settings_editable": editable,
+                "developer_mode": editable and developer_mode.is_on(settings.data_dir),
                 "identity": {"id": identity.id, "name": identity.name, "email": identity.email, "role": identity.role},
                 "runtime": {"kind": runtime.kind, "label": runtime.label(), "model": runtime.model,
                             "steering": runtime.steering, **readiness},
@@ -1675,7 +1682,8 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         view["source_order"]["sources"] = [{"id": source, "name": name}
                                            for source, name in systems.sources(settings, services, identity).items()]
         return {**view, "model": runtime.model, "runtime": runtime.kind,
-                "desktop": settings.desktop, "build": settings_pane.installed_build(), "version": __version__}
+                "desktop": settings.desktop, "build": settings_pane.installed_build(), "version": __version__,
+                "developer_mode": developer_mode.is_on(settings.data_dir)}
 
     def schedule_restart() -> str:
         request_restart = getattr(app.state, "request_restart", None)
@@ -1749,6 +1757,27 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         except settings_pane.PaneError as error:
             return {"ok": False, "message": str(error)}
 
+    # Developer mode (developer_mode.py): the person at this PC shows Tasks and the other developer settings with the PIN.
+    @app.post("/api/v1/developer-mode")
+    async def developer_mode_on(request: Request, body: DeveloperModeBody) -> dict[str, Any]:
+        identity = settings_owner(request)
+        if not developer_mode.pin_matches(body.pin):
+            store.audit(identity.id, "developer_mode:on", outcome="refused")
+            await asyncio.sleep(1.0)  # one guess a second
+            raise HTTPException(403, "That PIN is not right.")
+        await asyncio.to_thread(developer_mode.turn_on, settings.data_dir)
+        store.audit(identity.id, "developer_mode:on")
+        log.info("developer mode turned on")
+        return {"developer_mode": True}
+
+    @app.delete("/api/v1/developer-mode")
+    async def developer_mode_off(request: Request) -> dict[str, Any]:
+        identity = settings_owner(request)
+        await asyncio.to_thread(developer_mode.turn_off, settings.data_dir)
+        store.audit(identity.id, "developer_mode:off")
+        log.info("developer mode turned off")
+        return {"developer_mode": False}
+
     update_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 
     @app.get("/api/v1/updates")
@@ -1802,7 +1831,9 @@ def create_app(settings: Settings | None = None, runtime: AgentRuntime | None = 
         return {"version": __version__, "runtime": runtime.kind, "active_runs": len(manager.active),
                 "knowledge_base": knowledge_status(), "provision": settings.provision,
                 "postgres": bool(services.postgres), "content": "knowledge base" if kb else
-                ("folder" if settings.content_dir else "synthetic")}
+                ("folder" if settings.content_dir else "synthetic"),
+                # The tray shows Sync the knowledge base now and Export settings… only in developer mode.
+                "developer_mode": developer_mode.is_on(settings.data_dir)}
 
     @app.post("/internal/v1/desktop/sync")
     async def desktop_sync(request: Request) -> dict[str, Any]:

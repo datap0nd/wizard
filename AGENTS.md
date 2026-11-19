@@ -47,6 +47,10 @@ around a precomputed result is withdrawn. Its credential, entitlement, DLP and h
   ([decision](docs/decisions/2026-10-30-settings-export.md)); Quick setup at the top of Settings imports one the person
   chooses, checked before anything is stored ([decision](docs/decisions/2026-11-13-quick-setup.md)). See
   [docs/decisions/2026-10-20-desktop-app.md](docs/decisions/2026-10-20-desktop-app.md) and [docs/desktop.md](docs/desktop.md).
+- Keep a beginner's Settings short (owner, [decision](docs/decisions/2026-11-19-developer-mode.md)): Quick setup, the
+  portals' sign-in and Version and updates. Tasks, the prompt queue, the portal maps, Share as case, the tray's Sync and
+  Export settings…, and every other section (a new one too) need developer mode. Keep only the PIN's salted digest in the
+  code, never its digits, and the flag in its own file on the PC, never in a settings file or an export.
 - Ship every change (owner): merge it into `main`, push, and confirm the `desktop-continuous` release was published
   for that commit. Steps in [CLAUDE.md](CLAUDE.md).
 - Work one numbered plan step or small ticket at a time ([docs/issue-board.md](docs/issue-board.md)). Name the files
