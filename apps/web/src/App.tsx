@@ -442,7 +442,7 @@ export function App({compact = false}: {compact?: boolean}) {
           <h2 className="mr-2 truncate text-[14px] font-semibold" data-testid="conversation-title">{title}</h2>
           {runtime.kind === 'replay' && <RuntimeBadge kind={runtime.kind} label={runtime.label} />}
           {synthetic && <span className="inline-flex items-center gap-1 rounded-full border border-warn-line bg-warn-soft px-2 py-0.5 text-[11.5px] font-semibold text-warn" data-testid="synthetic-banner">SYNTHETIC DATA</span>}
-          {boot.site?.enabled && currentId && runs.some(r => r.status === 'succeeded' && (r.kind === 'ask' || r.kind === 'check')) && (
+          {boot.developer_mode && boot.site?.enabled && currentId && runs.some(r => r.status === 'succeeded' && (r.kind === 'ask' || r.kind === 'check')) && (
             <Button variant="outline" size="xs" className="ml-auto" onClick={() => setSharing(true)} data-testid="share-case-open"><Share2 />Share as case</Button>
           )}
         </div>

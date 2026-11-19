@@ -122,6 +122,8 @@ export const api = {
     request<SettingsTestResult>('/api/v1/settings/test', {body: {section, values}}),
   /** Quick setup: the company settings file (wizard.provision) the person chose, as text. Wizard restarts to apply it. */
   importSettings: (text: string) => request<SettingsImported>('/api/v1/settings/import', {body: {text}}),
+  developerMode: (pin: string) => request<{developer_mode: boolean}>('/api/v1/developer-mode', {body: {pin}}),
+  leaveDeveloperMode: () => request<{developer_mode: boolean}>('/api/v1/developer-mode', {method: 'DELETE'}),
   updates: (refresh = false) => request<UpdateInfo>(`/api/v1/updates${refresh ? '?refresh=true' : ''}`),
   portals: () => request<PortalStatus>('/api/v1/portals'),
   portalSignIn: () => request<PortalStatus>('/api/v1/portals/sign-in', {body: {}}),

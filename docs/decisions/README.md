@@ -51,3 +51,4 @@ Evidence**. A decision that changes repository rules also updates [AGENTS.md](..
 - [2026-11-13 The tasks come packaged with the app](2026-11-13-tasks-packaged.md)
 - [2026-11-13 Wizard checks the portals' sign-in before each answer, and turns yellow until the person signs in](2026-11-13-portal-sign-in-check.md)
 - [2026-11-16 The dashboards are read from the company GitHub, and mapped from scratch](2026-11-16-dashboards-on-github.md)
+- [2026-11-19 Developer mode: Tasks and the other developer settings behind a PIN](2026-11-19-developer-mode.md)

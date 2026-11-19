@@ -84,7 +84,7 @@ describe('the Source order section in Settings', () => {
       choices: [], secret: false, source: 'company', value: '[{"id":"postgresql"},{"id":"asap"}]', set: true, company_value: '[]',
       editable: true}],
     company_file: null, restart: 'automatic', model: 'gemini', runtime: 'code-assist', desktop: true, build: {}, version: '0.1.0',
-    source_order: {default: DEFAULT, max_use: 200, sources: SOURCES.slice(1, 3)},
+    source_order: {default: DEFAULT, max_use: 200, sources: SOURCES.slice(1, 3)}, developer_mode: true,
   };
 
   it('arranges the company order and saves it as one setting', async () => {

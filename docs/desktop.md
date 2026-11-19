@@ -33,7 +33,8 @@ No admin rights are needed. Setup adds a Start-menu entry and, by default, a "st
 
 ## One-time setup (owner)
 
-Wizard's **Settings → Knowledge base** does it with you: you create the repository and two tokens in the browser, enter
+Turn on **Settings → Developer mode** first (the owner's PIN): the sections below are developer settings. Wizard's
+**Settings → Knowledge base** does it with you: you create the repository and two tokens in the browser, enter
 them there and press **Test connection**, then make the provisioning file. You type the tokens yourself; Gemini never
 sees them. The notes come from tasks (**Settings → Tasks**), not from a folder on a PC
 ([decision](decisions/2026-11-02-tasks-only-writer.md)).
@@ -185,6 +186,15 @@ The ⚙ button in the panel (or **Settings…** in the tray menu, or Settings in
 of Wizard on this PC. **Quick setup** sits at its top: a new person's walk through Wizard, the settings file, the
 Gemini sign-in, the portals and a connection check ([decision](decisions/2026-11-13-quick-setup.md)).
 
+**Developer mode** ([decision](decisions/2026-11-19-developer-mode.md)). A beginner's Settings shows Quick setup, the
+company settings file's name, **Portals** with only the sign-in (**Sign in to the portals**, **Check sign-in**),
+**Version and updates** and, at the bottom, **Developer mode**. Every other section in the table below, the prompt
+queue, Tasks, the portal maps, **Share as case** and the tray's **Sync the knowledge base now** and **Export
+settings…** appear once you type the developer PIN there and press **Unlock**. It stays on for this PC, across restarts
+and updates, until **Turn off developer mode**. It is this PC's own: no settings file sets it and Export settings…
+never carries it, so a PC set up from your exported file starts as a beginner's. It hides; it is not a password (the
+code is public): nothing it hides depends on it for safety.
+
 | Section | Settings | Test |
 |---|---|---|
 | Gemini | Google Cloud project, company Google domains, thinking (high, low, model default) | — |
@@ -286,11 +296,13 @@ never on a server behind SSO.
    back), the portals' sign-in, and a check of every connection. Each step can be skipped and done later.
 
 Quick setup stays at the top of Settings and in the tray menu (**Quick setup…**). Someone who already has Wizard can
-import a new file there, or from the tray menu: **Import a settings file…**.
+import a new file there, or from the tray menu: **Import a settings file…**. Their Settings shows only what a beginner
+needs; the rest waits behind **Developer mode** (above), so do not give them the PIN unless they run tasks or set
+Wizard up for others.
 
 ### Moving to another PC
 
-On the PC that works, tray menu → **Export settings…**: Wizard writes `wizard.provision` where you choose, with every
+On the PC that works, turn on developer mode (Settings → Developer mode), then tray menu → **Export settings…**: Wizard writes `wizard.provision` where you choose, with every
 value this PC uses from the company file and Settings (Settings, the PC's `.env` and the environment win over the
 company file, as at run time), passwords and tokens included in plain text. Left out, as from any settings file: the
 per-PC values (data folder, port, your name), the knowledge base's **write token** and your Gemini sign-in. The
@@ -319,12 +331,12 @@ imported: anyone with it can use the passwords. Conversations stay on the first 
 | Ask Wizard (Ctrl+Alt+W) | Opens the panel |
 | Open Wizard in the browser | The full app (sidebar, history, sources) at `http://127.0.0.1:8771` |
 | (in the browser) `/brain` | The Brain page: the knowledge base as a graph of communities (2D or 3D) with its statistics, the systems and the live news, with a presenter tour; N plays a demo "new article came in" (`http://127.0.0.1:8771/brain`; [decision](decisions/2026-10-28-brain-page.md)) |
-| Sync the knowledge base now | Checks GitHub now and restarts the service on a new version |
+| Sync the knowledge base now | Checks GitHub now and restarts the service on a new version (developer mode) |
 | Show the button at the top of the screen | Hide the tab (Ctrl+Alt+W and the tray still work) |
 | Start Wizard when I sign in | The `HKCU\...\Run` entry |
 | Settings… | Opens the panel's settings: every setting of Wizard on this PC (Gemini, run limits, knowledge base, database, portals, attached files, proxy, diagnostics), version and updates |
 | Import a settings file… | A new `wizard.provision`; the service restarts and imports it |
-| Export settings… | This PC's settings as a `wizard.provision` for another PC, passwords in plain text, without the write token (see Moving to another PC) |
+| Export settings… | This PC's settings as a `wizard.provision` for another PC, passwords in plain text, without the write token (see Moving to another PC; developer mode) |
 | Check for updates… / Install update… | See Updating |
 | Open the log folder | `%LOCALAPPDATA%\Wizard\logs`: `bar.log` (WizardBar), `wizard.log` (the service), `service-output.log` |
 | Restart Wizard / About Wizard / Quit Wizard | About shows the version, the knowledge-base commit and the last sync problem |

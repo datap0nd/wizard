@@ -23,8 +23,9 @@ function landed(p: PortalCheck['portals'][number]): string {
 }
 
 /** Signing in to the company portals in Wizard's own browser: a visible window opens on this PC with one tab per
- * portal; the person signs in and closes it, and Gemini then reads the portals in the background with that sign-in. */
-export function PortalSignIn({compact = false}: {compact?: boolean}) {
+ * portal; the person signs in and closes it, and Gemini then reads the portals in the background with that sign-in.
+ * `developer`: the portal maps too (Settings in developer mode); without it, only the sign-in. */
+export function PortalSignIn({compact = false, developer = true}: {compact?: boolean; developer?: boolean}) {
   const [status, setStatus] = useState<PortalStatus | null | 'none'>(null);
   const [busy, setBusy] = useState<'sign-in' | 'done' | 'check' | null>(null);
   const [check, setCheck] = useState<PortalCheck | null>(null);
@@ -51,7 +52,9 @@ export function PortalSignIn({compact = false}: {compact?: boolean}) {
 
   if (status === null) return null;
   if (status === 'none') {
-    return compact ? null : <p className="mt-3 text-xs text-ink-3" data-testid="portals-none">Fill in a portal's address and save: Wizard restarts and the sign-in button appears here.</p>;
+    return compact ? null : <p className="mt-3 text-xs text-ink-3" data-testid="portals-none">{developer
+      ? "Fill in a portal's address and save: Wizard restarts and the sign-in button appears here."
+      : 'No portals are set up on this PC yet. They come with the company settings file (Quick setup).'}</p>;
   }
   return (<>
     <div className={cn('space-y-2', compact ? '' : 'mt-3 rounded-lg bg-surface px-3 py-3')} data-testid="portal-sign-in">
@@ -91,6 +94,6 @@ export function PortalSignIn({compact = false}: {compact?: boolean}) {
       )}
       {error && <p className="text-xs text-danger" role="alert">{error}</p>}
     </div>
-    {!compact && <PortalMaps status={status} onChange={setStatus} />}
+    {!compact && developer && <PortalMaps status={status} onChange={setStatus} />}
   </>);
 }
