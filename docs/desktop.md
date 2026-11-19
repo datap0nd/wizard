@@ -282,6 +282,8 @@ never on a server behind SSO.
 
 ## Giving Wizard to someone
 
+The [README](../README.md) walks them through it in plain words, with screenshots: send them its link.
+
 1. Download `WizardSetup.exe` from the
    [desktop-continuous release](https://github.com/datap0nd/wizard/releases/tag/desktop-continuous) (or a CI run's
    `WizardSetup` artifact). Behind a proxy that times out on release downloads, take

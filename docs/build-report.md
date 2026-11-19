@@ -3,7 +3,27 @@
 The single running record the plan asks for: what is implemented, actual test output, operating mode and open
 decisions. Update it with every change that alters behaviour.
 
-## 2026-11-19 (latest) — Developer mode: Tasks and the other developer settings behind a PIN
+## 2026-11-19 (latest) — A README for the people who use Wizard, with screenshots
+
+The owner: "This readme on github is a bit bad. Add the UI of wizard working, make it simple for non-tech users.
+Include the setup there."
+
+- `README.md` is now for the people who use Wizard, in plain words: what it does, what you need, download (the
+  **Releases** page of the repository it is read in, so a company copy of the repository links to its own), install
+  (SmartScreen's "Run anyway"), Quick setup step by step, asking, watching it work, reading an answer and its labels
+  (Live, Your file, SYNTHETIC, REPLAY, Checked), updates, what to do when something goes wrong, privacy, uninstalling,
+  and links for administrators.
+- Screenshots in `docs/images/readme/` (outside the installer: `docs/` is not in the payload): the full window
+  answering and at work, the sources, the desktop panel, two Quick setup steps, all from a local install in replay
+  mode over the SYNTHETIC fixtures, labelled as such on the page; the Ask Wizard button as WizardBar drew it on
+  Windows (`--snapshot`, the `desktop` workflow's `WizardBar-button` artifact). Taken at 2x in Chromium and reduced.
+- The previous README (what runs today, the install routes, development, verification, layout) is
+  `docs/developers.md`, its links rewritten for its folder and its status note brought up to date. AGENTS.md now
+  points there for the "What runs today" table.
+- Checks: `verify_spec.py` (every Markdown link resolves); every image the README shows exists; the page rendered
+  with GitHub's stylesheet and looked over in Chromium.
+
+## 2026-11-19 — Developer mode: Tasks and the other developer settings behind a PIN
 
 The owner, before handing Wizard to people who install it from the company's GitHub: "I just need the app to be a bit
 more beginner friendly too. I want you to keep tasks and other 'developer' stuff behind a developer mode PIN code menu
