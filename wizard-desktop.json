@@ -1,0 +1,7 @@
+{
+  "version": "1.0.243.0",
+  "commit": "891a0fbb635749a06b454375cd09ea6ed6d4daef",
+  "installer": "WizardSetup.exe",
+  "installer_sha256": "59476469d1954fda7044286a4b7047ebdb78686abebe08508dc7b43358f5e486",
+  "size": 48665533
+}
