@@ -17,6 +17,11 @@ Include the setup there."
   answering and at work, the sources, the desktop panel, two Quick setup steps, all from a local install in replay
   mode over the SYNTHETIC fixtures, labelled as such on the page; the Ask Wizard button as WizardBar drew it on
   Windows (`--snapshot`, the `desktop` workflow's `WizardBar-button` artifact). Taken at 2x in Chromium and reduced.
+- At the top, the owner asked for the systems stage "in a more graphic way ... perhaps a little gif": a 7-second
+  looping GIF of Wizard at work (`wizard-at-work.gif`, 640x334, 1.8 MB). Recorded with Chromium's screencast from
+  the same replay install in a window tall enough that nothing scrolls, the stage cropped, the waiting and the writing
+  sped up, a short fade back to the start; palette from ffmpeg. The full-window "at work" screenshot it replaces is
+  gone; the answer screenshot moved to "Read the answer".
 - The previous README (what runs today, the install routes, development, verification, layout) is
   `docs/developers.md`, its links rewritten for its folder and its status note brought up to date. AGENTS.md now
   points there for the "What runs today" table.

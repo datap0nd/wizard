@@ -8,10 +8,10 @@
 <p align="center"><strong>Ask a business question in plain words. Wizard finds the answer in the company's data<br>
 and shows you where every number comes from.</strong></p>
 
-<p align="center"><img src="docs/images/readme/answer.png" alt="A Wizard answer: the sources it read, a short conclusion, a chart and a table" width="900"></p>
+<p align="center"><img src="docs/images/readme/wizard-at-work.gif" alt="Wizard at work: ASAP, GSCM, NERP and the knowledge base light up as the wizard reads them, then the answer is ready" width="640"></p>
 
-<p align="center"><sub>The screenshots on this page use Wizard's built-in sample data, so they are marked SYNTHETIC and REPLAY.
-On your PC, answers come from your company's own sources.</sub></p>
+<p align="center"><sub>Wizard at work: each source lights up as he reads it. The pictures on this page use Wizard's built-in sample
+data, so they are marked SYNTHETIC and REPLAY. On your PC, answers come from your company's own sources.</sub></p>
 
 ## What Wizard does
 
@@ -105,14 +105,16 @@ press **Enter**.
 
 ### Watch it work
 
-Each source lights up while Wizard reads it, with the number of rows it got and how recent they are. Open
-**Step by step** to see every step it took.
-
-<p align="center"><img src="docs/images/readme/working.png" alt="Wizard at work: each source it reads lights up around the wizard" width="900"></p>
+As in the picture at the top of this page, each source lights up while Wizard reads it, with the number of rows it got
+and how recent they are. Open **Step by step** to see every step it took.
 
 ### Read the answer
 
-The answer starts with the conclusion, then the chart, the table and what to keep in mind. Below it:
+The answer starts with the conclusion, then the chart, the table and what to keep in mind.
+
+<p align="center"><img src="docs/images/readme/answer.png" alt="A Wizard answer: the sources it read, a short conclusion, a chart and a table" width="900"></p>
+
+Below it:
 
 - **Show sources** lists every report, table and file the answer used. Open one to see the query and the rows it
   returned.
