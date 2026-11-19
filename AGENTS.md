@@ -55,7 +55,8 @@ around a precomputed result is withdrawn. Its credential, entitlement, DLP and h
   for that commit. Steps in [CLAUDE.md](CLAUDE.md).
 - Work one numbered plan step or small ticket at a time ([docs/issue-board.md](docs/issue-board.md)). Name the files
   changed and commands run. Report passing, failing and BLOCKED tests honestly. Update
-  [docs/build-report.md](docs/build-report.md) and the README "What runs today" table when behaviour changes.
+  [docs/build-report.md](docs/build-report.md) and the "What runs today" table in [docs/developers.md](docs/developers.md) when behaviour changes; keep the
+  [README](README.md) for the people who use Wizard: plain words, the setup, screenshots.
 
 ## Do not
 
